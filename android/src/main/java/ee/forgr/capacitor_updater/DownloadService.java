@@ -15,8 +15,6 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.Dispatcher;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -38,11 +37,6 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
-import okio.Buffer;
-import okio.BufferedSink;
-import okio.BufferedSource;
-import okio.Okio;
-import okio.Source;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -78,6 +72,8 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
+    // Match HTTP dispatcher so 64 workers actually fetch in parallel (HTTP/2 multiplexes).
+    private static final int MANIFEST_MAX_CONCURRENT_FILES = 64;
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -88,7 +84,11 @@ public class DownloadService extends Worker {
 
     // Initialize shared client with User-Agent interceptor
     static {
+        Dispatcher dispatcher = new Dispatcher();
+        dispatcher.setMaxRequests(MANIFEST_MAX_CONCURRENT_FILES);
+        dispatcher.setMaxRequestsPerHost(MANIFEST_MAX_CONCURRENT_FILES);
         sharedClient = new OkHttpClient.Builder()
+            .dispatcher(dispatcher)
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
@@ -203,7 +203,7 @@ public class DownloadService extends Worker {
             if (isManifest) {
                 JSONArray manifest = DataManager.getInstance().getAndClearManifest();
                 if (manifest != null) {
-                    handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest.toString());
+                    handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
                 } else {
                     logger.error("Manifest is null");
@@ -291,7 +291,7 @@ public class DownloadService extends Worker {
         String version,
         String sessionKey,
         String publicKey,
-        String manifestString
+        JSONArray manifest
     ) {
         try {
             logger.debug("handleManifestDownload");
@@ -299,7 +299,6 @@ public class DownloadService extends Worker {
             // Send stats for manifest download start
             sendStatsAsync("download_manifest_start", version);
 
-            JSONArray manifest = new JSONArray(manifestString);
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
             File builtinFolder = new File(getApplicationContext().getFilesDir(), "public");
@@ -316,9 +315,7 @@ public class DownloadService extends Worker {
             final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
 
-            // Use more threads for I/O-bound operations
-            int threadCount = Math.min(64, Math.max(32, totalFiles));
-            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
             List<Future<?>> futures = new ArrayList<>();
 
             for (int i = 0; i < totalFiles; i++) {
@@ -361,8 +358,11 @@ public class DownloadService extends Worker {
                     continue;
                 }
                 String cacheBaseName = new File(isBrotli ? targetFileName : fileName).getName();
-                File cacheFile = new File(cacheFolder, finalFileHash + "_" + cacheBaseName);
-                final File legacyCacheFile = isBrotli ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
+                final File cacheFile = CapgoUpdater.isSafeCacheHash(finalFileHash)
+                    ? new File(cacheFolder, finalFileHash + "_" + cacheBaseName)
+                    : null;
+                final File legacyCacheFile =
+                    isBrotli && cacheFile != null ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
@@ -622,17 +622,13 @@ public class DownloadService extends Worker {
      * This handles the race condition where OS can delete cache files between exists() check and copy.
      */
     private boolean tryCopyFromCache(File source, File dest, String expectedHash) {
-        // First quick check - if file doesn't exist, don't bother
-        if (!source.exists()) {
+        // First quick check - if file doesn't exist or was truncated, don't bother
+        if (!CapgoUpdater.isReusableCacheFile(source, expectedHash)) {
             return false;
         }
 
-        // Verify checksum before copy
-        if (!verifyChecksum(source, expectedHash)) {
-            return false;
-        }
-
-        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        // Hash is in the cache file name and was verified when written.
+        // Re-hashing here would re-read every reused file on low-RAM devices.
         try {
             copyFile(source, dest);
             return true;
@@ -649,23 +645,29 @@ public class DownloadService extends Worker {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
         }
 
-        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
-        try (
-            FileInputStream inStream = new FileInputStream(source);
-            FileOutputStream outStream = new FileOutputStream(tempFile);
-            FileChannel inChannel = inStream.getChannel();
-            FileChannel outChannel = outStream.getChannel()
-        ) {
-            inChannel.transferTo(0, inChannel.size(), outChannel);
-        }
-
+        final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
         try {
-            Files.move(tempFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
+            try (
+                FileInputStream inStream = new FileInputStream(source);
+                FileOutputStream outStream = new FileOutputStream(tempFile);
+                FileChannel inChannel = inStream.getChannel();
+                FileChannel outChannel = outStream.getChannel()
+            ) {
+                long size = inChannel.size();
+                long pos = 0;
+                while (pos < size) {
+                    long transferred = inChannel.transferTo(pos, size - pos, outChannel);
+                    if (transferred <= 0) {
+                        throw new IOException("Failed to copy file: " + source.getAbsolutePath());
+                    }
+                    pos += transferred;
+                }
+            }
+            CryptoCipher.replaceFile(tempFile, dest);
+        } finally {
             if (tempFile.exists()) {
                 tempFile.delete();
             }
-            throw e;
         }
     }
 
@@ -715,35 +717,16 @@ public class DownloadService extends Worker {
 
                 // Only decompress if file has .br extension
                 if (isBrotli) {
-                    // Use new decompression method with atomic write
-                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                        byte[] compressedData = new byte[(int) compressedFile.length()];
-                        int offset = 0;
-                        int bytesRead;
-                        while (
-                            offset < compressedData.length &&
-                            (bytesRead = fis.read(compressedData, offset, compressedData.length - offset)) != -1
-                        ) {
-                            offset += bytesRead;
-                        }
-                        byte[] decompressedData;
-                        try {
-                            decompressedData = decompressBrotli(compressedData, targetFile.getName());
-                        } catch (IOException e) {
-                            sendStatsAsync(
-                                "download_manifest_brotli_fail",
-                                getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
-                            );
-                            throw e;
-                        }
-
-                        // Write decompressed data atomically
-                        try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(decompressedData)) {
-                            writeFileAtomic(finalTargetFile, bais, null);
-                        }
+                    try {
+                        decompressBrotli(compressedFile, finalTargetFile, targetFile.getName());
+                    } catch (IOException e) {
+                        sendStatsAsync(
+                            "download_manifest_brotli_fail",
+                            getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
+                        );
+                        throw e;
                     }
                 } else {
-                    // Just copy the file without decompression using atomic operation
                     try (FileInputStream fis = new FileInputStream(compressedFile)) {
                         writeFileAtomic(finalTargetFile, fis, null);
                     }
@@ -758,8 +741,10 @@ public class DownloadService extends Worker {
                 // Verify checksum
                 if (calculatedHash.equalsIgnoreCase(expectedHash)) {
                     // Only cache if checksum is correct - use atomic copy
-                    try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                        writeFileAtomic(cacheFile, fis, expectedHash);
+                    if (cacheFile != null) {
+                        try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
+                            writeFileAtomic(cacheFile, fis, null);
+                        }
                     }
                 } else {
                     finalTargetFile.delete();
@@ -815,75 +800,118 @@ public class DownloadService extends Worker {
         return sb.toString();
     }
 
-    private byte[] decompressBrotli(byte[] data, String fileName) throws IOException {
-        // Validate input
-        if (data == null) {
-            logger.error("Error: Null data received for " + fileName);
-            throw new IOException("Null data received");
+    static void decompressBrotli(File input, File output, String fileName) throws IOException {
+        File parent = output.getParentFile();
+        if (parent != null) {
+            parent.mkdirs();
+        }
+        long length = input.length();
+        if (length == 0) {
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            return;
         }
 
-        // Handle empty files
-        if (data.length == 0) {
-            return new byte[0];
-        }
-
-        // Handle the special EMPTY_BROTLI_STREAM case
-        if (data.length == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06) {
-            return new byte[0];
-        }
-
-        // For small files, check if it's a minimal Brotli wrapper
-        if (data.length > 3) {
-            try {
-                // Handle our minimal wrapper pattern
-                if (data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data[data.length - 1] == 0x03) {
-                    return Arrays.copyOfRange(data, 3, data.length - 1);
-                }
-
-                // Handle brotli.compress minimal wrapper (quality 0)
-                if (data[0] == 0x0b && data[1] == 0x02 && data[2] == (byte) 0x80 && data[data.length - 1] == 0x03) {
-                    return Arrays.copyOfRange(data, 3, data.length - 1);
-                }
-            } catch (ArrayIndexOutOfBoundsException e) {
-                logger.error("Error: Malformed data for " + fileName);
-                throw new IOException("Malformed data structure");
+        byte[] head = new byte[(int) Math.min(3, length)];
+        byte last = 0;
+        try (RandomAccessFile raf = new RandomAccessFile(input, "r")) {
+            raf.readFully(head);
+            if (length >= 1) {
+                raf.seek(length - 1);
+                last = raf.readByte();
             }
         }
 
-        // For all other cases, try standard decompression
-        try (
-            ByteArrayInputStream bis = new ByteArrayInputStream(data);
-            BrotliInputStream brotliInputStream = new BrotliInputStream(bis);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream()
-        ) {
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = brotliInputStream.read(buffer)) != -1) {
-                bos.write(buffer, 0, len);
+        if (length == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06) {
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            return;
+        }
+
+        if (length > 3 && last == 0x03) {
+            boolean emptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06;
+            boolean qualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == (byte) 0x80;
+            if (emptyWrapper || qualityZeroWrapper) {
+                try (FileInputStream fis = new FileInputStream(input)) {
+                    long skipped = 0;
+                    while (skipped < 3) {
+                        long n = fis.skip(3 - skipped);
+                        if (n <= 0) {
+                            break;
+                        }
+                        skipped += n;
+                    }
+                    writeFileAtomic(output, new BoundedInputStream(fis, length - 4), null);
+                }
+                return;
             }
-            return bos.toByteArray();
+        }
+
+        try (FileInputStream fis = new FileInputStream(input); BrotliInputStream brotliInputStream = new BrotliInputStream(fis)) {
+            writeFileAtomic(output, brotliInputStream, null);
         } catch (IOException e) {
             logger.error("Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
-            // Add hex dump for debugging
             StringBuilder hexDump = new StringBuilder();
-            for (int i = 0; i < Math.min(32, data.length); i++) {
-                hexDump.append(String.format("%02x ", data[i]));
+            try (FileInputStream peek = new FileInputStream(input)) {
+                byte[] prefix = new byte[(int) Math.min(32, length)];
+                int n = peek.read(prefix);
+                for (int i = 0; i < n; i++) {
+                    hexDump.append(String.format("%02x ", prefix[i]));
+                }
             }
-            logger.error("Error: Raw data (" + fileName + "): " + hexDump.toString());
+            logger.error("Error: Raw data (" + fileName + "): " + hexDump);
             throw e;
         }
     }
 
+    private static final class BoundedInputStream extends FilterInputStream {
+
+        private long remaining;
+
+        BoundedInputStream(InputStream in, long remaining) {
+            super(in);
+            this.remaining = remaining;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int value = super.read();
+            if (value >= 0) {
+                remaining--;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int capped = (int) Math.min(len, remaining);
+            int n = super.read(b, off, capped);
+            if (n > 0) {
+                remaining -= n;
+            }
+            return n;
+        }
+    }
+
     /**
-     * Atomically write data to a file using OkIO
+     * Atomically write a stream to a file using the RAM-ladder IO buffer.
      */
-    private void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
-        File tempFile = new File(targetFile.getParent(), targetFile.getName() + ".tmp");
+    static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
+        File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {
-            // Write to temp file first using OkIO
-            try (BufferedSink sink = Okio.buffer(Okio.sink(tempFile)); BufferedSource source = Okio.buffer(Okio.source(inputStream))) {
-                sink.writeAll(source);
+            // Okio's default segment is 8KB. Copy with the RAM-ladder buffer so
+            // 8MB wrapper unwraps are not 1000 tiny writes.
+            byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                int n;
+                while ((n = inputStream.read(buffer)) != -1) {
+                    fos.write(buffer, 0, n);
+                }
             }
 
             // Verify checksum if provided
@@ -895,8 +923,8 @@ public class DownloadService extends Worker {
                 }
             }
 
-            // Atomic rename (on same filesystem)
-            Files.move(tempFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            // Atomic rename (on same filesystem). renameTo works on API 24; Files.move does not.
+            CryptoCipher.replaceFile(tempFile, targetFile);
         } catch (Exception e) {
             // Clean up temp file on error
             if (tempFile.exists()) {

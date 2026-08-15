@@ -141,8 +141,43 @@ public struct CryptoCipher {
         }
     }
 
+    private static let twoGiB: UInt64 = 2 * 1024 * 1024 * 1024
+    private static let threeGiB: UInt64 = 3 * 1024 * 1024 * 1024
+    private static let fourGiB: UInt64 = 4 * 1024 * 1024 * 1024
+    private static let eightGiB: UInt64 = 8 * 1024 * 1024 * 1024
+    private static let flagshipIoBufferBytes = 5 * 1024 * 1024
+
+    /// Checksum and copy share one ladder. 64-wide peak RAM = 64 * buffer.
+    /// <2GB: 64KB. <3GB: 256KB. <4GB: 512KB. <8GB: 1MB. Else 5MB (flagship / unknown).
+    static func ioBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        if physicalRamBytes == 0 {
+            return flagshipIoBufferBytes
+        }
+        if physicalRamBytes < twoGiB {
+            return 64 * 1024
+        }
+        if physicalRamBytes < threeGiB {
+            return 256 * 1024
+        }
+        if physicalRamBytes < fourGiB {
+            return 512 * 1024
+        }
+        if physicalRamBytes < eightGiB {
+            return 1024 * 1024
+        }
+        return flagshipIoBufferBytes
+    }
+
+    static func checksumBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        return ioBufferBytes(physicalRamBytes)
+    }
+
+    static func copyBufferBytes(_ physicalRamBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        return ioBufferBytes(physicalRamBytes)
+    }
+
     public static func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        let bufferSize = checksumBufferBytes()
         var sha256 = SHA256()
 
         do {
@@ -243,40 +278,17 @@ public struct CryptoCipher {
 
             let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
 
-            let encryptedData: Data
-            do {
-                encryptedData = try Data(contentsOf: filePath)
-            } catch {
-                logger.error("Failed to read encrypted data")
-                logger.debug("Error: \(error)")
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
-            }
-
-            if encryptedData.isEmpty {
+            let encryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if encryptedSize == 0 {
                 logger.error("Encrypted file data is empty")
                 throw NSError(domain: "Empty encrypted data", code: 6, userInfo: nil)
             }
 
-            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
-                logger.error("Failed to decrypt data")
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            if decryptedData.isEmpty {
+            try aesPrivateKey.decrypt(from: filePath, to: filePath)
+            let decryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if decryptedSize == 0 {
                 logger.error("Decrypted data is empty")
                 throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
-            }
-
-            do {
-                try decryptedData.write(to: filePath, options: .atomic)
-                if !FileManager.default.fileExists(atPath: filePath.path) {
-                    logger.error("File was not created after write")
-                    throw NSError(domain: "File write failed", code: 8, userInfo: nil)
-                }
-            } catch {
-                logger.error("Error writing decrypted file")
-                logger.debug("Error: \(error)")
-                throw error
             }
 
         } catch {

@@ -25,6 +25,9 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
+    /// Match URLSession per-host limit so 64 workers actually fetch in parallel.
+    private static let manifestMaxConcurrentFiles = 64
+    private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
 
@@ -172,6 +175,7 @@ import UIKit
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
         return Session(configuration: configuration)
     }()
     private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
@@ -300,11 +304,29 @@ import UIKit
     private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
         let fileManager = FileManager.default
         if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
-            let resumedData = try Data(contentsOf: downloadedFileURL)
             let fileHandle = try FileHandle(forWritingTo: tempPath)
+            defer {
+                try? fileHandle.close()
+            }
             fileHandle.seek(toFileOffset: UInt64(existingBytes))
-            fileHandle.write(resumedData)
-            try fileHandle.close()
+            let input = try FileHandle(forReadingFrom: downloadedFileURL)
+            defer {
+                try? input.close()
+            }
+            let chunkSize = CryptoCipher.copyBufferBytes()
+            while true {
+                let done: Bool = try autoreleasepool {
+                    let chunk = try input.read(upToCount: chunkSize) ?? Data()
+                    if chunk.isEmpty {
+                        return true
+                    }
+                    fileHandle.write(chunk)
+                    return false
+                }
+                if done {
+                    break
+                }
+            }
             try? fileManager.removeItem(at: downloadedFileURL)
             return
         }
@@ -943,7 +965,7 @@ import UIKit
             }
 
             do {
-                try fileManager.copyItem(at: fileURL, to: cacheFile)
+                try copyItemAtomically(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -1174,19 +1196,50 @@ import UIKit
         let fileNameWithoutPath = (fileName as NSString).lastPathComponent
         let isBrotli = fileName.hasSuffix(".br")
         let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-        let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
-        if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
-            return true
-        }
-
-        if isBrotli {
-            let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
-            if FileManager.default.fileExists(atPath: legacyCacheFilePath.path) && verifyChecksum(file: legacyCacheFilePath, expectedHash: fileHash) {
+        if Self.isSafeCacheHash(fileHash) {
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
+            // Cache files are named `{hash}_{filename}` and were checksum-verified
+            // when written. Re-hashing every hit re-reads the whole bundle and
+            // OOMs/janks low-RAM devices during getMissing / delta apply.
+            if isReusableCacheFile(cacheFilePath, expectedHash: fileHash) {
                 return true
+            }
+
+            if isBrotli {
+                let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
+                if isReusableCacheFile(legacyCacheFilePath, expectedHash: fileHash) {
+                    return true
+                }
             }
         }
 
         return false
+    }
+
+    /// SHA-256 hash-named cache files were verified when written. Existence is
+    /// enough for non-empty files; empty files are reused only for the empty SHA-256.
+    /// CRC32 (8 hex) is too collision-prone to trust without a re-read.
+    private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
+        guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
+            return false
+        }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        if size > 0 {
+            return true
+        }
+        return size == 0 && expectedHash.lowercased() == Self.emptySha256
+    }
+
+    static func isSafeCacheHash(_ hash: String) -> Bool {
+        let count = hash.count
+        guard count == 64 || count == 8 else {
+            return false
+        }
+        return hash.unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value) ||
+                (0x41...0x46).contains(scalar.value) ||
+                (0x61...0x66).contains(scalar.value)
+        }
     }
 
     public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
@@ -1299,9 +1352,6 @@ import UIKit
 
         let totalFiles = manifest.count
 
-        // Configure concurrent operation count similar to Android: min(64, max(32, totalFiles))
-        manifestDownloadQueue.maxConcurrentOperationCount = min(64, max(32, totalFiles))
-
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
         let hasError = AtomicBool(initialValue: false)
@@ -1368,8 +1418,12 @@ import UIKit
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let isBrotli = fileName.hasSuffix(".br")
             let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
-            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
+            let cacheFilePath: URL? = Self.isSafeCacheHash(finalFileHash)
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+                : nil
+            let legacyCacheFilePath: URL? = isBrotli && cacheFilePath != nil
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)")
+                : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath: URL
@@ -1404,7 +1458,7 @@ import UIKit
                     }
                     // Try cache
                     else if
-                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
+                        (cacheFilePath != nil && self.tryCopyFromCache(from: cacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) ||
                             (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
@@ -1465,8 +1519,6 @@ import UIKit
         // Send stats for manifest download complete
         self.sendStats(action: "download_manifest_complete", versionName: version)
 
-        self.populateDeltaCacheAsync(for: id, manifest: manifest, sessionKey: sessionKey)
-
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
         return updatedBundle
@@ -1477,7 +1529,7 @@ import UIKit
     private func downloadManifestFile(
         downloadUrl: String,
         destFilePath: URL,
-        cacheFilePath: URL,
+        cacheFilePath: URL?,
         fileHash: String,
         fileName: String,
         destFileName: String,
@@ -1502,7 +1554,12 @@ import UIKit
             )
         }
 
-        let result = performRequest(request, label: "downloadManifestFile \(fileName)")
+        let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
 
         if result.timedOut {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
@@ -1520,7 +1577,13 @@ import UIKit
             throw error
         }
 
-        guard let data = result.data else {
+        let statusCode = result.response?.statusCode ?? 200
+        if statusCode < 200 || statusCode >= 300 {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+        }
+
+        guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -1529,43 +1592,27 @@ import UIKit
             )
         }
 
-        let statusCode = result.response?.statusCode ?? 200
-        if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            if let stringData = String(data: data, encoding: .utf8) {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
-            } else {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
-            }
-        }
-
         do {
-            // Add decryption step if public key is set and sessionKey is provided
-            var finalData = data
+            // Decrypt in place when a session key is present — streamed, not a whole-file copy.
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                try finalData.write(to: tempFile)
                 do {
-                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                 } catch {
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
-                finalData = try Data(contentsOf: tempFile)
-                try FileManager.default.removeItem(at: tempFile)
             }
 
-            // Decompress Brotli if needed
             if isBrotli {
-                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                do {
+                    try decompressBrotli(from: downloadedFileURL, to: destFilePath, fileName: fileName)
+                } catch {
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                    throw error
                 }
-                finalData = decompressedData
+            } else {
+                try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
             }
-
-            // Write to destination (replace if leftover from a previous failed download)
-            try writeDataAtomically(finalData, to: destFilePath)
 
             // Always verify checksum when file_hash is present
             let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
@@ -1578,7 +1625,9 @@ import UIKit
             }
 
             // Save to cache (replace stale cache entries from partial or concurrent downloads)
-            try writeDataAtomically(finalData, to: cacheFilePath)
+            if let cacheFilePath {
+                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+            }
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1589,49 +1638,55 @@ import UIKit
         }
     }
 
-    /// Atomically write data to a file, replacing any existing file at the destination.
-    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
-        let fileManager = FileManager.default
-        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
-        defer {
-            try? fileManager.removeItem(at: tempURL)
-        }
-
-        try data.write(to: tempURL, options: .atomic)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
-        try fileManager.moveItem(at: tempURL, to: destination)
-    }
-
     /// Copy a file to the destination, replacing any existing file.
     private func copyItemReplacing(from source: URL, to destination: URL) throws {
         let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
         try fileManager.copyItem(at: source, to: destination)
     }
 
+    /// Copy via a unique temp name then rename, so a crash cannot leave a
+    /// non-empty partial file that `isReusableCacheFile` would trust.
+    private func copyItemAtomically(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+        try fileManager.copyItem(at: source, to: tempURL)
+        try replaceItemAtomically(at: destination, withItemAt: tempURL)
+    }
+
+    /// One-step replace when dest exists, move when it does not. Avoids the
+    /// fileExists/removeItem race that can fail a verified install.
+    private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
+        let fileManager = FileManager.default
+        do {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
+        } catch {
+            if fileManager.fileExists(atPath: destination.path) {
+                throw error
+            }
+            try fileManager.moveItem(at: tempURL, to: destination)
+        }
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
-        let fileManager = FileManager.default
-
-        // First quick check - if file doesn't exist, don't bother
-        guard fileManager.fileExists(atPath: source.path) else {
+        // First quick check - if file doesn't exist or was truncated, don't bother
+        guard isReusableCacheFile(source, expectedHash: expectedHash) else {
             return false
         }
 
-        // Verify checksum before copy; remove stale cache entries that would block re-download
-        guard verifyChecksum(file: source, expectedHash: expectedHash) else {
-            try? fileManager.removeItem(at: source)
-            return false
-        }
-
-        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        // Hash is in the cache file name and was verified when written.
+        // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemReplacing(from: source, to: destination)
+            try copyItemAtomically(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
@@ -1640,122 +1695,155 @@ import UIKit
         }
     }
 
-    private func decompressBrotli(data: Data, fileName: String) -> Data? {
-        // Handle empty files
-        if data.count == 0 {
-            return data
+    /// Stream Brotli from disk to disk. Peek only the 3-byte header and last byte
+    /// for the empty/wrapper special cases; never load the whole file.
+    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let length = (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
+        if length == 0 {
+            try Data().write(to: dest, options: .atomic)
+            return
         }
 
-        // Handle the special EMPTY_BROTLI_STREAM case
-        if data.count == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 {
-            return Data()
+        let handle = try FileHandle(forReadingFrom: source)
+        defer {
+            try? handle.close()
         }
 
-        // For small files, check if it's a minimal Brotli wrapper
-        if data.count > 3 {
-            let maxBytes = min(32, data.count)
-            let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-            // Handle our minimal wrapper pattern
-            if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
+        let head = try handle.read(upToCount: 3) ?? Data()
+        var last: UInt8 = 0
+        if length >= 1 {
+            try handle.seek(toOffset: length - 1)
+            last = try handle.read(upToCount: 1)?.first ?? 0
+        }
+
+        if length == 3 && head.count == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06 {
+            try Data().write(to: dest, options: .atomic)
+            return
+        }
+
+        if length > 3 && head.count == 3 && last == 0x03 {
+            let isEmptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06
+            let isQualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == 0x80
+            if isEmptyWrapper || isQualityZeroWrapper {
+                try handle.seek(toOffset: 3)
+                try streamCopy(from: handle, count: length - 4, to: dest)
+                return
             }
-
-            // Handle brotli.compress minimal wrapper (quality 0)
-            if data[0] == 0x0b && data[1] == 0x02 && data[2] == 0x80 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
-            }
         }
 
-        // For all other cases, try standard decompression
-        let outputBufferSize = 65536
-        var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
-        var decompressedData = Data()
+        try handle.seek(toOffset: 0)
+        try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
+    }
+
+    private func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        var remaining = count
+        let chunkSize = CryptoCipher.ioBufferBytes()
+        while remaining > 0 {
+            let readCount: Int = try autoreleasepool {
+                let toRead = Int(min(UInt64(chunkSize), remaining))
+                let chunk = try handle.read(upToCount: toRead) ?? Data()
+                if !chunk.isEmpty {
+                    try output.write(contentsOf: chunk)
+                }
+                return chunk.count
+            }
+            if readCount == 0 {
+                break
+            }
+            remaining -= UInt64(readCount)
+        }
+        try output.close()
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
+    }
+
+    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        let chunkSize = max(CryptoCipher.ioBufferBytes(), 65536)
+        var inputBuffer = [UInt8](repeating: 0, count: chunkSize)
+        var outputBuffer = [UInt8](repeating: 0, count: chunkSize)
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-
         guard status != COMPRESSION_STATUS_ERROR else {
             logger.error("Failed to initialize Brotli stream")
             logger.debug("File: \(fileName), Status: \(status)")
-            return nil
+            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize Brotli stream for \(fileName)"])
         }
-
         defer {
             compression_stream_destroy(streamPointer)
             streamPointer.deallocate()
         }
 
-        streamPointer.pointee.src_size = 0
-        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-        streamPointer.pointee.dst_size = outputBufferSize
+        try inputBuffer.withUnsafeMutableBufferPointer { inBuf in
+            try outputBuffer.withUnsafeMutableBufferPointer { outBuf in
+                guard let inBase = inBuf.baseAddress, let outBase = outBuf.baseAddress else {
+                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get buffer address for \(fileName)"])
+                }
+                streamPointer.pointee.src_size = 0
+                streamPointer.pointee.dst_ptr = outBase
+                streamPointer.pointee.dst_size = chunkSize
 
-        let input = data
+                var flags: Int32 = 0
+                var inputExhausted = false
+                while true {
+                    if streamPointer.pointee.src_size == 0 && !inputExhausted {
+                        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
+                        if chunk.isEmpty {
+                            inputExhausted = true
+                            flags = Int32(bitPattern: COMPRESSION_STREAM_FINALIZE.rawValue)
+                        } else {
+                            chunk.copyBytes(to: inBase, count: chunk.count)
+                            streamPointer.pointee.src_ptr = UnsafePointer(inBase)
+                            streamPointer.pointee.src_size = chunk.count
+                        }
+                    }
 
-        while true {
-            if streamPointer.pointee.src_size == 0 {
-                streamPointer.pointee.src_size = input.count
-                input.withUnsafeBytes { rawBufferPointer in
-                    if let baseAddress = rawBufferPointer.baseAddress {
-                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
-                    } else {
-                        logger.error("Failed to get base address for Brotli decompression")
+                    status = compression_stream_process(streamPointer, flags)
+                    let have = chunkSize - streamPointer.pointee.dst_size
+                    if have > 0 {
+                        try output.write(contentsOf: Data(bytes: outBase, count: have))
+                    }
+                    streamPointer.pointee.dst_ptr = outBase
+                    streamPointer.pointee.dst_size = chunkSize
+
+                    if status == COMPRESSION_STATUS_END {
+                        break
+                    }
+                    if status == COMPRESSION_STATUS_ERROR {
+                        logger.error("Brotli process failed")
+                        logger.debug("File: \(fileName), Status: \(status)")
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
+                    }
+                    if inputExhausted && streamPointer.pointee.src_size == 0 && have == 0 {
+                        logger.error("Brotli decompression stalled")
                         logger.debug("File: \(fileName)")
-                        status = COMPRESSION_STATUS_ERROR
-                        return
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
                     }
                 }
-            }
-
-            if status == COMPRESSION_STATUS_ERROR {
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Brotli decompression failed")
-                logger.debug("File: \(fileName), First \(maxBytes) bytes: \(hexDump)")
-                break
-            }
-
-            status = compression_stream_process(streamPointer, 0)
-
-            let have = outputBufferSize - streamPointer.pointee.dst_size
-            if have > 0 {
-                decompressedData.append(outputBuffer, count: have)
-            }
-
-            if status == COMPRESSION_STATUS_END {
-                break
-            } else if status == COMPRESSION_STATUS_ERROR {
-                logger.error("Brotli process failed")
-                logger.debug("File: \(fileName), Status: \(status)")
-                if let text = String(data: data, encoding: .utf8) {
-                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
-                    let totalCount = text.unicodeScalars.count
-                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        logger.debug("Input appears to be plain text: \(text)")
-                    }
-                }
-
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.debug("Raw data: \(hexDump)")
-
-                return nil
-            }
-
-            if streamPointer.pointee.dst_size == 0 {
-                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-                streamPointer.pointee.dst_size = outputBufferSize
-            }
-
-            if input.count == 0 {
-                logger.error("Zero input size for Brotli decompression")
-                logger.debug("File: \(fileName)")
-                break
             }
         }
 
-        return status == COMPRESSION_STATUS_END ? decompressedData : nil
+        try output.close()
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
@@ -2888,6 +2976,7 @@ import UIKit
         let queue = OperationQueue()
         queue.name = "com.capgo.manifestDownload"
         queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
         return queue
     }()
 

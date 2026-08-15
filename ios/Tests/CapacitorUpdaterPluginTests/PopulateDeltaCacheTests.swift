@@ -234,4 +234,161 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }
+
+    // MARK: - getMissingBundleFiles: trust hash-named cache without re-reading
+
+    func testGetMissingBundleFilesTreatsHashNamedCacheAsReusable() throws {
+        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        // Content does not need to match the hash: the filename is the trust source
+        // (checksum was verified when the cache entry was written).
+        try "not-the-hashed-bytes".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testGetMissingBundleFilesIgnoresEmptyHashNamedCache() throws {
+        let hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try Data().write(to: cacheFile)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
+        XCTAssertEqual(missing.first?.file_name, "app.js")
+    }
+
+    func testGetMissingBundleFilesReusesEmptyFileForEmptySha256() throws {
+        let hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let cacheFile = expectedCacheFile(hash: hash, name: "empty.txt")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try Data().write(to: cacheFile)
+        let manifest = [
+            ManifestEntry(file_name: "empty.txt", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testGetMissingBundleFilesRejectsUnsafeCacheHash() throws {
+        let hash = "../evil"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
+    }
+
+    func testGetMissingBundleFilesDoesNotTrustCrc32CacheHash() throws {
+        let hash = "deadbeef"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertEqual(missing.count, 1)
+    }
+
+    func testGetMissingBundleFilesTreatsLegacyBrotliCacheNameAsReusable() throws {
+        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let cacheFile = expectedCacheFile(hash: hash, name: "app.js.br")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        try "legacy-brotli-cache".write(to: cacheFile, atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "app.js.br", file_hash: hash, download_url: nil)
+        ]
+
+        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+
+        XCTAssertTrue(missing.isEmpty)
+    }
+}
+
+final class IoBufferSizeTests: XCTestCase {
+    func testIoBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
+        let gib: UInt64 = 1024 * 1024 * 1024
+        let ramBytes: [UInt64] = [gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0]
+        let expected = [64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024]
+        for i in ramBytes.indices {
+            XCTAssertEqual(CryptoCipher.ioBufferBytes(ramBytes[i]), expected[i])
+            XCTAssertEqual(CryptoCipher.checksumBufferBytes(ramBytes[i]), expected[i])
+            XCTAssertEqual(CryptoCipher.copyBufferBytes(ramBytes[i]), expected[i])
+        }
+    }
+}
+
+final class StreamDecodeTests: XCTestCase {
+    private var updater: CapgoUpdater!
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+        CryptoCipher.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-brotli-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        if let tempDir {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        super.tearDown()
+    }
+
+    func testDecompressBrotliStreamsEmptyWrapperAndRealPayload() throws {
+        let dir = tempDir!
+
+        let emptyIn = dir.appendingPathComponent("empty.br")
+        let emptyOut = dir.appendingPathComponent("empty.txt")
+        try Data([0x1B, 0x00, 0x06]).write(to: emptyIn)
+        try updater.decompressBrotli(from: emptyIn, to: emptyOut, fileName: "empty.br")
+        XCTAssertEqual(try Data(contentsOf: emptyOut).count, 0)
+
+        let wrappedIn = dir.appendingPathComponent("hello.br")
+        let wrappedOut = dir.appendingPathComponent("hello.txt")
+        try Data([0x0b, 0x02, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x03]).write(to: wrappedIn)
+        try updater.decompressBrotli(from: wrappedIn, to: wrappedOut, fileName: "hello.br")
+        XCTAssertEqual(try String(contentsOf: wrappedOut, encoding: .utf8), "hello")
+
+        let realIn = dir.appendingPathComponent("payload.br")
+        let realOut = dir.appendingPathComponent("payload.txt")
+        try dataFromHex("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00").write(to: realIn)
+        try updater.decompressBrotli(from: realIn, to: realOut, fileName: "payload.br")
+        let expected = String(repeating: "Capgo stream brotli test payload. ", count: 20)
+        XCTAssertEqual(try String(contentsOf: realOut, encoding: .utf8), expected)
+    }
+
+    private func dataFromHex(_ hex: String) -> Data {
+        var data = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            data.append(UInt8(hex[index..<next], radix: 16)!)
+            index = next
+        }
+        return data
+    }
 }
