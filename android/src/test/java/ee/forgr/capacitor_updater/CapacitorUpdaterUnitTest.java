@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -3183,6 +3184,7 @@ public class CapacitorUpdaterUnitTest {
 
         assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
         assertEquals("store builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
     }
 
     @Test
@@ -3195,7 +3197,7 @@ public class CapacitorUpdaterUnitTest {
 
         assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
         assertFalse(dest.exists());
-        assertFalse(new File(dest.getParent(), dest.getName() + ".capgo_asset_tmp").exists());
+        assertEquals(0, leftoverAssetTemps(dest));
     }
 
     @Test
@@ -3209,7 +3211,20 @@ public class CapacitorUpdaterUnitTest {
 
         assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
         assertEquals("already downloaded", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertFalse(new File(dest.getParent(), dest.getName() + ".capgo_asset_tmp").exists());
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testManifestRejectsPlainAndBrotliTargetCollision() throws Exception {
+        final Path destFolder = Files.createTempDirectory("capgo-manifest-dup");
+        destFolder.toFile().deleteOnExit();
+        final HashSet<String> seen = new HashSet<>();
+        final File plain = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js");
+        final File brotli = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js.br");
+
+        assertEquals(plain.getCanonicalFile(), brotli.getCanonicalFile());
+        assertTrue(DownloadService.rememberManifestTarget(seen, plain));
+        assertFalse(DownloadService.rememberManifestTarget(seen, brotli));
     }
 
     @Test
@@ -3602,5 +3617,10 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(1, relaunched.pendingStatsCount());
         relaunched.shutdown();
         crashed.shutdown();
+    }
+
+    private static int leftoverAssetTemps(final File dest) {
+        final File[] leftovers = dest.getParentFile().listFiles((dir, name) -> name.endsWith(".capgo_asset_tmp"));
+        return leftovers == null ? 0 : leftovers.length;
     }
 }

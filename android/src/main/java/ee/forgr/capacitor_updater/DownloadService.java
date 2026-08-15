@@ -20,8 +20,10 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -211,7 +213,7 @@ public class DownloadService extends Worker {
             throw new IOException("SHA-256 algorithm not available", e);
         }
 
-        final File tempFile = new File(parent, dest.getName() + ".capgo_asset_tmp");
+        final File tempFile = Files.createTempFile(parent.toPath(), dest.getName() + ".", ".capgo_asset_tmp").toFile();
         try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
             final byte[] buffer = new byte[64 * 1024];
             int length;
@@ -255,6 +257,10 @@ public class DownloadService extends Worker {
         if (file.exists() && !file.delete()) {
             file.deleteOnExit();
         }
+    }
+
+    static boolean rememberManifestTarget(final Set<String> seenTargets, final File targetFile) throws IOException {
+        return seenTargets.add(targetFile.getCanonicalPath());
     }
 
     static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
@@ -427,6 +433,7 @@ public class DownloadService extends Worker {
             int threadCount = Math.min(64, Math.max(32, totalFiles));
             ExecutorService executor = Executors.newFixedThreadPool(threadCount);
             List<Future<?>> futures = new ArrayList<>();
+            final Set<String> seenTargets = new HashSet<>();
 
             for (int i = 0; i < totalFiles; i++) {
                 JSONObject entry = manifest.getJSONObject(i);
@@ -461,6 +468,12 @@ public class DownloadService extends Worker {
                 try {
                     targetFile = resolveManifestTargetFile(destFolder, fileName);
                     builtinFile = resolveManifestBuiltinFile(builtinFolder, fileName);
+                    if (!rememberManifestTarget(seenTargets, targetFile)) {
+                        logger.error("Duplicate manifest target path: " + fileName);
+                        sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                        hasError.set(true);
+                        continue;
+                    }
                 } catch (IOException e) {
                     logger.error("Invalid manifest file path: " + fileName);
                     sendStatsAsync("manifest_path_fail", version + ":" + fileName);
