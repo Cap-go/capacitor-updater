@@ -3186,7 +3186,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testCopyStreamIfChecksumMatchesDeletesMismatchedFile() throws Exception {
+    public void testCopyStreamIfChecksumMatchesLeavesMissingDestOnMismatch() throws Exception {
         CryptoCipher.setLogger(mock(Logger.class));
         final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
         destDir.toFile().deleteOnExit();
@@ -3195,6 +3195,21 @@ public class CapacitorUpdaterUnitTest {
 
         assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
         assertFalse(dest.exists());
+        assertFalse(new File(dest.getParent(), dest.getName() + ".capgo_asset_tmp").exists());
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesKeepsExistingDestOnMismatch() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-keep");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        Files.write(dest.toPath(), "already downloaded".getBytes(StandardCharsets.UTF_8));
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertEquals("already downloaded", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertFalse(new File(dest.getParent(), dest.getName() + ".capgo_asset_tmp").exists());
     }
 
     @Test

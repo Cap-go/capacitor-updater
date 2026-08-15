@@ -193,15 +193,68 @@ public class DownloadService extends Worker {
     }
 
     static boolean copyStreamIfChecksumMatches(final InputStream input, final File dest, final String expectedHash) throws IOException {
-        copyStreamToFile(input, dest);
-        final String actualHash = CryptoCipher.calcChecksum(dest);
-        if (expectedHash == null || expectedHash.isEmpty() || !expectedHash.equalsIgnoreCase(actualHash)) {
-            if (dest.exists() && !dest.delete()) {
-                dest.deleteOnExit();
-            }
+        if (expectedHash == null || expectedHash.isEmpty()) {
             return false;
         }
-        return true;
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            throw new IOException("Destination has no parent: " + dest.getAbsolutePath());
+        }
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 algorithm not available", e);
+        }
+
+        final File tempFile = new File(parent, dest.getName() + ".capgo_asset_tmp");
+        try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+            final byte[] buffer = new byte[64 * 1024];
+            int length;
+            while ((length = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, length);
+                outStream.write(buffer, 0, length);
+            }
+        } catch (IOException e) {
+            deleteQuietly(tempFile);
+            throw e;
+        }
+
+        if (!expectedHash.equalsIgnoreCase(sha256Hex(digest))) {
+            deleteQuietly(tempFile);
+            return false;
+        }
+
+        try {
+            Files.move(tempFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } catch (IOException e) {
+            deleteQuietly(tempFile);
+            throw e;
+        }
+    }
+
+    private static String sha256Hex(final MessageDigest digest) {
+        final byte[] hash = digest.digest();
+        final StringBuilder hexString = new StringBuilder(hash.length * 2);
+        for (final byte b : hash) {
+            final String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+
+    private static void deleteQuietly(final File file) {
+        if (file.exists() && !file.delete()) {
+            file.deleteOnExit();
+        }
     }
 
     static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
