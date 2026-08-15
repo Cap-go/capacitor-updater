@@ -326,7 +326,7 @@ public class CryptoCipher {
         }
     }
 
-    // 256KB: Go io.Copy / common sequential-IO default. 64 workers * 256KB = 16MB peak.
+    // 256 KiB: one size for checksum, copy, and decode. 64 workers * 256 KiB = 16 MiB peak.
     static final int IO_BUFFER_BYTES = 256 * 1024;
 
     static int ioBufferBytes() {
