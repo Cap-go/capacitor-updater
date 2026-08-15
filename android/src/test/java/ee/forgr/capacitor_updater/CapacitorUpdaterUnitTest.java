@@ -3188,6 +3188,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testCopyStreamIfChecksumMatchesAcceptsOneCharacterDestName() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-short");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("a").toFile();
+        final byte[] content = "short name".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("short name", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
     public void testCopyStreamIfChecksumMatchesLeavesMissingDestOnMismatch() throws Exception {
         CryptoCipher.setLogger(mock(Logger.class));
         final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
@@ -3620,7 +3636,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     private static int leftoverAssetTemps(final File dest) {
-        final File[] leftovers = dest.getParentFile().listFiles((dir, name) -> name.endsWith(".capgo_asset_tmp"));
+        final File[] leftovers = dest.getParentFile().listFiles((dir, name) -> name.startsWith("capgo_asset_") && name.endsWith(".tmp"));
         return leftovers == null ? 0 : leftovers.length;
     }
 }

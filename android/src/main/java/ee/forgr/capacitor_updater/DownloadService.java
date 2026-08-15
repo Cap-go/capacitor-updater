@@ -213,30 +213,22 @@ public class DownloadService extends Worker {
             throw new IOException("SHA-256 algorithm not available", e);
         }
 
-        final File tempFile = Files.createTempFile(parent.toPath(), dest.getName() + ".", ".capgo_asset_tmp").toFile();
-        try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
-            final byte[] buffer = new byte[64 * 1024];
-            int length;
-            while ((length = input.read(buffer)) != -1) {
-                digest.update(buffer, 0, length);
-                outStream.write(buffer, 0, length);
-            }
-        } catch (IOException e) {
-            deleteQuietly(tempFile);
-            throw e;
-        }
-
-        if (!expectedHash.equalsIgnoreCase(sha256Hex(digest))) {
-            deleteQuietly(tempFile);
-            return false;
-        }
-
+        final File tempFile = File.createTempFile("capgo_asset_", ".tmp", parent);
         try {
-            Files.move(tempFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            return true;
-        } catch (IOException e) {
+            try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+                final byte[] buffer = new byte[64 * 1024];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, length);
+                    outStream.write(buffer, 0, length);
+                }
+            }
+            if (!expectedHash.equalsIgnoreCase(sha256Hex(digest))) {
+                return false;
+            }
+            return replaceFile(tempFile, dest);
+        } finally {
             deleteQuietly(tempFile);
-            throw e;
         }
     }
 
@@ -257,6 +249,29 @@ public class DownloadService extends Worker {
         if (file.exists() && !file.delete()) {
             file.deleteOnExit();
         }
+    }
+
+    static boolean replaceFile(final File tempFile, final File dest) {
+        if (tempFile.renameTo(dest)) {
+            return true;
+        }
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            return false;
+        }
+        final File backup = new File(parent, dest.getName() + ".capgo_bak");
+        deleteQuietly(backup);
+        if (dest.exists() && !dest.renameTo(backup)) {
+            return false;
+        }
+        if (!tempFile.renameTo(dest)) {
+            if (backup.exists()) {
+                backup.renameTo(dest);
+            }
+            return false;
+        }
+        deleteQuietly(backup);
+        return true;
     }
 
     static boolean rememberManifestTarget(final Set<String> seenTargets, final File targetFile) throws IOException {
@@ -421,6 +436,7 @@ public class DownloadService extends Worker {
             if (!destFolder.exists() && !destFolder.mkdirs()) {
                 throw new IOException("Failed to create destination directory: " + destFolder.getAbsolutePath());
             }
+            cleanupOldTempFiles(destFolder);
             if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
                 throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
             }
