@@ -3614,6 +3614,147 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void getMissingBundleFilesTreatsHashNamedCacheAsReusable() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        // Content does not need to match the hash: the filename is the trust source
+        // (checksum was verified when the cache entry was written).
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "not-the-hashed-bytes".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesIgnoresEmptyHashNamedCache() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+        assertEquals("app.js", missing.getJSONObject(0).getString("file_name"));
+    }
+
+    @Test
+    public void getMissingBundleFilesReusesEmptyFileForEmptySha256() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-sha-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-sha-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-sha-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = CapgoUpdater.EMPTY_SHA256;
+        Files.write(new File(downloads, hash + "_empty.txt").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "empty.txt");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesRejectsUnsafeCacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-unsafe-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-unsafe-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-unsafe-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "../evil";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesDoesNotTrustCrc32CacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-crc-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-crc-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-crc-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "deadbeef";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesTreatsLegacyBrotliCacheNameAsReusable() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-br-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-br-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-br-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        Files.write(new File(downloads, hash + "_app.js.br").toPath(), "legacy-brotli-cache".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js.br");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
     public void testPendingStatsSurviveNewUpdaterInstance() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats");
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
@@ -3633,6 +3774,76 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(1, relaunched.pendingStatsCount());
         relaunched.shutdown();
         crashed.shutdown();
+    }
+
+    @Test
+    public void ioBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
+        final long gib = 1024L * 1024 * 1024;
+        final long[] ramBytes = { gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0 };
+        final int[] expected = { 64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024 };
+        for (int i = 0; i < ramBytes.length; i++) {
+            assertEquals(expected[i], CryptoCipher.ioBufferBytes(ramBytes[i]));
+            assertEquals(expected[i], CryptoCipher.checksumBufferBytes(ramBytes[i]));
+            assertEquals(expected[i], CryptoCipher.copyBufferBytes(ramBytes[i]));
+        }
+    }
+
+    @Test
+    public void decompressBrotliStreamsEmptyWrapperAndRealPayload() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-brotli");
+        File emptyOut = dir.resolve("empty.txt").toFile();
+        File emptyIn = dir.resolve("empty.br").toFile();
+        Files.write(emptyIn.toPath(), new byte[] { 0x1B, 0x00, 0x06 });
+        DownloadService.decompressBrotli(emptyIn, emptyOut, "empty.br");
+        assertEquals(0, emptyOut.length());
+
+        File wrappedIn = dir.resolve("hello.br").toFile();
+        File wrappedOut = dir.resolve("hello.txt").toFile();
+        byte[] wrapped = new byte[] { 0x0b, 0x02, (byte) 0x80, 'h', 'e', 'l', 'l', 'o', 0x03 };
+        Files.write(wrappedIn.toPath(), wrapped);
+        DownloadService.decompressBrotli(wrappedIn, wrappedOut, "hello.br");
+        assertEquals("hello", new String(Files.readAllBytes(wrappedOut.toPath()), StandardCharsets.UTF_8));
+
+        File realIn = dir.resolve("payload.br").toFile();
+        File realOut = dir.resolve("payload.txt").toFile();
+        Files.write(
+            realIn.toPath(),
+            hexToBytes("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00")
+        );
+        DownloadService.decompressBrotli(realIn, realOut, "payload.br");
+        String expected = "Capgo stream brotli test payload. ".repeat(20);
+        assertEquals(expected, new String(Files.readAllBytes(realOut.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void decryptAesFileStreamsRoundTrip() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes");
+        File file = dir.resolve("cipher.bin").toFile();
+        byte[] iv = new byte[16];
+        byte[] keyBytes = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            iv[i] = (byte) i;
+            keyBytes[i] = (byte) (31 - i);
+        }
+        javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+        byte[] plain = new byte[CryptoCipher.ioBufferBytes() * 2 + 1];
+        for (int i = 0; i < plain.length; i++) {
+            plain[i] = (byte) (i * 31);
+        }
+        javax.crypto.Cipher enc = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding");
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        Files.write(file.toPath(), enc.doFinal(plain));
+        CryptoCipher.decryptAesFile(file, key, iv);
+        assertArrayEquals(plain, Files.readAllBytes(file.toPath()));
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
     }
 
     private static int leftoverAssetTemps(final File dest) {

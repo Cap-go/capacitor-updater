@@ -449,7 +449,7 @@ public class CapgoUpdater {
                 continue;
             }
             try {
-                copyFile(file, cacheFile);
+                copyFileAtomically(file, cacheFile);
             } catch (IOException e) {
                 logger.debug("Delta cache copy failed: " + file.getPath());
             }
@@ -475,7 +475,7 @@ public class CapgoUpdater {
 
     private void copyFile(final File source, final File dest) throws IOException {
         try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(dest)) {
-            final byte[] buffer = new byte[1024 * 1024];
+            final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
             int length;
             while ((length = input.read(buffer)) != -1) {
                 output.write(buffer, 0, length);
@@ -531,18 +531,56 @@ public class CapgoUpdater {
         final boolean isBrotli = fileName.endsWith(".br");
         final String fileNameWithoutPath = new File(fileName).getName();
         final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
-        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
-        final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
-        if (verifyChecksum(cacheFile, fileHash)) {
-            return true;
-        }
+        if (isSafeCacheHash(fileHash)) {
+            final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+            final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
+            // Cache files are named `{hash}_{filename}` and were checksum-verified
+            // when written. Re-hashing every hit re-reads the whole bundle and
+            // OOMs/janks low-RAM devices during getMissing / delta apply.
+            if (isReusableCacheFile(cacheFile, fileHash)) {
+                return true;
+            }
 
-        if (isBrotli) {
-            final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
-            return verifyChecksum(legacyCacheFile, fileHash);
+            if (isBrotli) {
+                final File legacyCacheFile = new File(cacheFolder, fileHash + "_" + fileNameWithoutPath);
+                return isReusableCacheFile(legacyCacheFile, fileHash);
+            }
         }
 
         return false;
+    }
+
+    static final String EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    static boolean isSafeCacheHash(final String hash) {
+        if (hash == null) {
+            return false;
+        }
+        final int len = hash.length();
+        if (len != 64 && len != 8) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            final char c = hash.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // SHA-256 hash-named cache files were verified when written. Existence is
+    // enough for non-empty files; empty files are reused only for the empty SHA-256.
+    // CRC32 (8 hex) is too collision-prone to trust without a re-read.
+    static boolean isReusableCacheFile(final File file, final String expectedHash) {
+        if (file == null || !file.isFile() || !isSafeCacheHash(expectedHash) || expectedHash.length() != 64) {
+            return false;
+        }
+        final long length = file.length();
+        if (length > 0) {
+            return true;
+        }
+        return length == 0 && EMPTY_SHA256.equalsIgnoreCase(expectedHash);
     }
 
     public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {
@@ -1179,19 +1217,22 @@ public class CapgoUpdater {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
         }
 
-        final File tempFile = new File(parent, dest.getName() + ".capgo_tmp");
-        try (final FileInputStream input = new FileInputStream(source); final FileOutputStream output = new FileOutputStream(tempFile)) {
-            final byte[] buffer = new byte[1024 * 1024];
-            int length;
-            while ((length = input.read(buffer)) != -1) {
-                output.write(buffer, 0, length);
+        final File tempFile = File.createTempFile("capgo-", ".tmp", parent);
+        try {
+            try (
+                final FileInputStream input = new FileInputStream(source);
+                final FileOutputStream output = new FileOutputStream(tempFile)
+            ) {
+                final byte[] buffer = new byte[CryptoCipher.copyBufferBytes()];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, length);
+                }
             }
-        }
-
-        if (!tempFile.renameTo(dest)) {
-            if (!dest.delete() || !tempFile.renameTo(dest)) {
+            CryptoCipher.replaceFile(tempFile, dest);
+        } finally {
+            if (tempFile.exists()) {
                 tempFile.delete();
-                throw new IOException("Failed to replace file: " + dest.getAbsolutePath());
             }
         }
     }
