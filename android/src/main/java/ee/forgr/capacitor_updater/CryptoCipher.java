@@ -173,17 +173,20 @@ public class CryptoCipher {
         File tempFile = File.createTempFile("capgo-aes-", ".tmp", file.getParentFile());
         try {
             byte[] inBuf = new byte[ioBufferBytes()];
+            // Reuse one output buffer. cipher.update(in) allocates a new byte[] per chunk
+            // and 64 workers * 5MB was why AES barely won on heap in local benches.
+            byte[] outBuf = new byte[inBuf.length + 16];
             try (FileInputStream fis = new FileInputStream(file); FileOutputStream fos = new FileOutputStream(tempFile)) {
                 int n;
                 while ((n = fis.read(inBuf)) != -1) {
-                    byte[] out = cipher.update(inBuf, 0, n);
-                    if (out != null && out.length > 0) {
-                        fos.write(out);
+                    int outLen = cipher.update(inBuf, 0, n, outBuf, 0);
+                    if (outLen > 0) {
+                        fos.write(outBuf, 0, outLen);
                     }
                 }
-                byte[] last = cipher.doFinal();
-                if (last != null && last.length > 0) {
-                    fos.write(last);
+                int last = cipher.doFinal(outBuf, 0);
+                if (last > 0) {
+                    fos.write(outBuf, 0, last);
                 }
             }
             replaceFile(tempFile, file);

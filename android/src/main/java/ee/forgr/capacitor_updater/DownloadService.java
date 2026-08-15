@@ -37,11 +37,6 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
-import okio.Buffer;
-import okio.BufferedSink;
-import okio.BufferedSource;
-import okio.Okio;
-import okio.Source;
 import org.brotli.dec.BrotliInputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -903,15 +898,20 @@ public class DownloadService extends Worker {
     }
 
     /**
-     * Atomically write data to a file using OkIO
+     * Atomically write a stream to a file using the RAM-ladder IO buffer.
      */
     static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
         File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {
-            // Write to temp file first using OkIO
-            try (BufferedSink sink = Okio.buffer(Okio.sink(tempFile)); BufferedSource source = Okio.buffer(Okio.source(inputStream))) {
-                sink.writeAll(source);
+            // Okio's default segment is 8KB. Copy with the RAM-ladder buffer so
+            // 8MB wrapper unwraps are not 1000 tiny writes.
+            byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                int n;
+                while ((n = inputStream.read(buffer)) != -1) {
+                    fos.write(buffer, 0, n);
+                }
             }
 
             // Verify checksum if provided

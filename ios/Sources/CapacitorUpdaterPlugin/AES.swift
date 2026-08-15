@@ -1,6 +1,7 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
+import Darwin
 
 ///
 /// Constants
@@ -111,9 +112,12 @@ public struct AES128Key {
             CCCryptorRelease(cryptor)
         }
 
-        let input = try FileHandle(forReadingFrom: source)
+        guard let input = InputStream(url: source) else {
+            throw NSError(domain: "AESDecryptError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open AES source"])
+        }
+        input.open()
         defer {
-            try? input.close()
+            input.close()
         }
 
         let tempURL = destination.deletingLastPathComponent().appendingPathComponent("capgo-aes-\(UUID().uuidString).tmp")
@@ -127,22 +131,27 @@ public struct AES128Key {
 
         let bufferSize = CryptoCipher.ioBufferBytes()
         let outBufSize = bufferSize + kCCBlockSizeAES128
+        var inBuf = [UInt8](repeating: 0, count: bufferSize)
         var outBuf = [UInt8](repeating: 0, count: outBufSize)
+        let outFd = output.fileDescriptor
 
         while true {
-            let chunk = try autoreleasepool { () -> Data in
-                try input.read(upToCount: bufferSize) ?? Data()
+            let n = inBuf.withUnsafeMutableBufferPointer { ptr in
+                input.read(ptr.baseAddress!, maxLength: ptr.count)
             }
-            if chunk.isEmpty {
+            if n == 0 {
                 break
             }
+            if n < 0 {
+                throw input.streamError ?? NSError(domain: "AESDecryptError", code: 2, userInfo: [NSLocalizedDescriptionKey: "AES stream read failed"])
+            }
             var moved: size_t = 0
-            let status: CCCryptorStatus = outBuf.withUnsafeMutableBytes { outRaw in
-                chunk.withUnsafeBytes { inRaw in
+            let status: CCCryptorStatus = inBuf.withUnsafeBufferPointer { inRaw in
+                outBuf.withUnsafeMutableBytes { outRaw in
                     CCCryptorUpdate(
                         cryptor,
                         inRaw.baseAddress,
-                        chunk.count,
+                        n,
                         outRaw.baseAddress,
                         outBufSize,
                         &moved
@@ -154,7 +163,7 @@ public struct AES128Key {
                 throw NSError(domain: "AESDecryptError", code: Int(status), userInfo: nil)
             }
             if moved > 0 {
-                try output.write(contentsOf: Data(outBuf[0..<moved]))
+                try Self.writeAll(fd: outFd, buffer: &outBuf, count: moved)
             }
         }
 
@@ -167,10 +176,9 @@ public struct AES128Key {
             throw NSError(domain: "AESDecryptError", code: Int(finalStatus), userInfo: nil)
         }
         if moved > 0 {
-            try output.write(contentsOf: Data(outBuf[0..<moved]))
+            try Self.writeAll(fd: outFd, buffer: &outBuf, count: moved)
         }
         try output.close()
-        try input.close()
 
         do {
             _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
@@ -179,6 +187,19 @@ public struct AES128Key {
                 throw error
             }
             try fileManager.moveItem(at: tempURL, to: destination)
+        }
+    }
+
+    private static func writeAll(fd: Int32, buffer: inout [UInt8], count: Int) throws {
+        var offset = 0
+        while offset < count {
+            let written = buffer.withUnsafeBufferPointer { ptr -> Int in
+                Darwin.write(fd, ptr.baseAddress!.advanced(by: offset), count - offset)
+            }
+            if written <= 0 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "AES stream write failed"])
+            }
+            offset += written
         }
     }
 }
