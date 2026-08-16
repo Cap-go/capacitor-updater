@@ -1047,14 +1047,14 @@ public class DownloadService extends Worker {
     }
 
     /**
-     * Atomically write a stream to a file using the RAM-ladder IO buffer.
+     * Atomically write a stream to a file using the 256 KiB IO buffer.
      */
     static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
         File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {
-            // Okio's default segment is 8KB. Copy with the RAM-ladder buffer so
-            // 8MB wrapper unwraps are not 1000 tiny writes.
+            // Okio's default segment is 8 KiB. Copy with 256 KiB so 8 MiB wrapper unwraps
+            // are not 1000 tiny writes.
             byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
             try (FileOutputStream fos = new FileOutputStream(tempFile)) {
                 int n;

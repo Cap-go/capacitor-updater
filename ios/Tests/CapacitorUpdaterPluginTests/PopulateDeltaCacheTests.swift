@@ -326,15 +326,10 @@ final class PopulateDeltaCacheTests: XCTestCase {
 }
 
 final class IoBufferSizeTests: XCTestCase {
-    func testIoBuffersFollowFiveRamTiersAndMatchForChecksumAndCopy() {
-        let gib: UInt64 = 1024 * 1024 * 1024
-        let ramBytes: [UInt64] = [gib, 2 * gib, 3 * gib, 4 * gib, 6 * gib, 8 * gib, 0]
-        let expected = [64 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024]
-        for i in ramBytes.indices {
-            XCTAssertEqual(CryptoCipher.ioBufferBytes(ramBytes[i]), expected[i])
-            XCTAssertEqual(CryptoCipher.checksumBufferBytes(ramBytes[i]), expected[i])
-            XCTAssertEqual(CryptoCipher.copyBufferBytes(ramBytes[i]), expected[i])
-        }
+    func testIoBuffersAre256KiBForChecksumAndCopy() {
+        XCTAssertEqual(CryptoCipher.ioBufferBytes(), 256 * 1024)
+        XCTAssertEqual(CryptoCipher.checksumBufferBytes(), 256 * 1024)
+        XCTAssertEqual(CryptoCipher.copyBufferBytes(), 256 * 1024)
     }
 }
 
