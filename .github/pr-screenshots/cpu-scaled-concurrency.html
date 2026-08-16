@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Manifest workers: 64 vs CPU clamp</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0f1419; color: #e7ecf3; margin: 0; padding: 32px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { color: #9aa7b8; margin: 0 0 24px; font-size: 14px; line-height: 1.45; }
+    .row { display: flex; gap: 28px; }
+    .card { flex: 1; background: #1a222d; border-radius: 12px; padding: 20px 20px 12px; }
+    h2 { font-size: 15px; margin: 0 0 16px; font-weight: 600; }
+    .bars { display: flex; align-items: flex-end; gap: 10px; height: 180px; }
+    .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+    .bar { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; }
+    .bar.old { background: #e85d4c; }
+    .bar.new { background: #3dd68c; }
+    .bar.mid { background: #5b8def; }
+    .lbl { font-size: 11px; color: #9aa7b8; }
+    .val { font-size: 12px; font-weight: 600; }
+    .note { margin-top: 18px; font-size: 12px; color: #9aa7b8; }
+    .pill { display: inline-block; background: #3dd68c22; color: #3dd68c; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>CPU-scaled manifest workers beat hardcoded 64</h1>
+  <p>
+    Same AES-CBC file-to-file path as production (64 × 2 MiB files, 4 rounds, median of 3).
+    Hard CPU cap via Docker <code>--cpus</code>. iOS Simulator cannot cap cores (Apple).
+    New formula: <code>clamp(cpu × 2, 8, 64)</code>.
+  </p>
+  <div class="row">
+    <div class="card">
+      <h2>2 CPUs · low-end · clamp → 8 <span class="pill">28% faster</span></h2>
+      <div class="bars">
+        <div class="col"><div class="val">447</div><div class="bar new" style="height:72%"></div><div class="lbl">8 new</div></div>
+        <div class="col"><div class="val">477</div><div class="bar mid" style="height:77%"></div><div class="lbl">16</div></div>
+        <div class="col"><div class="val">343*</div><div class="bar mid" style="height:56%"></div><div class="lbl">32 noisy</div></div>
+        <div class="col"><div class="val">617</div><div class="bar old" style="height:100%"></div><div class="lbl">64 old</div></div>
+      </div>
+      <p class="note">*32 had a 1116 ms stall in one trial. 8 stayed in 436–480 ms.</p>
+    </div>
+    <div class="card">
+      <h2>6 CPUs · iPhone-class · clamp → 12 <span class="pill">45% faster at 16</span></h2>
+      <div class="bars">
+        <div class="col"><div class="val">514</div><div class="bar mid" style="height:58%"></div><div class="lbl">8</div></div>
+        <div class="col"><div class="val">481</div><div class="bar new" style="height:55%"></div><div class="lbl">16 ~new</div></div>
+        <div class="col"><div class="val">855</div><div class="bar old" style="height:97%"></div><div class="lbl">32</div></div>
+        <div class="col"><div class="val">881</div><div class="bar old" style="height:100%"></div><div class="lbl">64 old</div></div>
+      </div>
+      <p class="note">6-core clamp is 12. Nearest measured 8 and 16 both beat 64. 32–64 are the slow band.</p>
+    </div>
+  </div>
+</body>
+</html>

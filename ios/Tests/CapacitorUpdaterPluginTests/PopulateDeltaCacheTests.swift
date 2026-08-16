@@ -338,6 +338,21 @@ final class IoBufferSizeTests: XCTestCase {
     }
 }
 
+final class ManifestConcurrencyTests: XCTestCase {
+    func testManifestConcurrencyScalesWithCpuAndStaysCapped() {
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 8)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 8)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 12)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 16)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 36)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 64)
+        let live = CapgoUpdater.manifestMaxConcurrentFiles
+        XCTAssertGreaterThanOrEqual(live, 8)
+        XCTAssertLessThanOrEqual(live, 64)
+        XCTAssertEqual(live, CapgoUpdater.clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount))
+    }
+}
+
 final class StreamDecodeTests: XCTestCase {
     private var updater: CapgoUpdater!
     private var tempDir: URL!
