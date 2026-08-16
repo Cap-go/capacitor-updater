@@ -398,14 +398,17 @@ final class StreamDecodeTests: XCTestCase {
         XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 0))
     }
 
-    func testManifestPartialURLIsStableForSha256() {
+    func testManifestPartialURLIsStableForSha256AndPath() {
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-partial-\(UUID().uuidString)")
         let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let a = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js")
-        let b = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "app.js")
-        XCTAssertEqual(a.lastPathComponent, b.lastPathComponent)
-        XCTAssertTrue(a.lastPathComponent.hasPrefix("partial_\(hash)_"))
-        XCTAssertTrue(a.lastPathComponent.hasSuffix("app.js.tmp"))
+        let nested = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js")
+        let root = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "app.js")
+        let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "vendor/app.js")
+        XCTAssertNotEqual(nested.lastPathComponent, root.lastPathComponent)
+        XCTAssertNotEqual(nested.lastPathComponent, vendor.lastPathComponent)
+        XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_\(hash)_"))
+        XCTAssertTrue(nested.lastPathComponent.contains("nested"))
+        XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
     }
 
     func testStoreDownloadedFileReplacesOn200AndAppendsOn206() throws {

@@ -3879,14 +3879,17 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void manifestPartialFileUsesStableHashName() throws Exception {
+    public void manifestPartialFileUsesStableHashAndPath() throws Exception {
         final Path dir = Files.createTempDirectory("capgo-partial-name");
         String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        File a = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
-        File b = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
-        assertEquals(a.getName(), b.getName());
-        assertTrue(a.getName().startsWith("partial_" + hash + "_"));
-        assertTrue(a.getName().endsWith("app.js.tmp"));
+        File nested = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
+        File root = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
+        File vendor = DownloadService.manifestPartialFile(dir.toFile(), hash, "vendor/app.js");
+        assertNotEquals(nested.getName(), root.getName());
+        assertNotEquals(nested.getName(), vendor.getName());
+        assertTrue(nested.getName().startsWith("partial_" + hash + "_"));
+        assertTrue(nested.getName().contains("nested"));
+        assertTrue(nested.getName().endsWith(".tmp"));
         File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
         assertTrue(unsafe.getName().startsWith("temp_"));
     }

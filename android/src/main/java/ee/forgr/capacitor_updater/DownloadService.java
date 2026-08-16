@@ -157,6 +157,7 @@ public class DownloadService extends Worker {
 
         // Clean up old temporary files on service initialization
         cleanupOldTempFiles(getApplicationContext().getCacheDir());
+        cleanupOldTempFiles(new File(getApplicationContext().getCacheDir(), "capgo_downloads"));
     }
 
     private void setProgress(int percent) {
@@ -532,7 +533,16 @@ public class DownloadService extends Worker {
                         ) {
                             logger.debug("already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
+                            downloadAndVerify(
+                                downloadUrl,
+                                targetFile,
+                                cacheFile,
+                                finalFileHash,
+                                sessionKey,
+                                publicKey,
+                                finalIsBrotli,
+                                fileName
+                            );
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -827,7 +837,8 @@ public class DownloadService extends Worker {
         String expectedHash,
         String sessionKey,
         String publicKey,
-        boolean isBrotli
+        boolean isBrotli,
+        String relativeName
     ) throws Exception {
         logger.debug("downloadAndVerify " + downloadUrl);
 
@@ -836,7 +847,7 @@ public class DownloadService extends Worker {
         if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
             throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
         }
-        File partial = manifestPartialFile(cacheFolder, expectedHash, targetFile.getName());
+        File partial = manifestPartialFile(cacheFolder, expectedHash, relativeName);
         File workFile = null;
         boolean keepPartial = partial.isFile();
         try {
@@ -921,12 +932,28 @@ public class DownloadService extends Worker {
         }
     }
 
-    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
-        String baseName = new File(fileName).getName();
-        if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
-            return new File(cacheDir, "partial_" + hash + "_" + baseName + ".tmp");
+    static String safePartialToken(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return "file";
         }
-        return new File(cacheDir, "temp_" + UUID.randomUUID() + "_" + baseName + ".tmp");
+        StringBuilder sb = new StringBuilder(fileName.length());
+        for (int i = 0; i < fileName.length(); i++) {
+            char c = fileName.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_') {
+                sb.append(c);
+            } else {
+                sb.append('_');
+            }
+        }
+        return sb.length() == 0 ? "file" : sb.toString();
+    }
+
+    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
+        String token = safePartialToken(fileName);
+        if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
+            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
+        }
+        return new File(cacheDir, "temp_" + UUID.randomUUID() + "_" + token + ".tmp");
     }
 
     static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {

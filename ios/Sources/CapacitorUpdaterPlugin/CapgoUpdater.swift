@@ -309,12 +309,53 @@ import UIKit
         existingBytes > 0 && statusCode == 206
     }
 
-    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
-        let baseName = (fileName as NSString).lastPathComponent
-        if isSafeCacheHash(hash) && hash.count == 64 {
-            return cacheFolder.appendingPathComponent("partial_\(hash)_\(baseName).tmp")
+    static func safePartialToken(_ fileName: String) -> String {
+        if fileName.isEmpty {
+            return "file"
         }
-        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(baseName).tmp")
+        var token = ""
+        token.reserveCapacity(fileName.count)
+        for scalar in fileName.unicodeScalars {
+            let value = scalar.value
+            let allowed =
+                (0x30...0x39).contains(value) ||
+                (0x41...0x5A).contains(value) ||
+                (0x61...0x7A).contains(value) ||
+                scalar == "." ||
+                scalar == "-" ||
+                scalar == "_"
+            token.append(allowed ? Character(scalar) : "_")
+        }
+        return token.isEmpty ? "file" : token
+    }
+
+    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
+        let token = safePartialToken(fileName)
+        if isSafeCacheHash(hash) && hash.count == 64 {
+            return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
+        }
+        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(token).tmp")
+    }
+
+    private func cleanupOldManifestPartials() {
+        let cutoff = Date().addingTimeInterval(-3600)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: cacheFolder,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        for url in files {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("partial_") && name.hasSuffix(".tmp") else {
+                continue
+            }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
@@ -1355,6 +1396,7 @@ import UIKit
         try checkDiskSpace(estimatedSize: estimatedSize)
 
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        cleanupOldManifestPartials()
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
         // Create and save BundleInfo before starting the download process
