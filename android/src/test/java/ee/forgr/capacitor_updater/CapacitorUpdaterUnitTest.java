@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -3822,6 +3823,72 @@ public class CapacitorUpdaterUnitTest {
         DownloadService.decompressBrotli(realIn, realOut, "payload.br");
         String expected = "Capgo stream brotli test payload. ".repeat(20);
         assertEquals(expected, new String(Files.readAllBytes(realOut.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void writeFileAtomicHashesDuringWrite() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-hash-write");
+        byte[] payload = "hash-while-write-payload".repeat(1000).getBytes(StandardCharsets.UTF_8);
+        String expected = CryptoCipher.calcChecksum(new ByteArrayInputStream(payload));
+        File dest = dir.resolve("dest.bin").toFile();
+        DownloadService.writeFileAtomic(dest, new ByteArrayInputStream(payload), expected);
+        assertArrayEquals(payload, Files.readAllBytes(dest.toPath()));
+        assertEquals(expected, CryptoCipher.calcChecksum(dest));
+
+        File bad = dir.resolve("bad.bin").toFile();
+        try {
+            DownloadService.writeFileAtomic(
+                bad,
+                new ByteArrayInputStream(payload),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            );
+            fail("expected checksum mismatch");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Checksum verification failed"));
+            assertFalse(bad.exists());
+        }
+    }
+
+    @Test
+    public void writeHttpBodyReplacesOn200AndAppendsOn206() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-range-merge");
+        byte[] full = new byte[64 * 1024];
+        for (int i = 0; i < full.length; i++) {
+            full[i] = (byte) i;
+        }
+        byte[] first = Arrays.copyOfRange(full, 0, 24 * 1024);
+        byte[] second = Arrays.copyOfRange(full, 24 * 1024, full.length);
+        File dest = dir.resolve("partial.bin").toFile();
+
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(first), 200, 0);
+        assertArrayEquals(first, Files.readAllBytes(dest.toPath()));
+
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(second), 206, first.length);
+        assertArrayEquals(full, Files.readAllBytes(dest.toPath()));
+
+        byte[] other = "replaced-full-body".getBytes(StandardCharsets.UTF_8);
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(other), 200, dest.length());
+        assertArrayEquals(other, Files.readAllBytes(dest.toPath()));
+
+        assertFalse(DownloadService.shouldAppendHttpBody(200, 100));
+        assertTrue(DownloadService.shouldAppendHttpBody(206, 100));
+        assertFalse(DownloadService.shouldAppendHttpBody(206, 0));
+    }
+
+    @Test
+    public void manifestPartialFileUsesStableHashName() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-partial-name");
+        String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        File a = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
+        File b = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
+        assertEquals(a.getName(), b.getName());
+        assertTrue(a.getName().startsWith("partial_" + hash + "_"));
+        assertTrue(a.getName().endsWith("app.js.tmp"));
+        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
+        assertTrue(unsafe.getName().startsWith("temp_"));
     }
 
     @Test

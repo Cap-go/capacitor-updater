@@ -369,19 +369,23 @@ public class CryptoCipher {
             while ((length = inputStream.read(buffer)) != -1) {
                 digest.update(buffer, 0, length);
             }
-            byte[] hash = digest.digest();
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
+            return digestToHex(digest);
         } catch (IOException e) {
             logger.error("Cannot calculate checksum");
             logger.debug("Error: " + e.getMessage());
             return "";
         }
+    }
+
+    static String digestToHex(MessageDigest digest) {
+        byte[] hash = digest.digest();
+        StringBuilder hexString = new StringBuilder(hash.length * 2);
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) hexString.append('0');
+            hexString.append(hex);
+        }
+        return hexString.toString();
     }
 
     private static byte[] createDEREncoding(int tag, byte[] value) {

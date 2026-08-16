@@ -198,13 +198,32 @@ public struct CryptoCipher {
                 }
             }) {}
 
-            let digest = sha256.finalize()
-            return digest.compactMap { String(format: "%02x", $0) }.joined()
+            return hexString(from: sha256)
         } catch {
             logger.error("Cannot calculate checksum")
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
+    }
+
+    final class RunningChecksum {
+        private var sha256 = SHA256()
+
+        func update(_ data: Data) {
+            guard !data.isEmpty else {
+                return
+            }
+            sha256.update(data: data)
+        }
+
+        func hex() -> String {
+            CryptoCipher.hexString(from: sha256)
+        }
+    }
+
+    static func hexString(from sha256: SHA256) -> String {
+        var copy = sha256
+        return copy.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {

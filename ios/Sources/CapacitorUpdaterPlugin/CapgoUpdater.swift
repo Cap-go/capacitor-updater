@@ -305,9 +305,22 @@ import UIKit
         return fileManager.fileExists(atPath: fallback.path) ? fallback : nil
     }
 
-    private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
+    static func shouldAppendHttpBody(statusCode: Int, existingBytes: Int64) -> Bool {
+        existingBytes > 0 && statusCode == 206
+    }
+
+    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
+        let baseName = (fileName as NSString).lastPathComponent
+        if isSafeCacheHash(hash) && hash.count == 64 {
+            return cacheFolder.appendingPathComponent("partial_\(hash)_\(baseName).tmp")
+        }
+        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(baseName).tmp")
+    }
+
+    func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
         let fileManager = FileManager.default
-        if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
+        if Self.shouldAppendHttpBody(statusCode: response?.statusCode ?? 0, existingBytes: existingBytes) ||
+            (existingBytes > 0 && response == nil) {
             let fileHandle = try FileHandle(forWritingTo: tempPath)
             defer {
                 try? fileHandle.close()
@@ -1550,12 +1563,24 @@ import UIKit
             )
         }
 
-        guard let request = createRequest(url: url, method: "GET") else {
+        guard var request = createRequest(url: url, method: "GET") else {
             throw NSError(
                 domain: "ManifestDownloadError",
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Invalid manifest request for file \(fileName): \(downloadUrl)"]
             )
+        }
+
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, hash: fileHash, fileName: fileName)
+        let existingBytes: Int64
+        if FileManager.default.fileExists(atPath: partialURL.path) {
+            existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
+        } else {
+            existingBytes = 0
+        }
+        if existingBytes > 0 {
+            request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
         }
 
         let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
@@ -1566,6 +1591,7 @@ import UIKit
         }
 
         if result.timedOut {
+            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: NSURLErrorDomain,
@@ -1575,6 +1601,7 @@ import UIKit
         }
 
         if let error = result.error {
+            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             self.logger.error("Manifest file download network error")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
@@ -1582,12 +1609,24 @@ import UIKit
         }
 
         let statusCode = result.response?.statusCode ?? 200
-        if statusCode < 200 || statusCode >= 300 {
+        if statusCode == 416 && existingBytes > 0 {
+            logger.debug("Range not satisfiable, using existing partial \(partialURL.lastPathComponent)")
+        } else if statusCode < 200 || statusCode >= 300 {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+        } else {
+            guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
+                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+                throw NSError(
+                    domain: "ManifestDownloadError",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
+                )
+            }
+            try storeDownloadedFile(downloadedFileURL, at: partialURL, existingBytes: existingBytes, response: result.response)
         }
 
-        guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
+        guard FileManager.default.fileExists(atPath: partialURL.path) else {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -1596,42 +1635,58 @@ import UIKit
             )
         }
 
+        var workURL: URL?
+        defer {
+            if let workURL {
+                try? FileManager.default.removeItem(at: workURL)
+            }
+        }
+
         do {
-            // Decrypt in place when a session key is present — streamed, not a whole-file copy.
+            var source = partialURL
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
                 do {
-                    try CryptoCipher.decryptFile(filePath: downloadedFileURL, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
+                    try FileManager.default.copyItem(at: partialURL, to: work)
+                    workURL = work
+                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    source = work
                 } catch {
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
             }
 
+            let calculatedChecksum: String
             if isBrotli {
                 do {
-                    try decompressBrotli(from: downloadedFileURL, to: destFilePath, fileName: fileName)
+                    calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
                 } catch {
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
             } else {
-                try copyItemReplacing(from: downloadedFileURL, to: destFilePath)
+                let handle = try FileHandle(forReadingFrom: source)
+                defer {
+                    try? handle.close()
+                }
+                let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
+                calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
             }
 
-            // Always verify checksum when file_hash is present
-            let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
             CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
             CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
             if calculatedChecksum != fileHash {
                 try? FileManager.default.removeItem(at: destFilePath)
+                try? FileManager.default.removeItem(at: partialURL)
                 self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
-            // Save to cache (replace stale cache entries from partial or concurrent downloads)
             if let cacheFilePath {
                 try copyItemAtomically(from: destFilePath, to: cacheFilePath)
             }
+            try? FileManager.default.removeItem(at: partialURL)
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1701,13 +1756,13 @@ import UIKit
 
     /// Stream Brotli from disk to disk. Peek only the 3-byte header and last byte
     /// for the empty/wrapper special cases; never load the whole file.
-    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws {
+    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws -> String {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
         let length = (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
         if length == 0 {
             try Data().write(to: dest, options: .atomic)
-            return
+            return CryptoCipher.RunningChecksum().hex()
         }
 
         let handle = try FileHandle(forReadingFrom: source)
@@ -1724,7 +1779,7 @@ import UIKit
 
         if length == 3 && head.count == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06 {
             try Data().write(to: dest, options: .atomic)
-            return
+            return CryptoCipher.RunningChecksum().hex()
         }
 
         if length > 3 && head.count == 3 && last == 0x03 {
@@ -1732,16 +1787,15 @@ import UIKit
             let isQualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == 0x80
             if isEmptyWrapper || isQualityZeroWrapper {
                 try handle.seek(toOffset: 3)
-                try streamCopy(from: handle, count: length - 4, to: dest)
-                return
+                return try streamCopy(from: handle, count: length - 4, to: dest)
             }
         }
 
         try handle.seek(toOffset: 0)
-        try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
+        return try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
     }
 
-    private func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws {
+    func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws -> String {
         let fileManager = FileManager.default
         let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
         fileManager.createFile(atPath: tempURL.path, contents: nil)
@@ -1751,6 +1805,7 @@ import UIKit
             try? fileManager.removeItem(at: tempURL)
         }
 
+        let hasher = CryptoCipher.RunningChecksum()
         var remaining = count
         let chunkSize = CryptoCipher.ioBufferBytes()
         while remaining > 0 {
@@ -1758,6 +1813,7 @@ import UIKit
                 let toRead = Int(min(UInt64(chunkSize), remaining))
                 let chunk = try handle.read(upToCount: toRead) ?? Data()
                 if !chunk.isEmpty {
+                    hasher.update(chunk)
                     try output.write(contentsOf: chunk)
                 }
                 return chunk.count
@@ -1769,9 +1825,10 @@ import UIKit
         }
         try output.close()
         try replaceItemAtomically(at: dest, withItemAt: tempURL)
+        return hasher.hex()
     }
 
-    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws {
+    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws -> String {
         let fileManager = FileManager.default
         let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
         fileManager.createFile(atPath: tempURL.path, contents: nil)
@@ -1780,6 +1837,7 @@ import UIKit
             try? output.close()
             try? fileManager.removeItem(at: tempURL)
         }
+        let hasher = CryptoCipher.RunningChecksum()
 
         let chunkSize = max(CryptoCipher.ioBufferBytes(), 65536)
         var inputBuffer = [UInt8](repeating: 0, count: chunkSize)
@@ -1824,7 +1882,9 @@ import UIKit
                     status = compression_stream_process(streamPointer, flags)
                     let have = chunkSize - streamPointer.pointee.dst_size
                     if have > 0 {
-                        try output.write(contentsOf: Data(bytes: outBase, count: have))
+                        let decoded = Data(bytes: outBase, count: have)
+                        hasher.update(decoded)
+                        try output.write(contentsOf: decoded)
                     }
                     streamPointer.pointee.dst_ptr = outBase
                     streamPointer.pointee.dst_size = chunkSize
@@ -1848,6 +1908,7 @@ import UIKit
 
         try output.close()
         try replaceItemAtomically(at: dest, withItemAt: tempURL)
+        return hasher.hex()
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
