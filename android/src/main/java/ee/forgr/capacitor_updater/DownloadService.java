@@ -157,6 +157,7 @@ public class DownloadService extends Worker {
 
         // Clean up old temporary files on service initialization
         cleanupOldTempFiles(getApplicationContext().getCacheDir());
+        cleanupOldTempFiles(new File(getApplicationContext().getCacheDir(), "capgo_downloads"));
     }
 
     private void setProgress(int percent) {
@@ -532,7 +533,16 @@ public class DownloadService extends Worker {
                         ) {
                             logger.debug("already cached " + fileName);
                         } else {
-                            downloadAndVerify(downloadUrl, targetFile, cacheFile, finalFileHash, sessionKey, publicKey, finalIsBrotli);
+                            downloadAndVerify(
+                                downloadUrl,
+                                targetFile,
+                                cacheFile,
+                                finalFileHash,
+                                sessionKey,
+                                publicKey,
+                                finalIsBrotli,
+                                fileName
+                            );
                         }
 
                         long completed = completedFiles.incrementAndGet();
@@ -827,96 +837,137 @@ public class DownloadService extends Worker {
         String expectedHash,
         String sessionKey,
         String publicKey,
-        boolean isBrotli
+        boolean isBrotli,
+        String relativeName
     ) throws Exception {
         logger.debug("downloadAndVerify " + downloadUrl);
 
-        Request request = new Request.Builder().url(downloadUrl).build();
-
-        // targetFile is already the final destination without .br extension
         File finalTargetFile = targetFile;
-
-        // Create a temporary file for the compressed data with a unique name to avoid race conditions
-        // between threads processing files with the same basename in different directories
-        File compressedFile = new File(
-            getApplicationContext().getCacheDir(),
-            "temp_" + java.util.UUID.randomUUID().toString() + "_" + targetFile.getName() + ".tmp"
-        );
-
+        File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
+        if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
+            throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
+        }
+        File partial = manifestPartialFile(cacheFolder, expectedHash, relativeName);
+        File workFile = null;
+        boolean keepPartial = partial.isFile();
         try {
-            try (Response response = sharedClient.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
+            long existing = partial.isFile() ? partial.length() : 0;
+            Request.Builder builder = new Request.Builder().url(downloadUrl);
+            if (existing > 0) {
+                builder.header("Range", "bytes=" + existing + "-");
+            }
+            try (Response response = sharedClient.newCall(builder.build()).execute()) {
+                int code = response.code();
+                if (code == 416 && existing > 0) {
+                    logger.debug("Range not satisfiable, using existing partial " + partial.getName());
+                    keepPartial = true;
+                } else if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                     sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
-                    throw new IOException("Unexpected response code: " + response.code());
-                }
-
-                // Download compressed file atomically
-                ResponseBody responseBody = response.body();
-                if (responseBody == null) {
-                    throw new IOException("Response body is null");
-                }
-
-                // Use OkIO for atomic write
-                writeFileAtomic(compressedFile, responseBody.byteStream(), null);
-
-                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
-                    logger.debug("Decrypting file " + targetFile.getName());
-                    CryptoCipher.decryptFile(compressedFile, publicKey, sessionKey);
-                }
-
-                // Only decompress if file has .br extension
-                if (isBrotli) {
+                    throw new IOException("Unexpected response code: " + code);
+                } else {
+                    ResponseBody responseBody = response.body();
+                    if (responseBody == null) {
+                        throw new IOException("Response body is null");
+                    }
                     try {
-                        decompressBrotli(compressedFile, finalTargetFile, targetFile.getName());
-                    } catch (IOException e) {
-                        sendStatsAsync(
-                            "download_manifest_brotli_fail",
-                            getInputData().getString(VERSION) + ":" + finalTargetFile.getName()
-                        );
+                        writeHttpBody(partial, responseBody.byteStream(), code, existing);
+                        keepPartial = true;
+                    } catch (Exception e) {
+                        keepPartial = true;
                         throw e;
                     }
+                }
+            }
+
+            boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty();
+            File source = partial;
+            if (needDecrypt) {
+                workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
+                copyFile(partial, workFile);
+                try {
+                    logger.debug("Decrypting file " + targetFile.getName());
+                    CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
+                    source = workFile;
+                } catch (Exception e) {
+                    keepPartial = false;
+                    throw e;
+                }
+            }
+
+            try {
+                if (isBrotli) {
+                    decompressBrotli(source, finalTargetFile, targetFile.getName(), expectedHash);
                 } else {
-                    try (FileInputStream fis = new FileInputStream(compressedFile)) {
-                        writeFileAtomic(finalTargetFile, fis, null);
+                    try (FileInputStream fis = new FileInputStream(source)) {
+                        writeFileAtomic(finalTargetFile, fis, expectedHash);
                     }
                 }
-
-                // Delete the compressed file
-                compressedFile.delete();
-                String calculatedHash = CryptoCipher.calcChecksum(finalTargetFile);
-                CryptoCipher.logChecksumInfo("Calculated checksum", calculatedHash);
-                CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
-
-                // Verify checksum
-                if (calculatedHash.equalsIgnoreCase(expectedHash)) {
-                    // Only cache if checksum is correct - use atomic copy
-                    if (cacheFile != null) {
-                        try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                            writeFileAtomic(cacheFile, fis, null);
-                        }
+            } catch (IOException e) {
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("Checksum verification failed")) {
+                    if (finalTargetFile.exists() && !finalTargetFile.delete()) {
+                        logger.debug("Failed to delete dest after checksum mismatch");
                     }
-                } else {
-                    finalTargetFile.delete();
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
-                    throw new IOException(
-                        "Checksum verification failed for: " +
-                            downloadUrl +
-                            " " +
-                            targetFile.getName() +
-                            " expected: " +
-                            expectedHash +
-                            " calculated: " +
-                            calculatedHash
-                    );
+                    keepPartial = false;
+                } else if (isBrotli) {
+                    sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    keepPartial = false;
+                }
+                throw e;
+            }
+
+            CryptoCipher.logChecksumInfo("Calculated checksum", expectedHash);
+            CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
+
+            if (cacheFile != null) {
+                try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
+                    writeFileAtomic(cacheFile, fis, null);
                 }
             }
+            keepPartial = false;
         } catch (Exception e) {
-            throw new IOException("Error in downloadAndVerify: " + e.getMessage());
+            throw new IOException("Error in downloadAndVerify: " + e.getMessage(), e);
         } finally {
-            // Always cleanup the compressed temp file if it still exists
-            if (compressedFile.exists()) {
-                compressedFile.delete();
+            if (workFile != null && workFile.exists() && !workFile.delete()) {
+                logger.debug("Failed to delete decrypt work file");
             }
+            if (!keepPartial && partial.exists() && !partial.delete()) {
+                logger.debug("Failed to delete manifest partial " + partial.getName());
+            }
+        }
+    }
+
+    static String safePartialToken(String fileName) {
+        return CryptoCipher.shortPathKey(fileName);
+    }
+
+    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
+        String token = safePartialToken(fileName);
+        if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
+            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
+        }
+        return new File(cacheDir, "temp_" + UUID.randomUUID() + "_" + token + ".tmp");
+    }
+
+    static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {
+        return existingBytes > 0 && statusCode == HttpURLConnection.HTTP_PARTIAL;
+    }
+
+    static void writeHttpBody(File dest, InputStream body, int statusCode, long existingBytes) throws IOException {
+        boolean append = shouldAppendHttpBody(statusCode, existingBytes);
+        byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+        try (FileOutputStream fos = new FileOutputStream(dest, append)) {
+            int n;
+            long written = append ? existingBytes : 0;
+            while ((n = body.read(buffer)) != -1) {
+                fos.write(buffer, 0, n);
+                written += n;
+                if (written % (1024 * 1024) == 0) {
+                    fos.flush();
+                }
+            }
+            fos.flush();
         }
     }
 
@@ -950,13 +1001,17 @@ public class DownloadService extends Worker {
     }
 
     static void decompressBrotli(File input, File output, String fileName) throws IOException {
+        decompressBrotli(input, output, fileName, null);
+    }
+
+    static void decompressBrotli(File input, File output, String fileName, String expectedChecksum) throws IOException {
         File parent = output.getParentFile();
         if (parent != null) {
             parent.mkdirs();
         }
         long length = input.length();
         if (length == 0) {
-            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), expectedChecksum);
             return;
         }
 
@@ -971,7 +1026,7 @@ public class DownloadService extends Worker {
         }
 
         if (length == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06) {
-            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), null);
+            writeFileAtomic(output, new ByteArrayInputStream(new byte[0]), expectedChecksum);
             return;
         }
 
@@ -988,14 +1043,14 @@ public class DownloadService extends Worker {
                         }
                         skipped += n;
                     }
-                    writeFileAtomic(output, new BoundedInputStream(fis, length - 4), null);
+                    writeFileAtomic(output, new BoundedInputStream(fis, length - 4), expectedChecksum);
                 }
                 return;
             }
         }
 
         try (FileInputStream fis = new FileInputStream(input); BrotliInputStream brotliInputStream = new BrotliInputStream(fis)) {
-            writeFileAtomic(output, brotliInputStream, null);
+            writeFileAtomic(output, brotliInputStream, expectedChecksum);
         } catch (IOException e) {
             logger.error("Error: Brotli process failed for " + fileName + ". Status: " + e.getMessage());
             StringBuilder hexDump = new StringBuilder();
@@ -1048,6 +1103,7 @@ public class DownloadService extends Worker {
 
     /**
      * Atomically write a stream to a file using the 256 KiB IO buffer.
+     * When expectedChecksum is set, SHA-256 is hashed during the write.
      */
     static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
         File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
@@ -1056,26 +1112,39 @@ public class DownloadService extends Worker {
             // Okio's default segment is 8 KiB. Copy with 256 KiB so 8 MiB wrapper unwraps
             // are not 1000 tiny writes.
             byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+            MessageDigest digest = null;
+            if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
+                try {
+                    digest = MessageDigest.getInstance("SHA-256");
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new IOException("SHA-256 algorithm not available", e);
+                }
+            }
             try (FileOutputStream fos = new FileOutputStream(tempFile)) {
                 int n;
                 while ((n = inputStream.read(buffer)) != -1) {
+                    if (digest != null) {
+                        digest.update(buffer, 0, n);
+                    }
                     fos.write(buffer, 0, n);
                 }
             }
 
-            // Verify checksum if provided
-            if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
-                String actualChecksum = CryptoCipher.calcChecksum(tempFile);
+            if (digest != null) {
+                String actualChecksum = CryptoCipher.digestToHex(digest);
                 if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
-                    tempFile.delete();
-                    throw new IOException("Checksum verification failed");
+                    throw new IOException("Checksum verification failed expected: " + expectedChecksum + " calculated: " + actualChecksum);
                 }
             }
 
             // Atomic rename (on same filesystem). renameTo works on API 24; Files.move does not.
             CryptoCipher.replaceFile(tempFile, targetFile);
+        } catch (IOException e) {
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+            throw e;
         } catch (Exception e) {
-            // Clean up temp file on error
             if (tempFile.exists()) {
                 tempFile.delete();
             }

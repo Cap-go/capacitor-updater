@@ -386,9 +386,61 @@ final class StreamDecodeTests: XCTestCase {
         let realIn = dir.appendingPathComponent("payload.br")
         let realOut = dir.appendingPathComponent("payload.txt")
         try dataFromHex("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00").write(to: realIn)
-        try updater.decompressBrotli(from: realIn, to: realOut, fileName: "payload.br")
         let expected = String(repeating: "Capgo stream brotli test payload. ", count: 20)
+        let hashed = try updater.decompressBrotli(from: realIn, to: realOut, fileName: "payload.br")
         XCTAssertEqual(try String(contentsOf: realOut, encoding: .utf8), expected)
+        XCTAssertEqual(hashed, CryptoCipher.calcChecksum(filePath: realOut))
+    }
+
+    func testShouldAppendHttpBodyOnlyForPartialContent() {
+        XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 200, existingBytes: 100))
+        XCTAssertTrue(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 100))
+        XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 0))
+    }
+
+    func testManifestPartialURLIsStableForSha256AndPath() {
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-partial-\(UUID().uuidString)")
+        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let nested = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js")
+        let root = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "app.js")
+        let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "vendor/app.js")
+        XCTAssertNotEqual(nested.lastPathComponent, root.lastPathComponent)
+        XCTAssertNotEqual(nested.lastPathComponent, vendor.lastPathComponent)
+        XCTAssertEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js").lastPathComponent)
+        XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_\(hash)_"))
+        XCTAssertLessThan(nested.lastPathComponent.count, 255)
+        XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
+    }
+
+    func testStoreDownloadedFileReplacesOn200AndAppendsOn206() throws {
+        let updater = TestableCapgoUpdater()
+        updater.setLogger(Logger(withTag: "StreamDecodeTests", options: Logger.Options(level: .silent)))
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-range-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        var full = Data(count: 4096)
+        for i in 0..<full.count {
+            full[i] = UInt8(i % 256)
+        }
+        let first = full.prefix(1500)
+        let second = full.suffix(from: 1500)
+        let dest = dir.appendingPathComponent("partial.bin")
+        try Data(first).write(to: dest)
+
+        let chunk206 = dir.appendingPathComponent("chunk206.bin")
+        try Data(second).write(to: chunk206)
+        let url = URL(string: "https://example.invalid/file.bin")!
+        let partialResponse = HTTPURLResponse(url: url, statusCode: 206, httpVersion: "HTTP/1.1", headerFields: nil)
+        try updater.storeDownloadedFile(chunk206, at: dest, existingBytes: Int64(first.count), response: partialResponse)
+        XCTAssertEqual(try Data(contentsOf: dest), full)
+
+        let replaceChunk = dir.appendingPathComponent("chunk200.bin")
+        let other = Data("replaced-full-body".utf8)
+        try other.write(to: replaceChunk)
+        let okResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
+        try updater.storeDownloadedFile(replaceChunk, at: dest, existingBytes: Int64(full.count), response: okResponse)
+        XCTAssertEqual(try Data(contentsOf: dest), other)
     }
 
     private func dataFromHex(_ hex: String) -> Data {
