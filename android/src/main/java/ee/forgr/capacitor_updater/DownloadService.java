@@ -882,9 +882,9 @@ public class DownloadService extends Worker {
             boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty();
             File source = partial;
             if (needDecrypt) {
+                workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
+                copyFile(partial, workFile);
                 try {
-                    workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
-                    copyFile(partial, workFile);
                     logger.debug("Decrypting file " + targetFile.getName());
                     CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
                     source = workFile;
@@ -909,10 +909,11 @@ public class DownloadService extends Worker {
                         logger.debug("Failed to delete dest after checksum mismatch");
                     }
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    keepPartial = false;
                 } else if (isBrotli) {
                     sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    keepPartial = false;
                 }
-                keepPartial = false;
                 throw e;
             }
 

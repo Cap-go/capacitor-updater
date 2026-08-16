@@ -1671,16 +1671,17 @@ import UIKit
         do {
             var source = partialURL
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+                let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
+                try FileManager.default.copyItem(at: partialURL, to: work)
+                workURL = work
                 do {
-                    let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
-                    try FileManager.default.copyItem(at: partialURL, to: work)
-                    workURL = work
                     try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                    source = work
                 } catch {
+                    try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
+                source = work
             }
 
             let calculatedChecksum: String
@@ -1688,6 +1689,7 @@ import UIKit
                 do {
                     calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
                 } catch {
+                    try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
@@ -1717,7 +1719,6 @@ import UIKit
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
         } catch {
-            try? FileManager.default.removeItem(at: partialURL)
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
