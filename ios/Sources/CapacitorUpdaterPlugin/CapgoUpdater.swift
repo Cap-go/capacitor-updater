@@ -310,23 +310,7 @@ import UIKit
     }
 
     static func safePartialToken(_ fileName: String) -> String {
-        if fileName.isEmpty {
-            return "file"
-        }
-        var token = ""
-        token.reserveCapacity(fileName.count)
-        for scalar in fileName.unicodeScalars {
-            let value = scalar.value
-            let allowed =
-                (0x30...0x39).contains(value) ||
-                (0x41...0x5A).contains(value) ||
-                (0x61...0x7A).contains(value) ||
-                scalar == "." ||
-                scalar == "-" ||
-                scalar == "_"
-            token.append(allowed ? Character(scalar) : "_")
-        }
-        return token.isEmpty ? "file" : token
+        CryptoCipher.shortPathKey(fileName)
     }
 
     static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
@@ -1733,6 +1717,7 @@ import UIKit
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
         } catch {
+            try? FileManager.default.removeItem(at: partialURL)
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error

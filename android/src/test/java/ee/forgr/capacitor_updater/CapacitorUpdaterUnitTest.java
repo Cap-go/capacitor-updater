@@ -3887,8 +3887,9 @@ public class CapacitorUpdaterUnitTest {
         File vendor = DownloadService.manifestPartialFile(dir.toFile(), hash, "vendor/app.js");
         assertNotEquals(nested.getName(), root.getName());
         assertNotEquals(nested.getName(), vendor.getName());
+        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js").getName());
         assertTrue(nested.getName().startsWith("partial_" + hash + "_"));
-        assertTrue(nested.getName().contains("nested"));
+        assertTrue(nested.getName().length() < 255);
         assertTrue(nested.getName().endsWith(".tmp"));
         File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
         assertTrue(unsafe.getName().startsWith("temp_"));

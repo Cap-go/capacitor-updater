@@ -226,6 +226,12 @@ public struct CryptoCipher {
         return copy.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    static func shortPathKey(_ fileName: String) -> String {
+        var sha256 = SHA256()
+        sha256.update(data: Data(fileName.utf8))
+        return String(hexString(from: sha256).prefix(16))
+    }
+
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
         if publicKey.isEmpty || sessionKey.isEmpty || sessionKey.components(separatedBy: ":").count != 2 {
             logger.info("Encryption not set, no public key or session, ignored")

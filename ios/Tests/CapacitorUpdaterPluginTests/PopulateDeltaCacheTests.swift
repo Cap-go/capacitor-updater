@@ -406,8 +406,9 @@ final class StreamDecodeTests: XCTestCase {
         let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "vendor/app.js")
         XCTAssertNotEqual(nested.lastPathComponent, root.lastPathComponent)
         XCTAssertNotEqual(nested.lastPathComponent, vendor.lastPathComponent)
+        XCTAssertEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js").lastPathComponent)
         XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_\(hash)_"))
-        XCTAssertTrue(nested.lastPathComponent.contains("nested"))
+        XCTAssertLessThan(nested.lastPathComponent.count, 255)
         XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
     }
 

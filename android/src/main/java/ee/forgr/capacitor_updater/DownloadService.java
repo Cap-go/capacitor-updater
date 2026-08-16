@@ -882,11 +882,16 @@ public class DownloadService extends Worker {
             boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty();
             File source = partial;
             if (needDecrypt) {
-                workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
-                copyFile(partial, workFile);
-                logger.debug("Decrypting file " + targetFile.getName());
-                CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
-                source = workFile;
+                try {
+                    workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
+                    copyFile(partial, workFile);
+                    logger.debug("Decrypting file " + targetFile.getName());
+                    CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
+                    source = workFile;
+                } catch (Exception e) {
+                    keepPartial = false;
+                    throw e;
+                }
             }
 
             try {
@@ -904,10 +909,10 @@ public class DownloadService extends Worker {
                         logger.debug("Failed to delete dest after checksum mismatch");
                     }
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
-                    keepPartial = false;
                 } else if (isBrotli) {
                     sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                 }
+                keepPartial = false;
                 throw e;
             }
 
@@ -933,19 +938,7 @@ public class DownloadService extends Worker {
     }
 
     static String safePartialToken(String fileName) {
-        if (fileName == null || fileName.isEmpty()) {
-            return "file";
-        }
-        StringBuilder sb = new StringBuilder(fileName.length());
-        for (int i = 0; i < fileName.length(); i++) {
-            char c = fileName.charAt(i);
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_') {
-                sb.append(c);
-            } else {
-                sb.append('_');
-            }
-        }
-        return sb.length() == 0 ? "file" : sb.toString();
+        return CryptoCipher.shortPathKey(fileName);
     }
 
     static File manifestPartialFile(File cacheDir, String hash, String fileName) {

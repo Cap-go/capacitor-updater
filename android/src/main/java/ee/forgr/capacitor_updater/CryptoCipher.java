@@ -388,6 +388,16 @@ public class CryptoCipher {
         return hexString.toString();
     }
 
+    static String shortPathKey(String fileName) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update((fileName == null ? "" : fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return digestToHex(digest).substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return Integer.toHexString((fileName == null ? "" : fileName).hashCode());
+        }
+    }
+
     private static byte[] createDEREncoding(int tag, byte[] value) {
         if (tag < 0 || tag >= 0xFF) {
             throw new IllegalArgumentException("Currently only single byte tags supported");
