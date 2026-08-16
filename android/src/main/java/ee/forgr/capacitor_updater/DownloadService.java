@@ -76,8 +76,8 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // Match HTTP dispatcher so 64 workers actually fetch in parallel (HTTP/2 multiplexes).
-    private static final int MANIFEST_MAX_CONCURRENT_FILES = 64;
+    // HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -101,6 +101,15 @@ public class DownloadService extends Worker {
                 return chain.proceed(requestWithUserAgent);
             })
             .build();
+    }
+
+    static int manifestMaxConcurrentFiles() {
+        return manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors());
+    }
+
+    static int manifestMaxConcurrentFiles(int processors) {
+        int cores = Math.max(1, processors);
+        return Math.min(64, Math.max(8, cores * 2));
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {

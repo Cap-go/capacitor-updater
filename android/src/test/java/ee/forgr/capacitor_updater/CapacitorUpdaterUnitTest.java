@@ -3789,6 +3789,19 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
+        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(1));
+        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(4));
+        assertEquals(12, DownloadService.manifestMaxConcurrentFiles(6));
+        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(8));
+        assertEquals(36, DownloadService.manifestMaxConcurrentFiles(18));
+        assertEquals(64, DownloadService.manifestMaxConcurrentFiles(40));
+        int live = DownloadService.manifestMaxConcurrentFiles();
+        assertTrue(live >= 8 && live <= 64);
+        assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
+    }
+
+    @Test
     public void decompressBrotliStreamsEmptyWrapperAndRealPayload() throws Exception {
         DownloadService.setLogger(mock(Logger.class));
         final Path dir = Files.createTempDirectory("capgo-brotli");

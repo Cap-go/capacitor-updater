@@ -25,8 +25,12 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// Match URLSession per-host limit so 64 workers actually fetch in parallel.
-    private static let manifestMaxConcurrentFiles = 64
+    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
+
+    static func clampedManifestConcurrency(processorCount: Int) -> Int {
+        min(64, max(8, max(1, processorCount) * 2))
+    }
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
