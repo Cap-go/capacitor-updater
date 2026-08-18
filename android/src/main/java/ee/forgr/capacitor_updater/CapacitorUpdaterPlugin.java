@@ -776,9 +776,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Public key prefix: " + keyId);
         }
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
-        this.implementation.statsMode = CapgoUpdater.normalizeStatsMode(
-            this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL)
-        );
+        this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             if (this.prefs.contains(STATS_URL_PREF_KEY)) {

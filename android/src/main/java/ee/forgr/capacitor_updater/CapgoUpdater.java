@@ -2062,20 +2062,98 @@ public class CapgoUpdater {
         return STATS_MODE_BILLING_ONLY.equals(normalizeStatsMode(statsMode));
     }
 
+    static final Set<String> BILLING_STATS_PAYLOAD_KEYS = Set.of(
+        "platform",
+        "device_id",
+        "app_id",
+        "version_build",
+        "version_name",
+        "action",
+        "timestamp"
+    );
+
     public boolean allowsNonUpdateStats() {
         return STATS_MODE_ALL.equals(normalizeStatsMode(this.statsMode));
     }
 
-    private JSONObject createBillingStatsObject(final String versionName, final String action) throws JSONException {
-        JSONObject json = new JSONObject();
-        json.put("platform", "android");
-        json.put("device_id", this.deviceID);
-        json.put("app_id", this.appId);
-        json.put("version_build", this.versionBuild);
+    public void setStatsMode(final String statsMode) {
+        this.statsMode = normalizeStatsMode(statsMode);
+        filterPendingStatsForCurrentMode();
+    }
+
+    static JSONObject createBillingStatsPayload(
+        final String platform,
+        final String deviceId,
+        final String appId,
+        final String versionBuild,
+        final String versionName,
+        final String action,
+        final long timestamp
+    ) throws JSONException {
+        final JSONObject json = new JSONObject();
+        json.put("platform", platform);
+        json.put("device_id", deviceId);
+        json.put("app_id", appId);
+        json.put("version_build", versionBuild);
         json.put("version_name", versionName);
         json.put("action", action);
-        json.put("timestamp", System.currentTimeMillis());
+        json.put("timestamp", timestamp);
         return json;
+    }
+
+    private JSONObject createBillingStatsObject(final String versionName, final String action) throws JSONException {
+        return createBillingStatsObject(versionName, action, System.currentTimeMillis());
+    }
+
+    private JSONObject createBillingStatsObject(final String versionName, final String action, final long timestamp) throws JSONException {
+        return createBillingStatsPayload("android", this.deviceID, this.appId, this.versionBuild, versionName, action, timestamp);
+    }
+
+    private JSONObject prepareStatsEventForCurrentMode(final JSONObject event) {
+        if (event == null) {
+            return null;
+        }
+        final String action = event.optString("action", "");
+        if (!shouldSendStatsAction(action, this.statsMode)) {
+            return null;
+        }
+        if (!usesBillingStatsPayload(this.statsMode)) {
+            return event;
+        }
+        try {
+            final long timestamp = event.has("timestamp") ? event.optLong("timestamp") : System.currentTimeMillis();
+            return createBillingStatsObject(event.optString("version_name", ""), action, timestamp);
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    private void filterPendingStatsForCurrentMode() {
+        synchronized (statsQueue) {
+            final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue);
+            statsQueue.clear();
+            statsQueue.addAll(filteredQueue);
+
+            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight);
+            statsInFlight.clear();
+            statsInFlight.addAll(filteredInFlight);
+        }
+        persistStatsQueue();
+    }
+
+    private List<QueuedStatsEvent> filterQueuedStatsEvents(final List<QueuedStatsEvent> events) {
+        final List<QueuedStatsEvent> filtered = new ArrayList<>();
+        for (final QueuedStatsEvent queuedEvent : events) {
+            final JSONObject prepared = prepareStatsEventForCurrentMode(queuedEvent.event);
+            if (prepared == null) {
+                if (queuedEvent.onSent != null) {
+                    queuedEvent.onSent.run();
+                }
+                continue;
+            }
+            filtered.add(new QueuedStatsEvent(prepared, queuedEvent.onSent));
+        }
+        return filtered;
     }
 
     JSONObject firstQueuedStatsEventForTests() {
@@ -2960,6 +3038,9 @@ public class CapgoUpdater {
 
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
+            if (onSent != null) {
+                onSent.run();
+            }
             return;
         }
 
@@ -3027,7 +3108,10 @@ public class CapgoUpdater {
                 if (logger != null) {
                     logger.info("Restored " + statsQueue.size() + " pending stats events");
                 }
-                ensureStatsTimerStarted();
+                filterPendingStatsForCurrentMode();
+                if (!statsQueue.isEmpty()) {
+                    ensureStatsTimerStarted();
+                }
             }
         } catch (Exception e) {
             if (logger != null) {
@@ -3204,9 +3288,27 @@ public class CapgoUpdater {
         }
         persistStatsQueue();
 
+        final List<QueuedStatsEvent> deliverableEvents = new ArrayList<>();
         JSONArray jsonArray = new JSONArray();
         for (QueuedStatsEvent queuedEvent : eventsToSend) {
-            jsonArray.put(queuedEvent.event);
+            final JSONObject prepared = prepareStatsEventForCurrentMode(queuedEvent.event);
+            if (prepared == null) {
+                if (queuedEvent.onSent != null) {
+                    queuedEvent.onSent.run();
+                }
+                continue;
+            }
+            jsonArray.put(prepared);
+            deliverableEvents.add(new QueuedStatsEvent(prepared, queuedEvent.onSent));
+        }
+
+        if (jsonArray.length() == 0) {
+            synchronized (statsQueue) {
+                statsInFlight.clear();
+            }
+            persistStatsQueue();
+            statsFlushInFlight.set(false);
+            return;
         }
 
         Request request = new Request.Builder()
@@ -3214,7 +3316,7 @@ public class CapgoUpdater {
             .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
             .build();
 
-        final int eventCount = eventsToSend.size();
+        final int eventCount = deliverableEvents.size();
         DownloadService.sharedClient.newCall(request).enqueue(
             new okhttp3.Callback() {
                 @Override
@@ -3222,7 +3324,7 @@ public class CapgoUpdater {
                     if (abandonStoppedStatsFlush()) {
                         return;
                     }
-                    requeueStatsEvents(eventsToSend);
+                    requeueStatsEvents(deliverableEvents);
                     if (logger != null) {
                         logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
@@ -3238,7 +3340,7 @@ public class CapgoUpdater {
                         }
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(deliverableEvents);
                             return;
                         }
 
@@ -3251,9 +3353,9 @@ public class CapgoUpdater {
                                 logger.info("Stats batch sent successfully");
                                 logger.debug("Sent " + eventCount + " events");
                             }
-                            runStatsCallbacks(eventsToSend);
+                            runStatsCallbacks(deliverableEvents);
                         } else if (isTransientStatsFailure(response.code())) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(deliverableEvents);
                             if (logger != null) {
                                 logger.error("Error sending stats batch");
                                 logger.debug("Retrying later, response code: " + response.code());

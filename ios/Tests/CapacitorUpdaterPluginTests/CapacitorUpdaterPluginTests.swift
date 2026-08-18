@@ -600,6 +600,20 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testStatsModeUpdatesOnlySkipsHealthReporter() {
+        let defaults = UserDefaults.standard
+        let keys = [
+            "CapacitorUpdater.appSessionId",
+            "CapacitorUpdater.appSessionForeground",
+            "CapacitorUpdater.appSessionStartedAt",
+            "CapacitorUpdater.lastReportedUncleanSessionId"
+        ]
+        keys.forEach { defaults.removeObject(forKey: $0) }
+        defer { keys.forEach { defaults.removeObject(forKey: $0) } }
+
+        defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
+        defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
+        defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
+
         let implementation = HealthStatsCapgoUpdater()
         implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
         let tracker = AppHealthTracker(implementation: implementation)
@@ -626,7 +640,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.deviceID = "device-1"
         updater.appId = "com.example.app"
         updater.versionBuild = "1.0.0"
-        updater.statsMode = CapgoUpdater.statsModeBillingOnly
+        updater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
 
         updater.sendStats(action: "download_71", versionName: "1.0.0")
         updater.sendStats(action: "download_complete", versionName: "1.0.0")
@@ -634,14 +648,40 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let event = updater.firstQueuedStatsEventForTests()
         XCTAssertEqual(event?.action, "download_complete")
-        XCTAssertEqual(event?.app_id, "com.example.app")
-        XCTAssertEqual(event?.device_id, "device-1")
-        XCTAssertEqual(event?.version_build, "1.0.0")
-        XCTAssertEqual(event?.platform, "ios")
-        XCTAssertNotNil(event?.timestamp)
-        XCTAssertNil(event?.custom_id)
-        XCTAssertNil(event?.metadata)
-        XCTAssertNil(event?.plugin_version)
+        assertBillingPayloadKeysOnly(event)
+    }
+
+    func testStatsModeUpdatesOnlyDropsRestoredHealthEventsFromPendingQueue() throws {
+        let fileURL = libraryDirForStatsTests().appendingPathComponent("capgo_pending_stats.json")
+        let payload = """
+        [
+          {"action":"app_moved_to_background","timestamp":1,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"1.0.0"},
+          {"action":"set","timestamp":2,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"2.0.0"}
+        ]
+        """.data(using: .utf8)!
+        try payload.write(to: fileURL, options: .atomic)
+
+        let updater = CapgoUpdater()
+        updater.statsUrl = "https://example.com/stats"
+        updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+        updater.restorePendingStats()
+
+        XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "set")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    func testStatsModeChangeFiltersQueuedHealthEvents() {
+        let updater = CapgoUpdater()
+        updater.statsUrl = "https://example.com/stats"
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
+
+        updater.sendStats(action: "app_crash", versionName: "1.0.0")
+        updater.sendStats(action: "set", versionName: "2.0.0")
+
+        updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+
+        XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "set")
     }
 
     func testStatsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() {
@@ -684,6 +724,23 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeUpdatesOnly), CapgoUpdater.statsModeUpdatesOnly)
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeBillingOnly), CapgoUpdater.statsModeBillingOnly)
+    }
+
+    private func libraryDirForStatsTests() -> URL {
+        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+    }
+
+    private func assertBillingPayloadKeysOnly(_ event: StatsEvent?) {
+        guard let event else {
+            XCTFail("Expected billing stats event")
+            return
+        }
+        guard let data = try? JSONEncoder().encode(event),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            XCTFail("Failed to encode billing stats event")
+            return
+        }
+        XCTAssertEqual(Set(json.keys), CapgoUpdater.billingStatsPayloadKeys)
     }
 
     func testMapsWebViewErrorTypesToStatsActions() {
