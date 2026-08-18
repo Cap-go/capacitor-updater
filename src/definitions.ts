@@ -139,8 +139,11 @@ declare module '@capacitor/cli' {
        *   related failures). Drops health, WebView, launch timing, foreground/background markers,
        *   and native version change events. Full payload is kept.
        * - `billingOnly`: send only `set`, `download_complete`, and failure signals
-       *   (`set_fail`, `update_fail`, `download_fail`) with a reduced payload for customers who
-       *   still need minimal billing attribution without broad telemetry.
+       *   (`set_fail`, `update_fail`, `download_fail`) with a reduced payload that still
+       *   satisfies the Capgo `/stats` API: `app_id`, `device_id`, `platform`, `version_name`,
+       *   `version_os`, `is_emulator`, `is_prod`, `version_build`, and `plugin_version`.
+       *   Omits `custom_id`, `metadata`, `version_code`, `install_source`, `defaultChannel`,
+       *   `channel`, `key_id`, and `old_version_name`.
        *
        * Local JavaScript listeners such as `addListener('download')` are unchanged. This option
        * only affects native stats HTTP requests. Set `statsUrl` to `""` to disable all stats.
