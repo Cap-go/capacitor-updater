@@ -57,7 +57,13 @@ jobs:
         run: bunx capacitor-plugin-standard-version@latest --skip.changelog
       - name: Create version bump v7
         if: github.ref == 'refs/heads/v7'
-        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" = "7.50.2" ]; then
+            bunx capacitor-plugin-standard-version@latest --skip.changelog --release-as 7.51.13
+          else
+            bunx capacitor-plugin-standard-version@latest --skip.changelog
+          fi
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
