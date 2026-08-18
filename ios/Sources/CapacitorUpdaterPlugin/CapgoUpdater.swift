@@ -741,7 +741,7 @@ import UIKit
      * It MUST be called from a background queue to avoid blocking the main thread.
      */
     private func sendRateLimitStatistic() {
-        guard shouldSendStatsAction(
+        guard Self.shouldSendStatsAction(
             "rate_limit_reached",
             disableNonUpdateEvents: disableNonUpdateEvents,
             limitUpdateEventsToBilling: limitUpdateEventsToBilling
