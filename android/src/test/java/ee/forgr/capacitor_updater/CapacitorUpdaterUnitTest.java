@@ -4012,6 +4012,7 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapgoUpdater.shouldSendStatsAction("set", true, false));
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
         updater.deviceID = "device-1";
         updater.appId = "com.example.app";
@@ -4029,6 +4030,7 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapgoUpdater.shouldSendStatsAction("set", false, true));
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
         updater.deviceID = "device-1";
         updater.appId = "com.example.app";
@@ -4047,6 +4049,13 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(event.has("metadata"));
         assertFalse(event.has("plugin_version"));
         updater.shutdown();
+    }
+
+    private static void configureStatsTestUpdater(final CapgoUpdater updater) {
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        updater.prefs = prefs;
+        updater.versionBuild = "1.0.0";
+        when(prefs.getString("", "public")).thenReturn("public");
     }
 
     private static byte[] hexToBytes(String hex) {
