@@ -2106,7 +2106,9 @@ public class CapgoUpdater {
     }
 
     private void filterPendingStatsForCurrentMode() {
+        final boolean hadQueuedEvents;
         synchronized (statsQueue) {
+            hadQueuedEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
             final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue);
             statsQueue.clear();
             statsQueue.addAll(filteredQueue);
@@ -2115,7 +2117,9 @@ public class CapgoUpdater {
             statsInFlight.clear();
             statsInFlight.addAll(filteredInFlight);
         }
-        persistStatsQueue();
+        if (hadQueuedEvents) {
+            persistStatsQueue();
+        }
     }
 
     private List<QueuedStatsEvent> filterQueuedStatsEvents(final List<QueuedStatsEvent> events) {
