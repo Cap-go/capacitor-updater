@@ -2505,11 +2505,16 @@ import UIKit
             logger.debug("Error: \(error.localizedDescription)")
         }
 
+        if let thread = threadToCheck, thread.isCancelled {
+            logger.warn("cleanupOrphanedTempFolders was cancelled")
+            return
+        }
+
         // Also cleanup old download temp files (package_*.tmp and update_*.dat)
-        cleanupOldDownloadTempFiles()
+        cleanupOldDownloadTempFiles(threadToCheck: threadToCheck)
     }
 
-    private func cleanupOldDownloadTempFiles() {
+    private func cleanupOldDownloadTempFiles(threadToCheck: Thread? = nil) {
         let fileManager = FileManager.default
         guard let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return
@@ -2520,6 +2525,10 @@ import UIKit
             let oneHourAgo = Date().addingTimeInterval(-3600)
 
             for url in contents {
+                if let thread = threadToCheck, thread.isCancelled {
+                    logger.warn("cleanupOldDownloadTempFiles was cancelled")
+                    return
+                }
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
                 let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||

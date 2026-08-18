@@ -1124,6 +1124,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // cannot leave hundreds of MB behind across launches.
             let allowedIds = self.implementation.allowedBundleIdsForCleanup()
             self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
+            if Thread.current.isCancelled {
+                return
+            }
             self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
 
             if self.defaultChannelCleanupMustRetry {
