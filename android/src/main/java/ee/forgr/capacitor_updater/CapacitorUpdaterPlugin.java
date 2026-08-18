@@ -50,6 +50,7 @@ import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
 import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -68,6 +69,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -103,6 +105,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     private static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
     private static final String PREVIEW_SESSION_PREF_KEY = "CapacitorUpdater.previewSession";
+    private static final String DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY = "CapacitorUpdater.defaultChannelInstallMarkerCreated";
+    private static final String DEFAULT_CHANNEL_INSTALL_MARKER_FILE = "CapacitorUpdater.defaultChannelInstallMarker";
     private static final String PREVIEW_PREVIOUS_SHAKE_MENU_PREF_KEY = "CapacitorUpdater.previewPreviousShakeMenu";
     private static final String PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY = "CapacitorUpdater.previewPreviousShakeChannelSelector";
     private static final String PREVIEW_PREVIOUS_NEXT_BUNDLE_PREF_KEY = "CapacitorUpdater.previewPreviousNextBundle";
@@ -142,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "7.50.1";
+    private final String pluginVersion = "7.51.13";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -151,6 +155,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
     private Boolean persistModifyUrl = false;
+    private Boolean persistDefaultChannelOnReinstall = true;
 
     private Integer appReadyTimeout = 10000;
     private Integer periodCheckDelay = 0;
@@ -215,6 +220,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
+    // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
+    private volatile boolean pendingNotifyAppReadyWait = false;
+    private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
@@ -227,8 +235,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Lock to ensure cleanup completes before downloads start
     private final Object cleanupLock = new Object();
+    private volatile CountDownLatch cleanupLatch = new CountDownLatch(0);
     private volatile boolean cleanupComplete = false;
     private volatile Thread cleanupThread = null;
+    private volatile boolean defaultChannelCleanupMustRetry = false;
 
     private int lastNotifiedStatPercent = 0;
 
@@ -236,6 +246,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private ShakeMenu shakeMenu;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final long launchStartedAtMs = System.currentTimeMillis();
+    private volatile long webViewPageStartedAtMs = 0;
+    private volatile boolean launchStartReported = false;
+    private volatile boolean launchReadyReported = false;
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
     private FrameLayout previewTransitionLoaderOverlay;
@@ -267,6 +281,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // App lifecycle observer using ProcessLifecycleOwner for reliable foreground/background detection
     private AppLifecycleObserver appLifecycleObserver;
+
+    private boolean isProcessLifecycleObserverActive() {
+        return this.appLifecycleObserver != null && this.appLifecycleObserver.isRegistered();
+    }
 
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
@@ -747,6 +765,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
+        this.persistDefaultChannelOnReinstall = this.getConfig().getBoolean("persistDefaultChannelOnReinstall", true);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
         this.implementation.setPublicKey(this.getConfig().getString("publicKey", ""));
         // Log public key prefix if encryption is enabled
@@ -773,6 +792,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
 
+        final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
+        final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
+        final boolean defaultChannelPersistenceDisabled = !Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall);
+        final boolean restoredReinstall = defaultChannelPersistenceDisabled && this.isRestoredReinstall();
+        boolean installMarkerCanBePrepared = true;
+        if (
+            shouldClearPersistedDefaultChannel(
+                Boolean.TRUE.equals(this.persistDefaultChannelOnReinstall),
+                resetWhenUpdate,
+                nativeBuildVersionChanged,
+                restoredReinstall
+            )
+        ) {
+            installMarkerCanBePrepared = clearPersistedDefaultChannel(this.editor);
+            if (installMarkerCanBePrepared) {
+                logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled");
+            } else {
+                logger.warn("Cannot durably clear persisted defaultChannel");
+                this.defaultChannelCleanupMustRetry = true;
+                if (!invalidateDefaultChannelInstallMarker(this.defaultChannelInstallMarker())) {
+                    logger.warn("Cannot invalidate default channel install marker for cleanup retry");
+                }
+            }
+        }
+        if (defaultChannelPersistenceDisabled && installMarkerCanBePrepared) {
+            this.prepareDefaultChannelInstallMarker();
+        }
+
+        final String configDefaultChannel = this.getConfig().getString("defaultChannel", "");
         // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
         if (this.prefs.contains(DEFAULT_CHANNEL_PREF_KEY)) {
             final String storedDefaultChannel = this.prefs.getString(DEFAULT_CHANNEL_PREF_KEY, "");
@@ -780,20 +828,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.implementation.defaultChannel = storedDefaultChannel;
                 logger.info("Loaded persisted defaultChannel from setChannel()");
             } else {
-                this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+                this.implementation.defaultChannel = configDefaultChannel;
             }
         } else {
-            this.implementation.defaultChannel = this.getConfig().getString("defaultChannel", "");
+            this.implementation.defaultChannel = configDefaultChannel;
         }
 
         this.periodCheckDelay = normalizedPeriodCheckDelayMs(this.getConfig().getInt("periodCheckDelay", 0));
 
         this.implementation.documentsDir = this.getContext().getFilesDir();
+        this.implementation.noBackupDir = this.getContext().getNoBackupFilesDir();
         this.implementation.prefs = this.prefs;
         this.implementation.editor = this.editor;
         this.implementation.versionOs = Build.VERSION.RELEASE;
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
+        this.implementation.restorePendingStats();
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
@@ -807,6 +857,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
+        this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
@@ -851,11 +902,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 ? this.prefs.getBoolean(PREVIEW_PREVIOUS_SHAKE_CHANNEL_SELECTOR_PREF_KEY, false)
                 : this.shakeChannelSelectorEnabled;
         }
-        boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
 
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
-        final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
 
         this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
         if (nativeBuildVersionChanged) {
@@ -866,11 +915,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
-        if (resetWhenUpdate) {
-            this.cleanupObsoleteVersions();
-        } else {
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        this.implementation.downloadGate = this::waitForCleanupIfNeeded;
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan folders every launch. Must not block app startup.
+        if (!resetWhenUpdate) {
             this.persistCurrentNativeBuildVersion();
         }
+        this.cleanupObsoleteVersions(resetWhenUpdate);
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed by the system (onDestroy is not reliable)
@@ -899,11 +951,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 },
                 logger
             );
-            this.appLifecycleObserver.register();
-            logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
+            this.appLifecycleObserver.register(this.getContext());
+            if (!this.appLifecycleObserver.isRegistered()) {
+                logger.warn("ProcessLifecycleOwner unavailable; using activity lifecycle callbacks");
+            } else {
+                logger.info("Using ProcessLifecycleOwner for foreground/background detection (Android 14+)");
+            }
         } else {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
+
+        // Expect notifyAppReady before the first appReady/splash hide (same idea as iOS).
+        this.armPendingNotifyAppReadyWait();
     }
 
     private boolean semaphoreWait(final int phase, Number waitTime) {
@@ -946,6 +1005,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         semaphoreReady.arriveAndDeregister();
     }
 
+    private void armPendingNotifyAppReadyWait() {
+        this.clearPendingNotifyAppReadyWait();
+        this.pendingNotifyAppReadyPhase = this.semaphoreUp();
+        this.pendingNotifyAppReadyWait = true;
+    }
+
+    private void clearPendingNotifyAppReadyWait() {
+        if (!this.pendingNotifyAppReadyWait) {
+            return;
+        }
+        final int phase = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        this.cleanupTimedOutSemaphoreWait(phase);
+    }
+
+    private boolean consumePendingNotifyAppReadyWait(final int[] phaseOut) {
+        if (!this.pendingNotifyAppReadyWait) {
+            return false;
+        }
+        phaseOut[0] = this.pendingNotifyAppReadyPhase;
+        this.pendingNotifyAppReadyWait = false;
+        this.pendingNotifyAppReadyPhase = -1;
+        return true;
+    }
+
     protected long getMinimumPendingBundleAppReadyTimeoutMs() {
         return PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS;
     }
@@ -984,19 +1069,40 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
         logger.info("sendReadyToJs: " + msg);
-        final JSObject ret = new JSObject();
-        ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-        ret.put("status", msg);
+        final int[] pendingPhase = new int[] { -1 };
+        final boolean shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
 
-        // No need to wait for semaphore anymore since _reload() has already waited
-        this.notifyListeners("appReady", ret, true);
+        final Runnable emitReady = () -> {
+            final JSObject ret = new JSObject();
+            ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+            ret.put("status", msg);
 
-        // Auto hide splashscreen if enabled
-        // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-        if (this.autoSplashscreen) {
-            this.hideSplashscreen();
+            this.notifyListeners("appReady", ret, true);
+
+            // Auto hide splashscreen if enabled
+            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
+            if (this.autoSplashscreen) {
+                this.hideSplashscreen();
+            }
+            this.hidePreviewTransitionLoader("app-ready");
+        };
+
+        if (!shouldWait) {
+            emitReady.run();
+            return;
         }
-        this.hidePreviewTransitionLoader("app-ready");
+
+        // Never block the UI thread waiting for notifyAppReady (JS needs it).
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startNewThread(() -> {
+                this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+                emitReady.run();
+            });
+            return;
+        }
+
+        this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+        emitReady.run();
     }
 
     private void hideSplashscreen() {
@@ -1300,6 +1406,74 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return false;
     }
 
+    static boolean shouldClearPersistedDefaultChannel(
+        final boolean persistDefaultChannelOnReinstall,
+        final boolean resetWhenUpdate,
+        final boolean nativeBuildVersionChanged,
+        final boolean restoredReinstall
+    ) {
+        return !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged));
+    }
+
+    static boolean clearPersistedDefaultChannel(final SharedPreferences.Editor editor) {
+        editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
+        return editor.commit();
+    }
+
+    private File defaultChannelInstallMarker() {
+        return new File(this.getContext().getNoBackupFilesDir(), DEFAULT_CHANNEL_INSTALL_MARKER_FILE);
+    }
+
+    static boolean invalidateDefaultChannelInstallMarker(final File marker) {
+        return !marker.exists() || marker.delete();
+    }
+
+    private boolean isRestoredReinstall() {
+        return isRestoredReinstall(
+            this.defaultChannelInstallMarker(),
+            this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false)
+        );
+    }
+
+    static boolean isRestoredReinstall(final File marker, final boolean markerWasCreated) {
+        return markerWasCreated && !marker.exists();
+    }
+
+    private void prepareDefaultChannelInstallMarker() {
+        prepareDefaultChannelInstallMarker(
+            this.defaultChannelInstallMarker(),
+            this.prefs.getBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, false),
+            this.editor,
+            this.logger
+        );
+    }
+
+    static void prepareDefaultChannelInstallMarker(
+        final File marker,
+        final boolean markerWasCreated,
+        final SharedPreferences.Editor editor,
+        final Logger logger
+    ) {
+        if (!marker.exists()) {
+            try {
+                if (!marker.createNewFile() && !marker.exists()) {
+                    throw new IOException("Marker file was not created");
+                }
+            } catch (final IOException e) {
+                logger.warn("Cannot create default channel install marker: " + e.getMessage());
+                editor.remove(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY);
+                editor.commit();
+                return;
+            }
+        }
+        if (!markerWasCreated) {
+            editor.putBoolean(DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY, true);
+            editor.apply();
+        }
+    }
+
     private boolean hasNativeBuildVersionChanged() {
         final String lastKnownVersion = this.getStoredNativeBuildVersion();
         return !lastKnownVersion.isEmpty() && !lastKnownVersion.equals(this.currentBuildVersion);
@@ -1486,11 +1660,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.webViewStatsListener = new WebViewListener() {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
         };
@@ -1554,6 +1730,73 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Unable to evaluate WebView stats reporter: " + e.getMessage());
             }
         });
+    }
+
+    private void reportAppLaunchStart() {
+        if (
+            this.implementation == null ||
+            this.implementation.statsUrl == null ||
+            this.implementation.statsUrl.isEmpty() ||
+            this.launchStartReported
+        ) {
+            return;
+        }
+
+        this.launchStartReported = true;
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("source", "plugin_load");
+        this.implementation.sendStats("app_launch_start", current == null ? "" : current.getVersionName(), "", metadata);
+    }
+
+    private void reportAppLaunchReady(final BundleInfo bundle) {
+        if (
+            this.implementation == null ||
+            this.implementation.statsUrl == null ||
+            this.implementation.statsUrl.isEmpty() ||
+            this.launchReadyReported
+        ) {
+            return;
+        }
+
+        this.launchReadyReported = true;
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("source", "notify_app_ready");
+        this.implementation.sendStats("app_launch_ready", bundle == null ? "" : bundle.getVersionName(), "", metadata);
+    }
+
+    private void reportAppLaunchTimeout(final BundleInfo bundle) {
+        if (this.implementation == null || this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
+        metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
+        metadata.put("timeout_ms", Long.toString(this.appReadyTimeout));
+        metadata.put("source", "app_ready_timeout");
+        this.implementation.sendStats("app_launch_timeout", bundle == null ? "" : bundle.getVersionName(), "", metadata);
+    }
+
+    private void reportWebViewPageLoaded(final android.webkit.WebView view) {
+        if (this.implementation == null || this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("source", "android_webview_listener");
+        final long pageStartedAt = this.webViewPageStartedAtMs;
+        if (pageStartedAt > 0) {
+            metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - pageStartedAt)));
+            metadata.put("page_started_at", Long.toString(pageStartedAt));
+        }
+        if (view != null && view.getUrl() != null && !view.getUrl().isEmpty()) {
+            metadata.put("href", truncateStatsMetadataValue(sanitizeStatsMetadataUrl(view.getUrl()), 512));
+        }
+        this.reportWebViewStats("webview_page_loaded", metadata);
     }
 
     private Map<String, String> buildWebViewRenderProcessGoneMetadata(final Object detailObj) {
@@ -1664,6 +1907,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return "webview_render_process_gone";
             case "web_content_process_terminated":
                 return "webview_content_process_terminated";
+            case "webview_dom_content_loaded":
+                return "webview_dom_content_loaded";
+            case "webview_page_loaded":
+                return "webview_page_loaded";
             case "javascript_error":
             default:
                 return "webview_javascript_error";
@@ -1682,6 +1929,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         putStatsMetadataValue(metadata, "href", sanitizeStatsMetadataUrl(data.optString("href", "")), 512);
         putStatsMetadataValue(metadata, "user_agent", data.optString("user_agent", ""), 256);
         putStatsMetadataValue(metadata, "session_id", data.optString("session_id", ""), 128);
+        putStatsMetadataValue(metadata, "duration_ms", data.optString("duration_ms", ""), 32);
+        putStatsMetadataValue(metadata, "page_started_at", data.optString("page_started_at", ""), 64);
         putStatsMetadataValue(metadata, "previous_session_id", data.optString("previous_session_id", ""), 128);
         putStatsMetadataValue(metadata, "previous_href", sanitizeStatsMetadataUrl(data.optString("previous_href", "")), 512);
         putStatsMetadataValue(metadata, "previous_started_at", data.optString("previous_started_at", ""), 64);
@@ -1814,12 +2063,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             "if(previous&&previous.active){send({type:'webview_unclean_restart',message:'WebView restarted without a clean page unload',previous_session_id:s(previous.id),previous_href:s(previous.href),previous_started_at:s(previous.started_at),previous_updated_at:s(previous.updated_at)});}" +
             "writeSession(true);" +
             "setInterval(function(){writeSession(true);},15000);" +
+            "function pageDuration(){var started=Number(window.__capgoWebViewSessionStartedAt||Date.now());return String(Math.max(0,Date.now()-started));}" +
             "function markClean(){writeSession(false);}" +
             "window.addEventListener('pagehide',markClean,true);" +
             "window.addEventListener('beforeunload',markClean,true);" +
             "window.addEventListener('error',function(event){var target=event&&event.target;if(target&&target!==window&&(target.src||target.href)){send({type:'resource_error',message:'Resource failed to load',source:s(target.src||target.href),tag_name:s(target.tagName)});return;}send({type:'javascript_error',message:s((event&&event.message)||(event&&event.error)),source:s(event&&event.filename),line:s(event&&event.lineno),column:s(event&&event.colno),stack:stack(event&&event.error)});},true);" +
             "window.addEventListener('unhandledrejection',function(event){var reason=event&&event.reason;send({type:'unhandled_rejection',message:s(reason),stack:stack(reason)});},true);" +
             "document.addEventListener('securitypolicyviolation',function(event){send({type:'security_policy_violation',message:s(event&&event.violatedDirective),source:s(event&&event.blockedURI)});},true);" +
+            "document.addEventListener('DOMContentLoaded',function(){send({type:'webview_dom_content_loaded',message:'WebView DOM content loaded',duration_ms:pageDuration(),page_started_at:String(window.__capgoWebViewSessionStartedAt)});},true);" +
             "document.addEventListener('deviceready',scheduleFlush,false);" +
             "setTimeout(scheduleFlush,0);" +
             "})();"
@@ -2140,67 +2391,57 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return false;
     }
 
-    private void cleanupObsoleteVersions() {
+    private void cleanupObsoleteVersions(final boolean resetWhenUpdate) {
+        // Latch created before start so waiters never race past an unstarted cleanup thread.
+        final CountDownLatch latch = new CountDownLatch(1);
+        this.cleanupComplete = false;
+        this.cleanupLatch = latch;
         cleanupThread = startNewThread(() -> {
-            synchronized (cleanupLock) {
-                try {
-                    final String previous = this.getStoredNativeBuildVersion();
-                    if (!"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous)) {
-                        logger.info("New native build version detected: " + this.currentBuildVersion);
-                        this.implementation.reset(true);
-                        final List<BundleInfo> installed = this.implementation.list(false);
-                        for (final BundleInfo bundle : installed) {
-                            // Check if thread was interrupted (cancelled)
-                            if (Thread.currentThread().isInterrupted()) {
-                                logger.warn("Cleanup was cancelled, stopping");
-                                return;
-                            }
-                            try {
-                                logger.info("Deleting obsolete bundle: " + bundle.getId());
-                                this.implementation.delete(bundle.getId());
-                            } catch (final Exception e) {
-                                logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
-                            }
-                        }
-                        final List<BundleInfo> storedBundles = this.implementation.list(true);
-                        final Set<String> allowedIds = new HashSet<>();
-                        for (final BundleInfo info : storedBundles) {
-                            if (info != null && info.getId() != null && !info.getId().isEmpty()) {
-                                allowedIds.add(info.getId());
-                            }
-                        }
-                        this.implementation.cleanupDownloadDirectories(allowedIds, Thread.currentThread());
-                        this.implementation.cleanupOrphanedTempFolders(Thread.currentThread());
-
-                        // Check again before the expensive delta cache cleanup
-                        if (Thread.currentThread().isInterrupted()) {
-                            logger.warn("Cleanup was cancelled before delta cache cleanup");
-                            return;
-                        }
-                        this.implementation.cleanupDeltaCache(Thread.currentThread());
-                    }
-                    this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
-                    this.editor.apply();
-                } catch (Exception e) {
-                    logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
-                } finally {
-                    cleanupComplete = true;
-                    logger.info("Cleanup complete");
-                }
-            }
-        });
-
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        final long timeout = this.appReadyTimeout / 2;
-        startNewThread(() -> {
             try {
-                Thread.sleep(timeout);
-                if (cleanupThread != null && cleanupThread.isAlive() && !cleanupComplete) {
-                    logger.warn("Cleanup timeout exceeded (" + timeout + "ms), interrupting cleanup thread");
-                    cleanupThread.interrupt();
+                synchronized (cleanupLock) {
+                    try {
+                        final String previous = this.getStoredNativeBuildVersion();
+                        final boolean nativeVersionChanged = !"".equals(previous) && !Objects.equals(this.currentBuildVersion, previous);
+                        if (resetWhenUpdate && nativeVersionChanged) {
+                            logger.info("New native build version detected: " + this.currentBuildVersion);
+                            this.implementation.reset(true);
+                            final List<BundleInfo> installed = this.implementation.list(false);
+                            for (final BundleInfo bundle : installed) {
+                                try {
+                                    logger.info("Deleting obsolete bundle: " + bundle.getId());
+                                    this.implementation.delete(bundle.getId());
+                                } catch (final Exception e) {
+                                    logger.error("Failed to delete: " + bundle.getId() + " " + e.getMessage());
+                                }
+                                try {
+                                    Thread.sleep(75L);
+                                } catch (final InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                            }
+                            this.implementation.cleanupDeltaCache();
+                        }
+
+                        // Resume any DELETING leftovers from prior kills, one-by-one.
+                        this.implementation.drainPendingDeletes();
+
+                        // Always sweep orphan folders so incomplete prior cleanups (or failed deletes)
+                        // cannot leave hundreds of MB behind across launches.
+                        final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
+                        this.implementation.cleanupDownloadDirectories(allowedIds);
+                        this.implementation.cleanupOrphanedTempFolders(null);
+
+                        this.persistCurrentNativeBuildVersion();
+                    } catch (Exception e) {
+                        logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
+                    } finally {
+                        cleanupComplete = true;
+                        logger.info("Cleanup complete");
+                    }
                 }
-            } catch (InterruptedException e) {
-                // Watchdog thread was interrupted, that's fine
+            } finally {
+                latch.countDown();
             }
         });
     }
@@ -2214,6 +2455,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void persistCurrentNativeBuildVersion() {
+        if (this.defaultChannelCleanupMustRetry) {
+            logger.warn("Keeping the previous native build version so default channel cleanup retries");
+            return;
+        }
         this.editor.putString("LatestNativeBuildVersion", this.currentBuildVersion);
         this.editor.apply();
     }
@@ -2224,11 +2469,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...");
-
-        // Wait for cleanup to complete - blocks until lock is released
-        synchronized (cleanupLock) {
-            logger.info("Cleanup finished, proceeding with download");
+        try {
+            this.cleanupLatch.await();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for cleanup");
+            throw new IllegalStateException("Interrupted while waiting for cleanup");
         }
+        logger.info("Cleanup finished, proceeding with download");
     }
 
     public void notifyDownload(final String id, final int percent) {
@@ -2566,6 +2814,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
+        waitForCleanupIfNeeded();
         if (manifest != null) {
             return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
         }
@@ -2739,6 +2989,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
+        // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
+        this.clearPendingNotifyAppReadyWait();
         final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
@@ -3748,7 +4000,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                 new AlertDialog.Builder(getActivity())
                     .setTitle("Preview started")
-                    .setMessage("Shake your device anytime to reload or leave the test app.")
+                    .setMessage("shake".equals(this.shakeMenuGesture) ? "Shake to open menu." : "Three-finger pinch to open menu.")
                     .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
                     .show();
             } catch (final Exception e) {
@@ -4199,6 +4451,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
+            this.reportAppLaunchReady(bundle);
             logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle);
             logger.info("semaphoreReady countDown");
             this.semaphoreDown();
@@ -4873,19 +5126,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
             this.persistLastFailedBundle(current);
             this.notifyListeners("updateFailed", ret);
+            this.reportAppLaunchTimeout(current);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
             this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
-                logger.info("Deleting failing bundle: " + current.getVersionName());
-                try {
-                    final Boolean res = this.implementation.delete(current.getId(), false);
-                    if (res) {
-                        logger.info("Failed bundle deleted: " + current.getVersionName());
+                final String failedId = current.getId();
+                final String failedVersion = current.getVersionName();
+                logger.info("Deleting failing bundle: " + failedVersion);
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
+                startNewThread(() -> {
+                    try {
+                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
+                        if (Boolean.TRUE.equals(res)) {
+                            logger.info("Failed bundle deleted: " + failedVersion);
+                        }
+                    } catch (final IOException e) {
+                        logger.error("Failed to delete failed bundle: " + failedVersion + " " + e.getMessage());
                     }
-                } catch (final IOException e) {
-                    logger.error("Failed to delete failed bundle: " + current.getVersionName() + " " + e.getMessage());
-                }
+                });
             }
         } else {
             logger.info("notifyAppReady was called. This is fine: " + current.getId());
@@ -5000,6 +5260,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Do other background work after splashscreen is shown
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_background", current.getVersionName());
+        CapacitorUpdaterPlugin.this.implementation.persistPendingStats();
         logger.info("Checking for pending update");
 
         try {
@@ -5075,9 +5336,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             // On Android < 14, use activity lifecycle for foreground detection
             // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                if (isPreviousMainActivity) {
-                    logger.info("handleOnStart: appMovedToForeground (Android <14 path)");
+            if (!this.isProcessLifecycleObserverActive()) {
+                if (isPreviousMainActivity || Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    logger.info("handleOnStart: appMovedToForeground");
                     this.appMovedToForeground();
                 }
                 isPreviousMainActivity = true;
@@ -5096,11 +5357,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             // On Android < 14, use activity lifecycle for background detection
             // On Android 14+, ProcessLifecycleOwner handles this via AppLifecycleObserver
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                isPreviousMainActivity = isMainActivity();
-                if (isPreviousMainActivity) {
-                    logger.info("handleOnStop: appMovedToBackground (Android <14 path)");
+            if (!this.isProcessLifecycleObserverActive()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    logger.info("handleOnStop: appMovedToBackground");
                     this.appMovedToBackground();
+                } else {
+                    isPreviousMainActivity = isMainActivity();
+                    if (isPreviousMainActivity) {
+                        logger.info("handleOnStop: appMovedToBackground (Android <14 path)");
+                        this.appMovedToBackground();
+                    }
                 }
             }
         } catch (Exception e) {

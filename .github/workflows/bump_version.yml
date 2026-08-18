@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - development
+      - v7
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
@@ -31,7 +32,7 @@ jobs:
         with:
           node-version: 24.x
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           filter: blob:none
@@ -54,6 +55,16 @@ jobs:
       - name: Create version bump main
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest --skip.changelog
+      - name: Tag existing version v7
+        if: github.ref == 'refs/heads/v7'
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists"
+            exit 0
+          fi
+          git tag "$VERSION"
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog

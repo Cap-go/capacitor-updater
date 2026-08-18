@@ -14,8 +14,24 @@ Current runners:
 
 - Android: `android/src/test/java/ee/forgr/capacitor_updater/NativeContractTest.java`
 - iOS: `ios/Tests/CapacitorUpdaterPluginTests/NativeContractTests.swift`
+- Android: `android/src/test/java/ee/forgr/capacitor_updater/RsaContractTest.java`
+- iOS: `ios/Tests/CapacitorUpdaterPluginTests/RsaContractTests.swift`
 
-Run them with:
+RSA public-decrypt fixtures live in `native-contract-tests/crypto-rsa.json`.
+Regenerate them with:
+
+```bash
+bun scripts/generate-rsa-contract-fixtures.mjs
+```
+
+Run RSA contract tests with:
+
+```bash
+bun run native:contract:crypto:ios
+bun run native:contract:crypto:android
+```
+
+Run core contract tests with:
 
 ```bash
 bun run native:contract:android
