@@ -2315,6 +2315,10 @@ import UIKit
         var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
         pendingIds.formUnion(self.getPendingDeleteIds())
         for id in pendingIds {
+            if Thread.current.isCancelled {
+                logger.warn("drainPendingDeletes was cancelled")
+                return
+            }
             logger.info("Resuming pending delete for bundle: \(id)")
             if self.delete(id: id, removeInfo: true) {
                 self.dequeuePendingDelete(id: id)

@@ -2854,7 +2854,17 @@ public class CapgoUpdater {
 
     public void restorePendingStats() {
         File file = pendingStatsFile();
-        if (file == null || !file.exists()) {
+        if (file == null) {
+            return;
+        }
+        File backup = new File(file.getAbsolutePath() + ".bak");
+        if (!file.exists() && backup.exists() && !backup.renameTo(file)) {
+            if (logger != null) {
+                logger.error("Failed to restore stats backup");
+            }
+            return;
+        }
+        if (!file.exists()) {
             return;
         }
         try {

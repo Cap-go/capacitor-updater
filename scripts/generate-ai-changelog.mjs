@@ -39,10 +39,16 @@ function resolveTags({ fromTag, toTag }) {
   const major = currentTag.match(/^v?(\d+)/)?.[1];
   const describeArgs = ['describe', '--tags', '--abbrev=0'];
   if (major) {
-    describeArgs.push(`--match=${major}.*`);
+    try {
+      return {
+        previousTag: git([...describeArgs, `--match=${major}.*`, `--match=v${major}.*`, `${currentTag}^`]),
+        currentTag,
+      };
+    } catch {
+      // First release of a new major has no same-major predecessor.
+    }
   }
-  describeArgs.push(`${currentTag}^`);
-  return { previousTag: git(describeArgs), currentTag };
+  return { previousTag: git([...describeArgs, `${currentTag}^`]), currentTag };
 }
 
 function buildPrompt(previousTag, currentTag) {
@@ -91,7 +97,10 @@ async function generateChangelog(prompt, model) {
     throw new Error('CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required.');
   }
 
-  const timeoutMs = Math.min(600000, Math.max(1000, Number(process.env.CHANGELOG_AI_TIMEOUT_MS || 60000)));
+  const configuredTimeoutMs = Number(process.env.CHANGELOG_AI_TIMEOUT_MS || 60000);
+  const timeoutMs = Number.isFinite(configuredTimeoutMs)
+    ? Math.min(600000, Math.max(1000, Math.trunc(configuredTimeoutMs)))
+    : 60000;
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
   const response = await fetch(url, {
     method: 'POST',

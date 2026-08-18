@@ -3778,6 +3778,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void restorePendingStatsRecoversBackupWhenQueueFileMissing() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-bak");
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        Files.write(backup.toPath(), "[{\"action\":\"download_fail\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.restorePendingStats();
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertTrue(tempDir.resolve("capgo_pending_stats.json").toFile().exists());
+        assertFalse(backup.exists());
+        updater.shutdown();
+    }
+
+    @Test
     public void ioBuffersAre256KiBForChecksumAndCopy() {
         assertEquals(256 * 1024, CryptoCipher.ioBufferBytes());
         assertEquals(256 * 1024, CryptoCipher.checksumBufferBytes());

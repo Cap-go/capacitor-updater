@@ -251,6 +251,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
     private volatile boolean launchTimeoutReported = false;
+    private final Object launchReportLock = new Object();
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
     private FrameLayout previewTransitionLoaderOverlay;
@@ -1752,16 +1753,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reportAppLaunchReady(final BundleInfo bundle) {
-        if (
-            this.implementation == null ||
-            this.implementation.statsUrl == null ||
-            this.implementation.statsUrl.isEmpty() ||
-            this.launchReadyReported
-        ) {
-            return;
+        synchronized (this.launchReportLock) {
+            if (
+                this.implementation == null ||
+                this.implementation.statsUrl == null ||
+                this.implementation.statsUrl.isEmpty() ||
+                this.launchReadyReported ||
+                this.launchTimeoutReported
+            ) {
+                return;
+            }
+            this.launchReadyReported = true;
         }
-
-        this.launchReadyReported = true;
         final Map<String, String> metadata = new HashMap<>();
         metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
         metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
@@ -1770,17 +1773,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reportAppLaunchTimeout(final BundleInfo bundle) {
-        if (
-            this.implementation == null ||
-            this.implementation.statsUrl == null ||
-            this.implementation.statsUrl.isEmpty() ||
-            this.launchReadyReported ||
-            this.launchTimeoutReported
-        ) {
-            return;
+        synchronized (this.launchReportLock) {
+            if (
+                this.implementation == null ||
+                this.implementation.statsUrl == null ||
+                this.implementation.statsUrl.isEmpty() ||
+                this.launchReadyReported ||
+                this.launchTimeoutReported
+            ) {
+                return;
+            }
+            this.launchTimeoutReported = true;
         }
-
-        this.launchTimeoutReported = true;
         final Map<String, String> metadata = new HashMap<>();
         metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
         metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
