@@ -3436,10 +3436,6 @@ public class CapgoUpdater {
             }
 
             try {
-                final String action = sentEvent.event.optString("action", "");
-                if (!shouldSendStatsAction(action, this.statsMode)) {
-                    continue;
-                }
                 sentEvent.onSent.run();
             } catch (Exception e) {
                 if (logger != null) {

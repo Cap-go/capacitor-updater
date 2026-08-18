@@ -3567,10 +3567,6 @@ import UIKit
 
     private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
         for sentEvent in sentEvents {
-            let action = sentEvent.event.action ?? ""
-            guard Self.shouldSendStatsAction(action, statsMode: statsMode) else {
-                continue
-            }
             sentEvent.onSent?()
         }
     }
