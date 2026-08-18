@@ -99,7 +99,7 @@ public class BundleInfo {
     }
 
     public boolean isDownloaded() {
-        return (!this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted() && !this.isDeleting());
+        return !this.isBuiltin() && this.downloaded != null && !this.downloaded.isEmpty() && !this.isDeleted() && !this.isDeleting();
     }
 
     public String getDownloaded() {
