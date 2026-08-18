@@ -318,7 +318,8 @@ import UIKit
         if isSafeCacheHash(hash) && hash.count == 64 {
             return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
         }
-        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(token).tmp")
+        let digest = CryptoCipher.shortPathKey("\(hash)|\(fileName)")
+        return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
     }
 
     private func cleanupOldManifestPartials() {
@@ -2254,6 +2255,7 @@ import UIKit
         if !hadRegistry && !hadFolder {
             logger.error("Cannot delete unknown bundle")
             logger.debug("Bundle ID: \(id)")
+            self.dequeuePendingDelete(id: id)
             return false
         }
 

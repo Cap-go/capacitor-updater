@@ -76,8 +76,10 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    // HTTP + decode share one pool. Cap per host by CPU: 8 on 4 cores, 16 on 8 cores.
+    // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
     private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
+    private static final int SHARED_MAX_REQUESTS = 64;
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
@@ -89,7 +91,7 @@ public class DownloadService extends Worker {
     // Initialize shared client with User-Agent interceptor
     static {
         Dispatcher dispatcher = new Dispatcher();
-        dispatcher.setMaxRequests(MANIFEST_MAX_CONCURRENT_FILES);
+        dispatcher.setMaxRequests(SHARED_MAX_REQUESTS);
         dispatcher.setMaxRequestsPerHost(MANIFEST_MAX_CONCURRENT_FILES);
         sharedClient = new OkHttpClient.Builder()
             .dispatcher(dispatcher)
@@ -905,12 +907,9 @@ public class DownloadService extends Worker {
             } catch (IOException e) {
                 String msg = e.getMessage();
                 if (msg != null && msg.contains("Checksum verification failed")) {
-                    if (finalTargetFile.exists() && !finalTargetFile.delete()) {
-                        logger.debug("Failed to delete dest after checksum mismatch");
-                    }
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
-                } else if (isBrotli) {
+                } else if (isBrotli && msg != null && msg.toLowerCase(java.util.Locale.US).contains("brotli")) {
                     sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
                 }
@@ -947,7 +946,8 @@ public class DownloadService extends Worker {
         if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
             return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
         }
-        return new File(cacheDir, "temp_" + UUID.randomUUID() + "_" + token + ".tmp");
+        String digest = CryptoCipher.shortPathKey((hash == null ? "" : hash) + "\0" + (fileName == null ? "" : fileName));
+        return new File(cacheDir, "partial_" + digest + "_" + token + ".tmp");
     }
 
     static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {
@@ -1062,7 +1062,7 @@ public class DownloadService extends Worker {
                 }
             }
             logger.error("Error: Raw data (" + fileName + "): " + hexDump);
-            throw e;
+            throw new IOException("Brotli process failed for " + fileName + ": " + e.getMessage(), e);
         }
     }
 

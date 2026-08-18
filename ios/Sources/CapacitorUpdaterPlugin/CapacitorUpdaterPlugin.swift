@@ -1131,7 +1131,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
-        cleanupGroup.wait()
+        let result = cleanupGroup.wait(timeout: .now() + .seconds(60))
+        if result == .timedOut {
+            logger.warn("Cleanup wait timed out after 60s, proceeding with download")
+            return
+        }
         logger.info("Cleanup finished, proceeding with download")
     }
 
@@ -2749,7 +2753,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard self.previewSessionEnabled else {
                 return
             }
-            if let topVC = UIApplication.topViewController(),
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController),
                topVC.isKind(of: UIAlertController.self) {
                 self.previewSessionAlertPending = true
                 UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
@@ -2763,7 +2767,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController) {
                 topVC.present(alert, animated: true)
             } else {
                 self.previewSessionAlertPending = true

@@ -3849,6 +3849,20 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(e.getMessage().contains("Checksum verification failed"));
             assertFalse(bad.exists());
         }
+
+        File existing = dir.resolve("existing.bin").toFile();
+        Files.write(existing.toPath(), "keep-me".getBytes(StandardCharsets.UTF_8));
+        try {
+            DownloadService.writeFileAtomic(
+                existing,
+                new ByteArrayInputStream(payload),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            );
+            fail("expected checksum mismatch");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Checksum verification failed"));
+            assertEquals("keep-me", new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8));
+        }
     }
 
     @Test
@@ -3892,7 +3906,8 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(nested.getName().length() < 255);
         assertTrue(nested.getName().endsWith(".tmp"));
         File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
-        assertTrue(unsafe.getName().startsWith("temp_"));
+        assertTrue(unsafe.getName().startsWith("partial_"));
+        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js").getName());
     }
 
     @Test
@@ -3915,6 +3930,18 @@ public class CapacitorUpdaterUnitTest {
         Files.write(file.toPath(), enc.doFinal(plain));
         CryptoCipher.decryptAesFile(file, key, iv);
         assertArrayEquals(plain, Files.readAllBytes(file.toPath()));
+
+        File emptyPlain = dir.resolve("empty-plain.bin").toFile();
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        Files.write(emptyPlain.toPath(), enc.doFinal(new byte[0]));
+        byte[] emptyCipher = Files.readAllBytes(emptyPlain.toPath());
+        try {
+            CryptoCipher.decryptAesFile(emptyPlain, key, iv);
+            fail("expected empty plaintext to be rejected");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Empty decrypted data"));
+            assertArrayEquals(emptyCipher, Files.readAllBytes(emptyPlain.toPath()));
+        }
     }
 
     private static byte[] hexToBytes(String hex) {

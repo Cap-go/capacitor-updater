@@ -53,10 +53,10 @@ jobs:
           git commit --m "docs: update doc" || true
       - name: Create version bump main
         if: github.ref == 'refs/heads/main'
-        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
+        run: bunx capacitor-plugin-standard-version@2.0.19 --skip.changelog
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
-        run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
+        run: bunx capacitor-plugin-standard-version@2.0.19 --prerelease alpha --skip.changelog
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)

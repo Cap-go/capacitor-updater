@@ -250,6 +250,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile long webViewPageStartedAtMs = 0;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
+    private volatile boolean launchTimeoutReported = false;
     private FrameLayout splashscreenLoaderOverlay;
     private Runnable splashscreenTimeoutRunnable;
     private FrameLayout previewTransitionLoaderOverlay;
@@ -1769,14 +1770,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reportAppLaunchTimeout(final BundleInfo bundle) {
-        if (this.implementation == null || this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+        if (
+            this.implementation == null ||
+            this.implementation.statsUrl == null ||
+            this.implementation.statsUrl.isEmpty() ||
+            this.launchReadyReported ||
+            this.launchTimeoutReported
+        ) {
             return;
         }
 
+        this.launchTimeoutReported = true;
         final Map<String, String> metadata = new HashMap<>();
         metadata.put("duration_ms", Long.toString(Math.max(0, System.currentTimeMillis() - this.launchStartedAtMs)));
         metadata.put("launch_started_at", Long.toString(this.launchStartedAtMs));
-        metadata.put("timeout_ms", Long.toString(this.appReadyTimeout));
+        metadata.put("timeout_ms", Long.toString(this.resolveAppReadyCheckTimeoutMs()));
         metadata.put("source", "app_ready_timeout");
         this.implementation.sendStats("app_launch_timeout", bundle == null ? "" : bundle.getVersionName(), "", metadata);
     }
@@ -4745,8 +4753,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             // Wait for cleanup to complete before starting download
             waitForCleanupIfNeeded();
