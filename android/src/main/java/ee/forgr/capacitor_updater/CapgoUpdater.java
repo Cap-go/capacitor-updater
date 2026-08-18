@@ -2131,14 +2131,10 @@ public class CapgoUpdater {
     private void filterPendingStatsForCurrentMode() {
         final boolean hadQueuedEvents;
         synchronized (statsQueue) {
-            hadQueuedEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
+            hadQueuedEvents = !statsQueue.isEmpty();
             final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue);
             statsQueue.clear();
             statsQueue.addAll(filteredQueue);
-
-            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight);
-            statsInFlight.clear();
-            statsInFlight.addAll(filteredInFlight);
         }
         if (hadQueuedEvents) {
             persistStatsQueue();
@@ -3112,10 +3108,7 @@ public class CapgoUpdater {
                 if (logger != null) {
                     logger.info("Restored " + statsQueue.size() + " pending stats events");
                 }
-                filterPendingStatsForCurrentMode();
-                if (!statsQueue.isEmpty()) {
-                    ensureStatsTimerStarted();
-                }
+                ensureStatsTimerStarted();
             }
         } catch (Exception e) {
             if (logger != null) {
@@ -3419,6 +3412,10 @@ public class CapgoUpdater {
             }
 
             try {
+                final String action = sentEvent.event.optString("action", "");
+                if (!shouldSendStatsAction(action, this.statsMode)) {
+                    continue;
+                }
                 sentEvent.onSent.run();
             } catch (Exception e) {
                 if (logger != null) {

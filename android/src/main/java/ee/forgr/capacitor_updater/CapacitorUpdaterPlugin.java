@@ -776,7 +776,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Public key prefix: " + keyId);
         }
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
-        this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             if (this.prefs.contains(STATS_URL_PREF_KEY)) {
@@ -847,6 +846,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
         this.implementation.restorePendingStats();
+        this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
