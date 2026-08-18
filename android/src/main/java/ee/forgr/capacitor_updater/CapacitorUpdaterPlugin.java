@@ -776,6 +776,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Public key prefix: " + keyId);
         }
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
+        this.implementation.disableNonUpdateEvents = this.getConfig().getBoolean("disableNonUpdateEvents", false);
+        this.implementation.limitUpdateEventsToBilling = this.getConfig().getBoolean("limitUpdateEventsToBilling", false);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             if (this.prefs.contains(STATS_URL_PREF_KEY)) {
@@ -1900,6 +1902,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void reportWebViewStats(final String action, final Map<String, String> metadata) {
         if (this.implementation == null) {
+            return;
+        }
+
+        if (!this.implementation.allowsNonUpdateStats()) {
             return;
         }
 

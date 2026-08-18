@@ -3997,6 +3997,58 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void shouldSendStatsActionAllowsHealthAndUpdateByDefault() {
+        assertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", false, false));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", false, false));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", false, false));
+    }
+
+    @Test
+    public void disableNonUpdateEventsDropsHealthButKeepsUpdateEvents() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", true, false));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", true, false));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", true, false));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", true, false));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.disableNonUpdateEvents = true;
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_fail", "1.0.0", "");
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("download_fail", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void limitUpdateEventsToBillingOnlyQueuesSetWithMinimalPayload() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_fail", false, true));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", false, true));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.limitUpdateEventsToBilling = true;
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_fail", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(1, updater.pendingStatsCount());
+        final JSONObject event = updater.firstQueuedStatsEventForTests();
+        assertEquals("set", event.getString("action"));
+        assertEquals("com.example.app", event.getString("app_id"));
+        assertEquals("device-1", event.getString("device_id"));
+        assertEquals("2.0.0", event.getString("version_name"));
+        assertEquals("android", event.getString("platform"));
+        assertFalse(event.has("custom_id"));
+        assertFalse(event.has("metadata"));
+        assertFalse(event.has("plugin_version"));
+        updater.shutdown();
+    }
+
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length() / 2];
         for (int i = 0; i < out.length; i++) {

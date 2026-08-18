@@ -76,6 +76,8 @@ public class DownloadWorkerManager {
         boolean isProd,
         String installSource,
         String statsUrl,
+        boolean disableNonUpdateEvents,
+        boolean limitUpdateEventsToBilling,
         String deviceId,
         String versionBuild,
         String versionCode,
@@ -103,6 +105,8 @@ public class DownloadWorkerManager {
             .putString(DownloadService.pluginVersion, pluginVersion)
             .putString(DownloadService.INSTALL_SOURCE, installSource)
             .putString(DownloadService.STATS_URL, statsUrl)
+            .putBoolean(DownloadService.DISABLE_NON_UPDATE_EVENTS, disableNonUpdateEvents)
+            .putBoolean(DownloadService.LIMIT_UPDATE_EVENTS_TO_BILLING, limitUpdateEventsToBilling)
             .putString(DownloadService.DEVICE_ID, deviceId)
             .putString(DownloadService.VERSION_BUILD, versionBuild)
             .putString(DownloadService.VERSION_CODE, versionCode)

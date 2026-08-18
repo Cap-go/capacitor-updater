@@ -115,17 +115,55 @@ declare module '@capacitor/cli' {
       /**
        * Configure the URL / endpoint to which update statistics are sent.
        *
-       * Only available for Android and iOS. Set to "" to disable stats reporting.
+       * Only available for Android and iOS. Set to "" to disable all stats reporting.
        * Native stats include update lifecycle events, app health signals such as crashes,
        * Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals
        * such as JavaScript errors, unhandled promise rejections, resource load failures,
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
+       * Use {@link PluginsConfig.CapacitorUpdater.disableNonUpdateEvents} to keep update
+       * lifecycle stats while dropping health and analytics signals. Use
+       * {@link PluginsConfig.CapacitorUpdater.limitUpdateEventsToBilling} for a HIPAA-friendly
+       * billing-only mode that sends the smallest update payload.
+       *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
+
+      /**
+       * When true, native HTTP stats sent to {@link PluginsConfig.CapacitorUpdater.statsUrl}
+       * are limited to the update pipeline (download, install, set, delete, reset, and related
+       * failure events). Health and analytics signals are not sent, including crashes, Android
+       * ANRs / ApplicationExit, low-memory exits, iOS memory warnings, WebView JavaScript and
+       * resource errors, renderer exits, unclean WebView restarts, launch-readiness timing, and
+       * foreground/background activity markers.
+       *
+       * Local JavaScript listeners such as `addListener('download')` are unchanged. This flag
+       * only affects native stats HTTP requests. An empty `statsUrl` still disables all stats.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       */
+      disableNonUpdateEvents?: boolean;
+
+      /**
+       * HIPAA / billing-only stats mode. When true, only the minimum update events required for
+       * Capgo billing are sent to {@link PluginsConfig.CapacitorUpdater.statsUrl}, and the JSON
+       * payload is reduced to billing identity fields (`app_id`, `device_id`, `action`,
+       * `version_name`, and `platform`). Download progress, diagnostic failures, health metadata,
+       * and other non-billing signals are not sent.
+       *
+       * This implies {@link PluginsConfig.CapacitorUpdater.disableNonUpdateEvents}. An empty
+       * `statsUrl` still disables all stats.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       */
+      limitUpdateEventsToBilling?: boolean;
 
       /**
        * Configure the public key for end to end live update encryption Version 2
