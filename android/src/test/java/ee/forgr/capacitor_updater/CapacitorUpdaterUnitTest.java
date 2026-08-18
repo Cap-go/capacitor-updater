@@ -4028,11 +4028,17 @@ public class CapacitorUpdaterUnitTest {
             "com.example.app",
             "1.0.0",
             "2.0.0",
+            "14",
+            "8.0.0",
+            false,
+            true,
             "set",
             123L
         );
         assertBillingPayloadKeysOnly(payload);
         assertEquals("set", payload.getString("action"));
+        assertEquals("14", payload.getString("version_os"));
+        assertEquals("8.0.0", payload.getString("plugin_version"));
         assertEquals(123L, payload.getLong("timestamp"));
     }
 
@@ -4048,6 +4054,8 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences prefs = mock(SharedPreferences.class);
         updater.prefs = prefs;
         updater.versionBuild = "1.0.0";
+        updater.versionOs = "14";
+        updater.pluginVersion = "8.0.0";
         when(prefs.getString("", "public")).thenReturn("public");
     }
 

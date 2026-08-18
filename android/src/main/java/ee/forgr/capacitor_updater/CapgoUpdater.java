@@ -2045,6 +2045,10 @@ public class CapgoUpdater {
         "app_id",
         "version_build",
         "version_name",
+        "version_os",
+        "plugin_version",
+        "is_emulator",
+        "is_prod",
         "action",
         "timestamp"
     );
@@ -2064,6 +2068,10 @@ public class CapgoUpdater {
         final String appId,
         final String versionBuild,
         final String versionName,
+        final String versionOs,
+        final String pluginVersion,
+        final boolean isEmulator,
+        final boolean isProd,
         final String action,
         final long timestamp
     ) throws JSONException {
@@ -2073,6 +2081,10 @@ public class CapgoUpdater {
         json.put("app_id", appId);
         json.put("version_build", versionBuild);
         json.put("version_name", versionName);
+        json.put("version_os", versionOs);
+        json.put("plugin_version", pluginVersion);
+        json.put("is_emulator", isEmulator);
+        json.put("is_prod", isProd);
         json.put("action", action);
         json.put("timestamp", timestamp);
         return json;
@@ -2083,7 +2095,19 @@ public class CapgoUpdater {
     }
 
     private JSONObject createBillingStatsObject(final String versionName, final String action, final long timestamp) throws JSONException {
-        return createBillingStatsPayload("android", this.deviceID, this.appId, this.versionBuild, versionName, action, timestamp);
+        return createBillingStatsPayload(
+            "android",
+            this.deviceID,
+            this.appId,
+            this.versionBuild,
+            versionName,
+            this.versionOs,
+            this.pluginVersion,
+            this.isEmulator(),
+            this.isProd(),
+            action,
+            timestamp
+        );
     }
 
     private JSONObject prepareStatsEventForCurrentMode(final JSONObject event) {

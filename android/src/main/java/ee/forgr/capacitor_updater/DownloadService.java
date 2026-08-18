@@ -388,6 +388,10 @@ public class DownloadService extends Worker {
                     getInputString(APP_ID, "unknown"),
                     getInputString(VERSION_BUILD, ""),
                     version != null ? version : "",
+                    getInputString(VERSION_OS, currentVersionOs),
+                    getInputString(pluginVersion, "unknown"),
+                    getInputData().getBoolean(IS_EMULATOR, false),
+                    getInputData().getBoolean(IS_PROD, true),
                     action,
                     System.currentTimeMillis()
                 );

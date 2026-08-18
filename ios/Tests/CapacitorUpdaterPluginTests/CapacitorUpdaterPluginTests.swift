@@ -640,6 +640,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.deviceID = "device-1"
         updater.appId = "com.example.app"
         updater.versionBuild = "1.0.0"
+        updater.pluginVersion = "8.0.0"
         updater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
 
         updater.sendStats(action: "download_71", versionName: "1.0.0")
