@@ -68,8 +68,7 @@ public class DownloadService extends Worker {
     public static final String pluginVersion = "plugin_version";
     public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
-    public static final String DISABLE_NON_UPDATE_EVENTS = "disable_non_update_events";
-    public static final String LIMIT_UPDATE_EVENTS_TO_BILLING = "limit_update_events_to_billing";
+    public static final String STATS_MODE = "stats_mode";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
     public static final String VERSION_BUILD = "version_build";
@@ -376,20 +375,21 @@ public class DownloadService extends Worker {
                 return;
             }
 
-            final boolean disableNonUpdateEvents = getInputData().getBoolean(DISABLE_NON_UPDATE_EVENTS, false);
-            final boolean limitUpdateEventsToBilling = getInputData().getBoolean(LIMIT_UPDATE_EVENTS_TO_BILLING, false);
-            if (!CapgoUpdater.shouldSendStatsAction(action, disableNonUpdateEvents, limitUpdateEventsToBilling)) {
+            final String statsMode = CapgoUpdater.normalizeStatsMode(getInputData().getString(STATS_MODE));
+            if (!CapgoUpdater.shouldSendStatsAction(action, statsMode)) {
                 return;
             }
 
             JSONObject json;
-            if (limitUpdateEventsToBilling) {
+            if (CapgoUpdater.usesBillingStatsPayload(statsMode)) {
                 json = new JSONObject();
                 json.put("platform", "android");
                 json.put("device_id", getInputString(DEVICE_ID, ""));
                 json.put("app_id", getInputString(APP_ID, "unknown"));
+                json.put("version_build", getInputString(VERSION_BUILD, ""));
                 json.put("version_name", version != null ? version : "");
                 json.put("action", action);
+                json.put("timestamp", System.currentTimeMillis());
             } else {
                 json = new JSONObject();
                 json.put("platform", "android");

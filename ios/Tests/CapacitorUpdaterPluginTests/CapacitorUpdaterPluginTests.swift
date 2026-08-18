@@ -599,9 +599,9 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
     }
 
-    func testDisableNonUpdateEventsSkipsHealthReporter() {
+    func testStatsModeUpdatesOnlySkipsHealthReporter() {
         let implementation = HealthStatsCapgoUpdater()
-        implementation.disableNonUpdateEvents = true
+        implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
         let tracker = AppHealthTracker(implementation: implementation)
 
         tracker.reportMemoryWarning()
@@ -610,42 +610,80 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(implementation.sentStatsActions.isEmpty)
     }
 
-    func testLimitUpdateEventsToBillingOnlyQueuesSetWithMinimalPayload() {
+    func testStatsModeAllAllowsHealthStats() {
+        let implementation = HealthStatsCapgoUpdater()
+        implementation.statsMode = CapgoUpdater.statsModeAll
+        let tracker = AppHealthTracker(implementation: implementation)
+
+        tracker.reportMemoryWarning()
+
+        XCTAssertEqual(implementation.sentStatsActions, ["app_memory_warning"])
+    }
+
+    func testStatsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() {
         let updater = CapgoUpdater()
         updater.statsUrl = "https://example.com/stats"
         updater.deviceID = "device-1"
         updater.appId = "com.example.app"
-        updater.limitUpdateEventsToBilling = true
+        updater.versionBuild = "1.0.0"
+        updater.statsMode = CapgoUpdater.statsModeBillingOnly
 
-        updater.sendStats(action: "download_fail", versionName: "1.0.0")
+        updater.sendStats(action: "download_71", versionName: "1.0.0")
+        updater.sendStats(action: "download_complete", versionName: "1.0.0")
         updater.sendStats(action: "set", versionName: "2.0.0", oldVersionName: "1.0.0")
 
         let event = updater.firstQueuedStatsEventForTests()
-        XCTAssertEqual(event?.action, "set")
+        XCTAssertEqual(event?.action, "download_complete")
         XCTAssertEqual(event?.app_id, "com.example.app")
         XCTAssertEqual(event?.device_id, "device-1")
-        XCTAssertEqual(event?.version_name, "2.0.0")
+        XCTAssertEqual(event?.version_build, "1.0.0")
         XCTAssertEqual(event?.platform, "ios")
+        XCTAssertNotNil(event?.timestamp)
         XCTAssertNil(event?.custom_id)
         XCTAssertNil(event?.metadata)
         XCTAssertNil(event?.plugin_version)
     }
 
-    func testDisableNonUpdateEventsDropsHealthButKeepsUpdateEvents() {
-        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
-        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
-        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
+    func testStatsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() {
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeUpdatesOnly))
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", statsMode: CapgoUpdater.statsModeUpdatesOnly))
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("download_71", statsMode: CapgoUpdater.statsModeUpdatesOnly))
+        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", statsMode: CapgoUpdater.statsModeUpdatesOnly))
 
         let updater = CapgoUpdater()
         updater.statsUrl = "https://example.com/stats"
         updater.deviceID = "device-1"
         updater.appId = "com.example.app"
-        updater.disableNonUpdateEvents = true
+        updater.statsMode = CapgoUpdater.statsModeUpdatesOnly
 
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
+        updater.sendStats(action: "download_71", versionName: "1.0.0")
         updater.sendStats(action: "download_fail", versionName: "1.0.0")
 
         XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "download_fail")
+    }
+
+    func testStatsModeAllAllowsHealthAndUpdateEvents() {
+        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeAll))
+        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_71", statsMode: CapgoUpdater.statsModeAll))
+
+        let updater = CapgoUpdater()
+        updater.statsUrl = "https://example.com/stats"
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
+        updater.statsMode = CapgoUpdater.statsModeAll
+
+        updater.sendStats(action: "app_crash", versionName: "1.0.0")
+        updater.sendStats(action: "set", versionName: "2.0.0")
+
+        XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "app_crash")
+    }
+
+    func testNormalizeStatsModeFallsBackToAll() {
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(nil), CapgoUpdater.statsModeAll)
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeUpdatesOnly), CapgoUpdater.statsModeUpdatesOnly)
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeBillingOnly), CapgoUpdater.statsModeBillingOnly)
     }
 
     func testMapsWebViewErrorTypesToStatsActions() {
