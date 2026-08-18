@@ -3998,57 +3998,82 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void shouldSendStatsActionAllowsHealthAndUpdateByDefault() {
-        assertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", false, false));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", false, false));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", false, false));
-    }
-
-    @Test
-    public void disableNonUpdateEventsDropsHealthButKeepsUpdateEvents() throws Exception {
-        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", true, false));
-        assertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", true, false));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", true, false));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", true, false));
+    public void statsModeAllAllowsHealthAndUpdateEvents() throws Exception {
+        assertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_ALL));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_ALL));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_ALL));
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
         updater.deviceID = "device-1";
         updater.appId = "com.example.app";
-        updater.disableNonUpdateEvents = true;
         updater.sendStats("app_crash", "1.0.0", "");
-        updater.sendStats("download_fail", "1.0.0", "");
-        assertEquals(1, updater.pendingStatsCount());
-        assertEquals("download_fail", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
         updater.shutdown();
     }
 
     @Test
-    public void limitUpdateEventsToBillingOnlyQueuesSetWithMinimalPayload() throws Exception {
-        assertFalse(CapgoUpdater.shouldSendStatsAction("download_fail", false, true));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", false, true));
+    public void statsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
         updater.deviceID = "device-1";
         updater.appId = "com.example.app";
-        updater.limitUpdateEventsToBilling = true;
+        updater.statsMode = CapgoUpdater.STATS_MODE_UPDATES_ONLY;
         updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_71", "1.0.0", "");
         updater.sendStats("download_fail", "1.0.0", "");
-        updater.sendStats("set", "2.0.0", "1.0.0");
         assertEquals(1, updater.pendingStatsCount());
+        assertEquals("download_fail", updater.firstQueuedStatsEventForTests().getString("action"));
+        assertTrue(updater.firstQueuedStatsEventForTests().has("custom_id"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_complete", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.statsMode = CapgoUpdater.STATS_MODE_BILLING_ONLY;
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_71", "1.0.0", "");
+        updater.sendStats("download_complete", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
         final JSONObject event = updater.firstQueuedStatsEventForTests();
-        assertEquals("set", event.getString("action"));
+        assertEquals("download_complete", event.getString("action"));
         assertEquals("com.example.app", event.getString("app_id"));
         assertEquals("device-1", event.getString("device_id"));
-        assertEquals("2.0.0", event.getString("version_name"));
+        assertEquals("1.0.0", event.getString("version_build"));
         assertEquals("android", event.getString("platform"));
+        assertTrue(event.has("timestamp"));
         assertFalse(event.has("custom_id"));
         assertFalse(event.has("metadata"));
         assertFalse(event.has("plugin_version"));
         updater.shutdown();
+    }
+
+    @Test
+    public void normalizeStatsModeFallsBackToAll() {
+        assertEquals(CapgoUpdater.STATS_MODE_ALL, CapgoUpdater.normalizeStatsMode(null));
+        assertEquals(CapgoUpdater.STATS_MODE_ALL, CapgoUpdater.normalizeStatsMode("invalid"));
+        assertEquals(CapgoUpdater.STATS_MODE_UPDATES_ONLY, CapgoUpdater.normalizeStatsMode("updatesOnly"));
+        assertEquals(CapgoUpdater.STATS_MODE_BILLING_ONLY, CapgoUpdater.normalizeStatsMode("billingOnly"));
     }
 
     private static void configureStatsTestUpdater(final CapgoUpdater updater) {

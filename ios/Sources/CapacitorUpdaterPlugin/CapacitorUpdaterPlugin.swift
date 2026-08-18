@@ -346,8 +346,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         logger.info("appId \(implementation.appId)")
         implementation.statsUrl = getConfig().getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)!
-        implementation.disableNonUpdateEvents = getConfig().getBoolean("disableNonUpdateEvents", false)
-        implementation.limitUpdateEventsToBilling = getConfig().getBoolean("limitUpdateEventsToBilling", false)
+        implementation.statsMode = CapgoUpdater.normalizeStatsMode(getConfig().getString("statsMode", CapgoUpdater.statsModeAll))
         implementation.channelUrl = getConfig().getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)!
         if persistModifyUrl {
             if let storedStatsUrl = UserDefaults.standard.object(forKey: statsUrlDefaultsKey) as? String {

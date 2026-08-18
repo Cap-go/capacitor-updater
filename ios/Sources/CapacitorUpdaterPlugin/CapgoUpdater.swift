@@ -44,8 +44,10 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
-    public var disableNonUpdateEvents = false
-    public var limitUpdateEventsToBilling = false
+    public var statsMode: String = CapgoUpdater.statsModeAll
+    public static let statsModeAll = "all"
+    public static let statsModeUpdatesOnly = "updatesOnly"
+    public static let statsModeBillingOnly = "billingOnly"
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
     public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
@@ -88,60 +90,82 @@ import UIKit
         let onSent: (() -> Void)?
     }
 
-    private static let nonUpdateStatsActions: Set<String> = [
-        "app_crash",
-        "app_crash_native",
-        "app_anr",
-        "app_killed_low_memory",
-        "app_killed_excessive_resource_usage",
-        "app_initialization_failure",
-        "app_memory_warning",
-        "app_launch_start",
-        "app_launch_ready",
-        "app_launch_timeout",
-        "app_moved_to_foreground",
-        "app_moved_to_background",
-        "os_version_changed",
-        "native_app_version_changed",
+    private static let updatesOnlyStatsActions: Set<String> = [
+        "download_complete",
+        "download_manifest_start",
+        "download_manifest_complete",
+        "download_manifest_file_fail",
+        "download_manifest_checksum_fail",
+        "download_manifest_brotli_fail",
+        "download_zip_start",
+        "download_zip_complete",
+        "download_fail",
+        "finish_download_fail",
+        "unzip_fail",
+        "decrypt_fail",
+        "checksum_fail",
+        "checksum_required",
+        "windows_path_fail",
+        "canonical_path_fail",
+        "directory_path_fail",
+        "manifest_path_fail",
+        "insufficient_disk_space",
+        "low_mem_fail",
+        "set",
+        "set_fail",
+        "set_next",
+        "reset",
+        "delete",
+        "update_fail",
+        "blocked_by_server_url",
         "rate_limit_reached"
     ]
 
-    private static let billingStatsActions: Set<String> = ["set"]
+    private static let billingOnlyStatsActions: Set<String> = [
+        "set",
+        "download_complete",
+        "set_fail",
+        "update_fail",
+        "download_fail"
+    ]
 
-    static func isNonUpdateStatsAction(_ action: String) -> Bool {
+    static func normalizeStatsMode(_ statsMode: String?) -> String {
+        switch statsMode {
+        case statsModeUpdatesOnly, statsModeBillingOnly:
+            return statsMode!
+        default:
+            return statsModeAll
+        }
+    }
+
+    static func isUpdatesOnlyStatsAction(_ action: String) -> Bool {
+        updatesOnlyStatsActions.contains(action)
+    }
+
+    static func isBillingOnlyStatsAction(_ action: String) -> Bool {
+        billingOnlyStatsActions.contains(action)
+    }
+
+    static func shouldSendStatsAction(_ action: String, statsMode: String) -> Bool {
+        let mode = normalizeStatsMode(statsMode)
+        if mode == statsModeAll {
+            return true
+        }
         if action.isEmpty {
-            return true
+            return false
         }
-        if nonUpdateStatsActions.contains(action) {
-            return true
+        if mode == statsModeBillingOnly {
+            return isBillingOnlyStatsAction(action)
         }
-        return action.hasPrefix("webview_")
+        return isUpdatesOnlyStatsAction(action)
     }
 
-    static func isUpdatePipelineStatsAction(_ action: String) -> Bool {
-        !isNonUpdateStatsAction(action)
-    }
-
-    static func isBillingStatsAction(_ action: String) -> Bool {
-        billingStatsActions.contains(action)
-    }
-
-    static func shouldSendStatsAction(
-        _ action: String,
-        disableNonUpdateEvents: Bool,
-        limitUpdateEventsToBilling: Bool
-    ) -> Bool {
-        if limitUpdateEventsToBilling {
-            return isBillingStatsAction(action)
-        }
-        if disableNonUpdateEvents {
-            return isUpdatePipelineStatsAction(action)
-        }
-        return true
+    static func usesBillingStatsPayload(_ statsMode: String) -> Bool {
+        normalizeStatsMode(statsMode) == statsModeBillingOnly
     }
 
     func allowsNonUpdateStats() -> Bool {
-        !disableNonUpdateEvents && !limitUpdateEventsToBilling
+        Self.normalizeStatsMode(statsMode) == Self.statsModeAll
     }
 
     func firstQueuedStatsEventForTests() -> StatsEvent? {
@@ -156,7 +180,7 @@ import UIKit
             device_id: deviceID,
             app_id: appId,
             custom_id: nil,
-            version_build: nil,
+            version_build: versionBuild,
             version_code: nil,
             version_os: nil,
             version_name: versionName,
@@ -742,11 +766,7 @@ import UIKit
      * It MUST be called from a background queue to avoid blocking the main thread.
      */
     private func sendRateLimitStatistic() {
-        guard Self.shouldSendStatsAction(
-            "rate_limit_reached",
-            disableNonUpdateEvents: disableNonUpdateEvents,
-            limitUpdateEventsToBilling: limitUpdateEventsToBilling
-        ) else {
+        guard Self.shouldSendStatsAction("rate_limit_reached", statsMode: statsMode) else {
             CapgoUpdater.releaseRateLimitStatisticClaim()
             return
         }
@@ -3249,18 +3269,14 @@ import UIKit
             return
         }
 
-        if !Self.shouldSendStatsAction(
-            action,
-            disableNonUpdateEvents: disableNonUpdateEvents,
-            limitUpdateEventsToBilling: limitUpdateEventsToBilling
-        ) {
+        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
             onSent?()
             return
         }
 
         let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
         let event: StatsEvent
-        if limitUpdateEventsToBilling {
+        if Self.usesBillingStatsPayload(statsMode) {
             event = createBillingStatsEvent(action: action, versionName: resolvedVersionName)
         } else {
             let info = createInfoObject()

@@ -103,8 +103,10 @@ public class CapgoUpdater {
 
     public String customId = "";
     public String statsUrl = "";
-    public boolean disableNonUpdateEvents = false;
-    public boolean limitUpdateEventsToBilling = false;
+    public String statsMode = STATS_MODE_ALL;
+    public static final String STATS_MODE_ALL = "all";
+    public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
+    public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
@@ -814,8 +816,7 @@ public class CapgoUpdater {
             this.isProd(),
             this.getInstallSource(),
             this.statsUrl,
-            this.disableNonUpdateEvents,
-            this.limitUpdateEventsToBilling,
+            this.statsMode,
             this.deviceID,
             this.versionBuild,
             this.versionCode,
@@ -1989,60 +1990,80 @@ public class CapgoUpdater {
         this.finalizeResetTransition(currentBundleName, internal);
     }
 
-    private static final Set<String> NON_UPDATE_STATS_ACTIONS = Set.of(
-        "app_crash",
-        "app_crash_native",
-        "app_anr",
-        "app_killed_low_memory",
-        "app_killed_excessive_resource_usage",
-        "app_initialization_failure",
-        "app_memory_warning",
-        "app_launch_start",
-        "app_launch_ready",
-        "app_launch_timeout",
-        "app_moved_to_foreground",
-        "app_moved_to_background",
-        "os_version_changed",
-        "native_app_version_changed",
+    private static final Set<String> UPDATES_ONLY_STATS_ACTIONS = Set.of(
+        "download_complete",
+        "download_manifest_start",
+        "download_manifest_complete",
+        "download_manifest_file_fail",
+        "download_manifest_checksum_fail",
+        "download_manifest_brotli_fail",
+        "download_zip_start",
+        "download_zip_complete",
+        "download_fail",
+        "finish_download_fail",
+        "unzip_fail",
+        "decrypt_fail",
+        "checksum_fail",
+        "checksum_required",
+        "windows_path_fail",
+        "canonical_path_fail",
+        "directory_path_fail",
+        "manifest_path_fail",
+        "insufficient_disk_space",
+        "low_mem_fail",
+        "set",
+        "set_fail",
+        "set_next",
+        "reset",
+        "delete",
+        "update_fail",
+        "blocked_by_server_url",
         "rate_limit_reached"
     );
 
-    private static final Set<String> BILLING_STATS_ACTIONS = Set.of("set");
+    private static final Set<String> BILLING_ONLY_STATS_ACTIONS = Set.of(
+        "set",
+        "download_complete",
+        "set_fail",
+        "update_fail",
+        "download_fail"
+    );
 
-    static boolean isNonUpdateStatsAction(final String action) {
+    static String normalizeStatsMode(final String statsMode) {
+        if (STATS_MODE_UPDATES_ONLY.equals(statsMode) || STATS_MODE_BILLING_ONLY.equals(statsMode)) {
+            return statsMode;
+        }
+        return STATS_MODE_ALL;
+    }
+
+    static boolean isUpdatesOnlyStatsAction(final String action) {
+        return action != null && UPDATES_ONLY_STATS_ACTIONS.contains(action);
+    }
+
+    static boolean isBillingOnlyStatsAction(final String action) {
+        return action != null && BILLING_ONLY_STATS_ACTIONS.contains(action);
+    }
+
+    static boolean shouldSendStatsAction(final String action, final String statsMode) {
+        final String mode = normalizeStatsMode(statsMode);
+        if (STATS_MODE_ALL.equals(mode)) {
+            return true;
+        }
         if (action == null || action.isEmpty()) {
-            return true;
+            return false;
         }
-        if (NON_UPDATE_STATS_ACTIONS.contains(action)) {
-            return true;
+        if (STATS_MODE_BILLING_ONLY.equals(mode)) {
+            return isBillingOnlyStatsAction(action);
         }
-        return action.startsWith("webview_");
+        return isUpdatesOnlyStatsAction(action);
     }
 
-    static boolean isUpdatePipelineStatsAction(final String action) {
-        return !isNonUpdateStatsAction(action);
-    }
-
-    static boolean isBillingStatsAction(final String action) {
-        return action != null && BILLING_STATS_ACTIONS.contains(action);
-    }
-
-    static boolean shouldSendStatsAction(
-        final String action,
-        final boolean disableNonUpdateEvents,
-        final boolean limitUpdateEventsToBilling
-    ) {
-        if (limitUpdateEventsToBilling) {
-            return isBillingStatsAction(action);
-        }
-        if (disableNonUpdateEvents) {
-            return isUpdatePipelineStatsAction(action);
-        }
-        return true;
+    static boolean usesBillingStatsPayload(final String statsMode) {
+        return STATS_MODE_BILLING_ONLY.equals(normalizeStatsMode(statsMode));
     }
 
     public boolean allowsNonUpdateStats() {
-        return !this.disableNonUpdateEvents && !this.limitUpdateEventsToBilling;
+        return STATS_MODE_ALL.equals(normalizeStatsMode(this.statsMode));
     }
 
     private JSONObject createBillingStatsObject(final String versionName, final String action) throws JSONException {
@@ -2050,8 +2071,10 @@ public class CapgoUpdater {
         json.put("platform", "android");
         json.put("device_id", this.deviceID);
         json.put("app_id", this.appId);
+        json.put("version_build", this.versionBuild);
         json.put("version_name", versionName);
         json.put("action", action);
+        json.put("timestamp", System.currentTimeMillis());
         return json;
     }
 
@@ -2271,7 +2294,7 @@ public class CapgoUpdater {
      * Dispatched through OkHttp so no caller thread waits on the request.
      */
     private void sendRateLimitStatistic() {
-        if (!shouldSendStatsAction("rate_limit_reached", this.disableNonUpdateEvents, this.limitUpdateEventsToBilling)) {
+        if (!shouldSendStatsAction("rate_limit_reached", this.statsMode)) {
             releaseRateLimitStatisticClaim();
             return;
         }
@@ -2928,7 +2951,7 @@ public class CapgoUpdater {
             return;
         }
 
-        if (!shouldSendStatsAction(action, this.disableNonUpdateEvents, this.limitUpdateEventsToBilling)) {
+        if (!shouldSendStatsAction(action, this.statsMode)) {
             if (onSent != null) {
                 onSent.run();
             }
@@ -2942,7 +2965,7 @@ public class CapgoUpdater {
 
         JSONObject json;
         try {
-            if (this.limitUpdateEventsToBilling) {
+            if (usesBillingStatsPayload(this.statsMode)) {
                 json = this.createBillingStatsObject(versionName, action);
             } else {
                 json = this.createInfoObject();
