@@ -232,10 +232,13 @@ import UIKit
 
     private func filterPendingStatsForCurrentMode() {
         statsQueueLock.lock()
+        let hadQueuedEvents = !statsQueue.isEmpty || !statsInFlight.isEmpty
         statsQueue = filterQueuedStatsEvents(statsQueue)
         statsInFlight = filterQueuedStatsEvents(statsInFlight)
         statsQueueLock.unlock()
-        persistStatsQueue()
+        if hadQueuedEvents {
+            persistStatsQueue()
+        }
     }
 
     private func filterQueuedStatsEvents(_ events: [QueuedStatsEvent]) -> [QueuedStatsEvent] {
