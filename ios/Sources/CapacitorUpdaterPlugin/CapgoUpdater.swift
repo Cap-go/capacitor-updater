@@ -214,9 +214,7 @@ import UIKit
     }
 
     private func prepareStatsEventForCurrentMode(_ event: StatsEvent) -> StatsEvent? {
-        guard let action = event.action, !action.isEmpty else {
-            return nil
-        }
+        let action = event.action ?? ""
         if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
             return nil
         }
@@ -232,9 +230,8 @@ import UIKit
 
     private func filterPendingStatsForCurrentMode() {
         statsQueueLock.lock()
-        let hadQueuedEvents = !statsQueue.isEmpty || !statsInFlight.isEmpty
+        let hadQueuedEvents = !statsQueue.isEmpty
         statsQueue = filterQueuedStatsEvents(statsQueue)
-        statsInFlight = filterQueuedStatsEvents(statsInFlight)
         statsQueueLock.unlock()
         if hadQueuedEvents {
             persistStatsQueue()
@@ -3346,7 +3343,6 @@ import UIKit
 
         if restoredCount > 0 {
             logger.info("Restored \(restoredCount) pending stats events")
-            filterPendingStatsForCurrentMode()
             statsQueueLock.lock()
             let remainingCount = statsQueue.count
             statsQueueLock.unlock()
@@ -3520,6 +3516,10 @@ import UIKit
 
     private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
         for sentEvent in sentEvents {
+            let action = sentEvent.event.action ?? ""
+            guard Self.shouldSendStatsAction(action, statsMode: statsMode) else {
+                continue
+            }
             sentEvent.onSent?()
         }
     }

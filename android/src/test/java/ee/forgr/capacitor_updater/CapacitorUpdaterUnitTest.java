@@ -3994,8 +3994,8 @@ public class CapacitorUpdaterUnitTest {
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         updater.documentsDir = tempDir.toFile();
         updater.statsUrl = "https://example.com/stats";
-        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
         updater.restorePendingStats();
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
 
         assertEquals(1, updater.pendingStatsCount());
         assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));

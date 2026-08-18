@@ -663,8 +663,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let updater = CapgoUpdater()
         updater.statsUrl = "https://example.com/stats"
-        updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
         updater.restorePendingStats()
+        updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
 
         XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "set")
         try? FileManager.default.removeItem(at: fileURL)
