@@ -3317,12 +3317,12 @@ import UIKit
             return
         }
 
-        guard !statsUrl.isEmpty else {
+        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
             onSent?()
             return
         }
 
-        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
+        guard !statsUrl.isEmpty else {
             onSent?()
             return
         }
