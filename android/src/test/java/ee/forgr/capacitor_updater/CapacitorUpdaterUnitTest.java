@@ -32,6 +32,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -3975,17 +3976,64 @@ public class CapacitorUpdaterUnitTest {
         updater.sendStats("download_complete", "1.0.0", "");
         updater.sendStats("set", "2.0.0", "1.0.0");
         assertEquals(2, updater.pendingStatsCount());
-        final JSONObject event = updater.firstQueuedStatsEventForTests();
-        assertEquals("download_complete", event.getString("action"));
-        assertEquals("com.example.app", event.getString("app_id"));
-        assertEquals("device-1", event.getString("device_id"));
-        assertEquals("1.0.0", event.getString("version_build"));
-        assertEquals("android", event.getString("platform"));
-        assertTrue(event.has("timestamp"));
-        assertFalse(event.has("custom_id"));
-        assertFalse(event.has("metadata"));
-        assertFalse(event.has("plugin_version"));
+        assertBillingPayloadKeysOnly(updater.firstQueuedStatsEventForTests());
         updater.shutdown();
+    }
+
+    @Test
+    public void statsModeUpdatesOnlyDropsRestoredHealthEventsFromPendingQueue() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-stats-filter");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        Files.write(
+            queueFile.toPath(),
+            "[{\"action\":\"app_moved_to_background\",\"timestamp\":1},{\"action\":\"set\",\"version_name\":\"2.0.0\",\"timestamp\":2}]".getBytes(
+                StandardCharsets.UTF_8
+            )
+        );
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.statsUrl = "https://example.com/stats";
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
+        updater.restorePendingStats();
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeChangeFiltersQueuedHealthEvents() throws Exception {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
+
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void createBillingStatsPayloadUsesAllowListedFieldsOnly() throws Exception {
+        final JSONObject payload = CapgoUpdater.createBillingStatsPayload(
+            "android",
+            "device-1",
+            "com.example.app",
+            "1.0.0",
+            "2.0.0",
+            "set",
+            123L
+        );
+        assertBillingPayloadKeysOnly(payload);
+        assertEquals("set", payload.getString("action"));
+        assertEquals(123L, payload.getLong("timestamp"));
     }
 
     @Test
@@ -4001,6 +4049,15 @@ public class CapacitorUpdaterUnitTest {
         updater.prefs = prefs;
         updater.versionBuild = "1.0.0";
         when(prefs.getString("", "public")).thenReturn("public");
+    }
+
+    private static void assertBillingPayloadKeysOnly(final JSONObject event) throws Exception {
+        final Set<String> keys = new HashSet<>();
+        final Iterator<String> iterator = event.keys();
+        while (iterator.hasNext()) {
+            keys.add(iterator.next());
+        }
+        assertEquals(CapgoUpdater.BILLING_STATS_PAYLOAD_KEYS, keys);
     }
 
     private static byte[] hexToBytes(String hex) {

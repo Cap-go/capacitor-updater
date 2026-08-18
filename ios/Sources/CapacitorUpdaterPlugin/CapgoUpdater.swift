@@ -164,8 +164,23 @@ import UIKit
         normalizeStatsMode(statsMode) == statsModeBillingOnly
     }
 
+    static let billingStatsPayloadKeys: Set<String> = [
+        "platform",
+        "device_id",
+        "app_id",
+        "version_build",
+        "version_name",
+        "action",
+        "timestamp"
+    ]
+
     func allowsNonUpdateStats() -> Bool {
         Self.normalizeStatsMode(statsMode) == Self.statsModeAll
+    }
+
+    func setStatsMode(_ statsMode: String) {
+        self.statsMode = Self.normalizeStatsMode(statsMode)
+        filterPendingStatsForCurrentMode()
     }
 
     func firstQueuedStatsEventForTests() -> StatsEvent? {
@@ -174,7 +189,7 @@ import UIKit
         return statsQueue.first?.event
     }
 
-    private func createBillingStatsEvent(action: String, versionName: String) -> StatsEvent {
+    private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
         StatsEvent(
             platform: "ios",
             device_id: deviceID,
@@ -194,8 +209,45 @@ import UIKit
             defaultChannel: nil,
             key_id: nil,
             metadata: nil,
-            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+            timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
         )
+    }
+
+    private func prepareStatsEventForCurrentMode(_ event: StatsEvent) -> StatsEvent? {
+        guard let action = event.action, !action.isEmpty else {
+            return nil
+        }
+        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
+            return nil
+        }
+        if Self.usesBillingStatsPayload(statsMode) {
+            return createBillingStatsEvent(
+                action: action,
+                versionName: event.version_name ?? "",
+                timestamp: event.timestamp
+            )
+        }
+        return event
+    }
+
+    private func filterPendingStatsForCurrentMode() {
+        statsQueueLock.lock()
+        statsQueue = filterQueuedStatsEvents(statsQueue)
+        statsInFlight = filterQueuedStatsEvents(statsInFlight)
+        statsQueueLock.unlock()
+        persistStatsQueue()
+    }
+
+    private func filterQueuedStatsEvents(_ events: [QueuedStatsEvent]) -> [QueuedStatsEvent] {
+        var filtered: [QueuedStatsEvent] = []
+        for queuedEvent in events {
+            guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
+                queuedEvent.onSent?()
+                continue
+            }
+            filtered.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
+        }
+        return filtered
     }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
@@ -3219,6 +3271,7 @@ import UIKit
         }
 
         guard !statsUrl.isEmpty else {
+            onSent?()
             return
         }
 
@@ -3290,7 +3343,13 @@ import UIKit
 
         if restoredCount > 0 {
             logger.info("Restored \(restoredCount) pending stats events")
-            ensureStatsTimerStarted()
+            filterPendingStatsForCurrentMode()
+            statsQueueLock.lock()
+            let remainingCount = statsQueue.count
+            statsQueueLock.unlock()
+            if remainingCount > 0 {
+                ensureStatsTimerStarted()
+            }
         }
     }
 
@@ -3374,7 +3433,22 @@ import UIKit
         statsQueueLock.unlock()
         persistStatsQueue()
 
-        let eventsToSend = queuedEvents.map(\.event)
+        var deliverableEvents: [QueuedStatsEvent] = []
+        var eventsToSend: [StatsEvent] = []
+        for queuedEvent in queuedEvents {
+            guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
+                queuedEvent.onSent?()
+                continue
+            }
+            deliverableEvents.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
+            eventsToSend.append(prepared)
+        }
+
+        if eventsToSend.isEmpty {
+            clearStatsInFlight()
+            persistStatsQueue()
+            return
+        }
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -3392,14 +3466,14 @@ import UIKit
                     return
                 }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(deliverableEvents)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
-                        self.requeueStatsEvents(queuedEvents)
+                        self.requeueStatsEvents(deliverableEvents)
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
@@ -3416,9 +3490,9 @@ import UIKit
                     self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    self.runStatsCallbacks(queuedEvents)
+                    self.runStatsCallbacks(deliverableEvents)
                 case let .failure(error):
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(deliverableEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
