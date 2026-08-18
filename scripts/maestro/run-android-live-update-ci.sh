@@ -21,3 +21,11 @@ if [[ "${CAPGO_MAESTRO_CLEANUP_ANDROID_EMULATOR_ON_EXIT:-0}" == "1" ]]; then
 fi
 
 "$(dirname "$0")/run-android-live-update.sh" "$@"
+
+# set -e means we only get here when the flow passed. The marker lets CI tell a passing
+# flow from a hung emulator teardown, which the runner action performs after this script.
+if [[ -n "${CAPGO_MAESTRO_SUCCESS_MARKER:-}" ]]; then
+  # Create the parent first: under set -e a failed redirect would report a passing flow as failed.
+  mkdir -p "$(dirname "${CAPGO_MAESTRO_SUCCESS_MARKER}")"
+  : > "${CAPGO_MAESTRO_SUCCESS_MARKER}"
+fi

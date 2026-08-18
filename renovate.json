@@ -67,7 +67,7 @@
         "^ionic-team/capacitor-swift-pm$",
         "^capacitor-swift-pm$"
       ],
-      "allowedVersions": "8.0.0",
+      "allowedVersions": "7.0.0",
       "enabled": false
     },
     {
@@ -91,7 +91,7 @@
         "@capacitor/core"
       ],
       "rangeStrategy": "replace",
-      "allowedVersions": "/^>=\\d+\\.0\\.0$/"
+      "allowedVersions": "/^\\^7\\.0\\.0$/"
     },
     {
       "matchPackageNames": [
@@ -106,6 +106,16 @@
     {
       "matchPackageNames": [
         "androidx.work:work-runtime"
+      ],
+      "matchManagers": [
+        "gradle"
+      ],
+      "enabled": false
+    },
+    // Lifecycle 2.11 requires compileSdk 37 and Android Gradle plugin 9.1 through atomic group alignment
+    {
+      "matchPackageNames": [
+        "androidx.lifecycle:lifecycle-process"
       ],
       "matchManagers": [
         "gradle"

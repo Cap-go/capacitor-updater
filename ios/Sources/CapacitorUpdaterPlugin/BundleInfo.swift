@@ -65,9 +65,13 @@ import Foundation
         return BundleStatus.DELETED == self.status
     }
 
+    public func isDeleting() -> Bool {
+        return BundleStatus.DELETING == self.status
+    }
+
     public func isDownloaded() -> Bool {
         return !self.isBuiltin() && self.downloaded != "" &&
-            self.downloaded != BundleInfo.DOWNLOADED_BUILTIN && !self.isDeleted()
+            self.downloaded != BundleInfo.DOWNLOADED_BUILTIN && !self.isDeleted() && !self.isDeleting()
     }
 
     public func getDownloaded() -> String {

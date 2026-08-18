@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - development
+      - v7
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
@@ -31,7 +32,7 @@ jobs:
         with:
           node-version: 24.x
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           filter: blob:none
@@ -53,6 +54,9 @@ jobs:
           git commit --m "docs: update doc" || true
       - name: Create version bump main
         if: github.ref == 'refs/heads/main'
+        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
+      - name: Create version bump v7
+        if: github.ref == 'refs/heads/v7'
         run: bunx capacitor-plugin-standard-version@latest --skip.changelog
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'

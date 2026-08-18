@@ -22,8 +22,18 @@ import UIKit
     private let FALLBACK_VERSION: String = "pastVersion"
     private let NEXT_VERSION: String = "nextVersion"
     private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
+    private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
+    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
+
+    static func clampedManifestConcurrency(processorCount: Int) -> Int {
+        min(64, max(8, max(1, processorCount) * 2))
+    }
+    private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    private let deletePaceSeconds: TimeInterval = 0.075
+    private let deleteLock = NSLock()
 
     // Add this line to declare cacheFolder
     private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
@@ -34,6 +44,8 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
+    /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
+    public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
@@ -44,17 +56,30 @@ import UIKit
     // Cached key ID calculated once from publicKey
     private var cachedKeyId: String?
 
-    // Flag to track if we received a 429 response - stops requests until app restart
-    private static var rateLimitExceeded = false
+    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
+    // Guarded by rateLimitStateLock so concurrent 429s cannot shorten the window or mix metadata.
+    private static let rateLimitStateLock = NSLock()
+    private static var rateLimitBlockedUntilMs: Double = 0
+    private static var rateLimitBlockedError: String = "too_many_requests"
+    private static var rateLimitBlockedMessage: String = "Too many requests"
 
-    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop
+    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop.
+    // Released again when the send fails, so a later 429 can retry it.
     private static var rateLimitStatisticSent = false
+
+    // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
+    private static let maxRateLimitWindowMs: Double = 24 * 60 * 60 * 1000
 
     // Stats batching - queue events and send max once per second
     private var statsQueue: [QueuedStatsEvent] = []
+    private var statsInFlight: [QueuedStatsEvent] = []
     private let statsQueueLock = NSLock()
+    private let statsPersistLock = NSLock()
     private var statsFlushTimer: Timer?
+    private var statsStopped = false
     private static let statsFlushInterval: TimeInterval = 1.0
+    private static let maxPendingStats = 200
+    private let pendingStatsFileName = "capgo_pending_stats.json"
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -154,6 +179,7 @@ import UIKit
         configuration.httpShouldSetCookies = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
         return Session(configuration: configuration)
     }()
     private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
@@ -279,14 +305,70 @@ import UIKit
         return fileManager.fileExists(atPath: fallback.path) ? fallback : nil
     }
 
-    private func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
+    static func shouldAppendHttpBody(statusCode: Int, existingBytes: Int64) -> Bool {
+        existingBytes > 0 && statusCode == 206
+    }
+
+    static func safePartialToken(_ fileName: String) -> String {
+        CryptoCipher.shortPathKey(fileName)
+    }
+
+    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
+        let token = safePartialToken(fileName)
+        if isSafeCacheHash(hash) && hash.count == 64 {
+            return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
+        }
+        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(token).tmp")
+    }
+
+    private func cleanupOldManifestPartials() {
+        let cutoff = Date().addingTimeInterval(-3600)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: cacheFolder,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        for url in files {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("partial_") && name.hasSuffix(".tmp") else {
+                continue
+            }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
         let fileManager = FileManager.default
-        if existingBytes > 0 && (response?.statusCode == 206 || response == nil) {
-            let resumedData = try Data(contentsOf: downloadedFileURL)
+        if Self.shouldAppendHttpBody(statusCode: response?.statusCode ?? 0, existingBytes: existingBytes) ||
+            (existingBytes > 0 && response == nil) {
             let fileHandle = try FileHandle(forWritingTo: tempPath)
+            defer {
+                try? fileHandle.close()
+            }
             fileHandle.seek(toFileOffset: UInt64(existingBytes))
-            fileHandle.write(resumedData)
-            try fileHandle.close()
+            let input = try FileHandle(forReadingFrom: downloadedFileURL)
+            defer {
+                try? input.close()
+            }
+            let chunkSize = CryptoCipher.copyBufferBytes()
+            while true {
+                let done: Bool = try autoreleasepool {
+                    let chunk = try input.read(upToCount: chunkSize) ?? Data()
+                    if chunk.isEmpty {
+                        return true
+                    }
+                    fileHandle.write(chunk)
+                    return false
+                }
+                if done {
+                    break
+                }
+            }
             try? fileManager.removeItem(at: downloadedFileURL)
             return
         }
@@ -318,12 +400,16 @@ import UIKit
     }
 
     deinit {
-        // Invalidate the stats timer to prevent memory leaks
+        shutdown()
+    }
+
+    public func shutdown() {
+        statsPersistLock.lock()
+        statsStopped = true
+        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-
-        // Flush any remaining stats before deallocation
-        flushStatsQueue()
+        persistStatsQueue(force: true)
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -416,26 +502,149 @@ import UIKit
         }
     }
 
-    /**
-     * Check if a 429 (Too Many Requests) response was received and set the flag
-     */
-    private func checkAndHandleRateLimitResponse(statusCode: Int?) -> Bool {
-        if statusCode == 429 {
-            // Send a statistic about the rate limit BEFORE setting the flag
-            // Only send once to prevent infinite loop if the stat request itself gets rate limited
-            if !previewSession && !CapgoUpdater.rateLimitExceeded && !CapgoUpdater.rateLimitStatisticSent {
-                CapgoUpdater.rateLimitStatisticSent = true
+    private struct RemoteBlockResult {
+        let blocked: Bool
+        let error: String
+        let message: String
+    }
 
-                // Dispatch to background queue to avoid blocking the main thread
-                DispatchQueue.global(qos: .utility).async {
-                    self.sendRateLimitStatistic()
-                }
-            }
-            CapgoUpdater.rateLimitExceeded = true
-            logger.warn("Rate limit exceeded (429). Stopping all stats and channel requests until app restart.")
-            return true
+    /**
+     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
+     * All 429s use the same temporary client block — no sticky latch until restart.
+     */
+    private func checkAndHandleRateLimitResponse(
+        statusCode: Int?,
+        data: Data? = nil,
+        response: HTTPURLResponse? = nil
+    ) -> RemoteBlockResult {
+        guard statusCode == 429 else {
+            return RemoteBlockResult(blocked: false, error: "", message: "")
         }
-        return false
+
+        let parsed = parseRemoteError(from: data)
+        let errorCode = parsed.error.isEmpty ? "too_many_requests" : parsed.error
+        let message = parsed.message.isEmpty ? "Too many requests" : parsed.message
+
+        let retryUntilMs = resolveRateLimitBlockedUntilMs(data: data, response: response)
+        CapgoUpdater.recordRateLimitBlock(untilMs: retryUntilMs, error: errorCode, message: message)
+
+        // Claim last, and only when there is somewhere to send it, so a 429 burst with no
+        // stats URL does not claim and release the latch once per response.
+        if errorCode == "too_many_requests" && !previewSession && !statsUrl.isEmpty && CapgoUpdater.claimRateLimitStatistic() {
+            DispatchQueue.global(qos: .utility).async {
+                self.sendRateLimitStatistic()
+            }
+        }
+
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let retryAfter = CapgoUpdater.retryAfterSecondsForLog(untilMs: retryUntilMs, nowMs: nowMs)
+        logger.warn("Received 429 (\(errorCode)). Honouring Retry-After: \(retryAfter)s.")
+        return RemoteBlockResult(blocked: true, error: errorCode, message: message)
+    }
+
+    /// Stores the block deadline and its metadata together, keeping the longest deadline
+    /// so a concurrent 429 with a shorter window cannot cut the block short.
+    private static func recordRateLimitBlock(untilMs: Double, error: String, message: String) {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        if untilMs > rateLimitBlockedUntilMs {
+            rateLimitBlockedUntilMs = untilMs
+            rateLimitBlockedError = error
+            rateLimitBlockedMessage = message
+        } else if rateLimitBlockedUntilMs <= 0 {
+            rateLimitBlockedError = error
+            rateLimitBlockedMessage = message
+        }
+    }
+
+    /// Seconds left in the block, clamped and finite so the Int conversion can never trap.
+    private static func retryAfterSecondsForLog(untilMs: Double, nowMs: Double) -> Int {
+        let seconds = ((untilMs - nowMs) / 1000).rounded(.up)
+        guard seconds.isFinite, seconds > 0 else {
+            return 0
+        }
+        return Int(min(seconds, maxRateLimitWindowMs / 1000))
+    }
+
+    /// Returns true for the first 429 only, so the rate-limit statistic is sent once.
+    private static func claimRateLimitStatistic() -> Bool {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        if rateLimitStatisticSent {
+            return false
+        }
+        rateLimitStatisticSent = true
+        return true
+    }
+
+    /// Gives the claim back when the statistic never made it out, so a later 429 can retry it.
+    private static func releaseRateLimitStatisticClaim() {
+        rateLimitStateLock.lock()
+        defer { rateLimitStateLock.unlock() }
+        rateLimitStatisticSent = false
+    }
+
+    private func parseRemoteError(from data: Data?) -> (error: String, message: String) {
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ("", "")
+        }
+        let error = json["error"] as? String ?? ""
+        let message = json["message"] as? String ?? ""
+        return (error, message)
+    }
+
+    private func resolveRateLimitBlockedUntilMs(data: Data?, response: HTTPURLResponse?) -> Double {
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let candidate = rawRateLimitDeadlineMs(data: data, response: response, nowMs: nowMs)
+        // NaN and past deadlines mean "no client-side block"; anything further out is capped.
+        guard candidate > nowMs else {
+            return 0
+        }
+        return min(candidate, nowMs + CapgoUpdater.maxRateLimitWindowMs)
+    }
+
+    private func rawRateLimitDeadlineMs(data: Data?, response: HTTPURLResponse?, nowMs: Double) -> Double {
+        if let header = response?.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let seconds = Double(header), seconds >= 0 {
+            return nowMs + seconds * 1000
+        }
+
+        if let data = data,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let moreInfo = json["moreInfo"] as? [String: Any]
+            if let retryAfter = (moreInfo?["retryAfterSeconds"] as? NSNumber)?.doubleValue
+                ?? (json["retryAfterSeconds"] as? NSNumber)?.doubleValue,
+               retryAfter >= 0 {
+                return nowMs + retryAfter * 1000
+            }
+            if let resetAt = (moreInfo?["rateLimitResetAt"] as? NSNumber)?.doubleValue
+                ?? (json["rateLimitResetAt"] as? NSNumber)?.doubleValue {
+                return resetAt
+            }
+        }
+
+        // No retry hint — do not hold a client-side block; allow immediate retry to the worker
+        return 0
+    }
+
+    private func isRemoteBlocked() -> Bool {
+        CapgoUpdater.rateLimitStateLock.lock()
+        defer { CapgoUpdater.rateLimitStateLock.unlock() }
+        if CapgoUpdater.rateLimitBlockedUntilMs <= 0 {
+            return false
+        }
+        if Date().timeIntervalSince1970 * 1000 >= CapgoUpdater.rateLimitBlockedUntilMs {
+            CapgoUpdater.rateLimitBlockedUntilMs = 0
+            return false
+        }
+        return true
+    }
+
+    private func remoteBlockedClientError() -> (error: String, message: String) {
+        CapgoUpdater.rateLimitStateLock.lock()
+        defer { CapgoUpdater.rateLimitStateLock.unlock() }
+        return (CapgoUpdater.rateLimitBlockedError, CapgoUpdater.rateLimitBlockedMessage)
     }
 
     /**
@@ -445,6 +654,8 @@ import UIKit
      */
     private func sendRateLimitStatistic() {
         guard !statsUrl.isEmpty else {
+            // The URL was cleared after the claim was taken; nothing went out, so hand it back.
+            CapgoUpdater.releaseRateLimitStatisticClaim()
             return
         }
 
@@ -463,10 +674,16 @@ import UIKit
             encoding: JSONEncoding.default,
             requestModifier: { $0.timeoutInterval = self.timeout }
         ).responseData { response in
+            let statusCode = response.response?.statusCode
             switch response.result {
-            case .success:
+            case .success where (200...299).contains(statusCode ?? 0):
                 self.logger.info("Rate limit statistic sent")
+            case .success:
+                CapgoUpdater.releaseRateLimitStatisticClaim()
+                self.logger.error("Error sending rate limit statistic")
+                self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
             case let .failure(error):
+                CapgoUpdater.releaseRateLimitStatisticClaim()
                 self.logger.error("Error sending rate limit statistic")
                 self.logger.debug("Error: \(error.localizedDescription)")
             }
@@ -702,13 +919,42 @@ import UIKit
         }
     }
 
-    private func populateDeltaCacheAsync(for id: String) {
+    private func populateDeltaCacheAsync(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.populateDeltaCache(for: id)
+            self?.populateDeltaCache(for: id, manifest: manifest, sessionKey: sessionKey)
         }
     }
 
-    private func populateDeltaCache(for id: String) {
+    struct ManifestLookupEntry {
+        let hash: String
+        /// The manifest's own file name, `.br` suffix included when present. The
+        /// built-in bundle stores files under this exact name (see
+        /// isManifestEntryAvailableLocally), unlike the extracted/cached copy which
+        /// is always named without the suffix.
+        let originalFileName: String
+    }
+
+    /// Keys are stripped of the `.br` suffix so they match the extracted file names on
+    /// disk, not the manifest's (possibly brotli-compressed) original file names.
+    func manifestHashLookup(manifest: [ManifestEntry]?, sessionKey: String) -> [String: ManifestLookupEntry] {
+        guard let manifest else {
+            return [:]
+        }
+        var lookup: [String: ManifestLookupEntry] = [:]
+        for entry in manifest {
+            guard let fileName = entry.file_name,
+                  let hash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
+                continue
+            }
+            let destFileName = fileName.hasSuffix(".br") ? String(fileName.dropLast(3)) : fileName
+            lookup[destFileName] = ManifestLookupEntry(hash: hash, originalFileName: fileName)
+        }
+        return lookup
+    }
+
+    /// `manifest` must only contain entries the caller already checksum-verified
+    /// (as `downloadManifest` does) — the hashes are trusted as-is, not re-checked.
+    func populateDeltaCache(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
         let bundleDir = self.getBundleDirectory(id: id)
         let fileManager = FileManager.default
 
@@ -728,14 +974,30 @@ import UIKit
             return
         }
 
+        let knownEntries = manifestHashLookup(manifest: manifest, sessionKey: sessionKey)
+        let builtinFolder = self.builtinFolderURL()
+
         for case let fileURL as URL in enumerator {
             let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
             if resourceValues?.isDirectory == true {
                 continue
             }
 
-            let checksum = CryptoCipher.calcChecksum(filePath: fileURL)
+            let relativePath = String(fileURL.path.dropFirst(bundleDir.path.count + 1))
+            let knownEntry = knownEntries[relativePath]
+
+            let checksum = knownEntry?.hash ?? CryptoCipher.calcChecksum(filePath: fileURL)
             if checksum.isEmpty {
+                continue
+            }
+
+            // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
+            // so there's no need to also duplicate this file into the delta cache
+            let builtinRelativePath = knownEntry?.originalFileName ?? relativePath
+            let builtinFilePath = builtinFolder.appendingPathComponent(builtinRelativePath)
+            let isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
+                verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+            if isBuiltinOrigin {
                 continue
             }
 
@@ -745,7 +1007,7 @@ import UIKit
             }
 
             do {
-                try fileManager.copyItem(at: fileURL, to: cacheFile)
+                try copyItemAtomically(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -775,6 +1037,14 @@ import UIKit
 
     public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
         let latest: AppVersion = AppVersion()
+        if isRemoteBlocked() {
+            let blocked = remoteBlockedClientError()
+            logger.debug("Skipping getLatest due to remote block (\(blocked.error)).")
+            latest.message = blocked.message
+            latest.error = blocked.error
+            latest.kind = "failed"
+            return latest
+        }
         func applyLatestResponse(_ value: AppVersionDec?) {
             if let url = value?.url {
                 latest.url = url
@@ -855,9 +1125,14 @@ import UIKit
             return latest
         }
 
-        if self.checkAndHandleRateLimitResponse(statusCode: latest.statusCode) {
-            latest.message = "Rate limit exceeded"
-            latest.error = "rate_limit_exceeded"
+        let rateLimit = self.checkAndHandleRateLimitResponse(
+            statusCode: latest.statusCode,
+            data: data,
+            response: result.response
+        )
+        if rateLimit.blocked {
+            latest.message = rateLimit.message
+            latest.error = rateLimit.error
             latest.kind = "failed"
             return latest
         }
@@ -926,6 +1201,12 @@ import UIKit
         return actualHash == expectedHash
     }
 
+    /// Overridable so tests can point it at a writable directory instead of the
+    /// real (read-only) app bundle.
+    func builtinFolderURL() -> URL {
+        Bundle.main.bundleURL.appendingPathComponent("public")
+    }
+
     private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
         guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
             return nil
@@ -948,7 +1229,7 @@ import UIKit
             return false
         }
 
-        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFolder = self.builtinFolderURL()
         let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
         if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
             return true
@@ -957,19 +1238,50 @@ import UIKit
         let fileNameWithoutPath = (fileName as NSString).lastPathComponent
         let isBrotli = fileName.hasSuffix(".br")
         let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-        let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
-        if FileManager.default.fileExists(atPath: cacheFilePath.path) && verifyChecksum(file: cacheFilePath, expectedHash: fileHash) {
-            return true
-        }
-
-        if isBrotli {
-            let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
-            if FileManager.default.fileExists(atPath: legacyCacheFilePath.path) && verifyChecksum(file: legacyCacheFilePath, expectedHash: fileHash) {
+        if Self.isSafeCacheHash(fileHash) {
+            let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
+            // Cache files are named `{hash}_{filename}` and were checksum-verified
+            // when written. Re-hashing every hit re-reads the whole bundle and
+            // OOMs/janks low-RAM devices during getMissing / delta apply.
+            if isReusableCacheFile(cacheFilePath, expectedHash: fileHash) {
                 return true
+            }
+
+            if isBrotli {
+                let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
+                if isReusableCacheFile(legacyCacheFilePath, expectedHash: fileHash) {
+                    return true
+                }
             }
         }
 
         return false
+    }
+
+    /// SHA-256 hash-named cache files were verified when written. Existence is
+    /// enough for non-empty files; empty files are reused only for the empty SHA-256.
+    /// CRC32 (8 hex) is too collision-prone to trust without a re-read.
+    private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
+        guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
+            return false
+        }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        if size > 0 {
+            return true
+        }
+        return size == 0 && expectedHash.lowercased() == Self.emptySha256
+    }
+
+    static func isSafeCacheHash(_ hash: String) -> Bool {
+        let count = hash.count
+        guard count == 64 || count == 8 else {
+            return false
+        }
+        return hash.unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value) ||
+                (0x41...0x46).contains(scalar.value) ||
+                (0x61...0x66).contains(scalar.value)
+        }
     }
 
     public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
@@ -1052,17 +1364,23 @@ import UIKit
         return json
     }
 
+    private func runBeforeDownload() {
+        beforeDownload?()
+    }
+
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
-        let builtinFolder = Bundle.main.bundleURL.appendingPathComponent("public")
+        let builtinFolder = self.builtinFolderURL()
 
         // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
         let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
         try checkDiskSpace(estimatedSize: estimatedSize)
 
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        cleanupOldManifestPartials()
         try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
 
         // Create and save BundleInfo before starting the download process
@@ -1076,9 +1394,6 @@ import UIKit
         self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
 
         let totalFiles = manifest.count
-
-        // Keep this bounded because each manifest operation waits on a URLSession callback.
-        manifestDownloadQueue.maxConcurrentOperationCount = min(8, max(1, totalFiles))
 
         // Thread-safe counters for concurrent operations
         let completedFiles = AtomicCounter()
@@ -1146,8 +1461,12 @@ import UIKit
             let fileNameWithoutPath = (fileName as NSString).lastPathComponent
             let isBrotli = fileName.hasSuffix(".br")
             let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-            let cacheFilePath = cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
-            let legacyCacheFilePath: URL? = isBrotli ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)") : nil
+            let cacheFilePath: URL? = Self.isSafeCacheHash(finalFileHash)
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
+                : nil
+            let legacyCacheFilePath: URL? = isBrotli && cacheFilePath != nil
+                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)")
+                : nil
 
             let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
             let destFilePath: URL
@@ -1182,7 +1501,7 @@ import UIKit
                     }
                     // Try cache
                     else if
-                        self.tryCopyFromCache(from: cacheFilePath, to: destFilePath, expectedHash: finalFileHash) ||
+                        (cacheFilePath != nil && self.tryCopyFromCache(from: cacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) ||
                             (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
                         self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
                     }
@@ -1253,7 +1572,7 @@ import UIKit
     private func downloadManifestFile(
         downloadUrl: String,
         destFilePath: URL,
-        cacheFilePath: URL,
+        cacheFilePath: URL?,
         fileHash: String,
         fileName: String,
         destFileName: String,
@@ -1270,7 +1589,7 @@ import UIKit
             )
         }
 
-        guard let request = createRequest(url: url, method: "GET") else {
+        guard var request = createRequest(url: url, method: "GET") else {
             throw NSError(
                 domain: "ManifestDownloadError",
                 code: 2,
@@ -1278,9 +1597,27 @@ import UIKit
             )
         }
 
-        let result = performRequest(request, label: "downloadManifestFile \(fileName)")
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+        let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, hash: fileHash, fileName: fileName)
+        let existingBytes: Int64
+        if FileManager.default.fileExists(atPath: partialURL.path) {
+            existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
+        } else {
+            existingBytes = 0
+        }
+        if existingBytes > 0 {
+            request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
+        }
+
+        let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
 
         if result.timedOut {
+            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: NSURLErrorDomain,
@@ -1290,13 +1627,32 @@ import UIKit
         }
 
         if let error = result.error {
+            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             self.logger.error("Manifest file download network error")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
         }
 
-        guard let data = result.data else {
+        let statusCode = result.response?.statusCode ?? 200
+        if statusCode == 416 && existingBytes > 0 {
+            logger.debug("Range not satisfiable, using existing partial \(partialURL.lastPathComponent)")
+        } else if statusCode < 200 || statusCode >= 300 {
+            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+        } else {
+            guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
+                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
+                throw NSError(
+                    domain: "ManifestDownloadError",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
+                )
+            }
+            try storeDownloadedFile(downloadedFileURL, at: partialURL, existingBytes: existingBytes, response: result.response)
+        }
+
+        guard FileManager.default.fileExists(atPath: partialURL.path) else {
             self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -1305,56 +1661,60 @@ import UIKit
             )
         }
 
-        let statusCode = result.response?.statusCode ?? 200
-        if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            if let stringData = String(data: data, encoding: .utf8) {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid. Data: \(stringData) for file \(fileName) at url \(downloadUrl)"])
-            } else {
-                throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
+        var workURL: URL?
+        defer {
+            if let workURL {
+                try? FileManager.default.removeItem(at: workURL)
             }
         }
 
         do {
-            // Add decryption step if public key is set and sessionKey is provided
-            var finalData = data
+            var source = partialURL
             if !self.publicKey.isEmpty && !sessionKey.isEmpty {
-                let tempFile = self.cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)")
-                try finalData.write(to: tempFile)
+                let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
+                try FileManager.default.copyItem(at: partialURL, to: work)
+                workURL = work
                 do {
-                    try CryptoCipher.decryptFile(filePath: tempFile, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
                 } catch {
+                    try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
-                finalData = try Data(contentsOf: tempFile)
-                try FileManager.default.removeItem(at: tempFile)
+                source = work
             }
 
-            // Decompress Brotli if needed
+            let calculatedChecksum: String
             if isBrotli {
-                guard let decompressedData = self.decompressBrotli(data: finalData, fileName: fileName) else {
+                do {
+                    calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
+                } catch {
+                    try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName) at url \(downloadUrl)"])
+                    throw error
                 }
-                finalData = decompressedData
+            } else {
+                let handle = try FileHandle(forReadingFrom: source)
+                defer {
+                    try? handle.close()
+                }
+                let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
+                calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
             }
 
-            // Write to destination (replace if leftover from a previous failed download)
-            try writeDataAtomically(finalData, to: destFilePath)
-
-            // Always verify checksum when file_hash is present
-            let calculatedChecksum = CryptoCipher.calcChecksum(filePath: destFilePath)
             CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
             CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
             if calculatedChecksum != fileHash {
                 try? FileManager.default.removeItem(at: destFilePath)
+                try? FileManager.default.removeItem(at: partialURL)
                 self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
-            // Save to cache (replace stale cache entries from partial or concurrent downloads)
-            try writeDataAtomically(finalData, to: cacheFilePath)
+            if let cacheFilePath {
+                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+            }
+            try? FileManager.default.removeItem(at: partialURL)
 
             self.logger.info("Manifest file downloaded and cached")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
@@ -1365,49 +1725,55 @@ import UIKit
         }
     }
 
-    /// Atomically write data to a file, replacing any existing file at the destination.
-    private func writeDataAtomically(_ data: Data, to destination: URL) throws {
-        let fileManager = FileManager.default
-        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
-        defer {
-            try? fileManager.removeItem(at: tempURL)
-        }
-
-        try data.write(to: tempURL, options: .atomic)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
-        try fileManager.moveItem(at: tempURL, to: destination)
-    }
-
     /// Copy a file to the destination, replacing any existing file.
     private func copyItemReplacing(from source: URL, to destination: URL) throws {
         let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
         try fileManager.copyItem(at: source, to: destination)
     }
 
+    /// Copy via a unique temp name then rename, so a crash cannot leave a
+    /// non-empty partial file that `isReusableCacheFile` would trust.
+    private func copyItemAtomically(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+        try fileManager.copyItem(at: source, to: tempURL)
+        try replaceItemAtomically(at: destination, withItemAt: tempURL)
+    }
+
+    /// One-step replace when dest exists, move when it does not. Avoids the
+    /// fileExists/removeItem race that can fail a verified install.
+    private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
+        let fileManager = FileManager.default
+        do {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
+        } catch {
+            if fileManager.fileExists(atPath: destination.path) {
+                throw error
+            }
+            try fileManager.moveItem(at: tempURL, to: destination)
+        }
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
-        let fileManager = FileManager.default
-
-        // First quick check - if file doesn't exist, don't bother
-        guard fileManager.fileExists(atPath: source.path) else {
+        // First quick check - if file doesn't exist or was truncated, don't bother
+        guard isReusableCacheFile(source, expectedHash: expectedHash) else {
             return false
         }
 
-        // Verify checksum before copy; remove stale cache entries that would block re-download
-        guard verifyChecksum(file: source, expectedHash: expectedHash) else {
-            try? fileManager.removeItem(at: source)
-            return false
-        }
-
-        // Try to copy - if it fails (file deleted by OS between check and copy), return false
+        // Hash is in the cache file name and was verified when written.
+        // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemReplacing(from: source, to: destination)
+            try copyItemAtomically(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
@@ -1416,125 +1782,165 @@ import UIKit
         }
     }
 
-    private func decompressBrotli(data: Data, fileName: String) -> Data? {
-        // Handle empty files
-        if data.count == 0 {
-            return data
+    /// Stream Brotli from disk to disk. Peek only the 3-byte header and last byte
+    /// for the empty/wrapper special cases; never load the whole file.
+    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws -> String {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let length = (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
+        if length == 0 {
+            try Data().write(to: dest, options: .atomic)
+            return CryptoCipher.RunningChecksum().hex()
         }
 
-        // Handle the special EMPTY_BROTLI_STREAM case
-        if data.count == 3 && data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 {
-            return Data()
+        let handle = try FileHandle(forReadingFrom: source)
+        defer {
+            try? handle.close()
         }
 
-        // For small files, check if it's a minimal Brotli wrapper
-        if data.count > 3 {
-            let maxBytes = min(32, data.count)
-            let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-            // Handle our minimal wrapper pattern
-            if data[0] == 0x1B && data[1] == 0x00 && data[2] == 0x06 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
+        let head = try handle.read(upToCount: 3) ?? Data()
+        var last: UInt8 = 0
+        if length >= 1 {
+            try handle.seek(toOffset: length - 1)
+            last = try handle.read(upToCount: 1)?.first ?? 0
+        }
+
+        if length == 3 && head.count == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06 {
+            try Data().write(to: dest, options: .atomic)
+            return CryptoCipher.RunningChecksum().hex()
+        }
+
+        if length > 3 && head.count == 3 && last == 0x03 {
+            let isEmptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06
+            let isQualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == 0x80
+            if isEmptyWrapper || isQualityZeroWrapper {
+                try handle.seek(toOffset: 3)
+                return try streamCopy(from: handle, count: length - 4, to: dest)
             }
-
-            // Handle brotli.compress minimal wrapper (quality 0)
-            if data[0] == 0x0b && data[1] == 0x02 && data[2] == 0x80 && data.last == 0x03 {
-                let range = data.index(data.startIndex, offsetBy: 3)..<data.index(data.endIndex, offsetBy: -1)
-                return data[range]
-            }
         }
 
-        // For all other cases, try standard decompression
-        let outputBufferSize = 65536
-        var outputBuffer = [UInt8](repeating: 0, count: outputBufferSize)
-        var decompressedData = Data()
+        try handle.seek(toOffset: 0)
+        return try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
+    }
+
+    func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws -> String {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        let hasher = CryptoCipher.RunningChecksum()
+        var remaining = count
+        let chunkSize = CryptoCipher.ioBufferBytes()
+        while remaining > 0 {
+            let readCount: Int = try autoreleasepool {
+                let toRead = Int(min(UInt64(chunkSize), remaining))
+                let chunk = try handle.read(upToCount: toRead) ?? Data()
+                if !chunk.isEmpty {
+                    hasher.update(chunk)
+                    try output.write(contentsOf: chunk)
+                }
+                return chunk.count
+            }
+            if readCount == 0 {
+                break
+            }
+            remaining -= UInt64(readCount)
+        }
+        try output.close()
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
+        return hasher.hex()
+    }
+
+    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws -> String {
+        let fileManager = FileManager.default
+        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer {
+            try? output.close()
+            try? fileManager.removeItem(at: tempURL)
+        }
+        let hasher = CryptoCipher.RunningChecksum()
+
+        let chunkSize = max(CryptoCipher.ioBufferBytes(), 65536)
+        var inputBuffer = [UInt8](repeating: 0, count: chunkSize)
+        var outputBuffer = [UInt8](repeating: 0, count: chunkSize)
 
         let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
         var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-
         guard status != COMPRESSION_STATUS_ERROR else {
             logger.error("Failed to initialize Brotli stream")
             logger.debug("File: \(fileName), Status: \(status)")
-            return nil
+            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize Brotli stream for \(fileName)"])
         }
-
         defer {
             compression_stream_destroy(streamPointer)
             streamPointer.deallocate()
         }
 
-        streamPointer.pointee.src_size = 0
-        streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-        streamPointer.pointee.dst_size = outputBufferSize
+        try inputBuffer.withUnsafeMutableBufferPointer { inBuf in
+            try outputBuffer.withUnsafeMutableBufferPointer { outBuf in
+                guard let inBase = inBuf.baseAddress, let outBase = outBuf.baseAddress else {
+                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get buffer address for \(fileName)"])
+                }
+                streamPointer.pointee.src_size = 0
+                streamPointer.pointee.dst_ptr = outBase
+                streamPointer.pointee.dst_size = chunkSize
 
-        let input = data
+                var flags: Int32 = 0
+                var inputExhausted = false
+                while true {
+                    if streamPointer.pointee.src_size == 0 && !inputExhausted {
+                        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
+                        if chunk.isEmpty {
+                            inputExhausted = true
+                            flags = Int32(bitPattern: COMPRESSION_STREAM_FINALIZE.rawValue)
+                        } else {
+                            chunk.copyBytes(to: inBase, count: chunk.count)
+                            streamPointer.pointee.src_ptr = UnsafePointer(inBase)
+                            streamPointer.pointee.src_size = chunk.count
+                        }
+                    }
 
-        while true {
-            if streamPointer.pointee.src_size == 0 {
-                streamPointer.pointee.src_size = input.count
-                input.withUnsafeBytes { rawBufferPointer in
-                    if let baseAddress = rawBufferPointer.baseAddress {
-                        streamPointer.pointee.src_ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
-                    } else {
-                        logger.error("Failed to get base address for Brotli decompression")
+                    status = compression_stream_process(streamPointer, flags)
+                    let have = chunkSize - streamPointer.pointee.dst_size
+                    if have > 0 {
+                        let decoded = Data(bytes: outBase, count: have)
+                        hasher.update(decoded)
+                        try output.write(contentsOf: decoded)
+                    }
+                    streamPointer.pointee.dst_ptr = outBase
+                    streamPointer.pointee.dst_size = chunkSize
+
+                    if status == COMPRESSION_STATUS_END {
+                        break
+                    }
+                    if status == COMPRESSION_STATUS_ERROR {
+                        logger.error("Brotli process failed")
+                        logger.debug("File: \(fileName), Status: \(status)")
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
+                    }
+                    if inputExhausted && streamPointer.pointee.src_size == 0 && have == 0 {
+                        logger.error("Brotli decompression stalled")
                         logger.debug("File: \(fileName)")
-                        status = COMPRESSION_STATUS_ERROR
-                        return
+                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
                     }
                 }
-            }
-
-            if status == COMPRESSION_STATUS_ERROR {
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.error("Brotli decompression failed")
-                logger.debug("File: \(fileName), First \(maxBytes) bytes: \(hexDump)")
-                break
-            }
-
-            status = compression_stream_process(streamPointer, 0)
-
-            let have = outputBufferSize - streamPointer.pointee.dst_size
-            if have > 0 {
-                decompressedData.append(outputBuffer, count: have)
-            }
-
-            if status == COMPRESSION_STATUS_END {
-                break
-            } else if status == COMPRESSION_STATUS_ERROR {
-                logger.error("Brotli process failed")
-                logger.debug("File: \(fileName), Status: \(status)")
-                if let text = String(data: data, encoding: .utf8) {
-                    let asciiCount = text.unicodeScalars.filter { $0.isASCII }.count
-                    let totalCount = text.unicodeScalars.count
-                    if totalCount > 0 && Double(asciiCount) / Double(totalCount) >= 0.8 {
-                        logger.debug("Input appears to be plain text: \(text)")
-                    }
-                }
-
-                let maxBytes = min(32, data.count)
-                let hexDump = data.prefix(maxBytes).map { String(format: "%02x", $0) }.joined(separator: " ")
-                logger.debug("Raw data: \(hexDump)")
-
-                return nil
-            }
-
-            if streamPointer.pointee.dst_size == 0 {
-                streamPointer.pointee.dst_ptr = UnsafeMutablePointer<UInt8>(&outputBuffer)
-                streamPointer.pointee.dst_size = outputBufferSize
-            }
-
-            if input.count == 0 {
-                logger.error("Zero input size for Brotli decompression")
-                logger.debug("File: \(fileName)")
-                break
             }
         }
 
-        return status == COMPRESSION_STATUS_END ? decompressedData : nil
+        try output.close()
+        try replaceItemAtomically(at: dest, withItemAt: tempURL)
+        return hasher.hex()
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {
@@ -1811,6 +2217,9 @@ import UIKit
     }
 
     public func delete(id: String, removeInfo: Bool) -> Bool {
+        self.deleteLock.lock()
+        defer { self.deleteLock.unlock() }
+
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
             logger.info("Cannot delete current or builtin bundle")
@@ -1821,6 +2230,7 @@ import UIKit
         if let previewFallback = self.getPreviewFallbackBundle(),
            !previewFallback.isDeleted(),
            !previewFallback.isErrorStatus(),
+           !previewFallback.isDeleting(),
            previewFallback.getId() == id {
             logger.info("Cannot delete the preview fallback bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1831,6 +2241,7 @@ import UIKit
         if let next = self.getNextBundle(),
            !next.isDeleted() &&
             !next.isErrorStatus() &&
+            !next.isDeleting() &&
             next.getId() == id {
             logger.info("Cannot delete the next bundle")
             logger.debug("Bundle ID: \(id)")
@@ -1838,24 +2249,55 @@ import UIKit
         }
 
         let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
-        do {
-            try FileManager.default.removeItem(atPath: destPersist.path)
-        } catch {
-            logger.error("Bundle folder not removed")
-            logger.debug("Path: \(destPersist.path)")
-            // even if, we don;t care. Android doesn't care
-            if removeInfo {
-                self.removeBundleInfo(id: id)
-            }
-            self.sendStats(action: "delete", versionName: deleted.getVersionName())
+        let hadRegistry = self.hasStoredBundleInfo(id: id)
+        let hadFolder = FileManager.default.fileExists(atPath: destPersist.path)
+        if !hadRegistry && !hadFolder {
+            logger.error("Cannot delete unknown bundle")
+            logger.debug("Bundle ID: \(id)")
             return false
         }
-        if removeInfo {
-            self.removeBundleInfo(id: id)
-        } else {
-            self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+
+        // Persist DELETING before touching disk so kill/OOM can resume on next launch.
+        if !deleted.isDeleting() {
+            if !self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                logger.error("Failed to persist DELETING marker, aborting disk delete")
+                logger.debug("Bundle ID: \(id)")
+                return false
+            }
+            UserDefaults.standard.synchronize()
         }
-        logger.info("Bundle deleted successfully")
+
+        if FileManager.default.fileExists(atPath: destPersist.path) {
+            do {
+                try FileManager.default.removeItem(atPath: destPersist.path)
+            } catch {
+                logger.error("Bundle folder not removed, will retry later")
+                logger.debug("Path: \(destPersist.path), Error: \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        // Only drop registry after the folder is confirmed gone.
+        if FileManager.default.fileExists(atPath: destPersist.path) {
+            logger.error("Bundle folder still present after delete, will retry later")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+
+        let finalized: Bool
+        if removeInfo {
+            finalized = self.saveBundleInfo(id: id, bundle: nil)
+        } else {
+            finalized = self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
+        }
+        guard finalized else {
+            logger.error("Failed to finalize delete registry update, will retry later")
+            logger.debug("Bundle ID: \(id)")
+            return false
+        }
+        UserDefaults.standard.synchronize()
+        self.dequeuePendingDelete(id: id)
+        logger.info("Bundle deleted and confirmed gone")
         logger.debug("Version: \(deleted.getVersionName())")
         self.sendStats(action: "delete", versionName: deleted.getVersionName())
         return true
@@ -1863,6 +2305,47 @@ import UIKit
 
     public func delete(id: String) -> Bool {
         return self.delete(id: id, removeInfo: true)
+    }
+
+    /// Resume incomplete deletes one-by-one. Safe across app kill / OOM because
+    /// delete() marks DELETING before disk work and only clears registry after confirm.
+    public func drainPendingDeletes() {
+        var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
+        pendingIds.formUnion(self.getPendingDeleteIds())
+        for id in pendingIds {
+            logger.info("Resuming pending delete for bundle: \(id)")
+            if self.delete(id: id, removeInfo: true) {
+                self.dequeuePendingDelete(id: id)
+            }
+            Thread.sleep(forTimeInterval: self.deletePaceSeconds)
+        }
+    }
+
+    private func getPendingDeleteIds() -> Set<String> {
+        guard let raw = UserDefaults.standard.string(forKey: self.PENDING_DELETE_IDS), !raw.isEmpty else {
+            return []
+        }
+        return Set(raw.split(separator: ",").map { String($0) }.filter { !$0.isEmpty })
+    }
+
+    private func enqueuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.insert(id).inserted else { return }
+        UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        UserDefaults.standard.synchronize()
+    }
+
+    private func dequeuePendingDelete(id: String) {
+        guard !id.isEmpty else { return }
+        var ids = self.getPendingDeleteIds()
+        guard ids.remove(id) != nil else { return }
+        if ids.isEmpty {
+            UserDefaults.standard.removeObject(forKey: self.PENDING_DELETE_IDS)
+        } else {
+            UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
+        }
+        UserDefaults.standard.synchronize()
     }
 
     public func cleanupDeltaCache() {
@@ -1924,6 +2407,11 @@ import UIKit
 
                 do {
                     try fileManager.removeItem(at: url)
+                    if fileManager.fileExists(atPath: url.path) {
+                        logger.error("Orphan bundle directory still present after delete")
+                        logger.debug("Bundle ID: \(id)")
+                        continue
+                    }
                     self.removeBundleInfo(id: id)
                     logger.info("Deleted orphan bundle directory")
                     logger.debug("Bundle ID: \(id)")
@@ -1936,6 +2424,40 @@ import UIKit
             logger.error("Failed to enumerate bundle directory for cleanup")
             logger.debug("Error: \(error.localizedDescription)")
         }
+    }
+
+    public func allowedBundleIdsForCleanup() -> Set<String> {
+        var allowedIds = Set(self.list(raw: true).compactMap { info -> String? in
+            let id = info.getId()
+            // DELETED tombstones must not protect leftover folders.
+            // DELETING stays protected so drainPendingDeletes owns the removal.
+            if id.isEmpty || info.isDeleted() {
+                return nil
+            }
+            return id
+        })
+        let currentId = self.getCurrentBundleId()
+        if !currentId.isEmpty {
+            allowedIds.insert(currentId)
+        }
+        let fallback = self.getFallbackBundle()
+        let fallbackId = fallback.getId()
+        if !fallbackId.isEmpty && !fallback.isDeleting() {
+            allowedIds.insert(fallbackId)
+        }
+        if let next = self.getNextBundle() {
+            let nextId = next.getId()
+            if !nextId.isEmpty && !next.isDeleting() {
+                allowedIds.insert(nextId)
+            }
+        }
+        if let previewFallback = self.getPreviewFallbackBundle() {
+            let previewId = previewFallback.getId()
+            if !previewId.isEmpty && !previewFallback.isDeleting() {
+                allowedIds.insert(previewId)
+            }
+        }
+        return allowedIds
     }
 
     public func cleanupOrphanedTempFolders(threadToCheck: Thread?) {
@@ -2079,7 +2601,8 @@ import UIKit
                 destPersist.isDirectory &&
                 !indexPersist.isDirectory &&
                 indexPersist.exist &&
-                !bundleIndo.isDeleted() {
+                !bundleIndo.isDeleted() &&
+                !bundleIndo.isDeleting() {
             return true
         }
         return false
@@ -2169,17 +2692,39 @@ import UIKit
         let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
         logger.info("Fallback bundle is: \(fallback.toString())")
         logger.info("Version successfully loaded: \(bundle.toString())")
-        if autoDeletePrevious && !fallback.isBuiltin() && fallback.getId() != bundle.getId() && !fallbackIsPreviewFallback {
-            let res = self.delete(id: fallback.getId())
-            if res {
-                logger.info("Deleted previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
-            } else {
-                logger.error("Failed to delete previous bundle")
-                logger.debug("Bundle: \(fallback.toString())")
+        let previousFallbackId = fallback.getId()
+        let nextBundle = self.getNextBundle()
+        let previousIsNext = nextBundle?.getId() == previousFallbackId &&
+            !(nextBundle?.isDeleted() ?? true) &&
+            !(nextBundle?.isErrorStatus() ?? true) &&
+            !(nextBundle?.isDeleting() ?? true)
+        let shouldDeletePrevious = autoDeletePrevious &&
+            !fallback.isBuiltin() &&
+            previousFallbackId != bundle.getId() &&
+            !fallbackIsPreviewFallback &&
+            !previousIsNext
+        if shouldDeletePrevious {
+            // Mark durable intent before fallback switch so a kill mid-flight still retries.
+            if !self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue)) {
+                self.logger.error("Failed to persist DELETING for previous bundle; queueing durable retry")
+                self.logger.debug("Bundle ID: \(previousFallbackId)")
+                self.enqueuePendingDelete(id: previousFallbackId)
             }
+            UserDefaults.standard.synchronize()
         }
         self.setFallbackBundle(fallback: bundle)
+        if shouldDeletePrevious {
+            DispatchQueue.global(qos: .utility).async {
+                let res = self.delete(id: previousFallbackId)
+                if res {
+                    self.logger.info("Deleted previous bundle")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                } else {
+                    self.logger.info("Previous bundle delete incomplete, will retry")
+                    self.logger.debug("Bundle ID: \(previousFallbackId)")
+                }
+            }
+        }
     }
 
     public func setError(bundle: BundleInfo) {
@@ -2216,11 +2761,11 @@ import UIKit
             return setChannel
         }
 
-        // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping setChannel due to rate limit (429). Requests will resume after app restart.")
-            setChannel.message = "Rate limit exceeded"
-            setChannel.error = "rate_limit_exceeded"
+        if isRemoteBlocked() {
+            let blocked = remoteBlockedClientError()
+            logger.debug("Skipping setChannel due to remote block (\(blocked.error)).")
+            setChannel.message = blocked.message
+            setChannel.error = blocked.error
             return setChannel
         }
 
@@ -2245,9 +2790,14 @@ import UIKit
 
         let result = performRequest(request, label: "setChannel")
 
-        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
-            setChannel.message = "Rate limit exceeded"
-            setChannel.error = "rate_limit_exceeded"
+        let rateLimit = self.checkAndHandleRateLimitResponse(
+            statusCode: result.response?.statusCode,
+            data: result.data,
+            response: result.response
+        )
+        if rateLimit.blocked {
+            setChannel.message = rateLimit.message
+            setChannel.error = rateLimit.error
             return setChannel
         }
 
@@ -2289,7 +2839,8 @@ import UIKit
             self.logger.info("Public channel requested, channel override removed")
 
             setChannel.status = responseValue.status ?? "ok"
-            setChannel.message = responseValue.message ?? "Public channel requested, channel override removed. Device will use public channel automatically."
+            setChannel.message = responseValue.message
+                ?? "Public channel requested, channel override removed. Device will use public channel automatically."
         } else {
             self.defaultChannel = channel
             UserDefaults.standard.set(channel, forKey: defaultChannelKey)
@@ -2304,12 +2855,12 @@ import UIKit
 
     func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
-
         // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping getChannel due to rate limit (429). Requests will resume after app restart.")
-            getChannel.message = "Rate limit exceeded"
-            getChannel.error = "rate_limit_exceeded"
+        if isRemoteBlocked() {
+            let blocked = remoteBlockedClientError()
+            logger.debug("Skipping getChannel due to remote block (\(blocked.error)).")
+            getChannel.message = blocked.message
+            getChannel.error = blocked.error
             return getChannel
         }
 
@@ -2333,9 +2884,14 @@ import UIKit
 
         let result = performRequest(request, label: "getChannel")
 
-        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
-            getChannel.message = "Rate limit exceeded"
-            getChannel.error = "rate_limit_exceeded"
+        let rateLimit = self.checkAndHandleRateLimitResponse(
+            statusCode: result.response?.statusCode,
+            data: result.data,
+            response: result.response
+        )
+        if rateLimit.blocked {
+            getChannel.message = rateLimit.message
+            getChannel.error = rateLimit.error
             return getChannel
         }
 
@@ -2413,9 +2969,10 @@ import UIKit
         let listChannels: ListChannels = ListChannels()
 
         // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping listChannels due to rate limit (429). Requests will resume after app restart.")
-            listChannels.error = "rate_limit_exceeded"
+        if isRemoteBlocked() {
+            let blocked = remoteBlockedClientError()
+            logger.debug("Skipping listChannels due to remote block (\(blocked.error)).")
+            listChannels.error = blocked.error
             return listChannels
         }
 
@@ -2449,8 +3006,13 @@ import UIKit
 
         let result = performRequest(request, label: "listChannels")
 
-        if self.checkAndHandleRateLimitResponse(statusCode: result.response?.statusCode) {
-            listChannels.error = "rate_limit_exceeded"
+        let rateLimit = self.checkAndHandleRateLimitResponse(
+            statusCode: result.response?.statusCode,
+            data: result.data,
+            response: result.response
+        )
+        if rateLimit.blocked {
+            listChannels.error = rateLimit.error
             return listChannels
         }
 
@@ -2507,6 +3069,7 @@ import UIKit
         let queue = OperationQueue()
         queue.name = "com.capgo.manifestDownload"
         queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
         return queue
     }()
 
@@ -2529,14 +3092,12 @@ import UIKit
         metadata: [String: String]?,
         onSent: (() -> Void)?
     ) {
-        if previewSession {
-            logger.debug("Skipping sendStats during preview session.")
+        if statsStopped {
             return
         }
 
-        // Check if rate limit was exceeded
-        if CapgoUpdater.rateLimitExceeded {
-            logger.debug("Skipping sendStats due to rate limit (429). Stats will resume after app restart.")
+        if previewSession {
+            logger.debug("Skipping sendStats during preview session.")
             return
         }
 
@@ -2570,15 +3131,90 @@ import UIKit
         )
 
         statsQueueLock.lock()
+        if statsStopped {
+            statsQueueLock.unlock()
+            return
+        }
+        if statsQueue.count >= CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats + 1)
+        }
         statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
         statsQueueLock.unlock()
 
         ensureStatsTimerStarted()
     }
 
+    func restorePendingStats() {
+        let fileURL = pendingStatsFileURL()
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
+              let events = try? JSONDecoder().decode([StatsEvent].self, from: data) else {
+            return
+        }
+
+        statsQueueLock.lock()
+        for event in events {
+            if statsQueue.count >= CapgoUpdater.maxPendingStats {
+                break
+            }
+            statsQueue.append(QueuedStatsEvent(event: event, onSent: nil))
+        }
+        let restoredCount = statsQueue.count
+        statsQueueLock.unlock()
+
+        if restoredCount > 0 {
+            logger.info("Restored \(restoredCount) pending stats events")
+            ensureStatsTimerStarted()
+        }
+    }
+
+    func persistPendingStats() {
+        persistStatsQueue()
+    }
+
+    private func pendingStatsFileURL() -> URL {
+        libraryDir.appendingPathComponent(pendingStatsFileName)
+    }
+
+    private func persistStatsQueue(force: Bool = false) {
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        if statsStopped && !force {
+            return
+        }
+
+        statsQueueLock.lock()
+        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
+        statsQueueLock.unlock()
+        if events.count > CapgoUpdater.maxPendingStats {
+            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
+        }
+
+        let fileURL = pendingStatsFileURL()
+        if events.isEmpty {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(events)
+            try data.write(to: fileURL, options: .atomic)
+            var resourceURL = fileURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try resourceURL.setResourceValues(values)
+        } catch {
+            logger.error("Failed to persist stats queue")
+            logger.debug("Error: \(error.localizedDescription)")
+        }
+    }
+
     private func ensureStatsTimerStarted() {
+        if statsStopped {
+            return
+        }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.statsStopped else { return }
             if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
                 // Use closure-based timer to avoid strong reference cycle
                 self.statsFlushTimer = Timer.scheduledTimer(
@@ -2592,17 +3228,27 @@ import UIKit
     }
 
     private func flushStatsQueue() {
+        if statsStopped {
+            return
+        }
+        // While Retry-After is active, keep stats queued and skip the network call.
+        if isRemoteBlocked() {
+            logger.debug("Deferring stats flush until Retry-After expires.")
+            return
+        }
+
         statsQueueLock.lock()
-        guard !statsQueue.isEmpty else {
+        guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
             statsQueueLock.unlock()
             return
         }
         let queuedEvents = statsQueue
         statsQueue.removeAll()
+        statsInFlight = queuedEvents
         statsQueueLock.unlock()
+        persistStatsQueue()
 
         let eventsToSend = queuedEvents.map(\.event)
-        let onSentCallbacks = queuedEvents.compactMap(\.onSent)
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -2615,33 +3261,83 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                // Check for 429 rate limit
-                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode) {
+                if self.abandonStoppedStatsFlush() {
+                    semaphore.signal()
+                    return
+                }
+                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
+                    self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
-                    self.logger.error("Error sending stats batch")
-                    self.logger.debug("Response code: \(statusCode)")
+                    if CapgoUpdater.isTransientStatsFailure(statusCode) {
+                        self.requeueStatsEvents(queuedEvents)
+                        self.logger.error("Error sending stats batch")
+                        self.logger.debug("Retrying later, response code: \(statusCode)")
+                    } else {
+                        self.clearStatsInFlight()
+                        self.logger.error("Dropping stats batch after permanent error")
+                        self.logger.debug("Response code: \(statusCode)")
+                    }
                     semaphore.signal()
                     return
                 }
 
                 switch response.result {
                 case .success:
+                    self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    onSentCallbacks.forEach { $0() }
+                    self.runStatsCallbacks(queuedEvents)
                 case let .failure(error):
+                    self.requeueStatsEvents(queuedEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
                 semaphore.signal()
             }
             semaphore.wait()
+            if !self.statsStopped {
+                self.persistStatsQueue()
+            }
         }
         operationQueue.addOperation(operation)
+    }
+
+    private func abandonStoppedStatsFlush() -> Bool {
+        statsStopped
+    }
+
+    /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
+    private static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
+        return statusCode == 429 || statusCode == 408 || statusCode >= 500
+    }
+
+    private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
+        for sentEvent in sentEvents {
+            sentEvent.onSent?()
+        }
+    }
+
+    private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
+        guard !statsStopped, !events.isEmpty else { return }
+        statsQueueLock.lock()
+        statsInFlight.removeAll()
+        statsQueue.insert(contentsOf: events, at: 0)
+        if statsQueue.count > CapgoUpdater.maxPendingStats {
+            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats)
+        }
+        statsQueueLock.unlock()
+        persistStatsQueue()
+        ensureStatsTimerStarted()
+    }
+
+    private func clearStatsInFlight() {
+        statsQueueLock.lock()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {
@@ -2680,23 +3376,26 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: nil)
     }
 
-    public func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    @discardableResult
+    public func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
             logger.info("Not saving info for bundle [\(id)] \(bundle?.toString() ?? "")")
-            return
+            return false
         }
         if bundle == nil {
             logger.info("Removing info for bundle [\(id)]")
             UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
-        } else {
-            let update = bundle!.setId(id: id)
-            logger.info("Storing info for bundle [\(id)] \(update.toString())")
-            do {
-                try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
-            } catch {
-                logger.error("Failed to save bundle info")
-                logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-            }
+            return true
+        }
+        let update = bundle!.setId(id: id)
+        logger.info("Storing info for bundle [\(id)] \(update.toString())")
+        do {
+            try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
+            return true
+        } catch {
+            logger.error("Failed to save bundle info")
+            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
+            return false
         }
     }
 
