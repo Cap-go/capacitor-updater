@@ -599,6 +599,55 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
     }
 
+    func testDisableNonUpdateEventsSkipsHealthReporter() {
+        let implementation = HealthStatsCapgoUpdater()
+        implementation.disableNonUpdateEvents = true
+        let tracker = AppHealthTracker(implementation: implementation)
+
+        tracker.reportMemoryWarning()
+        tracker.reportPreviousUncleanForegroundExit()
+
+        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+    }
+
+    func testLimitUpdateEventsToBillingOnlyQueuesSetWithMinimalPayload() {
+        let updater = CapgoUpdater()
+        updater.statsUrl = "https://example.com/stats"
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
+        updater.limitUpdateEventsToBilling = true
+
+        updater.sendStats(action: "download_fail", versionName: "1.0.0")
+        updater.sendStats(action: "set", versionName: "2.0.0", oldVersionName: "1.0.0")
+
+        let event = updater.firstQueuedStatsEventForTests()
+        XCTAssertEqual(event?.action, "set")
+        XCTAssertEqual(event?.app_id, "com.example.app")
+        XCTAssertEqual(event?.device_id, "device-1")
+        XCTAssertEqual(event?.version_name, "2.0.0")
+        XCTAssertEqual(event?.platform, "ios")
+        XCTAssertNil(event?.custom_id)
+        XCTAssertNil(event?.metadata)
+        XCTAssertNil(event?.plugin_version)
+    }
+
+    func testDisableNonUpdateEventsDropsHealthButKeepsUpdateEvents() {
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
+        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", disableNonUpdateEvents: true, limitUpdateEventsToBilling: false))
+
+        let updater = CapgoUpdater()
+        updater.statsUrl = "https://example.com/stats"
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
+        updater.disableNonUpdateEvents = true
+
+        updater.sendStats(action: "app_crash", versionName: "1.0.0")
+        updater.sendStats(action: "download_fail", versionName: "1.0.0")
+
+        XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "download_fail")
+    }
+
     func testMapsWebViewErrorTypesToStatsActions() {
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "javascript_error"), "webview_javascript_error")
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unhandled_rejection"), "webview_unhandled_rejection")

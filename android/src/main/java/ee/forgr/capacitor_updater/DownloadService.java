@@ -68,6 +68,8 @@ public class DownloadService extends Worker {
     public static final String pluginVersion = "plugin_version";
     public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
+    public static final String DISABLE_NON_UPDATE_EVENTS = "disable_non_update_events";
+    public static final String LIMIT_UPDATE_EVENTS_TO_BILLING = "limit_update_events_to_billing";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
     public static final String VERSION_BUILD = "version_build";
@@ -374,22 +376,38 @@ public class DownloadService extends Worker {
                 return;
             }
 
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("app_id", getInputString(APP_ID, "unknown"));
-            json.put("plugin_version", getInputString(pluginVersion, "unknown"));
-            json.put("install_source", getInputString(INSTALL_SOURCE, ""));
-            json.put("version_name", version != null ? version : "");
-            json.put("old_version_name", "");
-            json.put("action", action);
-            json.put("device_id", getInputString(DEVICE_ID, ""));
-            json.put("custom_id", getInputString(CUSTOM_ID, ""));
-            json.put("version_build", getInputString(VERSION_BUILD, ""));
-            json.put("version_code", getInputString(VERSION_CODE, ""));
-            json.put("version_os", getInputString(VERSION_OS, currentVersionOs));
-            json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
-            json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
-            json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+            final boolean disableNonUpdateEvents = getInputData().getBoolean(DISABLE_NON_UPDATE_EVENTS, false);
+            final boolean limitUpdateEventsToBilling = getInputData().getBoolean(LIMIT_UPDATE_EVENTS_TO_BILLING, false);
+            if (!CapgoUpdater.shouldSendStatsAction(action, disableNonUpdateEvents, limitUpdateEventsToBilling)) {
+                return;
+            }
+
+            JSONObject json;
+            if (limitUpdateEventsToBilling) {
+                json = new JSONObject();
+                json.put("platform", "android");
+                json.put("device_id", getInputString(DEVICE_ID, ""));
+                json.put("app_id", getInputString(APP_ID, "unknown"));
+                json.put("version_name", version != null ? version : "");
+                json.put("action", action);
+            } else {
+                json = new JSONObject();
+                json.put("platform", "android");
+                json.put("app_id", getInputString(APP_ID, "unknown"));
+                json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+                json.put("install_source", getInputString(INSTALL_SOURCE, ""));
+                json.put("version_name", version != null ? version : "");
+                json.put("old_version_name", "");
+                json.put("action", action);
+                json.put("device_id", getInputString(DEVICE_ID, ""));
+                json.put("custom_id", getInputString(CUSTOM_ID, ""));
+                json.put("version_build", getInputString(VERSION_BUILD, ""));
+                json.put("version_code", getInputString(VERSION_CODE, ""));
+                json.put("version_os", getInputString(VERSION_OS, currentVersionOs));
+                json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
+                json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
+                json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+            }
 
             Request request = new Request.Builder()
                 .url(statsUrl)

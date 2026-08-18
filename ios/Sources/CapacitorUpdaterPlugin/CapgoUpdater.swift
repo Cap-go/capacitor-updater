@@ -44,6 +44,8 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
+    public var disableNonUpdateEvents = false
+    public var limitUpdateEventsToBilling = false
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
     public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
@@ -84,6 +86,92 @@ import UIKit
     private struct QueuedStatsEvent {
         let event: StatsEvent
         let onSent: (() -> Void)?
+    }
+
+    private static let nonUpdateStatsActions: Set<String> = [
+        "app_crash",
+        "app_crash_native",
+        "app_anr",
+        "app_killed_low_memory",
+        "app_killed_excessive_resource_usage",
+        "app_initialization_failure",
+        "app_memory_warning",
+        "app_launch_start",
+        "app_launch_ready",
+        "app_launch_timeout",
+        "app_moved_to_foreground",
+        "app_moved_to_background",
+        "os_version_changed",
+        "native_app_version_changed",
+        "rate_limit_reached"
+    ]
+
+    private static let billingStatsActions: Set<String> = ["set"]
+
+    static func isNonUpdateStatsAction(_ action: String) -> Bool {
+        if action.isEmpty {
+            return true
+        }
+        if nonUpdateStatsActions.contains(action) {
+            return true
+        }
+        return action.hasPrefix("webview_")
+    }
+
+    static func isUpdatePipelineStatsAction(_ action: String) -> Bool {
+        !isNonUpdateStatsAction(action)
+    }
+
+    static func isBillingStatsAction(_ action: String) -> Bool {
+        billingStatsActions.contains(action)
+    }
+
+    static func shouldSendStatsAction(
+        _ action: String,
+        disableNonUpdateEvents: Bool,
+        limitUpdateEventsToBilling: Bool
+    ) -> Bool {
+        if limitUpdateEventsToBilling {
+            return isBillingStatsAction(action)
+        }
+        if disableNonUpdateEvents {
+            return isUpdatePipelineStatsAction(action)
+        }
+        return true
+    }
+
+    func allowsNonUpdateStats() -> Bool {
+        !disableNonUpdateEvents && !limitUpdateEventsToBilling
+    }
+
+    func firstQueuedStatsEventForTests() -> StatsEvent? {
+        statsQueueLock.lock()
+        defer { statsQueueLock.unlock() }
+        return statsQueue.first?.event
+    }
+
+    private func createBillingStatsEvent(action: String, versionName: String) -> StatsEvent {
+        StatsEvent(
+            platform: "ios",
+            device_id: deviceID,
+            app_id: appId,
+            custom_id: nil,
+            version_build: nil,
+            version_code: nil,
+            version_os: nil,
+            version_name: versionName,
+            old_version_name: nil,
+            plugin_version: nil,
+            is_emulator: nil,
+            is_prod: nil,
+            installSource: nil,
+            action: action,
+            channel: nil,
+            defaultChannel: nil,
+            key_id: nil,
+            metadata: nil,
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+        )
     }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
@@ -653,6 +741,15 @@ import UIKit
      * It MUST be called from a background queue to avoid blocking the main thread.
      */
     private func sendRateLimitStatistic() {
+        guard shouldSendStatsAction(
+            "rate_limit_reached",
+            disableNonUpdateEvents: disableNonUpdateEvents,
+            limitUpdateEventsToBilling: limitUpdateEventsToBilling
+        ) else {
+            CapgoUpdater.releaseRateLimitStatisticClaim()
+            return
+        }
+
         guard !statsUrl.isEmpty else {
             // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             CapgoUpdater.releaseRateLimitStatisticClaim()
@@ -3105,30 +3202,43 @@ import UIKit
             return
         }
 
-        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
-        let info = createInfoObject()
+        if !Self.shouldSendStatsAction(
+            action,
+            disableNonUpdateEvents: disableNonUpdateEvents,
+            limitUpdateEventsToBilling: limitUpdateEventsToBilling
+        ) {
+            onSent?()
+            return
+        }
 
-        let event = StatsEvent(
-            platform: info.platform,
-            device_id: info.device_id,
-            app_id: info.app_id,
-            custom_id: info.custom_id,
-            version_build: info.version_build,
-            version_code: info.version_code,
-            version_os: info.version_os,
-            version_name: resolvedVersionName,
-            old_version_name: oldVersionName ?? "",
-            plugin_version: info.plugin_version,
-            is_emulator: info.is_emulator,
-            is_prod: info.is_prod,
-            installSource: info.installSource,
-            action: action,
-            channel: info.channel,
-            defaultChannel: info.defaultChannel,
-            key_id: info.key_id,
-            metadata: metadata,
-            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
-        )
+        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
+        let event: StatsEvent
+        if limitUpdateEventsToBilling {
+            event = createBillingStatsEvent(action: action, versionName: resolvedVersionName)
+        } else {
+            let info = createInfoObject()
+            event = StatsEvent(
+                platform: info.platform,
+                device_id: info.device_id,
+                app_id: info.app_id,
+                custom_id: info.custom_id,
+                version_build: info.version_build,
+                version_code: info.version_code,
+                version_os: info.version_os,
+                version_name: resolvedVersionName,
+                old_version_name: oldVersionName ?? "",
+                plugin_version: info.plugin_version,
+                is_emulator: info.is_emulator,
+                is_prod: info.is_prod,
+                installSource: info.installSource,
+                action: action,
+                channel: info.channel,
+                defaultChannel: info.defaultChannel,
+                key_id: info.key_id,
+                metadata: metadata,
+                timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+            )
+        }
 
         statsQueueLock.lock()
         if statsStopped {
