@@ -194,6 +194,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let defaultChannelStateLock = NSLock()
     private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
+    private var cleanupTimedOut = false
     private var cleanupThread: Thread?
     private var defaultChannelCleanupMustRetry = false
     private var persistCustomId = false
@@ -1139,9 +1140,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         cleanupThread?.start()
     }
 
+    private func cleanupTimeoutError() -> NSError {
+        NSError(
+            domain: "CapacitorUpdater",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Cleanup did not finish before download"]
+        )
+    }
+
     private func waitForCleanupIfNeeded() throws {
         if cleanupComplete {
             return  // Already done, no need to wait
+        }
+        if cleanupTimedOut {
+            throw cleanupTimeoutError()
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
@@ -1151,12 +1163,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             cleanupThread?.cancel()
             let cancelled = cleanupGroup.wait(timeout: .now() + .seconds(60))
             if cancelled == .timedOut {
+                cleanupTimedOut = true
                 logger.error("Cleanup did not finish after cancel, aborting download")
-                throw NSError(
-                    domain: "CapacitorUpdater",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Cleanup did not finish before download"]
-                )
+                throw cleanupTimeoutError()
             }
             return
         }
