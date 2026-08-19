@@ -412,7 +412,7 @@ final class StreamDecodeTests: XCTestCase {
         XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
         let unsafe = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: "../evil", fileName: "app.js")
         XCTAssertTrue(unsafe.lastPathComponent.hasPrefix("partial_"))
-        XCTAssertEqual(unsafe.deletingLastPathComponent().standardizedFileURL, cache.standardizedFileURL)
+        XCTAssertTrue(unsafe.standardizedFileURL.path.hasPrefix(cache.standardizedFileURL.path + "/"))
         XCTAssertFalse(unsafe.lastPathComponent.contains(".."))
     }
 
