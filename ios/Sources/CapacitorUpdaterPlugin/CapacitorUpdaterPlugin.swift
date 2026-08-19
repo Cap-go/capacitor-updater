@@ -427,7 +427,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         self.implementation.beforeDownload = { [weak self] in
-            self?.waitForCleanupIfNeeded()
+            try self?.waitForCleanupIfNeeded()
         }
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
@@ -1139,7 +1139,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         cleanupThread?.start()
     }
 
-    private func waitForCleanupIfNeeded() {
+    private func waitForCleanupIfNeeded() throws {
         if cleanupComplete {
             return  // Already done, no need to wait
         }
@@ -1149,7 +1149,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if result == .timedOut {
             logger.warn("Cleanup wait timed out after 60s, cancelling leftover cleanup")
             cleanupThread?.cancel()
-            _ = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            let cancelled = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            if cancelled == .timedOut {
+                logger.error("Cleanup did not finish after cancel, aborting download")
+                throw NSError(
+                    domain: "CapacitorUpdater",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Cleanup did not finish before download"]
+                )
+            }
             return
         }
         logger.info("Cleanup finished, proceeding with download")
@@ -1569,7 +1577,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
         // Manual/preview downloads must wait too - launch orphan sweep can delete their temps.
-        self.waitForCleanupIfNeeded()
+        try self.waitForCleanupIfNeeded()
         guard let url = URL(string: urlString) else {
             throw makePreviewError("Invalid download URL")
         }
@@ -4272,7 +4280,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.runBackgroundDownloadWork {
             // Wait for cleanup to complete before starting download
-            self.waitForCleanupIfNeeded()
+            do {
+                try self.waitForCleanupIfNeeded()
+            } catch {
+                self.logger.error("Cleanup still running, skipping download")
+                self.clearDownloadInProgressState()
+                return
+            }
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 return

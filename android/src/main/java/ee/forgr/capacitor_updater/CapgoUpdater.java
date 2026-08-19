@@ -2864,6 +2864,9 @@ public class CapgoUpdater {
             }
             return;
         }
+        if (backup.exists() && !backup.delete()) {
+            backup.deleteOnExit();
+        }
         if (!file.exists()) {
             return;
         }
@@ -2937,6 +2940,10 @@ public class CapgoUpdater {
                         if (logger != null) {
                             logger.error("Failed to delete empty stats queue file");
                         }
+                    }
+                    File backup = new File(file.getAbsolutePath() + ".bak");
+                    if (backup.exists() && !backup.delete()) {
+                        backup.deleteOnExit();
                     }
                     return;
                 }
