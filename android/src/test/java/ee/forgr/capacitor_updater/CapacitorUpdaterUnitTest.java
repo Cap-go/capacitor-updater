@@ -3818,7 +3818,10 @@ public class CapacitorUpdaterUnitTest {
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
         Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
-        Files.write(backup.toPath(), "[{\"action\":\"stale\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
+        Files.write(
+            backup.toPath(),
+            "[{\"action\":\"stale\",\"timestamp\":2},{\"action\":\"stale-2\",\"timestamp\":3}]".getBytes(StandardCharsets.UTF_8)
+        );
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         updater.documentsDir = tempDir.toFile();

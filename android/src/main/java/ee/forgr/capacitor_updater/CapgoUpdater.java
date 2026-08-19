@@ -2865,7 +2865,9 @@ public class CapgoUpdater {
             return;
         }
         if (backup.exists() && !backup.delete()) {
-            backup.deleteOnExit();
+            if (logger != null) {
+                logger.error("Failed to delete stats backup");
+            }
         }
         if (!file.exists()) {
             return;
@@ -2943,7 +2945,9 @@ public class CapgoUpdater {
                     }
                     File backup = new File(file.getAbsolutePath() + ".bak");
                     if (backup.exists() && !backup.delete()) {
-                        backup.deleteOnExit();
+                        if (logger != null) {
+                            logger.error("Failed to delete empty stats backup");
+                        }
                     }
                     return;
                 }
@@ -2994,8 +2998,8 @@ public class CapgoUpdater {
                 }
             }
             if (tmp.renameTo(file)) {
-                if (backup != null && backup.exists() && !backup.delete()) {
-                    backup.deleteOnExit();
+                if (backup != null && backup.exists()) {
+                    backup.delete();
                 }
                 backup = null;
                 return;
