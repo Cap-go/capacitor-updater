@@ -318,7 +318,8 @@ import UIKit
         if isSafeCacheHash(hash) && hash.count == 64 {
             return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
         }
-        return cacheFolder.appendingPathComponent("temp_\(UUID().uuidString)_\(token).tmp")
+        let digest = CryptoCipher.shortPathKey("\(hash)|\(fileName)")
+        return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
     }
 
     private func cleanupOldManifestPartials() {
@@ -2254,6 +2255,7 @@ import UIKit
         if !hadRegistry && !hadFolder {
             logger.error("Cannot delete unknown bundle")
             logger.debug("Bundle ID: \(id)")
+            self.dequeuePendingDelete(id: id)
             return false
         }
 
@@ -2313,6 +2315,10 @@ import UIKit
         var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
         pendingIds.formUnion(self.getPendingDeleteIds())
         for id in pendingIds {
+            if Thread.current.isCancelled {
+                logger.warn("drainPendingDeletes was cancelled")
+                return
+            }
             logger.info("Resuming pending delete for bundle: \(id)")
             if self.delete(id: id, removeInfo: true) {
                 self.dequeuePendingDelete(id: id)
@@ -2499,11 +2505,16 @@ import UIKit
             logger.debug("Error: \(error.localizedDescription)")
         }
 
+        if let thread = threadToCheck, thread.isCancelled {
+            logger.warn("cleanupOrphanedTempFolders was cancelled")
+            return
+        }
+
         // Also cleanup old download temp files (package_*.tmp and update_*.dat)
-        cleanupOldDownloadTempFiles()
+        cleanupOldDownloadTempFiles(threadToCheck: threadToCheck)
     }
 
-    private func cleanupOldDownloadTempFiles() {
+    private func cleanupOldDownloadTempFiles(threadToCheck: Thread? = nil) {
         let fileManager = FileManager.default
         guard let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return
@@ -2514,6 +2525,10 @@ import UIKit
             let oneHourAgo = Date().addingTimeInterval(-3600)
 
             for url in contents {
+                if let thread = threadToCheck, thread.isCancelled {
+                    logger.warn("cleanupOldDownloadTempFiles was cancelled")
+                    return
+                }
                 let fileName = url.lastPathComponent
                 // Only cleanup package_*.tmp and update_*.dat files
                 let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
