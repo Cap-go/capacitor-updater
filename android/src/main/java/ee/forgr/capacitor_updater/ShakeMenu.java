@@ -238,6 +238,9 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
     private void setPreviewMenuButtonsEnabled(List<Button> buttons, boolean enabled) {
         for (Button button : buttons) {
+            if (!enabled && "Close menu".equals(button.getText().toString())) {
+                continue;
+            }
             button.setEnabled(enabled);
         }
     }
