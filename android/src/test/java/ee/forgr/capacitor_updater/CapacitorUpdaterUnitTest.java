@@ -3796,6 +3796,7 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void persistEmptyQueueDeletesStaleStatsBackup() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-empty-bak");
+        tempDir.toFile().deleteOnExit();
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
         Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
@@ -3815,6 +3816,7 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void restorePendingStatsIgnoresStaleBackupWhenQueueFileExists() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-stale-bak");
+        tempDir.toFile().deleteOnExit();
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
         Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
