@@ -124,6 +124,8 @@ public class RsaContractTest {
                 } catch (IOException ignored) {
                     // expected
                 }
+            } else {
+                CryptoCipher.decryptChecksum(checksumHex, publicKeyPem);
             }
         }
     }

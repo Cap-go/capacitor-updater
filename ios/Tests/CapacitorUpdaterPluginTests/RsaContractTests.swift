@@ -160,6 +160,11 @@ final class RsaContractTests: XCTestCase {
                     try CryptoCipher.decryptChecksum(checksum: checksumHex, publicKey: publicKey),
                     id
                 )
+            } else {
+                XCTAssertNoThrow(
+                    try CryptoCipher.decryptChecksum(checksum: checksumHex, publicKey: publicKey),
+                    id
+                )
             }
         }
     }

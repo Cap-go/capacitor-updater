@@ -2854,7 +2854,17 @@ public class CapgoUpdater {
 
     public void restorePendingStats() {
         File file = pendingStatsFile();
-        if (file == null || !file.exists()) {
+        if (file == null) {
+            return;
+        }
+        File backup = new File(file.getAbsolutePath() + ".bak");
+        if (!file.exists() && backup.exists() && !backup.renameTo(file)) {
+            if (logger != null) {
+                logger.error("Failed to restore stats backup");
+            }
+            return;
+        }
+        if (!file.exists()) {
             return;
         }
         try {
@@ -2958,18 +2968,39 @@ public class CapgoUpdater {
 
     private static void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
         final File tmp = new File(file.getAbsolutePath() + ".tmp");
-        try (FileOutputStream out = new FileOutputStream(tmp)) {
-            out.write(bytes);
-            out.flush();
-        }
-        if (tmp.renameTo(file)) {
-            return;
-        }
-        if (file.exists() && !file.delete()) {
-            throw new IOException("Failed to replace " + file.getAbsolutePath());
-        }
-        if (!tmp.renameTo(file)) {
+        File backup = null;
+        try {
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(bytes);
+                out.flush();
+            }
+            if (tmp.renameTo(file)) {
+                return;
+            }
+            if (file.exists()) {
+                backup = new File(file.getAbsolutePath() + ".bak");
+                if (backup.exists() && !backup.delete()) {
+                    throw new IOException("Failed to replace " + file.getAbsolutePath());
+                }
+                if (!file.renameTo(backup)) {
+                    throw new IOException("Failed to replace " + file.getAbsolutePath());
+                }
+            }
+            if (tmp.renameTo(file)) {
+                if (backup != null && backup.exists() && !backup.delete()) {
+                    backup.deleteOnExit();
+                }
+                backup = null;
+                return;
+            }
             throw new IOException("Failed to persist " + file.getAbsolutePath());
+        } finally {
+            if (backup != null && !file.exists()) {
+                backup.renameTo(file);
+            }
+            if (tmp.exists() && !tmp.delete()) {
+                tmp.deleteOnExit();
+            }
         }
     }
 

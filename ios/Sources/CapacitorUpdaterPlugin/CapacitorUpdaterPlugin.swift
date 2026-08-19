@@ -1096,6 +1096,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 let res = self.implementation.list()
                 for version in res {
+                    if Thread.current.isCancelled {
+                        return
+                    }
                     self.logger.info("Deleting obsolete bundle: \(version.getId())")
                     let deleted = self.implementation.delete(id: version.getId())
                     if !deleted {
@@ -1103,17 +1106,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     Thread.sleep(forTimeInterval: 0.075)
                 }
-                self.implementation.cleanupDeltaCache()
+                self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
+            }
+
+            if Thread.current.isCancelled {
+                return
             }
 
             // Resume any DELETING leftovers from prior kills, one-by-one.
             self.implementation.drainPendingDeletes()
 
+            if Thread.current.isCancelled {
+                return
+            }
+
             // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
             // cannot leave hundreds of MB behind across launches.
             let allowedIds = self.implementation.allowedBundleIdsForCleanup()
-            self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds)
-            self.implementation.cleanupOrphanedTempFolders(threadToCheck: nil)
+            self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
+            if Thread.current.isCancelled {
+                return
+            }
+            self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
 
             if self.defaultChannelCleanupMustRetry {
                 self.logger.warn("Keeping the previous native build version so default channel cleanup retries")
@@ -1131,7 +1145,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
-        cleanupGroup.wait()
+        let result = cleanupGroup.wait(timeout: .now() + .seconds(60))
+        if result == .timedOut {
+            logger.warn("Cleanup wait timed out after 60s, cancelling leftover cleanup")
+            cleanupThread?.cancel()
+            _ = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            return
+        }
         logger.info("Cleanup finished, proceeding with download")
     }
 
@@ -2749,7 +2769,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard self.previewSessionEnabled else {
                 return
             }
-            if let topVC = UIApplication.topViewController(),
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController),
                topVC.isKind(of: UIAlertController.self) {
                 self.previewSessionAlertPending = true
                 UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
@@ -2763,7 +2783,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController) {
                 topVC.present(alert, animated: true)
             } else {
                 self.previewSessionAlertPending = true
