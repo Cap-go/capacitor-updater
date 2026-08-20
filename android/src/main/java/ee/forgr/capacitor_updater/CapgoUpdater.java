@@ -2977,7 +2977,7 @@ public class CapgoUpdater {
         }
     }
 
-    private static void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
+    private void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
         final File tmp = new File(file.getAbsolutePath() + ".tmp");
         File backup = null;
         try {
@@ -2998,8 +2998,10 @@ public class CapgoUpdater {
                 }
             }
             if (tmp.renameTo(file)) {
-                if (backup != null && backup.exists()) {
-                    backup.delete();
+                if (backup != null && backup.exists() && !backup.delete()) {
+                    if (logger != null) {
+                        logger.error("Failed to delete stats backup");
+                    }
                 }
                 backup = null;
                 return;

@@ -191,6 +191,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
+    // Short lock for cleanupComplete/cleanupTimedOut only. Never hold across cleanupGroup.wait.
+    private let cleanupStateLock = NSLock()
     private let defaultChannelStateLock = NSLock()
     private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
@@ -1037,7 +1039,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
         // Enter before start so waiters never race past an unstarted cleanup thread.
+        self.cleanupStateLock.lock()
         self.cleanupComplete = false
+        self.cleanupTimedOut = false
+        self.cleanupStateLock.unlock()
         self.cleanupGroup.enter()
         cleanupThread = Thread {
             let bgTaskLock = NSLock()
@@ -1055,7 +1060,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.cleanupLock.lock()
             defer {
+                self.cleanupStateLock.lock()
                 self.cleanupComplete = true
+                self.cleanupStateLock.unlock()
                 self.cleanupLock.unlock()
                 self.cleanupGroup.leave()
                 endCleanupBackgroundTask()
@@ -1149,10 +1156,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func waitForCleanupIfNeeded() throws {
-        if cleanupComplete {
+        cleanupStateLock.lock()
+        let alreadyDone = cleanupComplete
+        let alreadyTimedOut = cleanupTimedOut
+        cleanupStateLock.unlock()
+        if alreadyDone {
             return  // Already done, no need to wait
         }
-        if cleanupTimedOut {
+        if alreadyTimedOut {
             throw cleanupTimeoutError()
         }
 
@@ -1163,7 +1174,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             cleanupThread?.cancel()
             let cancelled = cleanupGroup.wait(timeout: .now() + .seconds(60))
             if cancelled == .timedOut {
+                cleanupStateLock.lock()
                 cleanupTimedOut = true
+                cleanupStateLock.unlock()
                 logger.error("Cleanup did not finish after cancel, aborting download")
                 throw cleanupTimeoutError()
             }
@@ -1585,8 +1598,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
-        // Manual/preview downloads must wait too - launch orphan sweep can delete their temps.
-        try self.waitForCleanupIfNeeded()
         guard let url = URL(string: urlString) else {
             throw makePreviewError("Invalid download URL")
         }
