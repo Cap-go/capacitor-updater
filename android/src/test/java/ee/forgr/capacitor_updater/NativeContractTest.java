@@ -74,6 +74,27 @@ public class NativeContractTest {
     }
 
     @Test
+    public void directUpdateAfterSplashTimeoutMatchesNativeContract() throws Exception {
+        JSONArray cases = contract().getJSONArray("directUpdateAfterSplashTimeout");
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            JSONObject input = testCase.getJSONObject("input");
+            boolean expected = testCase.getJSONObject("expect").getBoolean("allowed");
+
+            assertEquals(
+                id,
+                expected,
+                CapacitorUpdaterPlugin.isDirectUpdateCurrentlyAllowed(
+                    input.getBoolean("plannedDirectUpdate"),
+                    input.getBoolean("timedOut"),
+                    input.getString("mode")
+                )
+            );
+        }
+    }
+
+    @Test
     public void onLaunchDirectUpdateConsumptionMatchesNativeContract() throws Exception {
         JSONArray cases = contract().getJSONArray("onLaunchDirectUpdateConsumption");
         for (int index = 0; index < cases.length(); index++) {

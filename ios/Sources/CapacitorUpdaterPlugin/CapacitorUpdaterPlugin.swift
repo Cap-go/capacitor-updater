@@ -3860,7 +3860,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
             return false
         }
-        if self.autoSplashscreenTimedOut {
+        if self.autoSplashscreenTimedOut && self.directUpdateMode != Self.autoUpdateModeInstall {
             return false
         }
         switch directUpdateMode {
@@ -3999,6 +3999,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func shouldAutoSetNextBundle() -> Bool {
         Self.shouldAutoUpdateModeSetNextBundle(autoUpdateMode)
+    }
+
+    static func isDirectUpdateCurrentlyAllowed(
+        plannedDirectUpdate: Bool,
+        splashTimedOut: Bool,
+        directUpdateMode: String
+    ) -> Bool {
+        guard plannedDirectUpdate else {
+            return false
+        }
+        if !splashTimedOut {
+            return true
+        }
+        return directUpdateMode == autoUpdateModeInstall
+    }
+
+    private func isDirectUpdateCurrentlyAllowed(_ plannedDirectUpdate: Bool) -> Bool {
+        Self.isDirectUpdateCurrentlyAllowed(
+            plannedDirectUpdate: plannedDirectUpdate,
+            splashTimedOut: autoSplashscreenTimedOut,
+            directUpdateMode: directUpdateMode
+        )
     }
 
     static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
@@ -4301,7 +4323,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
-                let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                let directUpdateAllowed = self.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate)
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
                     _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
@@ -4426,7 +4448,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTask()
                         return
                     }
-                    let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                    let directUpdateAllowed = self.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate)
                     if directUpdateAllowed {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
                         let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in

@@ -127,6 +127,24 @@ final class NativeContractTests: XCTestCase {
         }
     }
 
+    func testDirectUpdateAfterSplashTimeoutMatchesNativeContract() throws {
+        for testCase in try contractCases("directUpdateAfterSplashTimeout") {
+            let id = try string(testCase, "id", id: "directUpdateAfterSplashTimeout")
+            let input = try dictionary(testCase, "input", id: id)
+            let expect = try dictionary(testCase, "expect", id: id)
+
+            XCTAssertEqual(
+                CapacitorUpdaterPlugin.isDirectUpdateCurrentlyAllowed(
+                    plannedDirectUpdate: try bool(input, "plannedDirectUpdate", id: id),
+                    splashTimedOut: try bool(input, "timedOut", id: id),
+                    directUpdateMode: try string(input, "mode", id: id)
+                ),
+                try bool(expect, "allowed", id: id),
+                id
+            )
+        }
+    }
+
     func testOnLaunchDirectUpdateConsumptionMatchesNativeContract() throws {
         for testCase in try contractCases("onLaunchDirectUpdateConsumption") {
             let id = try string(testCase, "id", id: "onLaunchDirectUpdateConsumption")

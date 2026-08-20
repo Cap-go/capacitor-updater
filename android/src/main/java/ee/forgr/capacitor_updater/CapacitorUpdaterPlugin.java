@@ -1376,14 +1376,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         cancelSplashscreenTimeout();
 
-        this.splashscreenTimeoutRunnable = () -> {
-            logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-            this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
-            hideSplashscreen();
-        };
+        this.splashscreenTimeoutRunnable = this::handleAutoSplashscreenTimeout;
 
         this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+    }
+
+    void handleAutoSplashscreenTimeout() {
+        logger.info("autoSplashscreen timeout reached, hiding splashscreen");
+        this.autoSplashscreenTimedOut = true;
+        if (!AUTO_UPDATE_MODE_INSTALL.equals(this.directUpdateMode)) {
+            this.implementation.directUpdate = false;
+        }
+        hideSplashscreen();
     }
 
     private void cancelSplashscreenTimeout() {
@@ -2093,7 +2097,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (!Boolean.TRUE.equals(this.autoUpdate) || AUTO_UPDATE_MODE_ONLY_DOWNLOAD.equals(this.autoUpdateMode)) {
             return false;
         }
-        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut) && !AUTO_UPDATE_MODE_INSTALL.equals(this.directUpdateMode)) {
             return false;
         }
         switch (this.directUpdateMode) {
@@ -2255,8 +2259,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return shouldAutoUpdateModeSetNextBundle(this.autoUpdateMode);
     }
 
+    static boolean isDirectUpdateCurrentlyAllowed(
+        final boolean plannedDirectUpdate,
+        final boolean splashTimedOut,
+        final String directUpdateMode
+    ) {
+        if (!plannedDirectUpdate) {
+            return false;
+        }
+        if (!splashTimedOut) {
+            return true;
+        }
+        return AUTO_UPDATE_MODE_INSTALL.equals(directUpdateMode);
+    }
+
     private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+        return isDirectUpdateCurrentlyAllowed(
+            plannedDirectUpdate,
+            Boolean.TRUE.equals(this.autoSplashscreenTimedOut),
+            this.directUpdateMode
+        );
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
