@@ -3799,6 +3799,8 @@ public class CapacitorUpdaterUnitTest {
         tempDir.toFile().deleteOnExit();
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
         Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
         Files.write(backup.toPath(), "[{\"action\":\"stale\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
 
@@ -3819,6 +3821,8 @@ public class CapacitorUpdaterUnitTest {
         tempDir.toFile().deleteOnExit();
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
         Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
         Files.write(
             backup.toPath(),
