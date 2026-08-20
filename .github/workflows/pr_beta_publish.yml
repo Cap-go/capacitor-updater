@@ -123,7 +123,7 @@ jobs:
               '',
               `Requested by @${actor}.`,
               '',
-              `This run will publish the PR head to the \`beta\` npm tag and refresh \`pr-${prNumber}\`.`,
+              `This run will stage the PR head for the \`beta\` npm tag. Cap-go/automations approves it with 2FA.`,
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');
