@@ -47,21 +47,39 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
-      - name: Publish lts-v6 to npm
+      - name: Install npm CLI for staged publishing
+        run: npm install -g npm@^11.15.0
+      - name: Stage publish lts-v6 to npm
         if: ${{ startsWith(github.ref, 'refs/tags/6.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag lts-v6 --provenance --access public
-      - name: Publish to npm
+        run: |
+          npm --version
+          npm stage publish --tag lts-v6 --provenance --access public --ignore-scripts
+      - name: Stage publish to npm
         if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag latest --provenance --access public
-      - name: Publish to npm with next tag
+        run: |
+          npm --version
+          npm stage publish --tag latest --provenance --access public --ignore-scripts
+      - name: Stage publish to npm with next tag
         if: ${{ contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/6.')  }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag next --provenance --access public
+        run: |
+          npm --version
+          npm stage publish --tag next --provenance --access public --ignore-scripts
+      - name: Request stage approval
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.NPM_STAGE_DISPATCH_TOKEN }}
+        run: |
+          gh api --method POST repos/Cap-go/automations/dispatches \
+            -f event_type=npm-stage-approve \
+            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
+            -f "client_payload[run_id]=${GITHUB_RUN_ID}" \
+            -f "client_payload[package]=$(node -p "require('./package.json').name")"
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v3
