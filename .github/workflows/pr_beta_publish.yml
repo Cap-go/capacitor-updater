@@ -212,6 +212,7 @@ jobs:
 
 
       - name: Request stage approval
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.NPM_STAGE_DISPATCH_TOKEN }}
         run: |
@@ -236,20 +237,16 @@ jobs:
               '',
               '## Beta npm build',
               '',
-              'Status: published',
+              'Status: staged',
               '',
               `Version: \`${version}\``,
               `Source: \`${shortSha}\``,
               `Requested by @${actor}`,
               '',
-              'Latest beta:',
+              'Latest beta (after Cap-go/automations approves the stage):',
               '```sh',
               `bun add ${packageName}@beta`,
-              '```',
-              '',
-              'This PR only:',
-              '```sh',
-              `bun add ${packageName}@pr-${prNumber}`,
+              `bun add ${packageName}@${version}`,
               '```',
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
