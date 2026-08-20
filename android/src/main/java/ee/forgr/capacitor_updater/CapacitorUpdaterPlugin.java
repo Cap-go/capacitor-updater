@@ -1376,14 +1376,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         cancelSplashscreenTimeout();
 
-        this.splashscreenTimeoutRunnable = () -> {
-            logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-            this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
-            hideSplashscreen();
-        };
+        this.splashscreenTimeoutRunnable = this::handleAutoSplashscreenTimeout;
 
         this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+    }
+
+    void handleAutoSplashscreenTimeout() {
+        logger.info("autoSplashscreen timeout reached, hiding splashscreen");
+        this.autoSplashscreenTimedOut = true;
+        if (!AUTO_UPDATE_MODE_INSTALL.equals(this.directUpdateMode)) {
+            this.implementation.directUpdate = false;
+        }
+        hideSplashscreen();
     }
 
     private void cancelSplashscreenTimeout() {

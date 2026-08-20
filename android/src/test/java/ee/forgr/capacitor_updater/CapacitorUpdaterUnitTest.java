@@ -2643,6 +2643,72 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testAtInstallSplashTimeoutKeepsInFlightDirectUpdate() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("atInstall", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.handleAutoSplashscreenTimeout();
+
+            assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testAlwaysSplashTimeoutClearsInFlightDirectUpdate() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.implementation.directUpdate = true;
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.handleAutoSplashscreenTimeout();
+
+            assertFalse(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testAtInstallSplashTimeoutDuringDownloadKeepsDirectUpdate() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("atInstall", false);
+            setPrivateField(plugin, "wasRecentlyInstalledOrUpdated", true);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.directUpdateStateSupplier = () -> Boolean.TRUE.equals(plugin.implementation.directUpdate);
+
+            invokeBackgroundDownload(plugin);
+            plugin.handleAutoSplashscreenTimeout();
+
+            assertTrue(updater.downloadBackgroundCalled);
+            assertTrue(updater.directUpdateWhenDownloadStarted);
+            assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
     public void testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
