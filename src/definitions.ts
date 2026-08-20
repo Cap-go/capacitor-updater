@@ -67,7 +67,7 @@ declare module '@capacitor/cli' {
        * String values merge the previous Auto Update and Direct Update configuration:
        * - `"off"`: Disable automatic update checks.
        * - `"atBackground"`: Check and download automatically on each foreground check, then apply the update the next time the app moves to background.
-       * - `"atInstall"`: Apply immediately only after a fresh install or native app store update; otherwise use `"atBackground"` behavior.
+       * - `"atInstall"`: Apply immediately only after a fresh install or native app store update; otherwise use `"atBackground"` behavior. If {@link autoSplashscreenTimeout} fires first, the splashscreen is still dismissed and the update reloads as soon as the download finishes instead of waiting for the next background.
        * - `"onLaunch"`: Apply immediately only when the app is brought to the foreground from a killed state (cold start). After that first check, fall back to `"atBackground"` behavior.
        * - `"always"`: Check on every foreground transition and apply immediately whenever an update is available.
        * - `"onlyDownload"`: Check and download automatically, emit `updateAvailable`, and never set the next bundle or apply an update automatically.
@@ -195,7 +195,8 @@ declare module '@capacitor/cli' {
        * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
        * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
        * Set to `0` (zero) to disable the timeout.
-       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
+       * When the timeout fires for `"always"` and `"onLaunch"`, the immediate reload is skipped and the downloaded bundle is installed on the next background/launch.
+       * When using `"atInstall"`, the update still applies in the current session via reload once the download finishes, so first-open users receive the latest bundle even if it missed the splash window.
        * Requires {@link autoSplashscreen} to be enabled.
        *
        * Only available for Android and iOS.

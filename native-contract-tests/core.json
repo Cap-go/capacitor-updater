@@ -225,6 +225,63 @@
       }
     }
   ],
+  "directUpdateAfterSplashTimeout": [
+    {
+      "id": "splash-timeout.not-timed-out.always",
+      "input": {
+        "plannedDirectUpdate": true,
+        "timedOut": false,
+        "mode": "always"
+      },
+      "expect": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "splash-timeout.timed-out.always",
+      "input": {
+        "plannedDirectUpdate": true,
+        "timedOut": true,
+        "mode": "always"
+      },
+      "expect": {
+        "allowed": false
+      }
+    },
+    {
+      "id": "splash-timeout.timed-out.on-launch",
+      "input": {
+        "plannedDirectUpdate": true,
+        "timedOut": true,
+        "mode": "onLaunch"
+      },
+      "expect": {
+        "allowed": false
+      }
+    },
+    {
+      "id": "splash-timeout.timed-out.at-install",
+      "input": {
+        "plannedDirectUpdate": true,
+        "timedOut": true,
+        "mode": "atInstall"
+      },
+      "expect": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "splash-timeout.not-planned.at-install",
+      "input": {
+        "plannedDirectUpdate": false,
+        "timedOut": true,
+        "mode": "atInstall"
+      },
+      "expect": {
+        "allowed": false
+      }
+    }
+  ],
   "updateResponseKind": [
     {
       "id": "response-kind.up-to-date",
