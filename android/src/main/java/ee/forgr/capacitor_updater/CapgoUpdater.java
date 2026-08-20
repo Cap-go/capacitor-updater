@@ -2864,11 +2864,6 @@ public class CapgoUpdater {
             }
             return;
         }
-        if (backup.exists() && !backup.delete()) {
-            if (logger != null) {
-                logger.error("Failed to delete stats backup");
-            }
-        }
         if (!file.exists()) {
             return;
         }
@@ -2881,6 +2876,11 @@ public class CapgoUpdater {
                         break;
                     }
                     statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                }
+            }
+            if (backup.exists() && !backup.delete()) {
+                if (logger != null) {
+                    logger.error("Failed to delete stats backup");
                 }
             }
             if (!statsQueue.isEmpty()) {
