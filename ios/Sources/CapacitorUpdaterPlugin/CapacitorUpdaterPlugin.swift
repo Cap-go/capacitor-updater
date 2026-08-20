@@ -1038,12 +1038,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
-        // Enter before start so waiters never race past an unstarted cleanup thread.
+        // Enter before publishing incomplete state so waiters cannot hit an empty group.
         self.cleanupStateLock.lock()
         self.cleanupComplete = false
         self.cleanupTimedOut = false
-        self.cleanupStateLock.unlock()
         self.cleanupGroup.enter()
+        self.cleanupStateLock.unlock()
         cleanupThread = Thread {
             let bgTaskLock = NSLock()
             var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
