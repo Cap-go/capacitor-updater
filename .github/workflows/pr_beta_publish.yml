@@ -123,7 +123,7 @@ jobs:
               '',
               `Requested by @${actor}.`,
               '',
-              `This run will stage the PR head for the \`beta\` npm tag. Cap-go/automations approves it with 2FA.`,
+              `This run will publish the PR head to the \`beta\` npm tag.`,
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');
@@ -243,7 +243,7 @@ jobs:
               `Source: \`${shortSha}\``,
               `Requested by @${actor}`,
               '',
-              'Latest beta (after Cap-go/automations approves the stage):',
+              'Latest beta:',
               '```sh',
               `bun add ${packageName}@beta`,
               `bun add ${packageName}@${version}`,
