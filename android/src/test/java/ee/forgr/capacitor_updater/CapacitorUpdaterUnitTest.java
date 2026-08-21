@@ -3794,6 +3794,52 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void persistEmptyQueueDeletesStaleStatsBackup() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-empty-bak");
+        tempDir.toFile().deleteOnExit();
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
+        Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+        Files.write(backup.toPath(), "[{\"action\":\"stale\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.persistPendingStats();
+
+        assertFalse(queueFile.exists());
+        assertFalse(backup.exists());
+        updater.restorePendingStats();
+        assertEquals(0, updater.pendingStatsCount());
+        updater.shutdown();
+    }
+
+    @Test
+    public void restorePendingStatsIgnoresStaleBackupWhenQueueFileExists() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-stale-bak");
+        tempDir.toFile().deleteOnExit();
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
+        Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+        Files.write(
+            backup.toPath(),
+            "[{\"action\":\"stale\",\"timestamp\":2},{\"action\":\"stale-2\",\"timestamp\":3}]".getBytes(StandardCharsets.UTF_8)
+        );
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.restorePendingStats();
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertTrue(queueFile.exists());
+        assertFalse(backup.exists());
+        updater.shutdown();
+    }
+
+    @Test
     public void ioBuffersAre256KiBForChecksumAndCopy() {
         assertEquals(256 * 1024, CryptoCipher.ioBufferBytes());
         assertEquals(256 * 1024, CryptoCipher.checksumBufferBytes());

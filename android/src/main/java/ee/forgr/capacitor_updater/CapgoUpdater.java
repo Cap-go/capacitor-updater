@@ -2878,6 +2878,11 @@ public class CapgoUpdater {
                     statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
                 }
             }
+            if (backup.exists() && !backup.delete()) {
+                if (logger != null) {
+                    logger.error("Failed to delete stats backup");
+                }
+            }
             if (!statsQueue.isEmpty()) {
                 if (logger != null) {
                     logger.info("Restored " + statsQueue.size() + " pending stats events");
@@ -2938,6 +2943,12 @@ public class CapgoUpdater {
                             logger.error("Failed to delete empty stats queue file");
                         }
                     }
+                    File backup = new File(file.getAbsolutePath() + ".bak");
+                    if (backup.exists() && !backup.delete()) {
+                        if (logger != null) {
+                            logger.error("Failed to delete empty stats backup");
+                        }
+                    }
                     return;
                 }
                 writeFileAtomically(file, arr.toString().getBytes(StandardCharsets.UTF_8));
@@ -2966,7 +2977,7 @@ public class CapgoUpdater {
         }
     }
 
-    private static void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
+    private void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
         final File tmp = new File(file.getAbsolutePath() + ".tmp");
         File backup = null;
         try {
@@ -2988,7 +2999,9 @@ public class CapgoUpdater {
             }
             if (tmp.renameTo(file)) {
                 if (backup != null && backup.exists() && !backup.delete()) {
-                    backup.deleteOnExit();
+                    if (logger != null) {
+                        logger.error("Failed to delete stats backup");
+                    }
                 }
                 backup = null;
                 return;
