@@ -228,9 +228,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             logger.error("Failed to get webView for logging")
         }
-        implementation.statsMode = CapgoUpdater.normalizeStatsMode(
+        let configuredStatsMode = CapgoUpdater.normalizeStatsMode(
             getConfig().getString("statsMode", CapgoUpdater.statsModeAll)
         )
+        implementation.statsMode = configuredStatsMode
         let webViewStatsReporter = WebViewStatsReporter(implementation: implementation)
         self.webViewStatsReporter = webViewStatsReporter
         webViewStatsReporter.install(on: self.bridge?.webView)
@@ -361,9 +362,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         implementation.restorePendingStats()
-        implementation.setStatsMode(
-            CapgoUpdater.normalizeStatsMode(getConfig().getString("statsMode", CapgoUpdater.statsModeAll))
-        )
+        implementation.setStatsMode(configuredStatsMode)
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
         let defaultChannelPersistenceDisabled = !persistDefaultChannelOnReinstall

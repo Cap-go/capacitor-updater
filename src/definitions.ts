@@ -119,7 +119,7 @@ declare module '@capacitor/cli' {
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
-       * Use {@link PluginsConfig.CapacitorUpdater.statsMode} to limit native stats to the
+       * Use `statsMode` to limit native stats to the
        * update pipeline (`updatesOnly`) or a HIPAA-friendly billing minimum (`billingOnly`)
        * while keeping `statsUrl` enabled.
        *
@@ -129,7 +129,7 @@ declare module '@capacitor/cli' {
       statsUrl?: string;
 
       /**
-       * Controls which native HTTP stats are sent to {@link PluginsConfig.CapacitorUpdater.statsUrl}.
+       * Controls which native HTTP stats are sent to `statsUrl`.
        *
        * - `all` (default): send update lifecycle, health, WebView, and analytics stats.
        * - `updatesOnly`: send only update-pipeline actions (download/install/set/delete/reset and
@@ -149,6 +149,7 @@ declare module '@capacitor/cli' {
        * Only available for Android and iOS.
        *
        * @default all
+       * @since 8.52.0
        */
       statsMode?: 'all' | 'updatesOnly' | 'billingOnly';
 

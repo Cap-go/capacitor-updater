@@ -193,27 +193,60 @@ import UIKit
         return statsQueue.first?.event
     }
 
-    private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
+    func queuedStatsActionsForTests() -> [String] {
+        statsQueueLock.lock()
+        defer { statsQueueLock.unlock() }
+        return statsQueue.map { $0.event.action ?? "" }
+    }
+
+    private func createBillingStatsEvent(from event: StatsEvent, action: String) -> StatsEvent {
         StatsEvent(
-            platform: "ios",
-            device_id: deviceID,
-            app_id: appId,
+            platform: event.platform ?? "ios",
+            device_id: event.device_id ?? deviceID,
+            app_id: event.app_id ?? appId,
             custom_id: nil,
-            version_build: versionBuild,
+            version_build: event.version_build ?? versionBuild,
             version_code: nil,
-            version_os: versionOs,
-            version_name: versionName,
+            version_os: event.version_os ?? versionOs,
+            version_name: event.version_name ?? getCurrentBundle().getVersionName(),
             old_version_name: nil,
-            plugin_version: pluginVersion,
-            is_emulator: isEmulator(),
-            is_prod: isProd(),
+            plugin_version: event.plugin_version ?? pluginVersion,
+            is_emulator: event.is_emulator ?? isEmulator(),
+            is_prod: event.is_prod ?? isProd(),
             installSource: nil,
             action: action,
             channel: nil,
             defaultChannel: nil,
             key_id: nil,
             metadata: nil,
-            timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
+            timestamp: event.timestamp
+        )
+    }
+
+    private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
+        createBillingStatsEvent(
+            from: StatsEvent(
+                platform: "ios",
+                device_id: deviceID,
+                app_id: appId,
+                custom_id: nil,
+                version_build: versionBuild,
+                version_code: nil,
+                version_os: versionOs,
+                version_name: versionName,
+                old_version_name: nil,
+                plugin_version: pluginVersion,
+                is_emulator: isEmulator(),
+                is_prod: isProd(),
+                installSource: nil,
+                action: action,
+                channel: nil,
+                defaultChannel: nil,
+                key_id: nil,
+                metadata: nil,
+                timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
+            ),
+            action: action
         )
     }
 
@@ -223,11 +256,7 @@ import UIKit
             return nil
         }
         if Self.usesBillingStatsPayload(statsMode) {
-            return createBillingStatsEvent(
-                action: action,
-                versionName: event.version_name ?? "",
-                timestamp: event.timestamp
-            )
+            return createBillingStatsEvent(from: event, action: action)
         }
         return event
     }
