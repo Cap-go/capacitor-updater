@@ -44,6 +44,10 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
+    public var statsMode: String = CapgoUpdater.statsModeAll
+    public static let statsModeAll = "all"
+    public static let statsModeUpdatesOnly = "updatesOnly"
+    public static let statsModeBillingOnly = "billingOnly"
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
     public var beforeDownload: (() -> Void)?
     public var channelUrl: String = ""
@@ -84,6 +88,199 @@ import UIKit
     private struct QueuedStatsEvent {
         let event: StatsEvent
         let onSent: (() -> Void)?
+    }
+
+    private static let updatesOnlyStatsActions: Set<String> = [
+        "download_complete",
+        "download_manifest_start",
+        "download_manifest_complete",
+        "download_manifest_file_fail",
+        "download_manifest_checksum_fail",
+        "download_manifest_brotli_fail",
+        "download_zip_start",
+        "download_zip_complete",
+        "download_fail",
+        "finish_download_fail",
+        "unzip_fail",
+        "decrypt_fail",
+        "checksum_fail",
+        "checksum_required",
+        "windows_path_fail",
+        "canonical_path_fail",
+        "directory_path_fail",
+        "manifest_path_fail",
+        "insufficient_disk_space",
+        "low_mem_fail",
+        "set",
+        "set_fail",
+        "set_next",
+        "reset",
+        "delete",
+        "update_fail",
+        "blocked_by_server_url",
+        "rate_limit_reached"
+    ]
+
+    private static let billingOnlyStatsActions: Set<String> = [
+        "set",
+        "download_complete",
+        "set_fail",
+        "update_fail",
+        "download_fail"
+    ]
+
+    static func normalizeStatsMode(_ statsMode: String?) -> String {
+        switch statsMode {
+        case statsModeUpdatesOnly, statsModeBillingOnly:
+            return statsMode!
+        default:
+            return statsModeAll
+        }
+    }
+
+    static func isUpdatesOnlyStatsAction(_ action: String) -> Bool {
+        updatesOnlyStatsActions.contains(action)
+    }
+
+    static func isBillingOnlyStatsAction(_ action: String) -> Bool {
+        billingOnlyStatsActions.contains(action)
+    }
+
+    static func shouldSendStatsAction(_ action: String, statsMode: String) -> Bool {
+        let mode = normalizeStatsMode(statsMode)
+        if mode == statsModeAll {
+            return true
+        }
+        if action.isEmpty {
+            return false
+        }
+        if mode == statsModeBillingOnly {
+            return isBillingOnlyStatsAction(action)
+        }
+        return isUpdatesOnlyStatsAction(action)
+    }
+
+    static func usesBillingStatsPayload(_ statsMode: String) -> Bool {
+        normalizeStatsMode(statsMode) == statsModeBillingOnly
+    }
+
+    static let billingStatsPayloadKeys: Set<String> = [
+        "platform",
+        "device_id",
+        "app_id",
+        "version_build",
+        "version_name",
+        "version_os",
+        "plugin_version",
+        "is_emulator",
+        "is_prod",
+        "action",
+        "timestamp"
+    ]
+
+    func allowsNonUpdateStats() -> Bool {
+        Self.normalizeStatsMode(statsMode) == Self.statsModeAll
+    }
+
+    func setStatsMode(_ statsMode: String) {
+        self.statsMode = Self.normalizeStatsMode(statsMode)
+        filterPendingStatsForCurrentMode()
+    }
+
+    func firstQueuedStatsEventForTests() -> StatsEvent? {
+        statsQueueLock.lock()
+        defer { statsQueueLock.unlock() }
+        return statsQueue.first?.event
+    }
+
+    func queuedStatsActionsForTests() -> [String] {
+        statsQueueLock.lock()
+        defer { statsQueueLock.unlock() }
+        return statsQueue.map { $0.event.action ?? "" }
+    }
+
+    private func createBillingStatsEvent(from event: StatsEvent, action: String) -> StatsEvent {
+        StatsEvent(
+            platform: event.platform ?? "ios",
+            device_id: event.device_id ?? deviceID,
+            app_id: event.app_id ?? appId,
+            custom_id: nil,
+            version_build: event.version_build ?? versionBuild,
+            version_code: nil,
+            version_os: event.version_os ?? versionOs,
+            version_name: event.version_name ?? getCurrentBundle().getVersionName(),
+            old_version_name: nil,
+            plugin_version: event.plugin_version ?? pluginVersion,
+            is_emulator: event.is_emulator ?? isEmulator(),
+            is_prod: event.is_prod ?? isProd(),
+            installSource: nil,
+            action: action,
+            channel: nil,
+            defaultChannel: nil,
+            key_id: nil,
+            metadata: nil,
+            timestamp: event.timestamp
+        )
+    }
+
+    private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
+        createBillingStatsEvent(
+            from: StatsEvent(
+                platform: "ios",
+                device_id: deviceID,
+                app_id: appId,
+                custom_id: nil,
+                version_build: versionBuild,
+                version_code: nil,
+                version_os: versionOs,
+                version_name: versionName,
+                old_version_name: nil,
+                plugin_version: pluginVersion,
+                is_emulator: isEmulator(),
+                is_prod: isProd(),
+                installSource: nil,
+                action: action,
+                channel: nil,
+                defaultChannel: nil,
+                key_id: nil,
+                metadata: nil,
+                timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
+            ),
+            action: action
+        )
+    }
+
+    private func prepareStatsEventForCurrentMode(_ event: StatsEvent) -> StatsEvent? {
+        let action = event.action ?? ""
+        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
+            return nil
+        }
+        if Self.usesBillingStatsPayload(statsMode) {
+            return createBillingStatsEvent(from: event, action: action)
+        }
+        return event
+    }
+
+    private func filterPendingStatsForCurrentMode() {
+        statsQueueLock.lock()
+        let hadQueuedEvents = !statsQueue.isEmpty
+        statsQueue = filterQueuedStatsEvents(statsQueue)
+        statsQueueLock.unlock()
+        if hadQueuedEvents {
+            persistStatsQueue()
+        }
+    }
+
+    private func filterQueuedStatsEvents(_ events: [QueuedStatsEvent]) -> [QueuedStatsEvent] {
+        var filtered: [QueuedStatsEvent] = []
+        for queuedEvent in events {
+            guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
+                queuedEvent.onSent?()
+                continue
+            }
+            filtered.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
+        }
+        return filtered
     }
 
     private static func sanitizeHeaderValue(_ value: String) -> String {
@@ -654,6 +851,11 @@ import UIKit
      * It MUST be called from a background queue to avoid blocking the main thread.
      */
     private func sendRateLimitStatistic() {
+        guard Self.shouldSendStatsAction("rate_limit_reached", statsMode: statsMode) else {
+            CapgoUpdater.releaseRateLimitStatisticClaim()
+            return
+        }
+
         guard !statsUrl.isEmpty else {
             // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             CapgoUpdater.releaseRateLimitStatisticClaim()
@@ -3116,34 +3318,44 @@ import UIKit
             return
         }
 
+        if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
+            onSent?()
+            return
+        }
+
         guard !statsUrl.isEmpty else {
+            onSent?()
             return
         }
 
         let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
-        let info = createInfoObject()
-
-        let event = StatsEvent(
-            platform: info.platform,
-            device_id: info.device_id,
-            app_id: info.app_id,
-            custom_id: info.custom_id,
-            version_build: info.version_build,
-            version_code: info.version_code,
-            version_os: info.version_os,
-            version_name: resolvedVersionName,
-            old_version_name: oldVersionName ?? "",
-            plugin_version: info.plugin_version,
-            is_emulator: info.is_emulator,
-            is_prod: info.is_prod,
-            installSource: info.installSource,
-            action: action,
-            channel: info.channel,
-            defaultChannel: info.defaultChannel,
-            key_id: info.key_id,
-            metadata: metadata,
-            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
-        )
+        let event: StatsEvent
+        if Self.usesBillingStatsPayload(statsMode) {
+            event = createBillingStatsEvent(action: action, versionName: resolvedVersionName)
+        } else {
+            let info = createInfoObject()
+            event = StatsEvent(
+                platform: info.platform,
+                device_id: info.device_id,
+                app_id: info.app_id,
+                custom_id: info.custom_id,
+                version_build: info.version_build,
+                version_code: info.version_code,
+                version_os: info.version_os,
+                version_name: resolvedVersionName,
+                old_version_name: oldVersionName ?? "",
+                plugin_version: info.plugin_version,
+                is_emulator: info.is_emulator,
+                is_prod: info.is_prod,
+                installSource: info.installSource,
+                action: action,
+                channel: info.channel,
+                defaultChannel: info.defaultChannel,
+                key_id: info.key_id,
+                metadata: metadata,
+                timestamp: Int64(Date().timeIntervalSince1970 * 1000)
+            )
+        }
 
         statsQueueLock.lock()
         if statsStopped {
@@ -3179,7 +3391,12 @@ import UIKit
 
         if restoredCount > 0 {
             logger.info("Restored \(restoredCount) pending stats events")
-            ensureStatsTimerStarted()
+            statsQueueLock.lock()
+            let remainingCount = statsQueue.count
+            statsQueueLock.unlock()
+            if remainingCount > 0 {
+                ensureStatsTimerStarted()
+            }
         }
     }
 
@@ -3263,7 +3480,22 @@ import UIKit
         statsQueueLock.unlock()
         persistStatsQueue()
 
-        let eventsToSend = queuedEvents.map(\.event)
+        var deliverableEvents: [QueuedStatsEvent] = []
+        var eventsToSend: [StatsEvent] = []
+        for queuedEvent in queuedEvents {
+            guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
+                queuedEvent.onSent?()
+                continue
+            }
+            deliverableEvents.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
+            eventsToSend.append(prepared)
+        }
+
+        if eventsToSend.isEmpty {
+            clearStatsInFlight()
+            persistStatsQueue()
+            return
+        }
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -3281,14 +3513,14 @@ import UIKit
                     return
                 }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(deliverableEvents)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
-                        self.requeueStatsEvents(queuedEvents)
+                        self.requeueStatsEvents(deliverableEvents)
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
@@ -3305,9 +3537,9 @@ import UIKit
                     self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    self.runStatsCallbacks(queuedEvents)
+                    self.runStatsCallbacks(deliverableEvents)
                 case let .failure(error):
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(deliverableEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }

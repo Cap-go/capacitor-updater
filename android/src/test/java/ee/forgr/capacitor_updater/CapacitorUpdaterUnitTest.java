@@ -32,6 +32,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -3958,6 +3959,156 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(e.getMessage().contains("Empty decrypted data"));
             assertArrayEquals(emptyCipher, Files.readAllBytes(emptyPlain.toPath()));
         }
+    }
+
+    @Test
+    public void statsModeAllAllowsHealthAndUpdateEvents() throws Exception {
+        assertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_ALL));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_ALL));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_ALL));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.statsMode = CapgoUpdater.STATS_MODE_UPDATES_ONLY;
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_71", "1.0.0", "");
+        updater.sendStats("download_fail", "1.0.0", "");
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("download_fail", updater.firstQueuedStatsEventForTests().getString("action"));
+        assertTrue(updater.firstQueuedStatsEventForTests().has("custom_id"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() throws Exception {
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_complete", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.statsMode = CapgoUpdater.STATS_MODE_BILLING_ONLY;
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("download_71", "1.0.0", "");
+        updater.sendStats("download_complete", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
+        assertBillingPayloadKeysOnly(updater.firstQueuedStatsEventForTests());
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeUpdatesOnlyDropsRestoredHealthEventsFromPendingQueue() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-stats-filter");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        Files.write(
+            queueFile.toPath(),
+            "[{\"action\":\"app_moved_to_background\",\"timestamp\":1},{\"action\":\"set\",\"version_name\":\"2.0.0\",\"timestamp\":2}]".getBytes(
+                StandardCharsets.UTF_8
+            )
+        );
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.statsUrl = "https://example.com/stats";
+        updater.restorePendingStats();
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void statsModeChangeFiltersQueuedHealthEvents() throws Exception {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        configureStatsTestUpdater(updater);
+        updater.statsUrl = "https://example.com/stats";
+        updater.deviceID = "device-1";
+        updater.appId = "com.example.app";
+        updater.sendStats("app_crash", "1.0.0", "");
+        updater.sendStats("set", "2.0.0", "1.0.0");
+        assertEquals(2, updater.pendingStatsCount());
+
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
+        updater.shutdown();
+    }
+
+    @Test
+    public void createBillingStatsPayloadUsesAllowListedFieldsOnly() throws Exception {
+        final JSONObject payload = CapgoUpdater.createBillingStatsPayload(
+            "android",
+            "device-1",
+            "com.example.app",
+            "1.0.0",
+            "2.0.0",
+            "14",
+            "8.0.0",
+            false,
+            true,
+            "set",
+            123L
+        );
+        assertBillingPayloadKeysOnly(payload);
+        assertEquals("set", payload.getString("action"));
+        assertEquals("14", payload.getString("version_os"));
+        assertEquals("8.0.0", payload.getString("plugin_version"));
+        assertEquals(123L, payload.getLong("timestamp"));
+    }
+
+    @Test
+    public void normalizeStatsModeFallsBackToAll() {
+        assertEquals(CapgoUpdater.STATS_MODE_ALL, CapgoUpdater.normalizeStatsMode(null));
+        assertEquals(CapgoUpdater.STATS_MODE_ALL, CapgoUpdater.normalizeStatsMode("invalid"));
+        assertEquals(CapgoUpdater.STATS_MODE_UPDATES_ONLY, CapgoUpdater.normalizeStatsMode("updatesOnly"));
+        assertEquals(CapgoUpdater.STATS_MODE_BILLING_ONLY, CapgoUpdater.normalizeStatsMode("billingOnly"));
+    }
+
+    private static void configureStatsTestUpdater(final CapgoUpdater updater) {
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        updater.prefs = prefs;
+        updater.versionBuild = "1.0.0";
+        updater.versionOs = "14";
+        updater.pluginVersion = "8.0.0";
+        when(prefs.getString("", "public")).thenReturn("public");
+    }
+
+    private static void assertBillingPayloadKeysOnly(final JSONObject event) throws Exception {
+        final Set<String> keys = new HashSet<>();
+        final Iterator<String> iterator = event.keys();
+        while (iterator.hasNext()) {
+            keys.add(iterator.next());
+        }
+        assertEquals(CapgoUpdater.BILLING_STATS_PAYLOAD_KEYS, keys);
     }
 
     private static byte[] hexToBytes(String hex) {
