@@ -180,6 +180,11 @@ public struct AES128Key {
         }
         try output.close()
 
+        let decryptedSize = (try fileManager.attributesOfItem(atPath: tempURL.path)[.size] as? NSNumber)?.uint64Value ?? 0
+        if decryptedSize == 0 {
+            throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
+        }
+
         do {
             _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
         } catch {

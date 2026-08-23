@@ -169,7 +169,11 @@ public class CryptoCipher {
         }
         Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
         cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getEncoded(), "AES"), new IvParameterSpec(iv));
-        File tempFile = File.createTempFile("capgo-aes-", ".tmp", file.getParentFile());
+        File parent = file.getAbsoluteFile().getParentFile();
+        if (parent == null) {
+            throw new IOException("Cannot create temp file for " + file.getAbsolutePath());
+        }
+        File tempFile = File.createTempFile("capgo-aes-", ".tmp", parent);
         try {
             byte[] inBuf = new byte[ioBufferBytes()];
             // Reuse one output buffer. cipher.update(in) allocates a new byte[] per chunk.
@@ -186,6 +190,9 @@ public class CryptoCipher {
                 if (last > 0) {
                     fos.write(outBuf, 0, last);
                 }
+            }
+            if (tempFile.length() == 0) {
+                throw new IOException("Empty decrypted data");
             }
             replaceFile(tempFile, file);
             tempFile = null;
