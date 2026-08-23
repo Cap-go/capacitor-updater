@@ -963,12 +963,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
 
-        // Start the update check during plugin load, not after the first
-        // activity onStart. File writes still wait on downloadGate.
-        if (this._isAutoUpdateEnabled()) {
-            this.backgroundDownload();
-        }
-
         // Expect notifyAppReady before the first appReady/splash hide (same idea as iOS).
         this.armPendingNotifyAppReadyWait();
     }
