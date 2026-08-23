@@ -4220,7 +4220,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         // Live update checks/downloads are user-visible work. Using `.background`
         // lets the scheduler starve them for minutes while the app is active.
-        DispatchQueue.global(qos: .utility).async(execute: work)
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func beginDownloadBackgroundTask() {
@@ -4271,8 +4271,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.runBackgroundDownloadWork {
-            // Wait for cleanup to complete before starting download
-            self.waitForCleanupIfNeeded()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 return

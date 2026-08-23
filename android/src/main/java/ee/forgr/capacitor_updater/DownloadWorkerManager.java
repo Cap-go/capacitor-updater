@@ -1,6 +1,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
+import android.os.Build;
 import androidx.work.BackoffPolicy;
 import androidx.work.Configuration;
 import androidx.work.Constraints;
@@ -8,6 +9,7 @@ import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
+import androidx.work.OutOfQuotaPolicy;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
 import java.util.concurrent.TimeUnit;
@@ -120,6 +122,11 @@ public class DownloadWorkerManager {
             .addTag(id)
             .addTag(version)
             .addTag("capacitor_updater_download");
+        // Android 12+ expedited jobs skip the WorkManager delay without a
+        // foreground service. Older APIs require getForegroundInfo().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            workRequestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
+        }
 
         // More aggressive retry policy for emulators
         if (isEmulator) {

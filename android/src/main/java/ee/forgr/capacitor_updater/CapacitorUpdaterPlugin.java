@@ -963,6 +963,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
         }
 
+        // Start the update check during plugin load, not after the first
+        // activity onStart. File writes still wait on downloadGate.
+        if (this._isAutoUpdateEnabled()) {
+            this.backgroundDownload();
+        }
+
         // Expect notifyAppReady before the first appReady/splash hide (same idea as iOS).
         this.armPendingNotifyAppReadyWait();
     }
@@ -4748,9 +4754,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
-    private Thread backgroundDownload() {
+    private synchronized Thread backgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
+        }
+        if (this.isDownloadStuckOrTimedOut()) {
+            logger.info("Download already in progress, skipping duplicate download request");
+            return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
@@ -4760,8 +4770,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 ? "Update will occur next time app moves to background."
                 : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
-            // Wait for cleanup to complete before starting download
-            waitForCleanupIfNeeded();
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
                 return;
