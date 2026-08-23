@@ -16,11 +16,11 @@ public class DataManager {
         return instance;
     }
 
-    public void setManifest(JSONArray manifest) {
+    public synchronized void setManifest(JSONArray manifest) {
         this.currentManifest = manifest;
     }
 
-    public JSONArray getAndClearManifest() {
+    public synchronized JSONArray getAndClearManifest() {
         JSONArray manifest = this.currentManifest;
         this.currentManifest = null;
         return manifest;
