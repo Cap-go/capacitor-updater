@@ -4297,6 +4297,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return
             }
+            // File mutations wait here. getLatest already ran in parallel with cleanup.
+            self.waitForCleanupIfNeeded()
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut

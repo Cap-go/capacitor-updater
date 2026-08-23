@@ -781,6 +781,10 @@ public class CapgoUpdater {
         }
         observeWorkProgress(this.activity, id, setNext);
 
+        if (manifest != null) {
+            DataManager.getInstance().setManifest(manifest);
+        }
+
         DownloadWorkerManager.enqueueDownload(
             this.activity,
             url,
@@ -805,10 +809,6 @@ public class CapgoUpdater {
             this.customId,
             this.defaultChannel
         );
-
-        if (manifest != null) {
-            DataManager.getInstance().setManifest(manifest);
-        }
     }
 
     public Boolean finishDownload(

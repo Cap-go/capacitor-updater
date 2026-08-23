@@ -4811,6 +4811,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     try {
+                        // File mutations wait here. getLatest already ran in parallel with cleanup.
+                        waitForCleanupIfNeeded();
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
