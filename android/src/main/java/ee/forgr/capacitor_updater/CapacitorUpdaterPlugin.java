@@ -4748,13 +4748,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
-    private synchronized Thread backgroundDownload() {
+    private Thread backgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
-        }
-        if (this.isDownloadStuckOrTimedOut()) {
-            logger.info("Download already in progress, skipping duplicate download request");
-            return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
