@@ -4278,7 +4278,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
-            let current = self.implementation.getCurrentBundle()
+            var current = self.implementation.getCurrentBundle()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 self.endBackGroundTask()

@@ -4748,9 +4748,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
-    private Thread backgroundDownload() {
+    private synchronized Thread backgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
+        }
+        if (this.isDownloadStuckOrTimedOut()) {
+            logger.info("Download already in progress, skipping duplicate download request");
+            return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
@@ -4772,7 +4776,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
-                    final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                    BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
                     // Handle network errors and other failures first
                     if (jsRes.has("error") || jsRes.has("kind")) {
@@ -4813,6 +4817,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     try {
                         // File mutations wait here. getLatest already ran in parallel with cleanup.
                         waitForCleanupIfNeeded();
+                        current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
