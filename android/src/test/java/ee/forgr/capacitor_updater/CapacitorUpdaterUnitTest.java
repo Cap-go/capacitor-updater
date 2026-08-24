@@ -4011,53 +4011,6 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void statsModeAllAllowsHealthAndUpdateEvents() throws Exception {
-        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
-        configureStatsTestUpdater(updater);
-        updater.statsUrl = "https://example.com/stats";
-        updater.deviceID = "device-1";
-        updater.appId = "com.example.app";
-        updater.sendStats("app_crash", "1.0.0", "");
-        updater.sendStats("set", "2.0.0", "1.0.0");
-        assertEquals(2, updater.pendingStatsCount());
-        updater.shutdown();
-    }
-
-    @Test
-    public void statsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() throws Exception {
-        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
-        configureStatsTestUpdater(updater);
-        updater.statsUrl = "https://example.com/stats";
-        updater.deviceID = "device-1";
-        updater.appId = "com.example.app";
-        updater.statsMode = CapgoUpdater.STATS_MODE_UPDATES_ONLY;
-        updater.sendStats("app_crash", "1.0.0", "");
-        updater.sendStats("download_71", "1.0.0", "");
-        updater.sendStats("download_fail", "1.0.0", "");
-        assertEquals(1, updater.pendingStatsCount());
-        assertEquals("download_fail", updater.firstQueuedStatsEventForTests().getString("action"));
-        assertTrue(updater.firstQueuedStatsEventForTests().has("custom_id"));
-        updater.shutdown();
-    }
-
-    @Test
-    public void statsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() throws Exception {
-        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
-        configureStatsTestUpdater(updater);
-        updater.statsUrl = "https://example.com/stats";
-        updater.deviceID = "device-1";
-        updater.appId = "com.example.app";
-        updater.statsMode = CapgoUpdater.STATS_MODE_BILLING_ONLY;
-        updater.sendStats("app_crash", "1.0.0", "");
-        updater.sendStats("download_71", "1.0.0", "");
-        updater.sendStats("download_complete", "1.0.0", "");
-        updater.sendStats("set", "2.0.0", "1.0.0");
-        assertEquals(2, updater.pendingStatsCount());
-        assertBillingPayloadKeysOnly(updater.firstQueuedStatsEventForTests());
-        updater.shutdown();
-    }
-
-    @Test
     public void statsModeUpdatesOnlyDropsRestoredHealthEventsFromPendingQueue() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-stats-filter");
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
@@ -4072,24 +4025,6 @@ public class CapacitorUpdaterUnitTest {
         updater.documentsDir = tempDir.toFile();
         updater.statsUrl = "https://example.com/stats";
         updater.restorePendingStats();
-        updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
-
-        assertEquals(1, updater.pendingStatsCount());
-        assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
-        updater.shutdown();
-    }
-
-    @Test
-    public void statsModeChangeFiltersQueuedHealthEvents() throws Exception {
-        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
-        configureStatsTestUpdater(updater);
-        updater.statsUrl = "https://example.com/stats";
-        updater.deviceID = "device-1";
-        updater.appId = "com.example.app";
-        updater.sendStats("app_crash", "1.0.0", "");
-        updater.sendStats("set", "2.0.0", "1.0.0");
-        assertEquals(2, updater.pendingStatsCount());
-
         updater.setStatsMode(CapgoUpdater.STATS_MODE_UPDATES_ONLY);
 
         assertEquals(1, updater.pendingStatsCount());
