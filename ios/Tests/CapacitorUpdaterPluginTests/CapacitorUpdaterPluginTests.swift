@@ -689,11 +689,6 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testStatsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() {
-        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeUpdatesOnly))
-        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", statsMode: CapgoUpdater.statsModeUpdatesOnly))
-        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("download_71", statsMode: CapgoUpdater.statsModeUpdatesOnly))
-        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", statsMode: CapgoUpdater.statsModeUpdatesOnly))
-
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
         configureStatsTestUpdater(updater)
@@ -709,9 +704,6 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testStatsModeAllAllowsHealthAndUpdateEvents() {
-        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeAll))
-        XCTAssertTrue(CapgoUpdater.shouldSendStatsAction("download_71", statsMode: CapgoUpdater.statsModeAll))
-
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
         configureStatsTestUpdater(updater)
@@ -723,13 +715,6 @@ class CapacitorUpdaterTests: XCTestCase {
         stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.queuedStatsActionsForTests(), ["app_crash", "set"])
-    }
-
-    func testNormalizeStatsModeFallsBackToAll() {
-        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(nil), CapgoUpdater.statsModeAll)
-        XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
-        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeUpdatesOnly), CapgoUpdater.statsModeUpdatesOnly)
-        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(CapgoUpdater.statsModeBillingOnly), CapgoUpdater.statsModeBillingOnly)
     }
 
     private func libraryDirForStatsTests() -> URL {

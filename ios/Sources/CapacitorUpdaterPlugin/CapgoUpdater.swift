@@ -200,20 +200,25 @@ import UIKit
         return statsQueue.map { $0.event.action ?? "" }
     }
 
-    private func createBillingStatsEvent(from event: StatsEvent, action: String) -> StatsEvent {
+    private func makeBillingStatsEvent(
+        action: String,
+        source: StatsEvent? = nil,
+        versionNameOverride: String? = nil,
+        timestampOverride: Int64? = nil
+    ) -> StatsEvent {
         StatsEvent(
-            platform: event.platform ?? "ios",
-            device_id: event.device_id ?? deviceID,
-            app_id: event.app_id ?? appId,
+            platform: source?.platform ?? "ios",
+            device_id: source?.device_id ?? deviceID,
+            app_id: source?.app_id ?? appId,
             custom_id: nil,
-            version_build: event.version_build ?? versionBuild,
+            version_build: source?.version_build ?? versionBuild,
             version_code: nil,
-            version_os: event.version_os ?? versionOs,
-            version_name: event.version_name ?? getCurrentBundle().getVersionName(),
+            version_os: source?.version_os ?? versionOs,
+            version_name: versionNameOverride ?? source?.version_name ?? getCurrentBundle().getVersionName(),
             old_version_name: nil,
-            plugin_version: event.plugin_version ?? pluginVersion,
-            is_emulator: event.is_emulator ?? isEmulator(),
-            is_prod: event.is_prod ?? isProd(),
+            plugin_version: source?.plugin_version ?? pluginVersion,
+            is_emulator: source?.is_emulator ?? isEmulator(),
+            is_prod: source?.is_prod ?? isProd(),
             installSource: nil,
             action: action,
             channel: nil,
@@ -221,36 +226,16 @@ import UIKit
             key_id: nil,
             metadata: nil,
             stats_mode: statsMode,
-            timestamp: event.timestamp
+            timestamp: timestampOverride ?? source?.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
         )
     }
 
+    private func createBillingStatsEvent(from event: StatsEvent, action: String) -> StatsEvent {
+        makeBillingStatsEvent(action: action, source: event)
+    }
+
     private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
-        createBillingStatsEvent(
-            from: StatsEvent(
-                platform: nil,
-                device_id: nil,
-                app_id: nil,
-                custom_id: nil,
-                version_build: nil,
-                version_code: nil,
-                version_os: nil,
-                version_name: versionName,
-                old_version_name: nil,
-                plugin_version: nil,
-                is_emulator: nil,
-                is_prod: nil,
-                installSource: nil,
-                action: action,
-                channel: nil,
-                defaultChannel: nil,
-                key_id: nil,
-                metadata: nil,
-                stats_mode: nil,
-                timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
-            ),
-            action: action
-        )
+        makeBillingStatsEvent(action: action, versionNameOverride: versionName, timestampOverride: timestamp)
     }
 
     private func prepareStatsEventForCurrentMode(_ event: StatsEvent) -> StatsEvent? {
