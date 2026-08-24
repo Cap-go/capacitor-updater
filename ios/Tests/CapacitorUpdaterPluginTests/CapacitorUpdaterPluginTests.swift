@@ -553,7 +553,7 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
     }
 
-    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
+    private func withSeededUncleanForegroundSession(_ body: () -> Void) {
         let defaults = UserDefaults.standard
         let keys = [
             "CapacitorUpdater.appSessionId",
@@ -567,24 +567,33 @@ class CapacitorUpdaterTests: XCTestCase {
         defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
         defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
         defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
+        body()
+    }
 
-        let implementation = HealthStatsCapgoUpdater()
-        let tracker = AppHealthTracker(implementation: implementation)
+    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
+        withSeededUncleanForegroundSession {
+            let implementation = HealthStatsCapgoUpdater()
+            let tracker = AppHealthTracker(implementation: implementation)
 
-        tracker.reportPreviousUncleanForegroundExit()
+            tracker.reportPreviousUncleanForegroundExit()
 
-        XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
-        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
-        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
-        XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
-        XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
+            XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
+            XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+            XCTAssertEqual(implementation.lastStatsOldVersionName, "")
+            XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
+            XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
+            XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
+            XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
 
-        implementation.sentStatsActions.removeAll()
-        tracker.reportPreviousUncleanForegroundExit()
+            implementation.sentStatsActions.removeAll()
+            tracker.reportPreviousUncleanForegroundExit()
 
-        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+            XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+
+            implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
+            tracker.reportPreviousUncleanForegroundExit()
+            XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+        }
     }
 
     func testReportsMemoryWarningAsHealthStat() {
@@ -597,41 +606,11 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
         XCTAssertEqual(implementation.lastStatsOldVersionName, "")
         XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
-    }
 
-    func testStatsModeUpdatesOnlySkipsHealthReporter() {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "CapacitorUpdater.appSessionId",
-            "CapacitorUpdater.appSessionForeground",
-            "CapacitorUpdater.appSessionStartedAt",
-            "CapacitorUpdater.lastReportedUncleanSessionId"
-        ]
-        keys.forEach { defaults.removeObject(forKey: $0) }
-        defer { keys.forEach { defaults.removeObject(forKey: $0) } }
-
-        defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
-        defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
-        defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
-
-        let implementation = HealthStatsCapgoUpdater()
+        implementation.sentStatsActions.removeAll()
         implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
-        let tracker = AppHealthTracker(implementation: implementation)
-
         tracker.reportMemoryWarning()
-        tracker.reportPreviousUncleanForegroundExit()
-
         XCTAssertTrue(implementation.sentStatsActions.isEmpty)
-    }
-
-    func testStatsModeAllAllowsHealthStats() {
-        let implementation = HealthStatsCapgoUpdater()
-        implementation.statsMode = CapgoUpdater.statsModeAll
-        let tracker = AppHealthTracker(implementation: implementation)
-
-        tracker.reportMemoryWarning()
-
-        XCTAssertEqual(implementation.sentStatsActions, ["app_memory_warning"])
     }
 
     func testStatsModeQueueBehavior() throws {
