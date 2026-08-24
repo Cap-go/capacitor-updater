@@ -429,6 +429,7 @@ public class DownloadService extends Worker {
                     getInputString(pluginVersion, "unknown"),
                     getInputData().getBoolean(IS_EMULATOR, false),
                     getInputData().getBoolean(IS_PROD, true),
+                    statsMode,
                     action,
                     System.currentTimeMillis()
                 );
@@ -449,6 +450,7 @@ public class DownloadService extends Worker {
                 json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
                 json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
                 json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+                json.put("stats_mode", statsMode);
             }
 
             Request request = new Request.Builder()

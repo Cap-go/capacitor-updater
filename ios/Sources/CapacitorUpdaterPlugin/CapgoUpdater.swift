@@ -174,6 +174,7 @@ import UIKit
         "plugin_version",
         "is_emulator",
         "is_prod",
+        "stats_mode",
         "action",
         "timestamp"
     ]
@@ -219,6 +220,7 @@ import UIKit
             defaultChannel: nil,
             key_id: nil,
             metadata: nil,
+            stats_mode: event.stats_mode ?? statsMode,
             timestamp: event.timestamp
         )
     }
@@ -244,6 +246,7 @@ import UIKit
                 defaultChannel: nil,
                 key_id: nil,
                 metadata: nil,
+                stats_mode: statsMode,
                 timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
             ),
             action: action
@@ -3385,6 +3388,7 @@ import UIKit
                 defaultChannel: info.defaultChannel,
                 key_id: info.key_id,
                 metadata: metadata,
+                stats_mode: statsMode,
                 timestamp: Int64(Date().timeIntervalSince1970 * 1000)
             )
         }

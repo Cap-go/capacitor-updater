@@ -4112,11 +4112,13 @@ public class CapacitorUpdaterUnitTest {
             "8.0.0",
             false,
             true,
+            CapgoUpdater.STATS_MODE_BILLING_ONLY,
             "set",
             123L
         );
         assertBillingPayloadKeysOnly(payload);
         assertEquals("set", payload.getString("action"));
+        assertEquals(CapgoUpdater.STATS_MODE_BILLING_ONLY, payload.getString("stats_mode"));
         assertEquals("14", payload.getString("version_os"));
         assertEquals("8.0.0", payload.getString("plugin_version"));
         assertEquals(123L, payload.getLong("timestamp"));

@@ -145,6 +145,9 @@ declare module '@capacitor/cli' {
        *   Omits `custom_id`, `metadata`, `version_code`, `install_source`, `defaultChannel`,
        *   `channel`, `key_id`, and `old_version_name`.
        *
+       * Every native stats HTTP request also sends `stats_mode` so the backend can avoid
+       * persisting or logging sensitive device fields when `billingOnly` is active.
+       *
        * Local JavaScript listeners such as `addListener('download')` are unchanged. This option
        * only affects native stats HTTP requests. Set `statsUrl` to `""` to disable all stats.
        * Preview sessions still skip all stats.

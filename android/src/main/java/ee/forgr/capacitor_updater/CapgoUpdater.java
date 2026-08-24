@@ -2072,6 +2072,7 @@ public class CapgoUpdater {
         "plugin_version",
         "is_emulator",
         "is_prod",
+        "stats_mode",
         "action",
         "timestamp"
     );
@@ -2095,6 +2096,7 @@ public class CapgoUpdater {
         final String pluginVersion,
         final boolean isEmulator,
         final boolean isProd,
+        final String statsMode,
         final String action,
         final long timestamp
     ) throws JSONException {
@@ -2108,6 +2110,7 @@ public class CapgoUpdater {
         json.put("plugin_version", pluginVersion);
         json.put("is_emulator", isEmulator);
         json.put("is_prod", isProd);
+        json.put("stats_mode", statsMode);
         json.put("action", action);
         json.put("timestamp", timestamp);
         return json;
@@ -2128,6 +2131,24 @@ public class CapgoUpdater {
             this.pluginVersion,
             this.isEmulator(),
             this.isProd(),
+            this.statsMode,
+            action,
+            timestamp
+        );
+    }
+
+    private JSONObject createBillingStatsObject(final JSONObject event, final String action, final long timestamp) throws JSONException {
+        return createBillingStatsPayload(
+            event.optString("platform", "android"),
+            event.optString("device_id", this.deviceID),
+            event.optString("app_id", this.appId),
+            event.optString("version_build", this.versionBuild),
+            event.optString("version_name", ""),
+            event.optString("version_os", this.versionOs),
+            event.optString("plugin_version", this.pluginVersion),
+            event.has("is_emulator") ? event.optBoolean("is_emulator") : this.isEmulator(),
+            event.has("is_prod") ? event.optBoolean("is_prod") : this.isProd(),
+            event.optString("stats_mode", this.statsMode),
             action,
             timestamp
         );
@@ -2146,7 +2167,7 @@ public class CapgoUpdater {
         }
         try {
             final long timestamp = event.has("timestamp") ? event.optLong("timestamp") : System.currentTimeMillis();
-            return createBillingStatsObject(event.optString("version_name", ""), action, timestamp);
+            return createBillingStatsObject(event, action, timestamp);
         } catch (JSONException e) {
             return null;
         }
@@ -2212,6 +2233,7 @@ public class CapgoUpdater {
         json.put("is_prod", this.isProd());
         json.put("install_source", this.getInstallSource());
         json.put("defaultChannel", this.defaultChannel);
+        json.put("stats_mode", this.statsMode);
 
         // Add encryption key ID if encryption is enabled (use cached value)
         if (!this.cachedKeyId.isEmpty()) {
@@ -3081,6 +3103,9 @@ public class CapgoUpdater {
                 if (metadata != null && !metadata.isEmpty()) {
                     json.put("metadata", new JSONObject(metadata));
                 }
+            }
+            if (!json.has("stats_mode")) {
+                json.put("stats_mode", this.statsMode);
             }
         } catch (JSONException e) {
             if (logger != null) {
