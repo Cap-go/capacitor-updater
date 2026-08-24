@@ -2045,17 +2045,11 @@ public class CapgoUpdater {
     }
 
     static boolean shouldSendStatsAction(final String action, final String statsMode) {
-        final String mode = normalizeStatsMode(statsMode);
-        if (STATS_MODE_ALL.equals(mode)) {
-            return true;
-        }
-        if (action == null || action.isEmpty()) {
-            return false;
-        }
-        if (STATS_MODE_BILLING_ONLY.equals(mode)) {
-            return isBillingOnlyStatsAction(action);
-        }
-        return isUpdatesOnlyStatsAction(action);
+        return switch (normalizeStatsMode(statsMode)) {
+            case STATS_MODE_ALL -> true;
+            case STATS_MODE_BILLING_ONLY -> action != null && !action.isEmpty() && isBillingOnlyStatsAction(action);
+            default -> action != null && !action.isEmpty() && isUpdatesOnlyStatsAction(action);
+        };
     }
 
     static boolean usesBillingStatsPayload(final String statsMode) {

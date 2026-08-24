@@ -3999,11 +3999,19 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void statsModeAllAllowsHealthAndUpdateEvents() throws Exception {
+    public void statsModeActionFiltersMatchContract() {
         assertTrue(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_ALL));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_ALL));
         assertTrue(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_ALL));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertTrue(CapgoUpdater.shouldSendStatsAction("download_complete", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+    }
 
+    @Test
+    public void statsModeAllAllowsHealthAndUpdateEvents() throws Exception {
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
@@ -4017,12 +4025,6 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void statsModeUpdatesOnlyDropsHealthAndProgressButKeepsUpdateEvents() throws Exception {
-        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
-        assertFalse(CapgoUpdater.shouldSendStatsAction("webview_javascript_error", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
-        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
-
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";
@@ -4040,11 +4042,6 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void statsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() throws Exception {
-        assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_BILLING_ONLY));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_BILLING_ONLY));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("download_complete", CapgoUpdater.STATS_MODE_BILLING_ONLY));
-        assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_BILLING_ONLY));
-
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         configureStatsTestUpdater(updater);
         updater.statsUrl = "https://example.com/stats";

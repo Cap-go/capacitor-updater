@@ -147,17 +147,14 @@ import UIKit
     }
 
     static func shouldSendStatsAction(_ action: String, statsMode: String) -> Bool {
-        let mode = normalizeStatsMode(statsMode)
-        if mode == statsModeAll {
+        switch normalizeStatsMode(statsMode) {
+        case statsModeAll:
             return true
+        case statsModeBillingOnly:
+            return !action.isEmpty && isBillingOnlyStatsAction(action)
+        default:
+            return !action.isEmpty && isUpdatesOnlyStatsAction(action)
         }
-        if action.isEmpty {
-            return false
-        }
-        if mode == statsModeBillingOnly {
-            return isBillingOnlyStatsAction(action)
-        }
-        return isUpdatesOnlyStatsAction(action)
     }
 
     static func usesBillingStatsPayload(_ statsMode: String) -> Bool {
