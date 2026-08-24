@@ -4230,16 +4230,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return "preview_session";
         }
-        final Thread previousTask = this.backgroundDownloadTask;
-        final Thread task = this.backgroundDownload();
-        if (task == null) {
-            return "unavailable";
+        synchronized (this) {
+            final Thread previousTask = this.backgroundDownloadTask;
+            final Thread task = this.backgroundDownload();
+            if (task == null) {
+                return "unavailable";
+            }
+            if (previousTask != null && previousTask == task) {
+                logger.info("Download already in progress, skipping duplicate download request");
+                return "already_running";
+            }
+            return "queued";
         }
-        if (previousTask != null && previousTask == task) {
-            logger.info("Download already in progress, skipping duplicate download request");
-            return "already_running";
-        }
-        return "queued";
     }
 
     @PluginMethod
@@ -4765,8 +4767,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
@@ -4789,7 +4791,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
                         String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
                         String latestVersion = jsRes.has("version") ? jsRes.getString("version") : currentBeforeCleanup.getVersionName();
-                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, currentBeforeCleanup);
+                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(
+                            kind,
+                            error,
+                            errorMessage,
+                            statusCode,
+                            latestVersion,
+                            currentBeforeCleanup
+                        );
                         CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(
                             jsRes,
                             jsRes.has("version") ? jsRes.getString("version") : ""
