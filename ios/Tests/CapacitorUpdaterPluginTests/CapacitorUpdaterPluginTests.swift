@@ -637,9 +637,8 @@ class CapacitorUpdaterTests: XCTestCase {
     func testStatsModeBillingOnlyQueuesAllowedEventsWithMinimalPayload() {
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
+        configureStatsTestUpdater(updater)
         updater.statsUrl = "https://example.com/stats"
-        updater.deviceID = "device-1"
-        updater.appId = "com.example.app"
         updater.versionBuild = "1.0.0"
         updater.pluginVersion = "8.0.0"
         updater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
@@ -666,6 +665,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
+        configureStatsTestUpdater(updater)
         updater.restorePendingStats()
         updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
         stopStatsFlushForTests(updater)
@@ -676,9 +676,8 @@ class CapacitorUpdaterTests: XCTestCase {
     func testStatsModeChangeFiltersQueuedHealthEvents() {
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
+        configureStatsTestUpdater(updater)
         updater.statsUrl = "https://example.com/stats"
-        updater.deviceID = "device-1"
-        updater.appId = "com.example.app"
 
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
         updater.sendStats(action: "set", versionName: "2.0.0")
@@ -697,9 +696,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
+        configureStatsTestUpdater(updater)
         updater.statsUrl = "https://example.com/stats"
-        updater.deviceID = "device-1"
-        updater.appId = "com.example.app"
         updater.statsMode = CapgoUpdater.statsModeUpdatesOnly
 
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
@@ -716,9 +714,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
+        configureStatsTestUpdater(updater)
         updater.statsUrl = "https://example.com/stats"
-        updater.deviceID = "device-1"
-        updater.appId = "com.example.app"
         updater.statsMode = CapgoUpdater.statsModeAll
 
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
@@ -741,6 +738,12 @@ class CapacitorUpdaterTests: XCTestCase {
 
     private func pendingStatsFileURLForTests() -> URL {
         libraryDirForStatsTests().appendingPathComponent("capgo_pending_stats.json")
+    }
+
+    private func configureStatsTestUpdater(_ updater: CapgoUpdater) {
+        updater.setLogger(Logger(withTag: "StatsModeTests", options: Logger.Options(level: .silent)))
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
     }
 
     private func stopStatsFlushForTests(_ updater: CapgoUpdater) {

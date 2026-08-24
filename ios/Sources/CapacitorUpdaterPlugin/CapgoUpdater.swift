@@ -228,25 +228,25 @@ import UIKit
     private func createBillingStatsEvent(action: String, versionName: String, timestamp: Int64? = nil) -> StatsEvent {
         createBillingStatsEvent(
             from: StatsEvent(
-                platform: "ios",
-                device_id: deviceID,
-                app_id: appId,
+                platform: nil,
+                device_id: nil,
+                app_id: nil,
                 custom_id: nil,
-                version_build: versionBuild,
+                version_build: nil,
                 version_code: nil,
-                version_os: versionOs,
+                version_os: nil,
                 version_name: versionName,
                 old_version_name: nil,
-                plugin_version: pluginVersion,
-                is_emulator: isEmulator(),
-                is_prod: isProd(),
+                plugin_version: nil,
+                is_emulator: nil,
+                is_prod: nil,
                 installSource: nil,
                 action: action,
                 channel: nil,
                 defaultChannel: nil,
                 key_id: nil,
                 metadata: nil,
-                stats_mode: statsMode,
+                stats_mode: nil,
                 timestamp: timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
             ),
             action: action
@@ -3521,16 +3521,8 @@ import UIKit
         statsQueueLock.unlock()
         persistStatsQueue()
 
-        var deliverableEvents: [QueuedStatsEvent] = []
-        var eventsToSend: [StatsEvent] = []
-        for queuedEvent in queuedEvents {
-            guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
-                queuedEvent.onSent?()
-                continue
-            }
-            deliverableEvents.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
-            eventsToSend.append(prepared)
-        }
+        let deliverableEvents = filterQueuedStatsEvents(queuedEvents)
+        let eventsToSend = deliverableEvents.map(\.event)
 
         if eventsToSend.isEmpty {
             clearStatsInFlight()

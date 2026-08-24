@@ -419,19 +419,21 @@ public class DownloadService extends Worker {
 
             JSONObject json;
             if (CapgoUpdater.usesBillingStatsPayload(statsMode)) {
-                json = CapgoUpdater.createBillingStatsPayload(
+                final JSONObject event = new JSONObject();
+                event.put("version_name", version != null ? version : "");
+                json = CapgoUpdater.createBillingStatsPayloadFromEvent(
+                    event,
+                    statsMode,
+                    action,
+                    System.currentTimeMillis(),
                     "android",
                     getInputString(DEVICE_ID, ""),
                     getInputString(APP_ID, "unknown"),
                     getInputString(VERSION_BUILD, ""),
-                    version != null ? version : "",
                     getInputString(VERSION_OS, currentVersionOs),
                     getInputString(pluginVersion, "unknown"),
                     getInputData().getBoolean(IS_EMULATOR, false),
-                    getInputData().getBoolean(IS_PROD, true),
-                    statsMode,
-                    action,
-                    System.currentTimeMillis()
+                    getInputData().getBoolean(IS_PROD, true)
                 );
             } else {
                 json = new JSONObject();

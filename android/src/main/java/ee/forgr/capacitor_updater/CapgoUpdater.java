@@ -2116,6 +2116,36 @@ public class CapgoUpdater {
         return json;
     }
 
+    static JSONObject createBillingStatsPayloadFromEvent(
+        final JSONObject event,
+        final String statsMode,
+        final String action,
+        final long timestamp,
+        final String defaultPlatform,
+        final String defaultDeviceId,
+        final String defaultAppId,
+        final String defaultVersionBuild,
+        final String defaultVersionOs,
+        final String defaultPluginVersion,
+        final boolean defaultIsEmulator,
+        final boolean defaultIsProd
+    ) throws JSONException {
+        return createBillingStatsPayload(
+            event.optString("platform", defaultPlatform),
+            event.optString("device_id", defaultDeviceId),
+            event.optString("app_id", defaultAppId),
+            event.optString("version_build", defaultVersionBuild),
+            event.optString("version_name", ""),
+            event.optString("version_os", defaultVersionOs),
+            event.optString("plugin_version", defaultPluginVersion),
+            event.has("is_emulator") ? event.optBoolean("is_emulator") : defaultIsEmulator,
+            event.has("is_prod") ? event.optBoolean("is_prod") : defaultIsProd,
+            statsMode,
+            action,
+            timestamp
+        );
+    }
+
     private JSONObject createBillingStatsObject(final String versionName, final String action) throws JSONException {
         return createBillingStatsObject(versionName, action, System.currentTimeMillis());
     }
@@ -2127,19 +2157,19 @@ public class CapgoUpdater {
     }
 
     private JSONObject createBillingStatsObject(final JSONObject event, final String action, final long timestamp) throws JSONException {
-        return createBillingStatsPayload(
-            event.optString("platform", "android"),
-            event.optString("device_id", this.deviceID),
-            event.optString("app_id", this.appId),
-            event.optString("version_build", this.versionBuild),
-            event.optString("version_name", ""),
-            event.optString("version_os", this.versionOs),
-            event.optString("plugin_version", this.pluginVersion),
-            event.has("is_emulator") ? event.optBoolean("is_emulator") : this.isEmulator(),
-            event.has("is_prod") ? event.optBoolean("is_prod") : this.isProd(),
+        return createBillingStatsPayloadFromEvent(
+            event,
             this.statsMode,
             action,
-            timestamp
+            timestamp,
+            "android",
+            this.deviceID,
+            this.appId,
+            this.versionBuild,
+            this.versionOs,
+            this.pluginVersion,
+            this.isEmulator(),
+            this.isProd()
         );
     }
 
@@ -3323,18 +3353,10 @@ public class CapgoUpdater {
         }
         persistStatsQueue();
 
-        final List<QueuedStatsEvent> deliverableEvents = new ArrayList<>();
+        final List<QueuedStatsEvent> deliverableEvents = filterQueuedStatsEvents(eventsToSend);
         JSONArray jsonArray = new JSONArray();
-        for (QueuedStatsEvent queuedEvent : eventsToSend) {
-            final JSONObject prepared = prepareStatsEventForCurrentMode(queuedEvent.event);
-            if (prepared == null) {
-                if (queuedEvent.onSent != null) {
-                    queuedEvent.onSent.run();
-                }
-                continue;
-            }
-            jsonArray.put(prepared);
-            deliverableEvents.add(new QueuedStatsEvent(prepared, queuedEvent.onSent));
+        for (QueuedStatsEvent queuedEvent : deliverableEvents) {
+            jsonArray.put(queuedEvent.event);
         }
 
         if (jsonArray.length() == 0) {
