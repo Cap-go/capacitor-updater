@@ -4230,11 +4230,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return "preview_session";
         }
-        if (this.isDownloadStuckOrTimedOut()) {
+        final Thread previousTask = this.backgroundDownloadTask;
+        final Thread task = this.backgroundDownload();
+        if (task == null) {
+            return "unavailable";
+        }
+        if (previousTask != null && previousTask == task) {
             logger.info("Download already in progress, skipping duplicate download request");
             return "already_running";
         }
-        this.backgroundDownload();
         return "queued";
     }
 
@@ -4776,7 +4780,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
-                    BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                    final BundleInfo currentBeforeCleanup = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
                     // Handle network errors and other failures first
                     if (jsRes.has("error") || jsRes.has("kind")) {
@@ -4784,8 +4788,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
                         String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
-                        String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
+                        String latestVersion = jsRes.has("version") ? jsRes.getString("version") : currentBeforeCleanup.getVersionName();
+                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, currentBeforeCleanup);
                         CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(
                             jsRes,
                             jsRes.has("version") ? jsRes.getString("version") : ""
@@ -4805,7 +4809,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
-                            current,
+                            currentBeforeCleanup,
                             isFailure,
                             plannedDirectUpdate,
                             "download_fail",
@@ -4817,7 +4821,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     try {
                         // File mutations wait here. getLatest already ran in parallel with cleanup.
                         waitForCleanupIfNeeded();
-                        current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                        final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
@@ -5066,8 +5070,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         logger.error("error in update check " + e.getMessage());
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             "Error in update check",
-                            current.getVersionName(),
-                            current,
+                            currentBeforeCleanup.getVersionName(),
+                            currentBeforeCleanup,
                             true,
                             plannedDirectUpdate
                         );
