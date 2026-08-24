@@ -647,6 +647,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.sendStats(action: "download_71", versionName: "1.0.0")
         updater.sendStats(action: "download_complete", versionName: "1.0.0")
         updater.sendStats(action: "set", versionName: "2.0.0", oldVersionName: "1.0.0")
+        stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.queuedStatsActionsForTests(), ["download_complete", "set"])
         assertBillingPayloadKeysOnly(updater.firstQueuedStatsEventForTests())
@@ -665,9 +666,9 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let updater = CapgoUpdater()
         defer { cleanupStatsTest(updater) }
-        updater.statsUrl = "https://example.com/stats"
         updater.restorePendingStats()
         updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+        stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "set")
     }
@@ -683,6 +684,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.sendStats(action: "set", versionName: "2.0.0")
 
         updater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+        stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "set")
     }
@@ -703,6 +705,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
         updater.sendStats(action: "download_71", versionName: "1.0.0")
         updater.sendStats(action: "download_fail", versionName: "1.0.0")
+        stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.firstQueuedStatsEventForTests()?.action, "download_fail")
     }
@@ -720,6 +723,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         updater.sendStats(action: "app_crash", versionName: "1.0.0")
         updater.sendStats(action: "set", versionName: "2.0.0")
+        stopStatsFlushForTests(updater)
 
         XCTAssertEqual(updater.queuedStatsActionsForTests(), ["app_crash", "set"])
     }
@@ -737,6 +741,10 @@ class CapacitorUpdaterTests: XCTestCase {
 
     private func pendingStatsFileURLForTests() -> URL {
         libraryDirForStatsTests().appendingPathComponent("capgo_pending_stats.json")
+    }
+
+    private func stopStatsFlushForTests(_ updater: CapgoUpdater) {
+        updater.shutdown()
     }
 
     private func cleanupStatsTest(_ updater: CapgoUpdater) {

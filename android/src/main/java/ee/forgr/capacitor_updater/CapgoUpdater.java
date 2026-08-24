@@ -2121,20 +2121,9 @@ public class CapgoUpdater {
     }
 
     private JSONObject createBillingStatsObject(final String versionName, final String action, final long timestamp) throws JSONException {
-        return createBillingStatsPayload(
-            "android",
-            this.deviceID,
-            this.appId,
-            this.versionBuild,
-            versionName,
-            this.versionOs,
-            this.pluginVersion,
-            this.isEmulator(),
-            this.isProd(),
-            this.statsMode,
-            action,
-            timestamp
-        );
+        final JSONObject event = new JSONObject();
+        event.put("version_name", versionName);
+        return createBillingStatsObject(event, action, timestamp);
     }
 
     private JSONObject createBillingStatsObject(final JSONObject event, final String action, final long timestamp) throws JSONException {
@@ -2148,7 +2137,7 @@ public class CapgoUpdater {
             event.optString("plugin_version", this.pluginVersion),
             event.has("is_emulator") ? event.optBoolean("is_emulator") : this.isEmulator(),
             event.has("is_prod") ? event.optBoolean("is_prod") : this.isProd(),
-            event.optString("stats_mode", this.statsMode),
+            this.statsMode,
             action,
             timestamp
         );

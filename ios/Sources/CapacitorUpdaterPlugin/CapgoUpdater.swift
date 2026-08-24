@@ -220,7 +220,7 @@ import UIKit
             defaultChannel: nil,
             key_id: nil,
             metadata: nil,
-            stats_mode: event.stats_mode ?? statsMode,
+            stats_mode: statsMode,
             timestamp: event.timestamp
         )
     }
@@ -610,6 +610,8 @@ import UIKit
         statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
+        operationQueue.cancelAllOperations()
+        alamofireSession.session.invalidateAndCancel()
         persistStatsQueue(force: true)
     }
 
@@ -3499,6 +3501,9 @@ import UIKit
         if statsStopped {
             return
         }
+        guard !statsUrl.isEmpty else {
+            return
+        }
         // While Retry-After is active, keep stats queued and skip the network call.
         if isRemoteBlocked() {
             logger.debug("Deferring stats flush until Retry-After expires.")
@@ -3581,7 +3586,11 @@ import UIKit
                 }
                 semaphore.signal()
             }
-            semaphore.wait()
+            let waitTimeout = max(self.timeout + 5, 10)
+            if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
+                self.requeueStatsEvents(deliverableEvents)
+                self.logger.error("Timed out sending stats batch")
+            }
             if !self.statsStopped {
                 self.persistStatsQueue()
             }
