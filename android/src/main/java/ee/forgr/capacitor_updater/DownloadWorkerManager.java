@@ -188,6 +188,9 @@ public class DownloadWorkerManager {
                     }
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while collecting manifest ids before version cancel", e);
         } catch (Exception e) {
             logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
         }

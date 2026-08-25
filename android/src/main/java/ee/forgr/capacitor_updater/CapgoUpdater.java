@@ -1941,25 +1941,24 @@ public class CapgoUpdater {
             !previousFallbackId.equals(bundle.getId()) &&
             !fallbackIsPreviewFallback &&
             !previousIsNext;
+        if (shouldDeletePrevious) {
+            if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
+                logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
+                logger.debug("Bundle ID: " + previousFallbackId);
+                this.enqueuePendingDelete(previousFallbackId);
+            }
+        }
         boolean deletePreviousAsync = shouldDeletePrevious;
         this.setFallbackBundle(bundle);
         if (deletePreviousAsync) {
             final String asyncPreviousFallbackId = previousFallbackId;
             final String asyncPreviousFallbackVersion = previousFallbackVersion;
-            final BundleInfo asyncFallback = fallback;
             io.execute(() -> {
                 if (this.activity != null) {
                     if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, asyncPreviousFallbackVersion)) {
                         logger.error("Failed to cancel previous version download before delete");
-                        this.enqueuePendingDelete(asyncPreviousFallbackId);
                         return;
                     }
-                }
-                if (!this.saveBundleInfo(asyncPreviousFallbackId, asyncFallback.setStatus(BundleStatus.DELETING))) {
-                    logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
-                    logger.debug("Bundle ID: " + asyncPreviousFallbackId);
-                    this.enqueuePendingDelete(asyncPreviousFallbackId);
-                    return;
                 }
                 try {
                     final Boolean res = this.delete(asyncPreviousFallbackId, true, false);
