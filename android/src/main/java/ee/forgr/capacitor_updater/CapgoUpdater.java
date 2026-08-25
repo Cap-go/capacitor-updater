@@ -1408,7 +1408,7 @@ public class CapgoUpdater {
             BundleInfo existingBundle = this.getBundleInfoByName(version);
             if (existingBundle != null && existingBundle.isErrorStatus()) {
                 // Cancel the failed download and allow retry
-                DownloadWorkerManager.cancelVersionDownload(this.activity, version);
+                DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version);
                 logger.info("Retrying failed download for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
@@ -1597,7 +1597,7 @@ public class CapgoUpdater {
 
             // Cancel download for this version if active
             if (cancelActiveDownload && this.activity != null) {
-                DownloadWorkerManager.cancelVersionDownload(this.activity, deleted.getVersionName());
+                DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName());
             }
 
             if (bundle.exists()) {

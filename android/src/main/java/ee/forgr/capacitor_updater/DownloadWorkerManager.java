@@ -156,26 +156,57 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        cancelExecutor.execute(() -> {
-            WorkManager workManager = WorkManager.getInstance(context);
-            Set<String> downloadIds = new HashSet<>();
-            try {
-                List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
-                for (WorkInfo workInfo : workInfos) {
-                    for (String tag : workInfo.getTags()) {
-                        if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
-                            downloadIds.add(tag);
-                        }
+        cancelExecutor.execute(() -> cancelVersionDownloadInternal(context, version));
+    }
+
+    public static void cancelVersionDownloadAndAwait(Context context, String version) {
+        initializeIfNeeded(context.getApplicationContext());
+        try {
+            cancelExecutor.submit(() -> cancelVersionDownloadInternal(context, version)).get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.error("Error awaiting version download cancel: " + e.getMessage());
+        }
+    }
+
+    private static void cancelVersionDownloadInternal(Context context, String version) {
+        WorkManager workManager = WorkManager.getInstance(context);
+        Set<String> downloadIds = new HashSet<>();
+        try {
+            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
+            for (WorkInfo workInfo : workInfos) {
+                for (String tag : workInfo.getTags()) {
+                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
+                        downloadIds.add(tag);
                     }
                 }
+            }
+        } catch (Exception e) {
+            logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
+        }
+        workManager.cancelAllWorkByTag(version);
+        for (String downloadId : downloadIds) {
+            DataManager.getInstance().clearManifest(downloadId);
+        }
+        awaitVersionWorkFinished(workManager, version);
+    }
+
+    private static void awaitVersionWorkFinished(WorkManager workManager, String version) {
+        for (int i = 0; i < 100; i++) {
+            try {
+                boolean anyActive = workManager
+                    .getWorkInfosByTag(version)
+                    .get()
+                    .stream()
+                    .anyMatch((workInfo) -> !workInfo.getState().isFinished());
+                if (!anyActive) {
+                    return;
+                }
+                Thread.sleep(100);
             } catch (Exception e) {
-                logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
+                logger.error("Error waiting for download cancel: " + e.getMessage());
+                return;
             }
-            workManager.cancelAllWorkByTag(version);
-            for (String downloadId : downloadIds) {
-                DataManager.getInstance().clearManifest(downloadId);
-            }
-        });
+        }
     }
 
     public static void cancelBundleDownload(Context context, String id, String version) {
