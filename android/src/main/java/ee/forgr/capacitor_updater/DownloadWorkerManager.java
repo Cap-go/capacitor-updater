@@ -13,7 +13,11 @@ import androidx.work.OutOfQuotaPolicy;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class DownloadWorkerManager {
@@ -25,6 +29,7 @@ public class DownloadWorkerManager {
     }
 
     private static volatile boolean isInitialized = false;
+    private static final ExecutorService cancelExecutor = Executors.newSingleThreadExecutor();
 
     private static synchronized void initializeIfNeeded(Context context) {
         if (!isInitialized) {
@@ -151,32 +156,40 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager workManager = WorkManager.getInstance(context);
-        try {
-            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
-            for (WorkInfo workInfo : workInfos) {
-                for (String tag : workInfo.getTags()) {
-                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
-                        DataManager.getInstance().clearManifest(tag);
+        cancelExecutor.execute(() -> {
+            WorkManager workManager = WorkManager.getInstance(context);
+            Set<String> downloadIds = new HashSet<>();
+            try {
+                List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
+                for (WorkInfo workInfo : workInfos) {
+                    for (String tag : workInfo.getTags()) {
+                        if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
+                            downloadIds.add(tag);
+                        }
                     }
                 }
+            } catch (Exception e) {
+                logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
             }
-        } catch (Exception e) {
-            logger.error("Error clearing manifest before version cancel: " + e.getMessage());
-        }
-        workManager.cancelAllWorkByTag(version);
+            workManager.cancelAllWorkByTag(version);
+            for (String downloadId : downloadIds) {
+                DataManager.getInstance().clearManifest(downloadId);
+            }
+        });
     }
 
     public static void cancelBundleDownload(Context context, String id, String version) {
         String uniqueWorkName = "bundle_" + id + "_" + version;
         initializeIfNeeded(context.getApplicationContext());
+        WorkManager workManager = WorkManager.getInstance(context);
+        workManager.cancelUniqueWork(uniqueWorkName);
         DataManager.getInstance().clearManifest(id);
-        WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName);
     }
 
     public static void cancelAllDownloads(Context context) {
         initializeIfNeeded(context.getApplicationContext());
+        WorkManager workManager = WorkManager.getInstance(context);
+        workManager.cancelAllWorkByTag("capacitor_updater_download");
         DataManager.getInstance().clearAllManifests();
-        WorkManager.getInstance(context).cancelAllWorkByTag("capacitor_updater_download");
     }
 }

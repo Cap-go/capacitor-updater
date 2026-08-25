@@ -379,6 +379,8 @@ public class DownloadService extends Worker {
                 if (manifest != null) {
                     handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
+                } else if (isStopped()) {
+                    return createFailureResult("download_cancelled");
                 } else {
                     logger.error("Manifest is null");
                     return createFailureResult("Manifest is null");
