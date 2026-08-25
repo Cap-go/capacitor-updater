@@ -10,8 +10,10 @@ import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.OutOfQuotaPolicy;
+import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class DownloadWorkerManager {
@@ -149,17 +151,32 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager.getInstance(context).cancelAllWorkByTag(version);
+        WorkManager workManager = WorkManager.getInstance(context);
+        try {
+            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
+            for (WorkInfo workInfo : workInfos) {
+                for (String tag : workInfo.getTags()) {
+                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
+                        DataManager.getInstance().clearManifest(tag);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error clearing manifest before version cancel: " + e.getMessage());
+        }
+        workManager.cancelAllWorkByTag(version);
     }
 
     public static void cancelBundleDownload(Context context, String id, String version) {
         String uniqueWorkName = "bundle_" + id + "_" + version;
         initializeIfNeeded(context.getApplicationContext());
+        DataManager.getInstance().clearManifest(id);
         WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName);
     }
 
     public static void cancelAllDownloads(Context context) {
         initializeIfNeeded(context.getApplicationContext());
+        DataManager.getInstance().clearAllManifests();
         WorkManager.getInstance(context).cancelAllWorkByTag("capacitor_updater_download");
     }
 }

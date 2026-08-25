@@ -763,6 +763,13 @@ public class CapgoUpdater {
                                 }
                             });
                             break;
+                        case CANCELLED:
+                            DataManager.getInstance().clearManifest(id);
+                            CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
+                            if (cancelledFuture != null) {
+                                cancelledFuture.cancel(true);
+                            }
+                            break;
                     }
                 });
         });

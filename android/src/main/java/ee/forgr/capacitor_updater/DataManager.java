@@ -31,4 +31,14 @@ public class DataManager {
         }
         return this.manifestsById.remove(downloadId);
     }
+
+    public synchronized void clearManifest(String downloadId) {
+        if (downloadId != null) {
+            this.manifestsById.remove(downloadId);
+        }
+    }
+
+    public synchronized void clearAllManifests() {
+        this.manifestsById.clear();
+    }
 }
