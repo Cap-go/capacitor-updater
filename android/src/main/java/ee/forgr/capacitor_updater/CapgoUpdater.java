@@ -315,14 +315,17 @@ public class CapgoUpdater {
         return this.cachedKeyId;
     }
 
-    private File unzip(final String id, final File zipFile, final String dest) throws IOException {
+    File unzip(final String id, final File zipFile, final String dest) throws IOException {
+        return unzip(id, zipFile, dest, CryptoCipher.ioBufferBytes());
+    }
+
+    File unzip(final String id, final File zipFile, final String dest, final int bufferSize) throws IOException {
         final File targetDirectory = new File(this.documentsDir, dest);
         try (
             final BufferedInputStream bis = new BufferedInputStream(new FileInputStream(zipFile));
             final ZipInputStream zis = new ZipInputStream(bis)
         ) {
             int count;
-            final int bufferSize = 8192;
             final byte[] buffer = new byte[bufferSize];
             final long lengthTotal = zipFile.length();
             long lengthRead = bufferSize;

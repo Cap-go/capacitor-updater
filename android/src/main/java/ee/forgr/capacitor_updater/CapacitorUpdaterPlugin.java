@@ -882,6 +882,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
         this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
+        DownloadService.applyHttpTimeouts(this.implementation.timeout);
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
