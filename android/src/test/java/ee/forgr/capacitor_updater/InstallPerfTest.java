@@ -43,7 +43,12 @@ public class InstallPerfTest {
         final File zip = new File(root, "bundle.zip");
         writeStoredZip(zip, ZIP_FILES, ZIP_FILE_BYTES);
         System.out.println(
-            "CAPGO_INSTALL_PERF platform=android fixture=zip files=" + ZIP_FILES + " bytes_each=" + ZIP_FILE_BYTES + " zip_bytes=" + zip.length()
+            "CAPGO_INSTALL_PERF platform=android fixture=zip files=" +
+                ZIP_FILES +
+                " bytes_each=" +
+                ZIP_FILE_BYTES +
+                " zip_bytes=" +
+                zip.length()
         );
 
         long[] unzipBefore = new long[RUNS];
@@ -193,17 +198,17 @@ public class InstallPerfTest {
     private static void printResult(final String platform, final String scenario, final long[] before, final long[] after) {
         System.out.println(
             "CAPGO_INSTALL_PERF platform=" +
-            platform +
-            " scenario=" +
-            scenario +
-            " before_ms=" +
-            median(before) +
-            " after_ms=" +
-            median(after) +
-            " before_runs=" +
-            Arrays.toString(before) +
-            " after_runs=" +
-            Arrays.toString(after)
+                platform +
+                " scenario=" +
+                scenario +
+                " before_ms=" +
+                median(before) +
+                " after_ms=" +
+                median(after) +
+                " before_runs=" +
+                Arrays.toString(before) +
+                " after_runs=" +
+                Arrays.toString(after)
         );
     }
 
@@ -216,7 +221,7 @@ public class InstallPerfTest {
     private static void writeStoredZip(final File zip, final int fileCount, final int fileBytes) throws IOException {
         final byte[] payload = new byte[fileBytes];
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zip))) {
-        zos.setMethod(ZipOutputStream.STORED);
+            zos.setMethod(ZipOutputStream.STORED);
             for (int i = 0; i < fileCount; i++) {
                 Arrays.fill(payload, (byte) (i & 0xff));
                 payload[0] = (byte) i;
