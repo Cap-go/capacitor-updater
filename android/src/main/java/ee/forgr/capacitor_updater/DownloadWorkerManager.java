@@ -18,7 +18,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class DownloadWorkerManager {
 
@@ -156,39 +158,26 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager workManager = WorkManager.getInstance(context);
-        workManager.cancelAllWorkByTag(version);
-        cancelExecutor.execute(() -> clearManifestsForVersion(workManager, version));
+        cancelExecutor.execute(() -> cancelVersionDownloadInternal(context, version, false));
     }
 
     public static boolean cancelVersionDownloadAndAwait(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
+        Future<?> future = cancelExecutor.submit(() -> cancelVersionDownloadInternal(context, version, true));
         try {
-            cancelExecutor.submit(() -> cancelVersionDownloadInternal(context, version)).get(10, TimeUnit.SECONDS);
+            future.get(10, TimeUnit.SECONDS);
             return true;
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            logger.error("Timed out awaiting version download cancel");
+            return false;
         } catch (Exception e) {
             logger.error("Error awaiting version download cancel: " + e.getMessage());
             return false;
         }
     }
 
-    private static void clearManifestsForVersion(WorkManager workManager, String version) {
-        try {
-            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
-            for (WorkInfo workInfo : workInfos) {
-                for (String tag : workInfo.getTags()) {
-                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
-                        DataManager.getInstance().clearManifest(tag);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error clearing manifests after version cancel: " + e.getMessage());
-        }
-    }
-
-    private static void cancelVersionDownloadInternal(Context context, String version) {
-        WorkManager workManager = WorkManager.getInstance(context);
+    private static Set<String> collectManifestIdsForVersion(WorkManager workManager, String version) {
         Set<String> downloadIds = new HashSet<>();
         try {
             List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
@@ -202,15 +191,33 @@ public class DownloadWorkerManager {
         } catch (Exception e) {
             logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
         }
-        workManager.cancelAllWorkByTag(version);
+        return downloadIds;
+    }
+
+    private static void clearManifestIds(Set<String> downloadIds) {
         for (String downloadId : downloadIds) {
             DataManager.getInstance().clearManifest(downloadId);
         }
-        awaitVersionWorkFinished(workManager, version);
+    }
+
+    private static void cancelVersionDownloadInternal(Context context, String version, boolean awaitFinished) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
+        WorkManager workManager = WorkManager.getInstance(context);
+        Set<String> downloadIds = collectManifestIdsForVersion(workManager, version);
+        workManager.cancelAllWorkByTag(version);
+        clearManifestIds(downloadIds);
+        if (awaitFinished) {
+            awaitVersionWorkFinished(workManager, version);
+        }
     }
 
     private static void awaitVersionWorkFinished(WorkManager workManager, String version) {
         for (int i = 0; i < 100; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IllegalStateException("Interrupted while waiting for version download cancel");
+            }
             try {
                 boolean anyActive = workManager
                     .getWorkInfosByTag(version)
@@ -221,6 +228,9 @@ public class DownloadWorkerManager {
                     return;
                 }
                 Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for download cancel", e);
             } catch (Exception e) {
                 throw new IllegalStateException("Error waiting for download cancel: " + e.getMessage(), e);
             }
