@@ -1408,7 +1408,10 @@ public class CapgoUpdater {
             BundleInfo existingBundle = this.getBundleInfoByName(version);
             if (existingBundle != null && existingBundle.isErrorStatus()) {
                 // Cancel the failed download and allow retry
-                DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version);
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version)) {
+                    logger.error("Failed to cancel previous download before retry");
+                    return;
+                }
                 logger.info("Retrying failed download for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
@@ -1597,7 +1600,10 @@ public class CapgoUpdater {
 
             // Cancel download for this version if active
             if (cancelActiveDownload && this.activity != null) {
-                DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName());
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName())) {
+                    logger.error("Failed to cancel active download before delete");
+                    return false;
+                }
             }
 
             if (bundle.exists()) {
@@ -1931,21 +1937,30 @@ public class CapgoUpdater {
             !previousFallbackId.equals(bundle.getId()) &&
             !fallbackIsPreviewFallback &&
             !previousIsNext;
+        boolean deletePreviousNow = false;
         if (shouldDeletePrevious) {
             // Cancel any in-flight download for the old version before the async boundary
             // so a later download of the same version name is not cancelled mid-flight.
+            deletePreviousNow = true;
             if (this.activity != null) {
-                DownloadWorkerManager.cancelVersionDownload(this.activity, previousFallbackVersion);
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, previousFallbackVersion)) {
+                    logger.error("Failed to cancel previous version download before delete");
+                    this.enqueuePendingDelete(previousFallbackId);
+                    deletePreviousNow = false;
+                }
             }
-            // Mark durable intent before fallback switch so a kill mid-flight still retries.
-            if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
-                logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
-                logger.debug("Bundle ID: " + previousFallbackId);
-                this.enqueuePendingDelete(previousFallbackId);
+            if (deletePreviousNow) {
+                // Mark durable intent before fallback switch so a kill mid-flight still retries.
+                if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
+                    logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
+                    logger.debug("Bundle ID: " + previousFallbackId);
+                    this.enqueuePendingDelete(previousFallbackId);
+                    deletePreviousNow = false;
+                }
             }
         }
         this.setFallbackBundle(bundle);
-        if (shouldDeletePrevious) {
+        if (deletePreviousNow) {
             new Thread(() -> {
                 try {
                     final Boolean res = this.delete(previousFallbackId, true, false);

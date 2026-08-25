@@ -156,15 +156,34 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        cancelExecutor.execute(() -> cancelVersionDownloadInternal(context, version));
+        WorkManager workManager = WorkManager.getInstance(context);
+        workManager.cancelAllWorkByTag(version);
+        cancelExecutor.execute(() -> clearManifestsForVersion(workManager, version));
     }
 
-    public static void cancelVersionDownloadAndAwait(Context context, String version) {
+    public static boolean cancelVersionDownloadAndAwait(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
         try {
             cancelExecutor.submit(() -> cancelVersionDownloadInternal(context, version)).get(10, TimeUnit.SECONDS);
+            return true;
         } catch (Exception e) {
             logger.error("Error awaiting version download cancel: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static void clearManifestsForVersion(WorkManager workManager, String version) {
+        try {
+            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
+            for (WorkInfo workInfo : workInfos) {
+                for (String tag : workInfo.getTags()) {
+                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
+                        DataManager.getInstance().clearManifest(tag);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error clearing manifests after version cancel: " + e.getMessage());
         }
     }
 
@@ -203,10 +222,10 @@ public class DownloadWorkerManager {
                 }
                 Thread.sleep(100);
             } catch (Exception e) {
-                logger.error("Error waiting for download cancel: " + e.getMessage());
-                return;
+                throw new IllegalStateException("Error waiting for download cancel: " + e.getMessage(), e);
             }
         }
+        throw new IllegalStateException("Timed out waiting for version download cancel: " + version);
     }
 
     public static void cancelBundleDownload(Context context, String id, String version) {
