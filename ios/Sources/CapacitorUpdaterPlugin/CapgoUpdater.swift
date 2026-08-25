@@ -3495,24 +3495,12 @@ import UIKit
         return token
     }
 
-    private func isCurrentStatsFlushToken(_ token: UUID) -> Bool {
+    private func takeStatsFlushTokenIfCurrent(_ token: UUID) -> Bool {
         statsFlushTokenLock.lock()
         defer { statsFlushTokenLock.unlock() }
-        return activeStatsFlushToken == token
-    }
-
-    private func clearStatsFlushTokenIfCurrent(_ token: UUID) {
-        statsFlushTokenLock.lock()
-        if activeStatsFlushToken == token {
-            activeStatsFlushToken = nil
-        }
-        statsFlushTokenLock.unlock()
-    }
-
-    private func clearStatsFlushToken() {
-        statsFlushTokenLock.lock()
+        guard activeStatsFlushToken == token else { return false }
         activeStatsFlushToken = nil
-        statsFlushTokenLock.unlock()
+        return true
     }
 
     private func flushStatsQueue() {
@@ -3560,24 +3548,21 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                guard self.isCurrentStatsFlushToken(flushToken) else {
+                guard self.takeStatsFlushTokenIfCurrent(flushToken) else {
                     semaphore.signal()
                     return
                 }
                 if self.abandonStoppedStatsFlush() {
-                    self.clearStatsFlushToken()
                     semaphore.signal()
                     return
                 }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
-                    self.clearStatsFlushToken()
                     self.requeueStatsEvents(deliverableEvents)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
-                    self.clearStatsFlushToken()
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
                         self.requeueStatsEvents(deliverableEvents)
                         self.logger.error("Error sending stats batch")
@@ -3593,13 +3578,11 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    self.clearStatsFlushToken()
                     self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(deliverableEvents)
                 case let .failure(error):
-                    self.clearStatsFlushToken()
                     self.requeueStatsEvents(deliverableEvents)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
@@ -3608,9 +3591,10 @@ import UIKit
             }
             let waitTimeout = max(self.timeout + 5, 10)
             if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-                self.clearStatsFlushTokenIfCurrent(flushToken)
-                self.requeueStatsEvents(deliverableEvents)
-                self.logger.error("Timed out sending stats batch")
+                if self.takeStatsFlushTokenIfCurrent(flushToken) {
+                    self.requeueStatsEvents(deliverableEvents)
+                    self.logger.error("Timed out sending stats batch")
+                }
             }
             if !self.statsStopped {
                 self.persistStatsQueue()
