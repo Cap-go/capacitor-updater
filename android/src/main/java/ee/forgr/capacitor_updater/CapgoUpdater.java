@@ -785,7 +785,7 @@ public class CapgoUpdater {
         observeWorkProgress(this.activity, id, setNext);
 
         if (manifest != null) {
-            DataManager.getInstance().setManifest(manifest);
+            DataManager.getInstance().setManifest(id, manifest);
         }
 
         DownloadWorkerManager.enqueueDownload(

@@ -375,7 +375,7 @@ public class DownloadService extends Worker {
             logger.debug("doWork isManifest: " + isManifest);
 
             if (isManifest) {
-                JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+                JSONArray manifest = DataManager.getInstance().getAndClearManifest(id);
                 if (manifest != null) {
                     handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
