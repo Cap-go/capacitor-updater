@@ -21,9 +21,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.junit.After;
 import org.junit.Test;
 
 public class InstallPerfTest {
+
+    private File perfTestRoot;
 
     private static final int ZIP_FILES = 512;
     private static final int ZIP_FILE_BYTES = 64 * 1024;
@@ -38,7 +41,7 @@ public class InstallPerfTest {
         CryptoCipher.setLogger(mock(Logger.class));
         DownloadService.setLogger(mock(Logger.class));
         final File root = Files.createTempDirectory("capgo-install-perf").toFile();
-        root.deleteOnExit();
+        perfTestRoot = root;
 
         final File zip = new File(root, "bundle.zip");
         writeStoredZip(zip, ZIP_FILES, ZIP_FILE_BYTES);
@@ -271,6 +274,14 @@ public class InstallPerfTest {
             }
         }
         return count;
+    }
+
+    @After
+    public void tearDown() {
+        if (perfTestRoot != null) {
+            deleteRecursively(perfTestRoot);
+            perfTestRoot = null;
+        }
     }
 
     private static void deleteRecursively(final File file) {

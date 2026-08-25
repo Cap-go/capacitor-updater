@@ -40,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -3258,7 +3259,9 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
             assertEquals(15_000, DownloadService.sharedClient.readTimeoutMillis());
             assertEquals(15_000, DownloadService.sharedClient.writeTimeoutMillis());
+            final OkHttpClient beforeNoop = DownloadService.sharedClient;
             DownloadService.applyHttpTimeouts(15_000);
+            assertSame(beforeNoop, DownloadService.sharedClient);
             assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
         } finally {
             DownloadService.applyHttpTimeouts(original);

@@ -83,7 +83,7 @@ public class DownloadService extends Worker {
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
-    protected static OkHttpClient sharedClient;
+    protected static volatile OkHttpClient sharedClient;
     private static final Object HTTP_CLIENT_LOCK = new Object();
     // Match CapgoUpdater.timeout / responseTimeout default (20s). OkHttp's 10s
     // defaults were unused by the plugin config and aborted slow manifest GETs.
@@ -117,7 +117,8 @@ public class DownloadService extends Worker {
     }
 
     static void applyHttpTimeouts(int timeoutMs) {
-        int ms = Math.max(0, timeoutMs);
+        // OkHttp treats 0 as infinite; keep plugin responseTimeout floor (20s default).
+        int ms = timeoutMs > 0 ? timeoutMs : 20_000;
         synchronized (HTTP_CLIENT_LOCK) {
             if (
                 sharedClient.connectTimeoutMillis() == ms &&
