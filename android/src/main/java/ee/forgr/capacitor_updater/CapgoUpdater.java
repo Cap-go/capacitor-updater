@@ -2961,15 +2961,16 @@ public class CapgoUpdater {
             }
             try {
                 if (arr.length() == 0) {
-                    if (file.exists() && !file.delete()) {
-                        if (logger != null) {
-                            logger.error("Failed to delete empty stats queue file");
-                        }
-                    }
                     File backup = new File(file.getAbsolutePath() + ".bak");
                     if (backup.exists() && !backup.delete()) {
                         if (logger != null) {
                             logger.error("Failed to delete empty stats backup");
+                        }
+                        return;
+                    }
+                    if (file.exists() && !file.delete()) {
+                        if (logger != null) {
+                            logger.error("Failed to delete empty stats queue file");
                         }
                     }
                     return;
