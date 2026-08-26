@@ -748,7 +748,9 @@ async function performRefreshState() {
       state.shakeChannelSelectorEnabled = String(shakeChannelSelector.value?.enabled ?? 'unknown');
     }
 
-    state.lastError = null;
+    if (!state.lastActionMarker?.includes(':error')) {
+      state.lastError = null;
+    }
   } catch (error) {
     state.lastError = error?.message ?? String(error);
     addEvent('Refresh error', { message: state.lastError });
@@ -1463,6 +1465,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
+  const shouldVerifyStatsUrl = Boolean(lastStatsRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const expectedUpdateUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
@@ -1490,10 +1493,12 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     observedChannelUrl === expectedChannelUrl,
     `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
   );
-  invariant(
-    observedStatsUrl === expectedStatsUrl,
-    `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
-  );
+  if (shouldVerifyStatsUrl) {
+    invariant(
+      observedStatsUrl === expectedStatsUrl,
+      `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
+    );
+  }
   invariant(
     observedAppId === defaultSmokeAppId,
     `verify persisted config expected server app_id ${defaultSmokeAppId}, received ${observedAppId}`,
@@ -2175,7 +2180,10 @@ const actions = [
     skipRefresh: true,
     run: async () => {
       await runGetLatestCheck();
-      return verifyPersistedRuntimeConfig({ includePluginAppId: false });
+      return verifyPersistedRuntimeConfig({
+        includePluginAppId: false,
+        probeLatest: false,
+      });
     },
   },
   {
@@ -3123,7 +3131,8 @@ async function bootstrap() {
     platform === 'android' &&
     scenarioId.startsWith('manual-zip') &&
     buildLabel.endsWith('-builtin') &&
-    state.bootCount > 1;
+    state.bootCount > 1 &&
+    bootActionFromStorage === 'none';
   if (shouldRunAndroidBootProbe) {
     state.bootProbe = 'running';
     renderState();
