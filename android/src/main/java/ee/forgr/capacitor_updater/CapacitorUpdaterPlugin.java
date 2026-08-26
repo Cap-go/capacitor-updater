@@ -2537,6 +2537,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.editor.putString(UPDATE_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
                 logger.error("Failed to persist updateUrl");
+                call.reject("Failed to persist updateUrl");
+                return;
             }
         }
         call.resolve();
@@ -2560,6 +2562,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.editor.putString(STATS_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
                 logger.error("Failed to persist statsUrl");
+                call.reject("Failed to persist statsUrl");
+                return;
             }
         }
         call.resolve();
@@ -2583,6 +2587,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.editor.putString(CHANNEL_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
                 logger.error("Failed to persist channelUrl");
+                call.reject("Failed to persist channelUrl");
+                return;
             }
         }
         call.resolve();
