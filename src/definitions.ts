@@ -23,7 +23,10 @@ declare module '@capacitor/cli' {
       appReadyTimeout?: number;
 
       /**
-       * Configure the number of seconds the native plugin should wait before considering API timeout.
+       * Configure the number of seconds the native plugin should wait before considering an HTTP timeout.
+       * Applies to update checks and file downloads. On Android these are idle connect/read/write
+       * timeouts and do not cap total download time; on iOS the request timeout also bounds the
+       * total download duration.
        *
        * Only available for Android and iOS.
        *
@@ -55,8 +58,9 @@ declare module '@capacitor/cli' {
       /**
        * Configure how the plugin checks for, downloads, and applies live updates.
        *
-       * The plugin checks for updates when the app moves to the foreground and, if
-       * {@link periodCheckDelay} is set, on a repeating timer while the app stays open.
+       * The plugin checks for updates when the app moves to the foreground. When
+       * {@link periodCheckDelay} is greater than 0, it also checks on a repeating timer
+       * while the app stays open.
        *
        * Boolean values keep their existing behavior:
        * - `true`: Same as `"atBackground"`.
@@ -114,7 +118,8 @@ declare module '@capacitor/cli' {
        * Native stats include update lifecycle events, app health signals such as crashes,
        * Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals
        * such as JavaScript errors, unhandled promise rejections, resource load failures,
-       * WebView renderer exits, and unclean WebView restarts when available.
+       * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
+       * and WebView load milestones when available.
        *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
@@ -148,10 +153,10 @@ declare module '@capacitor/cli' {
        * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
        * Works well for apps less than 10MB and with uploads done using --delta flag.
        * Zip or apps more than 10MB will be relatively slow for users to update.
-       * - false: Never do direct updates (use default behavior: download on foreground check, apply when backgrounded)
-       * - atInstall: Direct update only after app install or native app store update, otherwise act as directUpdate = false
-       * - onLaunch: Direct update only when the app is brought to the foreground from a killed state, otherwise act as directUpdate = false
-       * - always: Direct update on every foreground check whenever an update is available, never act as directUpdate = false
+       * - false: Never do direct updates
+       * - atInstall: Same as `"atInstall"` for {@link autoUpdate}
+       * - onLaunch: Same as `"onLaunch"` for {@link autoUpdate}
+       * - always: Same as `"always"` for {@link autoUpdate}
        * - true: (deprecated) Same as "always" for backward compatibility
        *
        * Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads.
@@ -203,7 +208,8 @@ declare module '@capacitor/cli' {
       autoSplashscreenTimeout?: number;
 
       /**
-       * Configure the delay period for period update check. the unit is in seconds.
+       * Configure the interval in seconds for repeating update checks while the app stays open.
+       * Foreground checks still run when this is 0. Values below 600 are normalized to 600.
        *
        * Only available for Android and iOS.
        * Cannot be less than 600 seconds (10 minutes).
@@ -343,6 +349,23 @@ declare module '@capacitor/cli' {
        * @since 7.34.0
        */
       allowSetDefaultChannel?: boolean;
+
+      /**
+       * Keep the default channel stored by {@link CapacitorUpdaterPlugin.setChannel} or refreshed by
+       * {@link CapacitorUpdaterPlugin.getChannel} when app data is restored into a new app install.
+       *
+       * `setChannel()` and a successful `getChannel()` still persist the selected channel across app
+       * restarts. When this option is `false`, native startup clears that persisted channel when it
+       * detects app data restored into a new installation. Native build cleanup clears the persisted
+       * channel only when `persistDefaultChannelOnReinstall` is `false`, `resetWhenUpdate` is `true`,
+       * and the native build version has changed.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since 8.51.0
+       */
+      persistDefaultChannelOnReinstall?: boolean;
 
       /**
        * Set the default channel for the app in the config. Case sensitive.
@@ -532,7 +555,9 @@ export interface CapacitorUpdaterPlugin {
    * **Android Background Runner note:** `@capacitor/background-runner` loads its
    * configured runner script from native APK assets. Live updates cannot replace
    * that runner script. Keep it stable across OTA updates and ship a native app
-   * update when the runner code changes.
+   * update when the runner code changes. When a bundle switch happens, Capacitor
+   * Updater cancels and reschedules configured Background Runner WorkManager jobs
+   * and syncs the bundled runner script into native `public/` storage when present.
    *
    * @example
    * const bundle = await CapacitorUpdater.download({
@@ -1011,9 +1036,9 @@ export interface CapacitorUpdaterPlugin {
    * (e.g., "production", "beta", "staging"). This method switches the device to a new channel.
    *
    * **Device Override UI:** `setChannel()` validates the channel with the backend, then stores the
-   * selected channel locally on the device. It does not create or update a backend Device Override,
-   * so the device will not appear as overridden in the Capgo dashboard. Only assignments created
-   * from the dashboard or the Public API are shown in the Device Override UI.
+   * selected channel locally on the device for future app restarts. It does not create or update
+   * a backend Device Override, so the device will not appear as overridden in the Capgo dashboard.
+   * Only assignments created from the dashboard or the Public API are shown in the Device Override UI.
    *
    * **Requirements:**
    * - The target channel must allow self-assignment (configured in your Capgo dashboard or backend)
@@ -1042,7 +1067,7 @@ export interface CapacitorUpdaterPlugin {
    * ```
    *
    * This sends a request to the Capgo backend to validate the specified channel, then stores the
-   * channel locally on the device.
+   * channel locally on the device for future app restarts.
    *
    * @param options The {@link SetChannelOptions} containing the channel name and optional auto-update trigger.
    * @returns {Promise<ChannelRes>} Channel operation result with status and optional error/message.
@@ -1085,8 +1110,8 @@ export interface CapacitorUpdaterPlugin {
    * - Check if a device is on a specific channel before showing features
    * - Verify channel assignment after calling {@link setChannel}
    *
-   * On native platforms, a successful response also refreshes the locally persisted
-   * default channel used by update checks.
+   * On native platforms, a successful response also refreshes the default channel used by update checks.
+   * This refresh is persisted across app restarts.
    *
    * @returns {Promise<GetChannelRes>} The current channel information.
    * @throws {Error} If the operation fails.
@@ -1738,7 +1763,7 @@ export interface CapacitorUpdaterPlugin {
  * success: The bundle has been downloaded and is ready to be **SET** as the next bundle.
  * error: The bundle has failed to download.
  */
-export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading';
+export type BundleStatus = 'success' | 'error' | 'pending' | 'downloading' | 'deleted' | 'deleting';
 
 export type DelayUntilNext = 'background' | 'kill' | 'nativeVersion' | 'date';
 

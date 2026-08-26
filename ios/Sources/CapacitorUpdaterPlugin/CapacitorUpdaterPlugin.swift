@@ -16,6 +16,13 @@ import Version
  */
 @objc(CapacitorUpdaterPlugin)
 public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
+    enum DefaultChannelPreviewSnapshot: Equatable {
+        case missing
+        case invalidated
+        case snapshot(String?)
+        case unreadable
+    }
+
     lazy var logger: Logger = {
         // Default to true for OS logging. In test environments without a bridge,
         // this will default to true. In production, it reads from config.
@@ -85,7 +92,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "completeFlexibleUpdate", returnType: CAPPluginReturnPromise)
     ]
     public var implementation = CapgoUpdater()
-    private let pluginVersion: String = "5.50.1"
+
+    deinit {
+        implementation.shutdown()
+    }
+    private let pluginVersion: String = "5.51.15"
+    private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
@@ -123,6 +135,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let previewSourceDefaultsKey = "CapacitorUpdater.previewSource"
     private let previewSessionsDefaultsKey = "CapacitorUpdater.previewSessions"
     private let previewSessionAlertPendingDefaultsKey = "CapacitorUpdater.previewSessionAlertPending"
+    private let defaultChannelInstallMarkerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+    private let defaultChannelInstallMarkerFilename = "CapacitorUpdater.defaultChannelInstallMarker"
+    private let defaultChannelStateFilename = "CapacitorUpdater.defaultChannelState"
+    private let defaultChannelPreviewSnapshotFilename = "CapacitorUpdater.defaultChannelPreviewSnapshot"
     private let previewDeepLinkScheme = "capgo"
     private let previewDeepLinkRootComponent = "preview"
     private let previewDeepLinkChannelComponent = "channel"
@@ -135,6 +151,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
+    private var launchStartReported = false
+    private var launchReadyReported = false
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
     private var resetWhenUpdate = true
@@ -160,6 +178,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
     var allowSetDefaultChannel = true
+    var persistDefaultChannelOnReinstall = true
     private var keepUrlPathAfterReload = false
     private var backgroundWork: DispatchWorkItem?
     private var taskRunning = false
@@ -172,8 +191,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
+    private let defaultChannelStateLock = NSLock()
+    private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
     private var cleanupThread: Thread?
+    private var defaultChannelCleanupMustRetry = false
     private var persistCustomId = false
     private var persistModifyUrl = false
     private var allowManualBundleError = false
@@ -191,6 +213,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var isLeavingPreviewForIncomingLink = false
     private var previewTransitionClearWorkItem: DispatchWorkItem?
     let semaphoreReady = DispatchSemaphore(value: 0)
+    // Best-effort flag: set before we expect notifyAppReady (load/reload).
+    // No lock — never held across waits; a rare race only mis-times one wait.
+    private var pendingNotifyAppReady = false
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -216,6 +241,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
         allowSetDefaultChannel = getConfig().getBoolean("allowSetDefaultChannel", true)
+        persistDefaultChannelOnReinstall = getConfig().getBoolean("persistDefaultChannelOnReinstall", true)
         if persistCustomId {
             let storedCustomId = UserDefaults.standard.string(forKey: customIdDefaultsKey) ?? ""
             if !storedCustomId.isEmpty {
@@ -331,14 +357,61 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Loaded persisted channelUrl")
             }
         }
+        implementation.restorePendingStats()
 
-        // Load defaultChannel: first try from persistent storage (set via setChannel), then fall back to config
-        if let storedDefaultChannel = UserDefaults.standard.object(forKey: defaultChannelDefaultsKey) as? String {
+        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
+        let defaultChannelPersistenceDisabled = !persistDefaultChannelOnReinstall
+        let restoredReinstall = defaultChannelPersistenceDisabled && self.isRestoredReinstall()
+        var installMarkerCanBePrepared = true
+        if shouldClearPersistedDefaultChannel(
+            nativeBuildVersionChanged: nativeBuildVersionChanged,
+            resetWhenUpdate: resetWhenUpdate,
+            restoredReinstall: restoredReinstall
+        ) {
+            installMarkerCanBePrepared = clearPersistedDefaultChannel()
+            if installMarkerCanBePrepared {
+                logger.info("Cleared persisted defaultChannel because reinstall persistence is disabled")
+            } else {
+                logger.warn("Cannot durably clear persisted defaultChannel")
+                self.defaultChannelCleanupMustRetry = true
+                self.invalidateDefaultChannelInstallMarker()
+            }
+        }
+        if defaultChannelPersistenceDisabled && installMarkerCanBePrepared {
+            self.prepareDefaultChannelInstallMarker()
+        }
+        if !previewSessionEnabled,
+           !defaultChannelCleanupMustRetry,
+           self.hasPendingDefaultChannelPreviewSnapshot(),
+           !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore remains pending")
+        }
+
+        let configDefaultChannel = getConfig().getString("defaultChannel", "")!
+        let storedDefaultChannel = UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+        let stateFile = self.defaultChannelStateFile()
+        let state = stateFile.map { self.defaultChannelState(file: $0) }
+        if defaultChannelCleanupMustRetry {
+            implementation.defaultChannel = configDefaultChannel
+            logger.warn("Using configured defaultChannel until persisted cleanup can retry")
+        } else if let state = state, state.exists, state.isReadable {
+            self.reconcileDefaultChannelDefaults(with: state.channel)
+            implementation.defaultChannel = state.channel ?? configDefaultChannel
+            logger.info("Loaded persisted defaultChannel from local state")
+        } else if defaultChannelPersistenceDisabled, state?.exists == true {
+            implementation.defaultChannel = configDefaultChannel
+            logger.warn("Ignoring unreadable persisted defaultChannel while reinstall persistence is disabled")
+        } else if let storedDefaultChannel = storedDefaultChannel {
             implementation.defaultChannel = storedDefaultChannel
             logger.info("Loaded persisted defaultChannel from setChannel()")
         } else {
-            implementation.defaultChannel = getConfig().getString("defaultChannel", "")!
+            implementation.defaultChannel = configDefaultChannel
         }
+        if !defaultChannelCleanupMustRetry,
+           state?.exists != true || (!defaultChannelPersistenceDisabled && state?.isReadable != true) {
+            _ = self.persistDefaultChannelStateFromDefaults()
+        }
+        self.reportAppLaunchStart()
         self.implementation.autoReset()
         let appHealthTracker = AppHealthTracker(implementation: self.implementation)
         self.appHealthTracker = appHealthTracker
@@ -347,16 +420,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
         self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
-        let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
         if nativeBuildVersionChanged {
             self.clearPreviewSessionForNativeBuildChange()
         }
         self.leavePreviewSessionForLaunchURLIfNeeded()
 
-        if resetWhenUpdate {
-            let didResetCurrentBundle = self.resetCurrentBundleForNativeBuildChangeIfNeeded()
-            self.cleanupObsoleteVersions(didResetCurrentBundle: didResetCurrentBundle)
+        // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
+        self.implementation.beforeDownload = { [weak self] in
+            self?.waitForCleanupIfNeeded()
         }
+        // Always run async cleanup: delete obsolete bundles on native update (when enabled)
+        // and sweep orphan directories every launch. Must not block app startup.
+        if !resetWhenUpdate {
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
+        }
+        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
+        self.cleanupObsoleteVersions(
+            resetWhenUpdate: resetWhenUpdate,
+            didResetCurrentBundle: didResetCurrentBundle
+        )
         self.reportNativeVersionStatsIfChanged()
 
         // Load the server
@@ -518,6 +601,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func semaphoreUp() {
+        pendingNotifyAppReady = true
         DispatchQueue.global().async {
             self.semaphoreWait(waitTime: 0)
         }
@@ -529,6 +613,327 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func storedNativeBuildVersion() -> String {
         UserDefaults.standard.string(forKey: "LatestNativeBuildVersion") ?? UserDefaults.standard.string(forKey: "LatestVersionNative") ?? "0"
+    }
+
+    func shouldClearPersistedDefaultChannel(
+        nativeBuildVersionChanged: Bool,
+        resetWhenUpdate: Bool,
+        restoredReinstall: Bool
+    ) -> Bool {
+        !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged))
+    }
+
+    func clearPersistedDefaultChannel() -> Bool {
+        guard let stateFile = self.defaultChannelStateFile(),
+              let previewSnapshotFile = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        return self.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        )
+    }
+
+    func clearPersistedDefaultChannel(stateFile: URL, previewSnapshotFile: URL) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        do {
+            try self.persistDefaultChannelStateWithoutLock(channel: nil, file: stateFile)
+            try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+                channel: nil,
+                isValid: false,
+                file: previewSnapshotFile
+            )
+            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelWasSetDefaultsKey)
+            return true
+        } catch {
+            logger.warn("Cannot persist cleared default channel state: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func defaultChannelStateFile() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelStateFilename)
+    }
+
+    private func defaultChannelPreviewSnapshotFile() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelPreviewSnapshotFilename)
+    }
+
+    func defaultChannelState(file: URL) -> (exists: Bool, channel: String?, isReadable: Bool) {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        return self.defaultChannelStateWithoutLock(file: file)
+    }
+
+    private func defaultChannelStateWithoutLock(file: URL) -> (exists: Bool, channel: String?, isReadable: Bool) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: file.path) else {
+            return (false, nil, true)
+        }
+        do {
+            let data = try Data(contentsOf: file)
+            guard !data.isEmpty else {
+                return (true, nil, true)
+            }
+            guard let channel = String(data: data, encoding: .utf8) else {
+                logger.warn("Cannot decode persisted default channel state")
+                return (true, nil, false)
+            }
+            return (true, channel, true)
+        } catch {
+            logger.warn("Cannot read persisted default channel state: \(error.localizedDescription)")
+            return (true, nil, false)
+        }
+    }
+
+    func persistDefaultChannelState(channel: String?, file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelStateWithoutLock(channel: channel, file: file)
+    }
+
+    private func persistDefaultChannelStateWithoutLock(channel: String?, file: URL) throws {
+        let data = channel.map { Data($0.utf8) } ?? Data()
+        try self.persistBackupExcludedFile(file: file, data: data, overwrite: true)
+    }
+
+    func defaultChannelPreviewSnapshot(file: URL) -> DefaultChannelPreviewSnapshot {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        return self.defaultChannelPreviewSnapshotWithoutLock(file: file)
+    }
+
+    private func defaultChannelPreviewSnapshotWithoutLock(file: URL) -> DefaultChannelPreviewSnapshot {
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            return .missing
+        }
+        do {
+            let data = try Data(contentsOf: file)
+            guard let kind = data.first else {
+                return .unreadable
+            }
+            switch kind {
+            case 0 where data.count == 1:
+                return .invalidated
+            case 1 where data.count == 1:
+                return .snapshot(nil)
+            case 2:
+                guard let channel = String(data: Data(data.dropFirst()), encoding: .utf8) else {
+                    return .unreadable
+                }
+                return .snapshot(channel)
+            default:
+                return .unreadable
+            }
+        } catch {
+            logger.warn("Cannot read default channel preview snapshot: \(error.localizedDescription)")
+            return .unreadable
+        }
+    }
+
+    func persistDefaultChannelPreviewSnapshot(channel: String?, file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+            channel: channel,
+            isValid: true,
+            file: file
+        )
+    }
+
+    func invalidateDefaultChannelPreviewSnapshot(file: URL) throws {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+            channel: nil,
+            isValid: false,
+            file: file
+        )
+    }
+
+    private func persistDefaultChannelPreviewSnapshotWithoutLock(
+        channel: String?,
+        isValid: Bool,
+        file: URL
+    ) throws {
+        var data = Data()
+        if !isValid {
+            data.append(0)
+        } else if let channel = channel {
+            data.append(2)
+            data.append(contentsOf: channel.utf8)
+        } else {
+            data.append(1)
+        }
+        try self.persistBackupExcludedFile(file: file, data: data, overwrite: true)
+    }
+
+    private func persistDefaultChannelPreviewSnapshot(channel: String?) -> Bool {
+        guard let file = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        do {
+            try self.persistDefaultChannelPreviewSnapshot(channel: channel, file: file)
+            return true
+        } catch {
+            logger.warn("Cannot persist default channel preview snapshot: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func hasPendingDefaultChannelPreviewSnapshot() -> Bool {
+        guard let file = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
+        switch self.defaultChannelPreviewSnapshot(file: file) {
+        case .snapshot, .unreadable:
+            return true
+        case .missing, .invalidated:
+            return false
+        }
+    }
+
+    @discardableResult
+    func persistDefaultChannelStateFromDefaults() -> Bool {
+        guard let file = self.defaultChannelStateFile() else {
+            logger.warn("Cannot locate default channel state file")
+            return false
+        }
+        return self.persistDefaultChannelStateFromDefaults(stateFile: file)
+    }
+
+    @discardableResult
+    func persistDefaultChannelStateFromDefaults(stateFile: URL) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        do {
+            try self.persistDefaultChannelStateWithoutLock(
+                channel: UserDefaults.standard.string(forKey: defaultChannelDefaultsKey),
+                file: stateFile
+            )
+            return true
+        } catch {
+            do {
+                if FileManager.default.fileExists(atPath: stateFile.path) {
+                    try FileManager.default.removeItem(at: stateFile)
+                }
+                logger.warn("Cannot persist default channel state; falling back to UserDefaults: \(error.localizedDescription)")
+                return true
+            } catch let invalidationError {
+                logger.warn("Cannot persist or invalidate default channel state: \(invalidationError.localizedDescription)")
+                return false
+            }
+        }
+    }
+
+    private func persistedDefaultChannel() -> String? {
+        guard let file = self.defaultChannelStateFile() else {
+            return UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+        }
+        return self.persistedDefaultChannel(stateFile: file)
+    }
+
+    func persistedDefaultChannel(stateFile: URL) -> String? {
+        let state = self.defaultChannelState(file: stateFile)
+        if state.exists {
+            if state.isReadable {
+                return state.channel
+            }
+            if !persistDefaultChannelOnReinstall {
+                return nil
+            }
+        }
+        return UserDefaults.standard.string(forKey: defaultChannelDefaultsKey)
+    }
+
+    private func reconcileDefaultChannelDefaults(with channel: String?) {
+        if let channel = channel {
+            UserDefaults.standard.set(channel, forKey: defaultChannelDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+        }
+    }
+
+    private func defaultChannelInstallMarker() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(defaultChannelInstallMarkerFilename)
+    }
+
+    private func invalidateDefaultChannelInstallMarker() {
+        guard let marker = self.defaultChannelInstallMarker() else {
+            return
+        }
+        do {
+            try self.invalidateDefaultChannelInstallMarker(marker: marker)
+        } catch {
+            logger.warn("Cannot invalidate default channel install marker for cleanup retry: \(error.localizedDescription)")
+        }
+    }
+
+    func invalidateDefaultChannelInstallMarker(marker: URL) throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: marker.path) {
+            try fileManager.removeItem(at: marker)
+        }
+    }
+
+    func isRestoredReinstall() -> Bool {
+        guard let marker = self.defaultChannelInstallMarker() else {
+            return false
+        }
+        return self.isRestoredReinstall(
+            marker: marker,
+            markerWasCreated: UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
+        )
+    }
+
+    func isRestoredReinstall(marker: URL, markerWasCreated: Bool) -> Bool {
+        markerWasCreated && !FileManager.default.fileExists(atPath: marker.path)
+    }
+
+    private func prepareDefaultChannelInstallMarker() {
+        guard let marker = self.defaultChannelInstallMarker() else {
+            return
+        }
+        self.prepareDefaultChannelInstallMarker(
+            marker: marker,
+            markerWasCreated: UserDefaults.standard.bool(forKey: defaultChannelInstallMarkerDefaultsKey)
+        )
+    }
+
+    func prepareDefaultChannelInstallMarker(marker: URL, markerWasCreated: Bool) {
+        do {
+            try self.persistBackupExcludedFile(file: marker, data: Data())
+            if !markerWasCreated {
+                UserDefaults.standard.set(true, forKey: defaultChannelInstallMarkerDefaultsKey)
+                UserDefaults.standard.synchronize()
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: marker)
+            UserDefaults.standard.set(false, forKey: defaultChannelInstallMarkerDefaultsKey)
+            UserDefaults.standard.synchronize()
+            logger.warn("Cannot prepare default channel install marker: \(error.localizedDescription)")
+        }
+    }
+
+    private func persistBackupExcludedFile(file: URL, data: Data, overwrite: Bool = false) throws {
+        let fileManager = FileManager.default
+        if overwrite || !fileManager.fileExists(atPath: file.path) {
+            try fileManager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+        }
+        let currentResourceValues = try file.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        if currentResourceValues.isExcludedFromBackup != true {
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            var mutableFile = file
+            try mutableFile.setResourceValues(resourceValues)
+        }
     }
 
     func hasNativeBuildVersionChanged() -> Bool {
@@ -629,12 +1034,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
-    private func cleanupObsoleteVersions(didResetCurrentBundle: Bool = false) {
+    private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
+        // Enter before start so waiters never race past an unstarted cleanup thread.
+        self.cleanupComplete = false
+        self.cleanupGroup.enter()
         cleanupThread = Thread {
+            let bgTaskLock = NSLock()
+            var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
+            let endCleanupBackgroundTask = {
+                bgTaskLock.lock()
+                defer { bgTaskLock.unlock() }
+                if cleanupBackgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(cleanupBackgroundTask)
+                    cleanupBackgroundTask = .invalid
+                }
+            }
+            cleanupBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "CapgoBundleCleanup") {
+                endCleanupBackgroundTask()
+            }
             self.cleanupLock.lock()
             defer {
                 self.cleanupComplete = true
                 self.cleanupLock.unlock()
+                self.cleanupGroup.leave()
+                endCleanupBackgroundTask()
                 self.logger.info("Cleanup complete")
             }
 
@@ -665,54 +1088,55 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // 2. Compare both keys. If any is not equal to "currentBuildVersion", then revert to builtin version. This fixes the part 2 of this bug
 
             let previous = self.storedNativeBuildVersion()
-            if previous != "0" && self.currentBuildVersion != previous {
+            let nativeVersionChanged = previous != "0" && self.currentBuildVersion != previous
+            if resetWhenUpdate && nativeVersionChanged {
                 if !didResetCurrentBundle {
                     self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting current bundle to builtin.")
                     self.implementation.reset(isInternal: true)
                 }
                 let res = self.implementation.list()
                 for version in res {
-                    // Check if thread was cancelled
                     if Thread.current.isCancelled {
-                        self.logger.warn("Cleanup was cancelled, stopping")
                         return
                     }
                     self.logger.info("Deleting obsolete bundle: \(version.getId())")
-                    let res = self.implementation.delete(id: version.getId())
-                    if !res {
+                    let deleted = self.implementation.delete(id: version.getId())
+                    if !deleted {
                         self.logger.error("Delete failed, id \(version.getId()) doesn't exist")
                     }
-                }
-
-                let storedBundles = self.implementation.list(raw: true)
-                let allowedIds = Set(storedBundles.compactMap { info -> String? in
-                    let id = info.getId()
-                    return id.isEmpty ? nil : id
-                })
-                self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
-                self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
-
-                // Check again before the expensive delta cache cleanup
-                if Thread.current.isCancelled {
-                    self.logger.warn("Cleanup was cancelled before delta cache cleanup")
-                    return
+                    Thread.sleep(forTimeInterval: 0.075)
                 }
                 self.implementation.cleanupDeltaCache(threadToCheck: Thread.current)
             }
-            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
-            UserDefaults.standard.synchronize()
-        }
-        cleanupThread?.start()
 
-        // Start a timeout watchdog thread to cancel cleanup if it takes too long
-        let timeout = Double(self.appReadyTimeout / 2) / 1000.0
-        Thread.detachNewThread {
-            Thread.sleep(forTimeInterval: timeout)
-            if let thread = self.cleanupThread, !thread.isFinished && !self.cleanupComplete {
-                self.logger.warn("Cleanup timeout exceeded (\(timeout)s), cancelling cleanup thread")
-                thread.cancel()
+            if Thread.current.isCancelled {
+                return
+            }
+
+            // Resume any DELETING leftovers from prior kills, one-by-one.
+            self.implementation.drainPendingDeletes()
+
+            if Thread.current.isCancelled {
+                return
+            }
+
+            // Always sweep orphan directories so incomplete prior cleanups (or failed deletes)
+            // cannot leave hundreds of MB behind across launches.
+            let allowedIds = self.implementation.allowedBundleIdsForCleanup()
+            self.implementation.cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: Thread.current)
+            if Thread.current.isCancelled {
+                return
+            }
+            self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
+
+            if self.defaultChannelCleanupMustRetry {
+                self.logger.warn("Keeping the previous native build version so default channel cleanup retries")
+            } else {
+                UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+                UserDefaults.standard.synchronize()
             }
         }
+        cleanupThread?.start()
     }
 
     private func waitForCleanupIfNeeded() {
@@ -721,11 +1145,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
-
-        // Wait for cleanup to complete - blocks until lock is released
-        cleanupLock.lock()
-        cleanupLock.unlock()
-
+        let result = cleanupGroup.wait(timeout: .now() + .seconds(60))
+        if result == .timedOut {
+            logger.warn("Cleanup wait timed out after 60s, cancelling leftover cleanup")
+            cleanupThread?.cancel()
+            _ = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            return
+        }
         logger.info("Cleanup finished, proceeding with download")
     }
 
@@ -1142,6 +1568,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func downloadBundle(urlString: String, version: String, sessionKey: String, checksum rawChecksum: String, manifestEntries: [ManifestEntry]?) throws -> BundleInfo {
+        // Manual/preview downloads must wait too - launch orphan sweep can delete their temps.
+        self.waitForCleanupIfNeeded()
         guard let url = URL(string: urlString) else {
             throw makePreviewError("Invalid download URL")
         }
@@ -1293,6 +1721,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let performReload: () -> Bool = {
             guard self.applyCurrentBundleToBridge(bridge) else {
+                self.clearPendingNotifyAppReady()
                 return false
             }
             self.checkAppReady()
@@ -1497,8 +1926,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
         }
 
+        let previousDefaultChannel = self.persistedDefaultChannel()
+        guard self.persistDefaultChannelPreviewSnapshot(channel: previousDefaultChannel) else {
+            logger.error("Could not durably save the default channel preview snapshot")
+            return false
+        }
         UserDefaults.standard.set(self.implementation.appId, forKey: self.previewPreviousAppIdDefaultsKey)
-        if let previousDefaultChannel = UserDefaults.standard.object(forKey: self.defaultChannelDefaultsKey) as? String {
+        if let previousDefaultChannel = previousDefaultChannel {
             UserDefaults.standard.set(previousDefaultChannel, forKey: self.previewPreviousDefaultChannelDefaultsKey)
             UserDefaults.standard.set(true, forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
         } else {
@@ -1946,7 +2380,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             ?? self.getBooleanConfig("allowShakeChannelSelector", defaultValue: false)
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
 
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
@@ -1973,7 +2409,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.restorePreviewPreviousNextBundle()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
         self.previewSessionEnabled = false
         self.previewSessionAlertPending = false
         self.isLeavingPreviewForIncomingLink = false
@@ -2001,14 +2439,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func clearPreviewSessionPreferences() {
+        let keepDefaultChannelSnapshotFallback = self.hasPendingDefaultChannelPreviewSnapshot()
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         UserDefaults.standard.removeObject(forKey: self.previewSessionDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeMenuDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousShakeChannelSelectorDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousNextBundleDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPreviousAppIdDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        if !keepDefaultChannelSnapshotFallback {
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey)
+        }
         UserDefaults.standard.removeObject(forKey: self.previewAppIdDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewPayloadUrlDefaultsKey)
         UserDefaults.standard.removeObject(forKey: self.previewNameDefaultsKey)
@@ -2026,21 +2467,95 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Restored appId after preview: \(previousAppId)")
     }
 
-    private func restorePreviewPreviousDefaultChannel() {
-        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
-        let hadPreviousDefaultChannel = UserDefaults.standard.object(forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey) as? Bool ?? false
+    private func restorePreviewPreviousDefaultChannel() -> Bool {
+        guard !defaultChannelCleanupMustRetry else {
+            logger.warn("Skipping default channel preview restore until cleanup retries")
+            return false
+        }
+        guard let stateFile = self.defaultChannelStateFile(),
+              let previewSnapshotFile = self.defaultChannelPreviewSnapshotFile() else {
+            return false
+        }
 
-        guard hadPreviousDefaultChannel,
-              let previousDefaultChannel = UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey) else {
+        let previousDefaultChannel: String?
+        switch self.defaultChannelPreviewSnapshot(file: previewSnapshotFile) {
+        case .invalidated:
+            return true
+        case let .snapshot(channel):
+            previousDefaultChannel = channel
+        case .missing:
+            let hadPreviousDefaultChannel = UserDefaults.standard.object(
+                forKey: self.previewPreviousDefaultChannelWasSetDefaultsKey
+            ) as? Bool ?? false
+            previousDefaultChannel = hadPreviousDefaultChannel
+                ? UserDefaults.standard.string(forKey: self.previewPreviousDefaultChannelDefaultsKey)
+                : nil
+            do {
+                try self.persistDefaultChannelPreviewSnapshot(
+                    channel: previousDefaultChannel,
+                    file: previewSnapshotFile
+                )
+            } catch {
+                logger.warn("Cannot migrate default channel preview snapshot: \(error.localizedDescription)")
+                return false
+            }
+        case .unreadable:
+            logger.warn("Cannot restore default channel from an unreadable preview snapshot")
+            return false
+        }
+
+        return self.persistRestoredDefaultChannelFromPreview(
+            channel: previousDefaultChannel,
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        )
+    }
+
+    private func applyRestoredDefaultChannelFromPreview(_ channel: String?) {
+        let configDefaultChannel = self.getStringConfig("defaultChannel", defaultValue: "")
+        if let channel = channel {
+            UserDefaults.standard.set(channel, forKey: self.defaultChannelDefaultsKey)
+            self.implementation.defaultChannel = channel
+            logger.info("Restored defaultChannel after preview")
+        } else {
             UserDefaults.standard.removeObject(forKey: self.defaultChannelDefaultsKey)
             self.implementation.defaultChannel = configDefaultChannel
             logger.info("Restored defaultChannel after preview to config value")
-            return
         }
+    }
 
-        UserDefaults.standard.set(previousDefaultChannel, forKey: self.defaultChannelDefaultsKey)
-        self.implementation.defaultChannel = previousDefaultChannel
-        logger.info("Restored defaultChannel after preview")
+    private func persistRestoredDefaultChannelFromPreview(
+        channel: String?,
+        stateFile: URL,
+        previewSnapshotFile: URL
+    ) -> Bool {
+        defaultChannelStateLock.lock()
+        defer { defaultChannelStateLock.unlock() }
+        let didPersist: Bool
+        do {
+            try self.persistDefaultChannelStateWithoutLock(channel: channel, file: stateFile)
+            try self.persistDefaultChannelPreviewSnapshotWithoutLock(
+                channel: nil,
+                isValid: false,
+                file: previewSnapshotFile
+            )
+            didPersist = true
+        } catch {
+            let persistedState = self.defaultChannelStateWithoutLock(file: stateFile)
+            let persistedSnapshot = self.defaultChannelPreviewSnapshotWithoutLock(file: previewSnapshotFile)
+            if persistedState.exists,
+               persistedState.isReadable,
+               persistedState.channel == channel,
+               persistedSnapshot == .invalidated {
+                logger.warn("Default channel preview restore committed before metadata update failed")
+                didPersist = true
+            } else {
+                logger.warn("Cannot durably restore default channel after preview: \(error.localizedDescription)")
+                didPersist = false
+            }
+        }
+        self.applyRestoredDefaultChannelFromPreview(channel)
+        return didPersist
     }
 
     private func normalizedPreviewAppId(_ rawAppId: String?) -> String? {
@@ -2220,7 +2735,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.shakeMenuGesture = Self.normalizedShakeMenuGesture(self.getStringConfig("shakeMenuGesture", defaultValue: Self.shakeMenuGestureShake))
         self.syncShakeMenuGestureRecognizer()
         self.restorePreviewPreviousAppId()
-        self.restorePreviewPreviousDefaultChannel()
+        if !self.restorePreviewPreviousDefaultChannel() {
+            logger.warn("Default channel preview restore will retry on next launch")
+        }
         _ = self.implementation.setPreviewFallbackBundle(fallback: nil)
         _ = self.implementation.setNextBundle(next: Optional<String>.none)
         self.clearPreviewSessionPreferences()
@@ -2252,7 +2769,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard self.previewSessionEnabled else {
                 return
             }
-            if let topVC = UIApplication.topViewController(),
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController),
                topVC.isKind(of: UIAlertController.self) {
                 self.previewSessionAlertPending = true
                 UserDefaults.standard.set(true, forKey: self.previewSessionAlertPendingDefaultsKey)
@@ -2262,11 +2779,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let alert = UIAlertController(
                 title: "Preview started",
-                message: "Shake your device anytime to reload or leave the test app.",
+                message: self.shakeMenuGesture == Self.shakeMenuGestureThreeFingerPinch ? "Three-finger pinch to open menu." : "Shake to open menu.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Got it", style: .default))
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = UIApplication.topViewController(self.bridge?.viewController) {
                 topVC.present(alert, animated: true)
             } else {
                 self.previewSessionAlertPending = true
@@ -2465,6 +2982,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel override removed but local persistence failed", code: "UNSETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
@@ -2511,6 +3032,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel changed but local persistence failed", code: "SETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 if self._isAutoUpdateEnabled() && triggerAutoUpdate {
                     self.logger.info("Calling autoupdater after channel change!")
                     // Check if download is already in progress (with timeout protection)
@@ -2535,6 +3060,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
                 ])
             } else {
+                guard self.persistDefaultChannelStateFromDefaults() else {
+                    self.rejectCall(call, message: "Channel synchronized but local persistence failed", code: "GETCHANNEL_PERSISTENCE_FAILED")
+                    return
+                }
                 self.resolveCall(call, data: res.toDict())
             }
         }
@@ -2674,10 +3203,67 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         ])
     }
 
+    private func reportAppLaunchStart() {
+        guard !self.implementation.statsUrl.isEmpty, !launchStartReported else {
+            return
+        }
+
+        launchStartReported = true
+        let current = self.implementation.getCurrentBundle()
+        self.implementation.sendStats(
+            action: "app_launch_start",
+            versionName: current.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "launch_started_at": String(launchStartedAtMs),
+                "source": "plugin_load"
+            ]
+        )
+    }
+
+    private func reportAppLaunchReady(_ bundle: BundleInfo) {
+        guard !self.implementation.statsUrl.isEmpty, !launchReadyReported else {
+            return
+        }
+
+        launchReadyReported = true
+        let duration = max(0, Int64(Date().timeIntervalSince1970 * 1000) - launchStartedAtMs)
+        self.implementation.sendStats(
+            action: "app_launch_ready",
+            versionName: bundle.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "duration_ms": String(duration),
+                "launch_started_at": String(launchStartedAtMs),
+                "source": "notify_app_ready"
+            ]
+        )
+    }
+
+    private func reportAppLaunchTimeout(_ bundle: BundleInfo) {
+        guard !self.implementation.statsUrl.isEmpty else {
+            return
+        }
+
+        let duration = max(0, Int64(Date().timeIntervalSince1970 * 1000) - launchStartedAtMs)
+        self.implementation.sendStats(
+            action: "app_launch_timeout",
+            versionName: bundle.getVersionName(),
+            oldVersionName: "",
+            metadata: [
+                "duration_ms": String(duration),
+                "launch_started_at": String(launchStartedAtMs),
+                "timeout_ms": String(appReadyTimeout),
+                "source": "app_ready_timeout"
+            ]
+        )
+    }
+
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
+        self.reportAppLaunchReady(bundle)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
         self.clearIncomingPreviewTransition()
         self.hidePreviewTransitionLoader(reason: "notify-app-ready")
@@ -2785,16 +3371,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 "bundle": current.toJSON()
             ])
             self.persistLastFailedBundle(current)
+            self.reportAppLaunchTimeout(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
             _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
+                let failedId = current.getId()
                 logger.info("Deleting failing bundle: \(current.toString())")
-                let res = self.implementation.delete(id: current.getId(), removeInfo: false)
-                if !res {
-                    logger.info("Delete version deleted: \(current.toString())")
-                } else {
-                    logger.error("Failed to delete failed bundle: \(current.toString())")
+                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                self.implementation.saveBundleInfo(
+                    id: failedId,
+                    bundle: current.setStatus(status: BundleStatus.DELETING.storedValue)
+                )
+                UserDefaults.standard.synchronize()
+                DispatchQueue.global(qos: .utility).async {
+                    let res = self.implementation.delete(id: failedId, removeInfo: false)
+                    if res {
+                        self.logger.info("Failed bundle deleted: \(failedId)")
+                    } else {
+                        self.logger.error("Failed to delete failed bundle: \(failedId)")
+                    }
                 }
             }
         } else {
@@ -2819,7 +3415,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func sendReadyToJs(current: BundleInfo, msg: String) {
         logger.info("sendReadyToJs")
         DispatchQueue.global().async {
-            self.semaphoreWait(waitTime: self.appReadyTimeout)
+            // Only wait after load()/reload() armed the semaphore. Foreground resumes
+            // with autoUpdate disabled call sendReadyToJs again without a fresh
+            // notifyAppReady(), so waiting there always timed out after appReadyTimeout.
+            if self.consumePendingNotifyAppReady() {
+                self.semaphoreWait(waitTime: self.appReadyTimeout)
+            }
             self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
@@ -2829,6 +3430,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.hidePreviewTransitionLoader(reason: "app-ready")
         }
+    }
+
+    private func consumePendingNotifyAppReady() -> Bool {
+        let shouldWait = pendingNotifyAppReady
+        pendingNotifyAppReady = false
+        return shouldWait
+    }
+
+    private func clearPendingNotifyAppReady() {
+        pendingNotifyAppReady = false
     }
 
     private func hideSplashscreen() {
@@ -3444,6 +4055,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.currentBuildVersion = currentBuildVersion
     }
 
+    func setAppReadyTimeoutForTesting(_ timeout: Int) {
+        self.appReadyTimeout = timeout
+    }
+
+    func armPendingNotifyAppReadyForTesting() {
+        pendingNotifyAppReady = true
+    }
+
+    func clearPendingNotifyAppReadyForTesting() {
+        clearPendingNotifyAppReady()
+    }
+
+    var isPendingNotifyAppReadyForTesting: Bool {
+        pendingNotifyAppReady
+    }
+
     func shouldUseDirectUpdateForTesting() -> Bool {
         self.shouldUseDirectUpdate()
     }
@@ -3593,7 +4220,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         // Live update checks/downloads are user-visible work. Using `.background`
         // lets the scheduler starve them for minutes while the app is active.
-        DispatchQueue.global(qos: .utility).async(execute: work)
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func beginDownloadBackgroundTask() {
@@ -3644,8 +4271,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.runBackgroundDownloadWork {
-            // Wait for cleanup to complete before starting download
-            self.waitForCleanupIfNeeded()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 return
@@ -3653,7 +4278,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
-            let current = self.implementation.getCurrentBundle()
+            var current = self.implementation.getCurrentBundle()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 self.endBackGroundTask()
@@ -3672,6 +4297,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return
             }
+            // File mutations wait here. getLatest already ran in parallel with cleanup.
+            self.waitForCleanupIfNeeded()
+            current = self.implementation.getCurrentBundle()
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -4014,6 +4642,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_background", versionName: current.getVersionName())
+        self.implementation.persistPendingStats()
         logger.info("Check for pending update")
 
         // Show splashscreen only if autoSplashscreen is enabled AND autoUpdate is enabled AND directUpdate would be used

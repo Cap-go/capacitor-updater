@@ -13,6 +13,7 @@ import android.hardware.SensorManager;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -117,65 +118,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     isShowing = false;
                     return;
                 }
-                if (Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled)) {
-                    showCombinedPreviewMenu();
-                    return;
-                }
-                String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
-                String title = "Preview " + appName + " Menu";
-                String message = "Reload, switch, or leave the current preview.";
-                List<String> actions = new ArrayList<>();
-                actions.add("Reload preview");
-                if (plugin.previewMenuPreviews().length() > 0) {
-                    actions.add("Switch preview");
-                }
-                actions.add("Leave test app");
-                final boolean[] openingNestedSelector = { false };
-                final boolean[] previewActionRunning = { false };
 
-                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-                builder.setTitle(title);
-                builder.setMessage(message);
-                builder.setItems(actions.toArray(new String[0]), (dialogInterface, which) -> {
-                    AlertDialog dialog = (AlertDialog) dialogInterface;
-                    String action = actions.get(which);
-                    if ("Reload preview".equals(action)) {
-                        previewActionRunning[0] = true;
-                        logger.info("Reloading webview");
-                        runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
-                            plugin.reloadPreviewSessionFromShakeMenu()
-                        );
-                    } else if ("Switch preview".equals(action)) {
-                        openingNestedSelector[0] = true;
-                        dialog.dismiss();
-                        showPreviewSelector();
-                    } else {
-                        previewActionRunning[0] = true;
-                        runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
-                            plugin.leavePreviewSessionFromShakeMenu()
-                        );
-                    }
-                });
-
-                // Cancel button
-                builder.setNegativeButton(
-                    "Close menu",
-                    new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int id) {
-                            logger.info("Shake menu cancelled");
-                            dialog.dismiss();
-                            isShowing = false;
-                        }
-                    }
-                );
-
-                AlertDialog dialog = builder.create();
-                dialog.setOnDismissListener((dialogInterface) -> {
-                    if (!openingNestedSelector[0] && !previewActionRunning[0]) {
-                        isShowing = false;
-                    }
-                });
-                dialog.show();
+                showPreviewActionsMenu(Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled));
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());
                 isShowing = false;
@@ -183,65 +127,95 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         });
     }
 
-    private void showCombinedPreviewMenu() {
-        try {
-            String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
-            String title = "Preview " + appName + " Menu";
-            String message = "Reload, switch, or leave the current preview.";
-            List<String> actions = new ArrayList<>();
-            actions.add("Reload preview");
-            if (plugin.previewMenuPreviews().length() > 0) {
-                actions.add("Switch preview");
-            }
-            actions.add("Leave test app");
-            actions.add("Switch channel");
-            final boolean[] openingNestedSelector = { false };
-            final boolean[] previewActionRunning = { false };
+    private void showPreviewActionsMenu(boolean includeChannelSelector) {
+        String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
+        String title = "Preview " + appName + " Menu";
+        String message = "Reload, switch, or leave the current preview.";
+        final boolean[] openingNestedSelector = { false };
+        final boolean[] previewActionRunning = { false };
+        final AlertDialog[] dialogRef = { null };
+        List<Button> buttons = new ArrayList<>();
 
-            AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-            builder.setTitle(title);
-            builder.setMessage(message);
-            builder.setItems(actions.toArray(new String[0]), (dialogInterface, which) -> {
-                AlertDialog dialog = (AlertDialog) dialogInterface;
-                String action = actions.get(which);
-                if ("Reload preview".equals(action)) {
-                    previewActionRunning[0] = true;
-                    logger.info("Reloading webview");
-                    runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
-                        plugin.reloadPreviewSessionFromShakeMenu()
-                    );
-                } else if ("Leave test app".equals(action)) {
-                    previewActionRunning[0] = true;
-                    runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
-                        plugin.leavePreviewSessionFromShakeMenu()
-                    );
-                } else if ("Switch preview".equals(action)) {
-                    openingNestedSelector[0] = true;
-                    dialog.dismiss();
-                    showPreviewSelector();
-                } else {
-                    openingNestedSelector[0] = true;
-                    dialog.dismiss();
-                    showChannelSelector();
-                }
+        LinearLayout layout = new LinearLayout(activity);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int horizontalPadding = dpToPx(16);
+        int verticalPadding = dpToPx(8);
+        layout.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
+
+        addPreviewMenuButton(layout, buttons, "Reload preview", () -> {
+            AlertDialog dialog = dialogRef[0];
+            previewActionRunning[0] = true;
+            setPreviewMenuButtonsEnabled(buttons, false);
+            logger.info("Reloading webview");
+            runPreviewMenuAction(dialog, "Could not reload the test app.", "Error reloading test app: ", () ->
+                plugin.reloadPreviewSessionFromShakeMenu()
+            );
+        });
+
+        if (plugin.previewMenuPreviews().length() > 0) {
+            addPreviewMenuButton(layout, buttons, "Switch preview", () -> {
+                AlertDialog dialog = dialogRef[0];
+                openingNestedSelector[0] = true;
+                dialog.dismiss();
+                showPreviewSelector();
             });
-            builder.setNegativeButton("Close menu", (dialog, id) -> {
+        }
+
+        if (includeChannelSelector) {
+            addPreviewMenuButton(layout, buttons, "Switch channel", () -> {
+                AlertDialog dialog = dialogRef[0];
+                openingNestedSelector[0] = true;
+                dialog.dismiss();
+                showChannelSelector();
+            });
+        }
+
+        addPreviewMenuButton(layout, buttons, "Leave test app", () -> {
+            AlertDialog dialog = dialogRef[0];
+            previewActionRunning[0] = true;
+            setPreviewMenuButtonsEnabled(buttons, false);
+            runPreviewMenuAction(dialog, "Could not leave the test app.", "Error leaving test app: ", () ->
+                plugin.leavePreviewSessionFromShakeMenu()
+            );
+        });
+
+        addPreviewMenuButton(layout, buttons, "Close menu", () -> {
+            AlertDialog dialog = dialogRef[0];
+            if (dialog != null) {
                 logger.info("Shake menu cancelled");
                 dialog.dismiss();
                 isShowing = false;
-            });
+            }
+        });
 
-            AlertDialog dialog = builder.create();
-            dialog.setOnDismissListener((dialogInterface) -> {
-                if (!openingNestedSelector[0] && !previewActionRunning[0]) {
-                    isShowing = false;
-                }
-            });
-            dialog.show();
-        } catch (Exception e) {
-            logger.error("Error showing combined shake menu: " + e.getMessage());
-            isShowing = false;
-        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(title);
+        builder.setMessage(message);
+        builder.setView(layout);
+
+        AlertDialog dialog = builder.create();
+        dialogRef[0] = dialog;
+        dialog.setOnDismissListener((dialogInterface) -> {
+            if (!openingNestedSelector[0] && !previewActionRunning[0]) {
+                isShowing = false;
+            }
+        });
+        dialog.show();
+    }
+
+    private void addPreviewMenuButton(LinearLayout layout, List<Button> buttons, String title, Runnable action) {
+        Button button = new Button(activity);
+        button.setAllCaps(false);
+        button.setText(title);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, 0, 0, dpToPx(8));
+        button.setLayoutParams(params);
+        button.setOnClickListener((view) -> action.run());
+        buttons.add(button);
+        layout.addView(button);
     }
 
     private void runPreviewMenuAction(AlertDialog dialog, String failureMessage, String errorPrefix, PreviewMenuAction action) {
@@ -262,10 +236,13 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         }).start();
     }
 
-    private void setPreviewMenuButtonsEnabled(AlertDialog dialog, boolean enabled) {
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(enabled);
-        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setEnabled(enabled);
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(enabled);
+    private void setPreviewMenuButtonsEnabled(List<Button> buttons, boolean enabled) {
+        for (Button button : buttons) {
+            if (!enabled && "Close menu".equals(button.getText().toString())) {
+                continue;
+            }
+            button.setEnabled(enabled);
+        }
     }
 
     private void showPreviewSelector() {
@@ -299,7 +276,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         String name = preview.optString("name", "");
         JSObject bundle = preview.getJSObject("bundle");
         String version = bundle == null ? "" : bundle.optString("version", "");
-        String label = !name.isEmpty() ? name : (!version.isEmpty() ? version : preview.optString("id", "Preview"));
+        String label = !name.isEmpty() ? name : !version.isEmpty() ? version : preview.optString("id", "Preview");
         if (preview.optBoolean("isActive", false)) {
             label += " (current)";
         }
@@ -819,8 +796,20 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 String latestUrl = getString(latestRes, "url");
 
-                                // Check if there's an actual update available
-                                if ("up_to_date".equals(latestKind) || latestUrl == null || latestUrl.isEmpty()) {
+                                Object manifestObj = latestRes.get("manifest");
+                                JSONArray manifestArray = null;
+                                if (manifestObj instanceof JSONArray) {
+                                    manifestArray = (JSONArray) manifestObj;
+                                } else if (manifestObj instanceof List) {
+                                    manifestArray = new JSONArray((List<?>) manifestObj);
+                                }
+                                final boolean hasManifest = manifestArray != null && manifestArray.length() > 0;
+
+                                // Check if there's an actual update available. A manifest-only
+                                // response legitimately has no URL (the files come from the
+                                // manifest, not a zip), so only report "already on latest" when
+                                // the URL is empty AND there is no manifest to download from.
+                                if ("up_to_date".equals(latestKind) || ((latestUrl == null || latestUrl.isEmpty()) && !hasManifest)) {
                                     activity.runOnUiThread(() -> {
                                         progressDialog.dismiss();
                                         showSuccess("Channel set to " + channelName + ". Already on latest version.");
@@ -843,25 +832,18 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 String sessionKey = getString(latestRes, "sessionKey");
                                 String checksum = getString(latestRes, "checksum");
-                                Object manifestObj = latestRes.get("manifest");
+
+                                // A manifest-only response has no zip URL; downloadManifest
+                                // tolerates the placeholder URL the plugin already uses.
+                                final String downloadUrl =
+                                    latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
 
                                 // Download the update
                                 try {
                                     BundleInfo bundle;
-                                    if (manifestObj != null) {
-                                        JSONArray manifestArray = null;
-                                        if (manifestObj instanceof JSONArray) {
-                                            manifestArray = (JSONArray) manifestObj;
-                                        } else if (manifestObj instanceof List) {
-                                            manifestArray = new JSONArray((List<?>) manifestObj);
-                                        }
-
-                                        if (manifestArray == null) {
-                                            throw new IllegalArgumentException("Invalid manifest format");
-                                        }
-
+                                    if (hasManifest) {
                                         bundle = updater.downloadManifest(
-                                            latestUrl,
+                                            downloadUrl,
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
                                             checksum != null ? checksum : "",
@@ -869,7 +851,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                         );
                                     } else {
                                         bundle = updater.download(
-                                            latestUrl,
+                                            downloadUrl,
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
                                             checksum != null ? checksum : ""

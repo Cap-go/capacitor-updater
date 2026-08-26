@@ -25,7 +25,7 @@ function readBooleanEnv(name: string, fallback = false): boolean {
 
 const config: CapacitorConfig = {
   appId: 'app.capgo.updater',
-  appName: 'Updater Example',
+  appName: '@capgo/capacitor-updater',
   webDir: 'dist',
   plugins: {
     SplashScreen: {

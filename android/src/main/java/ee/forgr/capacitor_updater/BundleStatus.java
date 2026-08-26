@@ -14,6 +14,7 @@ public enum BundleStatus {
     ERROR("error"),
     PENDING("pending"),
     DELETED("deleted"),
+    DELETING("deleting"),
     DOWNLOADING("downloading");
 
     public final String label;
