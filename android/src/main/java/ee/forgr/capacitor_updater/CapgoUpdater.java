@@ -2962,6 +2962,12 @@ public class CapgoUpdater {
             try {
                 if (arr.length() == 0) {
                     writeFileAtomically(file, "[]".getBytes(StandardCharsets.UTF_8));
+                    File backup = new File(file.getAbsolutePath() + ".bak");
+                    if (backup.exists() && !backup.delete()) {
+                        if (logger != null) {
+                            logger.error("Failed to delete empty stats backup");
+                        }
+                    }
                     return;
                 }
                 writeFileAtomically(file, arr.toString().getBytes(StandardCharsets.UTF_8));
