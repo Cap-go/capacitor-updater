@@ -24,7 +24,10 @@ declare module '@capacitor/cli' {
       appReadyTimeout?: number;
 
       /**
-       * Configure the number of seconds the native plugin should wait before considering API timeout.
+       * Configure the number of seconds the native plugin should wait before considering an HTTP timeout.
+       * Applies to update checks and file downloads. On Android these are idle connect/read/write
+       * timeouts and do not cap total download time; on iOS the request timeout also bounds the
+       * total download duration.
        *
        * Only available for Android and iOS.
        *
