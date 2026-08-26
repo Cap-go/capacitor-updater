@@ -4220,7 +4220,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         // Live update checks/downloads are user-visible work. Using `.background`
         // lets the scheduler starve them for minutes while the app is active.
-        DispatchQueue.global(qos: .utility).async(execute: work)
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func beginDownloadBackgroundTask() {
@@ -4271,8 +4271,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.runBackgroundDownloadWork {
-            // Wait for cleanup to complete before starting download
-            self.waitForCleanupIfNeeded()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 return
@@ -4280,7 +4278,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
-            let current = self.implementation.getCurrentBundle()
+            var current = self.implementation.getCurrentBundle()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 self.endBackGroundTask()
@@ -4299,6 +4297,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return
             }
+            // File mutations wait here. getLatest already ran in parallel with cleanup.
+            self.waitForCleanupIfNeeded()
+            current = self.implementation.getCurrentBundle()
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
