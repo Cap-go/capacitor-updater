@@ -18,6 +18,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
 import io.github.g00fy2.versioncompare.Version;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -27,15 +28,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -773,8 +778,9 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void saveBundleInfo(final String id, final BundleInfo info) {
+        public boolean saveBundleInfo(final String id, final BundleInfo info) {
             this.bundleInfos.put(id, info);
+            return true;
         }
 
         @Override
@@ -976,6 +982,18 @@ public class CapacitorUpdaterUnitTest {
         return updater;
     }
 
+    private static void invokeSendReadyToJs(final CapacitorUpdaterPlugin plugin, final BundleInfo bundle, final String msg)
+        throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+            "sendReadyToJs",
+            BundleInfo.class,
+            String.class,
+            boolean.class
+        );
+        method.setAccessible(true);
+        method.invoke(plugin, bundle, msg, false);
+    }
+
     private static void invokePrivateVoidMethod(final CapacitorUpdaterPlugin plugin, final String methodName) throws Exception {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
@@ -1148,6 +1166,8 @@ public class CapacitorUpdaterUnitTest {
             "webview_content_process_terminated",
             CapacitorUpdaterPlugin.statsActionForWebViewErrorType("web_content_process_terminated")
         );
+        assertEquals("webview_dom_content_loaded", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_dom_content_loaded"));
+        assertEquals("webview_page_loaded", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("webview_page_loaded"));
         assertEquals("webview_javascript_error", CapacitorUpdaterPlugin.statsActionForWebViewErrorType("unknown"));
     }
 
@@ -1162,6 +1182,8 @@ public class CapacitorUpdaterUnitTest {
         data.put("stack", "x".repeat(3000));
         data.put("href", "capacitor://localhost");
         data.put("session_id", "session-1");
+        data.put("duration_ms", "123");
+        data.put("page_started_at", "456");
 
         final Map<String, String> metadata = CapacitorUpdaterPlugin.buildWebViewErrorMetadata(data);
 
@@ -1172,6 +1194,8 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("20", metadata.get("column"));
         assertEquals("capacitor://localhost", metadata.get("href"));
         assertEquals("session-1", metadata.get("session_id"));
+        assertEquals("123", metadata.get("duration_ms"));
+        assertEquals("456", metadata.get("page_started_at"));
         assertEquals(2048, metadata.get("stack").length());
     }
 
@@ -1204,6 +1228,7 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(script.contains("resource_error"));
         assertTrue(script.contains("securitypolicyviolation"));
         assertTrue(script.contains("webview_unclean_restart"));
+        assertTrue(script.contains("webview_dom_content_loaded"));
         assertTrue(script.contains("reportWebViewError"));
     }
 
@@ -1310,6 +1335,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("error", BundleStatus.ERROR.toString());
         assertEquals("pending", BundleStatus.PENDING.toString());
         assertEquals("deleted", BundleStatus.DELETED.toString());
+        assertEquals("deleting", BundleStatus.DELETING.toString());
         assertEquals("downloading", BundleStatus.DOWNLOADING.toString());
     }
 
@@ -1319,6 +1345,7 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(BundleStatus.ERROR, BundleStatus.fromString("error"));
         assertEquals(BundleStatus.PENDING, BundleStatus.fromString("pending"));
         assertEquals(BundleStatus.DELETED, BundleStatus.fromString("deleted"));
+        assertEquals(BundleStatus.DELETING, BundleStatus.fromString("deleting"));
         assertEquals(BundleStatus.DOWNLOADING, BundleStatus.fromString("downloading"));
 
         // Test null/empty string returns PENDING
@@ -1432,6 +1459,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testGetBackgroundRunnerWorkConfigFromConfigParsesScheduleFields() {
+        final String config =
+            "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"com.example.runner\",\"src\":\"runner.js\",\"event\":\"myEvent\",\"autoStart\":true,\"repeat\":true,\"interval\":15}}}";
+
+        final CapgoUpdater.BackgroundRunnerWorkConfig parsed = CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig(config);
+
+        assertNotNull(parsed);
+        assertEquals("com.example.runner", parsed.label);
+        assertEquals("runner.js", parsed.src);
+        assertEquals("myEvent", parsed.event);
+        assertTrue(parsed.autoStart);
+        assertTrue(parsed.repeat);
+        assertEquals(15, parsed.interval);
+    }
+
+    @Test
     public void testGetBundleInfoBuiltinReturnsVersionBuildWhenPresent() {
         CapgoUpdater updater = new CapgoUpdater(null);
         updater.versionBuild = "1.2.3";
@@ -1487,6 +1530,26 @@ public class CapacitorUpdaterUnitTest {
 
             verify(editor).putString("LatestNativeBuildVersion", "8");
             verify(editor).apply();
+        }
+    }
+
+    @Test
+    public void testPersistCurrentNativeBuildVersionSkipsPendingDefaultChannelCleanup() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.setLoggerForTesting(mock(Logger.class));
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+            setPrivateField(plugin, "editor", editor);
+            setPrivateField(plugin, "currentBuildVersion", "8");
+            setPrivateField(plugin, "defaultChannelCleanupMustRetry", true);
+
+            plugin.persistCurrentNativeBuildVersion();
+
+            verify(editor, never()).putString(anyString(), anyString());
+            verify(editor, never()).apply();
         }
     }
 
@@ -2370,6 +2433,162 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testSendReadyToJsWithoutPendingEmitsImmediately() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 2000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("disabled", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertTrue("expected immediate emit, took " + elapsed + "ms", elapsed < 500);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsWithPendingUnblocksAfterNotifyAppReady() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final PluginCall call = mock(PluginCall.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 5000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+
+            // Signal before sendReadyToJs waits — proves pending wait observes notifyAppReady.
+            plugin.notifyAppReady(call);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "update installed");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("update installed", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertTrue("expected quick unblock after notifyAppReady, took " + elapsed + "ms", elapsed < 500);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsWithPendingTimesOutAndStillEmits() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 50);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertTrue("expected timeout wait, took " + elapsed + "ms", elapsed >= 40);
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testReloadClearsLaunchPendingNotifyWait() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            looperMock.when(Looper::myLooper).thenReturn(null);
+
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+
+            plugin._reload();
+
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(-1, (int) getPrivateField(plugin, "pendingNotifyAppReadyPhase"));
+        }
+    }
+
+    @Test
+    public void testSendReadyToJsOnMainThreadDoesNotBlockCaller() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final PluginCall call = mock(PluginCall.class);
+            final BundleInfo bundle = new BundleInfo("id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 5000);
+            setPrivateField(plugin, "autoSplashscreen", false);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            plugin.notifyAppReady(call);
+
+            final long start = System.currentTimeMillis();
+            invokeSendReadyToJs(plugin, bundle, "disabled");
+            final long elapsed = System.currentTimeMillis() - start;
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertTrue("main-thread caller should not block on wait, took " + elapsed + "ms", elapsed < 1000);
+        }
+    }
+
+    @Test
     public void testInstallNextDispatchesReloadOffLifecycleThread() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
@@ -2931,6 +3150,138 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testManifestBuiltinStripsBrotliSuffixBeforeResolvingPath() throws Exception {
+        final Path builtinFolder = Files.createTempDirectory("capgo-builtin");
+        try {
+            final File resolved = DownloadService.resolveManifestBuiltinFile(builtinFolder.toFile(), "background-runner.js.br");
+            assertEquals("background-runner.js", resolved.getName());
+        } finally {
+            Files.deleteIfExists(builtinFolder);
+        }
+    }
+
+    @Test
+    public void testBuiltinAssetPathUsesApkPublicFolderAndStripsBrotli() throws Exception {
+        assertEquals("public/background-runner.js", DownloadService.resolveBuiltinAssetPath("background-runner.js.br"));
+        assertEquals("public/assets/app.js", DownloadService.resolveBuiltinAssetPath("assets/app.js.br"));
+        assertEquals("public/index.html", DownloadService.resolveBuiltinAssetPath("index.html"));
+    }
+
+    @Test
+    public void testBuiltinAssetPathRejectsPathTraversal() {
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("../secret.js"));
+        assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("assets/../../secret.js"));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesReusesMatchingBuiltinBytes() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-copy");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source.js").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("store builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesAcceptsOneCharacterDestName() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-short");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("a").toFile();
+        final byte[] content = "short name".getBytes(StandardCharsets.UTF_8);
+        final File hashSource = destDir.resolve("source").toFile();
+        Files.write(hashSource.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(hashSource);
+
+        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
+        assertEquals("short name", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesLeavesMissingDestOnMismatch() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertFalse(dest.exists());
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testCopyStreamIfChecksumMatchesKeepsExistingDestOnMismatch() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-keep");
+        destDir.toFile().deleteOnExit();
+        final File dest = destDir.resolve("index.js").toFile();
+        Files.write(dest.toPath(), "already downloaded".getBytes(StandardCharsets.UTF_8));
+        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
+
+        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
+        assertEquals("already downloaded", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertEquals(0, leftoverAssetTemps(dest));
+    }
+
+    @Test
+    public void testTryCopyBuiltinFileCopiesWhenChecksumMatches() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-file");
+        destDir.toFile().deleteOnExit();
+        final File source = destDir.resolve("source.js").toFile();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "disk builtin js".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(source);
+
+        assertTrue(DownloadService.tryCopyBuiltinFile(source, dest, hash));
+        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertFalse(DownloadService.tryCopyBuiltinFile(source, dest, "deadbeef"));
+        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertFalse(DownloadService.tryCopyBuiltinFile(destDir.resolve("missing.js").toFile(), dest, hash));
+    }
+
+    @Test
+    public void applyHttpTimeoutsUpdatesSharedClientAndIgnoresNoops() {
+        final int original = DownloadService.httpTimeoutMs();
+        try {
+            DownloadService.applyHttpTimeouts(15_000);
+            assertEquals(15_000, DownloadService.httpTimeoutMs());
+            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
+            assertEquals(15_000, DownloadService.sharedClient.readTimeoutMillis());
+            assertEquals(15_000, DownloadService.sharedClient.writeTimeoutMillis());
+            final OkHttpClient beforeNoop = DownloadService.sharedClient;
+            DownloadService.applyHttpTimeouts(15_000);
+            assertSame(beforeNoop, DownloadService.sharedClient);
+            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
+        } finally {
+            DownloadService.applyHttpTimeouts(original);
+        }
+    }
+
+    @Test
+    public void testManifestRejectsPlainAndBrotliTargetCollision() throws Exception {
+        final Path destFolder = Files.createTempDirectory("capgo-manifest-dup");
+        destFolder.toFile().deleteOnExit();
+        final HashSet<String> seen = new HashSet<>();
+        final File plain = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js");
+        final File brotli = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js.br");
+
+        assertEquals(plain.getCanonicalFile(), brotli.getCanonicalFile());
+        assertTrue(DownloadService.rememberManifestTarget(seen, plain));
+        assertFalse(DownloadService.rememberManifestTarget(seen, brotli));
+    }
+
+    @Test
     public void testManifestTargetRejectsPathTraversalAfterBrotliSuffixIsRemoved() throws Exception {
         final Path documentsDir = Files.createTempDirectory("capgo-manifest-path");
         documentsDir.toFile().deleteOnExit();
@@ -2976,6 +3327,71 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("company-a", updater.defaultChannel);
         verify(editor).putString("CapacitorUpdater.defaultChannel", "company-a");
         verify(editor).apply();
+    }
+
+    @Test
+    public void defaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        assertTrue(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, false, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(true, true, true, true));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, true, false, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        assertFalse(CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(false, false, true, false));
+    }
+
+    @Test
+    public void defaultChannelCleanupClearsRestoredPreviewSnapshot() {
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.clearPersistedDefaultChannel(editor));
+
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannel");
+        verify(editor).remove("CapacitorUpdater.previewPreviousDefaultChannelWasSet");
+        verify(editor).commit();
+    }
+
+    @Test
+    public void defaultChannelCleanupFailurePreservesInstallMarkerRetry() throws IOException {
+        final File marker = File.createTempFile("capgo-install-marker", ".tmp");
+        marker.deleteOnExit();
+
+        assertTrue(marker.exists());
+        assertTrue(CapacitorUpdaterPlugin.invalidateDefaultChannelInstallMarker(marker));
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
+    }
+
+    @Test
+    public void defaultChannelInstallMarkerFailureIsHandledOnce() throws IOException {
+        final File nonDirectory = File.createTempFile("capgo-install-marker-parent", ".tmp");
+        nonDirectory.deleteOnExit();
+        final File marker = new File(nonDirectory, "marker");
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        final Logger logger = mock(Logger.class);
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(CapacitorUpdaterPlugin.isRestoredReinstall(marker, true));
+        CapacitorUpdaterPlugin.prepareDefaultChannelInstallMarker(marker, true, editor, logger);
+
+        verify(editor).remove("CapacitorUpdater.defaultChannelInstallMarkerCreated");
+        verify(editor).commit();
+        assertFalse(CapacitorUpdaterPlugin.isRestoredReinstall(marker, false));
     }
 
     @Test
@@ -3050,5 +3466,547 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "));
         assertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"));
+    }
+
+    @Test
+    public void cleanupDownloadDirectoriesRemovesOrphanBundleFolders() throws Exception {
+        final String keptId = "keptBundle1";
+        final String orphanId = "orphanBndl1";
+        final Path tempDir = createExistingBundleDirectory("capgo-orphan-kept", keptId);
+        final Path orphanDir = tempDir.resolve("versions").resolve(orphanId);
+        Files.createDirectories(orphanDir);
+        Files.write(orphanDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        orphanDir.toFile().deleteOnExit();
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        when(prefs.getString("server-path", "public")).thenReturn("public");
+        when(prefs.getString("pastVersion", BundleInfo.ID_BUILTIN)).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString("nextVersion", null)).thenReturn(null);
+        when(prefs.getString("previewFallbackVersion", null)).thenReturn(null);
+        when(prefs.getAll()).thenReturn(Map.of());
+        when(editor.remove(anyString())).thenReturn(editor);
+
+        final Set<String> allowedIds = Set.of(keptId);
+        updater.cleanupDownloadDirectories(allowedIds);
+
+        assertTrue("Kept bundle folder should remain", Files.exists(tempDir.resolve("versions").resolve(keptId)));
+        assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
+    }
+
+    @Test
+    public void deleteMarksDeletingThenRemovesRegistryOnlyAfterFolderGone() throws Exception {
+        final String id = "delBundle1";
+        final Path tempDir = createExistingBundleDirectory("capgo-safe-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo initial = new BundleInfo(id, "9.9.9", BundleStatus.SUCCESS, new Date(), "checksum1");
+        store.put(id + "_info", initial.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(Boolean.TRUE.equals(updater.delete(id, true)));
+        assertFalse("Folder must be gone after confirmed delete", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("Registry entry must be removed after confirmed delete", store.containsKey(id + "_info"));
+    }
+
+    @Test
+    public void drainPendingDeletesFinishesDeletingBundles() throws Exception {
+        final String id = "pendDelete";
+        final Path tempDir = createExistingBundleDirectory("capgo-drain-delete", id);
+
+        final Map<String, String> store = new HashMap<>();
+        final BundleInfo deleting = new BundleInfo(id, "8.8.8", BundleStatus.DELETING, new Date(), "checksum2");
+        store.put(id + "_info", deleting.toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+        when(prefs.getString(eq(id + "_info"), anyString())).thenAnswer((inv) -> store.getOrDefault(id + "_info", ""));
+        when(prefs.contains(eq(id + "_info"))).thenAnswer((inv) -> store.containsKey(id + "_info"));
+        when(prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.putAll(store);
+            return all;
+        });
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove((String) inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        updater.drainPendingDeletes();
+
+        assertFalse("Folder must be gone after drain", Files.exists(tempDir.resolve("versions").resolve(id)));
+        assertFalse("DELETING registry entry must be cleared after drain", store.containsKey(id + "_info"));
+    }
+
+    private CapgoUpdater newDeltaCacheUpdater(final Path docsDir, final File filesDir, final File cacheDir) {
+        final AppCompatActivity activity = mock(AppCompatActivity.class);
+        when(activity.getFilesDir()).thenReturn(filesDir);
+        when(activity.getCacheDir()).thenReturn(cacheDir);
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = docsDir.toFile();
+        updater.activity = activity;
+        return updater;
+    }
+
+    @Test
+    public void cacheBundleFilesSkipsFilesAlreadyAvailableFromBuiltin() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-delta-docs");
+        final File filesDir = Files.createTempDirectory("capgo-delta-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-delta-cache").toFile();
+
+        final String id = "deltaCacheBundle";
+        final Path bundleDir = docsDir.resolve("versions").resolve(id);
+        Files.createDirectories(bundleDir);
+        final byte[] shared = "<html>shared builtin content</html>".getBytes(StandardCharsets.UTF_8);
+        final File sharedFile = bundleDir.resolve("index.html").toFile();
+        Files.write(sharedFile.toPath(), shared);
+
+        // Same relative path and byte-identical content in the built-in bundle.
+        final Path builtinDir = filesDir.toPath().resolve("public");
+        Files.createDirectories(builtinDir);
+        Files.write(builtinDir.resolve("index.html"), shared);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        updater.cacheBundleFiles(id);
+
+        final String checksum = CryptoCipher.calcChecksum(sharedFile);
+        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_index.html");
+        assertFalse("Builtin-origin file must not be duplicated into the delta cache", cacheFile.exists());
+    }
+
+    @Test
+    public void cacheBundleFilesStillCachesFilesNotPresentInBuiltin() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-delta-docs2");
+        final File filesDir = Files.createTempDirectory("capgo-delta-files2").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-delta-cache2").toFile();
+
+        final String id = "deltaCacheBundle2";
+        final Path bundleDir = docsDir.resolve("versions").resolve(id);
+        Files.createDirectories(bundleDir);
+        final File newFile = bundleDir.resolve("new.js").toFile();
+        Files.write(newFile.toPath(), "only in this bundle".getBytes(StandardCharsets.UTF_8));
+
+        // Built-in exists but does not contain this file.
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        updater.cacheBundleFiles(id);
+
+        final String checksum = CryptoCipher.calcChecksum(newFile);
+        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_new.js");
+        assertTrue("Non-builtin file must be copied into the delta cache", cacheFile.exists());
+    }
+
+    @Test
+    public void getMissingBundleFilesTreatsHashNamedCacheAsReusable() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        // Content does not need to match the hash: the filename is the trust source
+        // (checksum was verified when the cache entry was written).
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "not-the-hashed-bytes".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesIgnoresEmptyHashNamedCache() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+        assertEquals("app.js", missing.getJSONObject(0).getString("file_name"));
+    }
+
+    @Test
+    public void getMissingBundleFilesReusesEmptyFileForEmptySha256() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-empty-sha-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-empty-sha-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-empty-sha-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = CapgoUpdater.EMPTY_SHA256;
+        Files.write(new File(downloads, hash + "_empty.txt").toPath(), new byte[0]);
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "empty.txt");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesRejectsUnsafeCacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-unsafe-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-unsafe-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-unsafe-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "../evil";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesDoesNotTrustCrc32CacheHash() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-crc-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-crc-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-crc-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "deadbeef";
+        Files.write(new File(downloads, hash + "_app.js").toPath(), "payload".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(1, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesTreatsLegacyBrotliCacheNameAsReusable() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-br-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-br-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-br-cache").toFile();
+        Files.createDirectories(filesDir.toPath().resolve("public"));
+        final File downloads = new File(cacheDir, "capgo_downloads");
+        assertTrue(downloads.mkdirs());
+        final String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        Files.write(new File(downloads, hash + "_app.js.br").toPath(), "legacy-brotli-cache".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "app.js.br");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
+        assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void testPendingStatsSurviveNewUpdaterInstance() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        Files.write(queueFile.toPath(), "[{\"action\":\"app_moved_to_background\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater crashed = new CapgoUpdater(mock(Logger.class));
+        crashed.documentsDir = tempDir.toFile();
+        crashed.restorePendingStats();
+
+        assertEquals(1, crashed.pendingStatsCount());
+        assertTrue(queueFile.exists());
+
+        final CapgoUpdater relaunched = new CapgoUpdater(mock(Logger.class));
+        relaunched.documentsDir = tempDir.toFile();
+        relaunched.restorePendingStats();
+
+        assertEquals(1, relaunched.pendingStatsCount());
+        relaunched.shutdown();
+        crashed.shutdown();
+    }
+
+    @Test
+    public void restorePendingStatsRecoversBackupWhenQueueFileMissing() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-bak");
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        Files.write(backup.toPath(), "[{\"action\":\"download_fail\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.restorePendingStats();
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertTrue(tempDir.resolve("capgo_pending_stats.json").toFile().exists());
+        assertFalse(backup.exists());
+        updater.shutdown();
+    }
+
+    @Test
+    public void ioBuffersAre256KiBForChecksumAndCopy() {
+        assertEquals(256 * 1024, CryptoCipher.ioBufferBytes());
+        assertEquals(256 * 1024, CryptoCipher.checksumBufferBytes());
+        assertEquals(256 * 1024, CryptoCipher.copyBufferBytes());
+    }
+
+    @Test
+    public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
+        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(1));
+        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(4));
+        assertEquals(12, DownloadService.manifestMaxConcurrentFiles(6));
+        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(8));
+        assertEquals(36, DownloadService.manifestMaxConcurrentFiles(18));
+        assertEquals(64, DownloadService.manifestMaxConcurrentFiles(40));
+        int live = DownloadService.manifestMaxConcurrentFiles();
+        assertTrue(live >= 8 && live <= 64);
+        assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
+    }
+
+    @Test
+    public void decompressBrotliStreamsEmptyWrapperAndRealPayload() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-brotli");
+        File emptyOut = dir.resolve("empty.txt").toFile();
+        File emptyIn = dir.resolve("empty.br").toFile();
+        Files.write(emptyIn.toPath(), new byte[] { 0x1B, 0x00, 0x06 });
+        DownloadService.decompressBrotli(emptyIn, emptyOut, "empty.br");
+        assertEquals(0, emptyOut.length());
+
+        File wrappedIn = dir.resolve("hello.br").toFile();
+        File wrappedOut = dir.resolve("hello.txt").toFile();
+        byte[] wrapped = new byte[] { 0x0b, 0x02, (byte) 0x80, 'h', 'e', 'l', 'l', 'o', 0x03 };
+        Files.write(wrappedIn.toPath(), wrapped);
+        DownloadService.decompressBrotli(wrappedIn, wrappedOut, "hello.br");
+        assertEquals("hello", new String(Files.readAllBytes(wrappedOut.toPath()), StandardCharsets.UTF_8));
+
+        File realIn = dir.resolve("payload.br").toFile();
+        File realOut = dir.resolve("payload.txt").toFile();
+        Files.write(
+            realIn.toPath(),
+            hexToBytes("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00")
+        );
+        DownloadService.decompressBrotli(realIn, realOut, "payload.br");
+        String expected = "Capgo stream brotli test payload. ".repeat(20);
+        assertEquals(expected, new String(Files.readAllBytes(realOut.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void writeFileAtomicHashesDuringWrite() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-hash-write");
+        byte[] payload = "hash-while-write-payload".repeat(1000).getBytes(StandardCharsets.UTF_8);
+        String expected = CryptoCipher.calcChecksum(new ByteArrayInputStream(payload));
+        File dest = dir.resolve("dest.bin").toFile();
+        DownloadService.writeFileAtomic(dest, new ByteArrayInputStream(payload), expected);
+        assertArrayEquals(payload, Files.readAllBytes(dest.toPath()));
+        assertEquals(expected, CryptoCipher.calcChecksum(dest));
+
+        File bad = dir.resolve("bad.bin").toFile();
+        try {
+            DownloadService.writeFileAtomic(
+                bad,
+                new ByteArrayInputStream(payload),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            );
+            fail("expected checksum mismatch");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Checksum verification failed"));
+            assertFalse(bad.exists());
+        }
+
+        File existing = dir.resolve("existing.bin").toFile();
+        Files.write(existing.toPath(), "keep-me".getBytes(StandardCharsets.UTF_8));
+        try {
+            DownloadService.writeFileAtomic(
+                existing,
+                new ByteArrayInputStream(payload),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            );
+            fail("expected checksum mismatch");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Checksum verification failed"));
+            assertEquals("keep-me", new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
+    public void writeHttpBodyReplacesOn200AndAppendsOn206() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-range-merge");
+        byte[] full = new byte[64 * 1024];
+        for (int i = 0; i < full.length; i++) {
+            full[i] = (byte) i;
+        }
+        byte[] first = Arrays.copyOfRange(full, 0, 24 * 1024);
+        byte[] second = Arrays.copyOfRange(full, 24 * 1024, full.length);
+        File dest = dir.resolve("partial.bin").toFile();
+
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(first), 200, 0);
+        assertArrayEquals(first, Files.readAllBytes(dest.toPath()));
+
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(second), 206, first.length);
+        assertArrayEquals(full, Files.readAllBytes(dest.toPath()));
+
+        byte[] other = "replaced-full-body".getBytes(StandardCharsets.UTF_8);
+        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(other), 200, dest.length());
+        assertArrayEquals(other, Files.readAllBytes(dest.toPath()));
+
+        assertFalse(DownloadService.shouldAppendHttpBody(200, 100));
+        assertTrue(DownloadService.shouldAppendHttpBody(206, 100));
+        assertFalse(DownloadService.shouldAppendHttpBody(206, 0));
+    }
+
+    @Test
+    public void manifestPartialFileUsesStableHashAndPath() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-partial-name");
+        String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        File nested = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
+        File root = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
+        File vendor = DownloadService.manifestPartialFile(dir.toFile(), hash, "vendor/app.js");
+        assertNotEquals(nested.getName(), root.getName());
+        assertNotEquals(nested.getName(), vendor.getName());
+        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js").getName());
+        assertTrue(nested.getName().startsWith("partial_" + hash + "_"));
+        assertTrue(nested.getName().length() < 255);
+        assertTrue(nested.getName().endsWith(".tmp"));
+        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
+        assertTrue(unsafe.getName().startsWith("partial_"));
+        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js").getName());
+    }
+
+    @Test
+    public void decryptAesFileStreamsRoundTrip() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes");
+        File file = dir.resolve("cipher.bin").toFile();
+        byte[] iv = new byte[16];
+        byte[] keyBytes = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            iv[i] = (byte) i;
+            keyBytes[i] = (byte) (31 - i);
+        }
+        javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+        byte[] plain = new byte[CryptoCipher.ioBufferBytes() * 2 + 1];
+        for (int i = 0; i < plain.length; i++) {
+            plain[i] = (byte) (i * 31);
+        }
+        javax.crypto.Cipher enc = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding");
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        Files.write(file.toPath(), enc.doFinal(plain));
+        CryptoCipher.decryptAesFile(file, key, iv);
+        assertArrayEquals(plain, Files.readAllBytes(file.toPath()));
+
+        File emptyPlain = dir.resolve("empty-plain.bin").toFile();
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        Files.write(emptyPlain.toPath(), enc.doFinal(new byte[0]));
+        byte[] emptyCipher = Files.readAllBytes(emptyPlain.toPath());
+        try {
+            CryptoCipher.decryptAesFile(emptyPlain, key, iv);
+            fail("expected empty plaintext to be rejected");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Empty decrypted data"));
+            assertArrayEquals(emptyCipher, Files.readAllBytes(emptyPlain.toPath()));
+        }
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
+    }
+
+    private static int leftoverAssetTemps(final File dest) {
+        final File[] leftovers = dest.getParentFile().listFiles((dir, name) -> name.startsWith("capgo_asset_") && name.endsWith(".tmp"));
+        return leftovers == null ? 0 : leftovers.length;
     }
 }
