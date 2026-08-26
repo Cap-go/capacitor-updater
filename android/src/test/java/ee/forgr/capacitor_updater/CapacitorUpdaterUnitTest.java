@@ -3845,7 +3845,8 @@ public class CapacitorUpdaterUnitTest {
         updater.documentsDir = tempDir.toFile();
         updater.persistPendingStats();
 
-        assertFalse(queueFile.exists());
+        assertTrue(queueFile.exists());
+        assertEquals("[]", Files.readString(queueFile.toPath()));
         assertFalse(backup.exists());
         updater.restorePendingStats();
         assertEquals(0, updater.pendingStatsCount());
