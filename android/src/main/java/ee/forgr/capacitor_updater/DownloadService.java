@@ -83,7 +83,11 @@ public class DownloadService extends Worker {
     private static final String UPDATE_FILE = "update.dat";
 
     // Shared OkHttpClient to prevent resource leaks
-    protected static OkHttpClient sharedClient;
+    protected static volatile OkHttpClient sharedClient;
+    private static final Object HTTP_CLIENT_LOCK = new Object();
+    // Match CapgoUpdater.timeout / responseTimeout default (20s). OkHttp's 10s
+    // defaults were unused by the plugin config and aborted slow manifest GETs.
+    private static volatile int httpTimeoutMs = 20_000;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
     private static String currentVersionOs = "unknown";
@@ -96,6 +100,9 @@ public class DownloadService extends Worker {
         sharedClient = new OkHttpClient.Builder()
             .dispatcher(dispatcher)
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            .connectTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
+            .writeTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
                 String userAgent = buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs);
@@ -103,6 +110,32 @@ public class DownloadService extends Worker {
                 return chain.proceed(requestWithUserAgent);
             })
             .build();
+    }
+
+    static int httpTimeoutMs() {
+        return httpTimeoutMs;
+    }
+
+    static void applyHttpTimeouts(int timeoutMs) {
+        // OkHttp treats 0 as infinite; keep plugin responseTimeout floor (20s default).
+        int ms = timeoutMs > 0 ? timeoutMs : 20_000;
+        synchronized (HTTP_CLIENT_LOCK) {
+            if (
+                sharedClient.connectTimeoutMillis() == ms &&
+                sharedClient.readTimeoutMillis() == ms &&
+                sharedClient.writeTimeoutMillis() == ms
+            ) {
+                httpTimeoutMs = ms;
+                return;
+            }
+            sharedClient = sharedClient
+                .newBuilder()
+                .connectTimeout(ms, TimeUnit.MILLISECONDS)
+                .readTimeout(ms, TimeUnit.MILLISECONDS)
+                .writeTimeout(ms, TimeUnit.MILLISECONDS)
+                .build();
+            httpTimeoutMs = ms;
+        }
     }
 
     static int manifestMaxConcurrentFiles() {
@@ -342,10 +375,12 @@ public class DownloadService extends Worker {
             logger.debug("doWork isManifest: " + isManifest);
 
             if (isManifest) {
-                JSONArray manifest = DataManager.getInstance().getAndClearManifest();
+                JSONArray manifest = DataManager.getInstance().getAndClearManifest(id);
                 if (manifest != null) {
                     handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
+                } else if (isStopped()) {
+                    return createFailureResult("download_cancelled");
                 } else {
                     logger.error("Manifest is null");
                     return createFailureResult("Manifest is null");
@@ -526,8 +561,7 @@ public class DownloadService extends Worker {
                     try {
                         if (tryCopyBuiltinAsset(assets, fileName, targetFile, finalFileHash)) {
                             logger.debug("using builtin asset " + fileName);
-                        } else if (builtinFile.exists() && verifyChecksum(builtinFile, finalFileHash)) {
-                            copyFile(builtinFile, targetFile);
+                        } else if (tryCopyBuiltinFile(builtinFile, targetFile, finalFileHash)) {
                             logger.debug("using builtin file " + fileName);
                         } else if (
                             tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
@@ -626,9 +660,11 @@ public class DownloadService extends Worker {
             URL u = new URL(url);
             httpConn = (HttpURLConnection) u.openConnection();
 
-            // Set reasonable timeouts
-            httpConn.setConnectTimeout(30000); // 30 seconds
-            httpConn.setReadTimeout(60000); // 60 seconds
+            // Zip can stall longer than a JSON API call; keep a floor so
+            // responseTimeout cannot shrink large-bundle downloads.
+            int zipTimeoutMs = Math.max(httpTimeoutMs, 60_000);
+            httpConn.setConnectTimeout(zipTimeoutMs);
+            httpConn.setReadTimeout(zipTimeoutMs);
 
             // Reading progress file (if exist)
             long downloadedBytes = 0;
@@ -678,7 +714,7 @@ public class DownloadService extends Worker {
                         writer = null;
                     }
 
-                    byte[] buffer = new byte[8192]; // Larger buffer for better performance
+                    byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
                     int lastNotifiedPercent = 0;
                     int bytesRead;
 
@@ -801,6 +837,10 @@ public class DownloadService extends Worker {
     }
 
     private void copyFile(File source, File dest) throws IOException {
+        copyFileChannel(source, dest);
+    }
+
+    static void copyFileChannel(final File source, final File dest) throws IOException {
         final File parent = dest.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
@@ -971,33 +1011,19 @@ public class DownloadService extends Worker {
         }
     }
 
-    private boolean verifyChecksum(File file, String expectedHash) {
-        try {
-            String actualHash = calculateFileHash(file);
-            return actualHash.equalsIgnoreCase(expectedHash);
-        } catch (Exception e) {
-            e.printStackTrace();
+    static boolean tryCopyBuiltinFile(final File builtinFile, final File dest, final String expectedHash) {
+        if (builtinFile == null || dest == null || expectedHash == null || expectedHash.isEmpty() || !builtinFile.isFile()) {
             return false;
         }
-    }
-
-    private String calculateFileHash(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] byteArray = new byte[1024];
-        int bytesCount = 0;
-
-        try (FileInputStream fis = new FileInputStream(file)) {
-            while ((bytesCount = fis.read(byteArray)) != -1) {
-                digest.update(byteArray, 0, bytesCount);
+        try {
+            if (!expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(builtinFile))) {
+                return false;
             }
+            copyFileChannel(builtinFile, dest);
+            return true;
+        } catch (IOException e) {
+            return false;
         }
-
-        byte[] bytes = digest.digest();
-        StringBuilder sb = new StringBuilder();
-        for (byte aByte : bytes) {
-            sb.append(Integer.toString((aByte & 0xff) + 0x100, 16).substring(1));
-        }
-        return sb.toString();
     }
 
     static void decompressBrotli(File input, File output, String fileName) throws IOException {
