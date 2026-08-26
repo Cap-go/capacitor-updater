@@ -3846,7 +3846,7 @@ public class CapacitorUpdaterUnitTest {
         updater.persistPendingStats();
 
         assertTrue(queueFile.exists());
-        assertEquals("[]", Files.readString(queueFile.toPath()));
+        assertEquals("[]", new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
         assertFalse(backup.exists());
         updater.restorePendingStats();
         assertEquals(0, updater.pendingStatsCount());
