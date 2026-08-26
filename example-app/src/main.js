@@ -3127,12 +3127,15 @@ async function bootstrap() {
   }
 
   await refreshState();
+  const skipAndroidBootProbeForBootAction =
+    bootActionFromStorage === 'verify-persisted-config-after-get-latest-boot' ||
+    bootActionFromStorage === 'verify-persisted-runtime-traffic-boot';
   const shouldRunAndroidBootProbe =
     platform === 'android' &&
     scenarioId.startsWith('manual-zip') &&
     buildLabel.endsWith('-builtin') &&
     state.bootCount > 1 &&
-    bootActionFromStorage === 'none';
+    !skipAndroidBootProbeForBootAction;
   if (shouldRunAndroidBootProbe) {
     state.bootProbe = 'running';
     renderState();
