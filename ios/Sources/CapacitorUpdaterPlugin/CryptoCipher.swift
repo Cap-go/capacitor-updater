@@ -141,31 +141,47 @@ public struct CryptoCipher {
         }
     }
 
+    /// 256 KiB: one size for checksum, copy, and decode.
+    /// 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
+    static let ioBufferBytesValue = 256 * 1024
+
+    static func ioBufferBytes() -> Int {
+        return ioBufferBytesValue
+    }
+
+    static func checksumBufferBytes() -> Int {
+        return ioBufferBytesValue
+    }
+
+    static func copyBufferBytes() -> Int {
+        return ioBufferBytesValue
+    }
+
     public static func calcChecksum(filePath: URL) -> String {
-        let bufferSize = 1024 * 1024 * 5 // 5 MB
+        let bufferSize = checksumBufferBytes()
         var sha256 = SHA256()
 
-        let fileHandle: FileHandle
         do {
-            fileHandle = try FileHandle(forReadingFrom: filePath)
-        } catch {
-            logger.error("Cannot open file for checksum calculation")
-            logger.debug("Path: \(filePath.path), Error: \(error)")
-            return ""
-        }
-
-        defer {
+            let fileHandle: FileHandle
             do {
-                try fileHandle.close()
+                fileHandle = try FileHandle(forReadingFrom: filePath)
             } catch {
-                logger.error("Error closing file during checksum")
-                logger.debug("Error: \(error)")
+                logger.error("Cannot open file for checksum calculation")
+                logger.debug("Path: \(filePath.path), Error: \(error)")
+                return ""
             }
-        }
 
-        while autoreleasepool(invoking: {
-            let fileData: Data
-            if #available(iOS 13.4, *) {
+            defer {
+                do {
+                    try fileHandle.close()
+                } catch {
+                    logger.error("Error closing file during checksum")
+                    logger.debug("Error: \(error)")
+                }
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData: Data
                 do {
                     fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
                 } catch {
@@ -173,20 +189,47 @@ public struct CryptoCipher {
                     logger.debug("Error: \(error)")
                     return false
                 }
-            } else {
-                fileData = fileHandle.readData(ofLength: bufferSize)
-            }
 
-            if fileData.count > 0 {
-                sha256.update(data: fileData)
-                return true // Continue
-            } else {
-                return false // End of file
-            }
-        }) {}
+                if fileData.count > 0 {
+                    sha256.update(data: fileData)
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
 
-        let digest = sha256.finalize()
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
+            return hexString(from: sha256)
+        } catch {
+            logger.error("Cannot calculate checksum")
+            logger.debug("Path: \(filePath.path), Error: \(error)")
+            return ""
+        }
+    }
+
+    final class RunningChecksum {
+        private var sha256 = SHA256()
+
+        func update(_ data: Data) {
+            guard !data.isEmpty else {
+                return
+            }
+            sha256.update(data: data)
+        }
+
+        func hex() -> String {
+            CryptoCipher.hexString(from: sha256)
+        }
+    }
+
+    static func hexString(from sha256: SHA256) -> String {
+        var copy = sha256
+        return copy.finalize().compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    static func shortPathKey(_ fileName: String) -> String {
+        var sha256 = SHA256()
+        sha256.update(data: Data(fileName.utf8))
+        return String(hexString(from: sha256).prefix(16))
     }
 
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
@@ -241,40 +284,17 @@ public struct CryptoCipher {
 
             let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
 
-            let encryptedData: Data
-            do {
-                encryptedData = try Data(contentsOf: filePath)
-            } catch {
-                logger.error("Failed to read encrypted data")
-                logger.debug("Error: \(error)")
-                throw NSError(domain: "Failed to read encrypted data", code: 3, userInfo: nil)
-            }
-
-            if encryptedData.isEmpty {
+            let encryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if encryptedSize == 0 {
                 logger.error("Encrypted file data is empty")
                 throw NSError(domain: "Empty encrypted data", code: 6, userInfo: nil)
             }
 
-            guard let decryptedData = aesPrivateKey.decrypt(data: encryptedData) else {
-                logger.error("Failed to decrypt data")
-                throw NSError(domain: "Failed to decrypt data", code: 4, userInfo: nil)
-            }
-
-            if decryptedData.isEmpty {
+            try aesPrivateKey.decrypt(from: filePath, to: filePath)
+            let decryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if decryptedSize == 0 {
                 logger.error("Decrypted data is empty")
                 throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
-            }
-
-            do {
-                try decryptedData.write(to: filePath, options: .atomic)
-                if !FileManager.default.fileExists(atPath: filePath.path) {
-                    logger.error("File was not created after write")
-                    throw NSError(domain: "File write failed", code: 8, userInfo: nil)
-                }
-            } catch {
-                logger.error("Error writing decrypted file")
-                logger.debug("Error: \(error)")
-                throw error
             }
 
         } catch {

@@ -123,6 +123,7 @@ We welcome contributions, including AI-generated pull requests. Every PR must in
 - Keep temporary files clean: delete or mark with `deleteOnExit` after use.
 - `dist/` is fully regenerated on every build — never edit generated files.
 - Use Bun for everything. Do not use npm or npx. Use `bunx` if you need to run a package binary.
+- Production and PR beta publishes use `npm stage publish`. Plugin CI only has the org `NPM_TOKEN`.
 - Maestro can sometimes fail for timeout, WE ENFORCE ` timeout-minutes: 10` if your test fail for timeout make better test augment the timeout is NEVER allowed
 
 ## Timeout Policy

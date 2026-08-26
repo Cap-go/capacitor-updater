@@ -32,7 +32,8 @@ let package = Package(
             name: "CapacitorUpdaterPluginTests",
             dependencies: [
                 "CapacitorUpdaterPlugin",
-                .product(name: "Version", package: "Version")
+                .product(name: "Version", package: "Version"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
             path: "ios/Tests/CapacitorUpdaterPluginTests")
     ],

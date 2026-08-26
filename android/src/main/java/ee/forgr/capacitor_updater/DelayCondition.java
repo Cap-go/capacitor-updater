@@ -40,7 +40,7 @@ public class DelayCondition {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof DelayCondition that)) return false;
-        return (getKind() == that.getKind() && Objects.equals(getValue(), that.getValue()));
+        return getKind() == that.getKind() && Objects.equals(getValue(), that.getValue());
     }
 
     @Override
@@ -51,6 +51,6 @@ public class DelayCondition {
     @NonNull
     @Override
     public String toString() {
-        return ("DelayCondition{" + "kind=" + kind + ", value='" + value + '\'' + '}');
+        return "DelayCondition{" + "kind=" + kind + ", value='" + value + '\'' + '}';
     }
 }

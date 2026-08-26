@@ -92,18 +92,26 @@ final class ThreeFingerPinchGestureRecognizer: UIGestureRecognizer {
 }
 
 extension UIApplication {
-    // swiftlint:disable:next line_length
-    public class func topViewController(_ base: UIViewController? = UIApplication.shared.windows.first?.rootViewController) -> UIViewController? {
-        if let nav = base as? UINavigationController {
+    public class func topViewController(_ base: UIViewController? = nil) -> UIViewController? {
+        let resolvedBase = base ?? keyWindowRootViewController
+        if let nav = resolvedBase as? UINavigationController {
             return topViewController(nav.visibleViewController)
         }
-        if let tab = base as? UITabBarController, let selected = tab.selectedViewController {
+        if let tab = resolvedBase as? UITabBarController, let selected = tab.selectedViewController {
             return topViewController(selected)
         }
-        if let presented = base?.presentedViewController {
+        if let presented = resolvedBase?.presentedViewController {
             return topViewController(presented)
         }
-        return base
+        return resolvedBase
+    }
+
+    private static var keyWindowRootViewController: UIViewController? {
+        let scenes = shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let foregroundScenes = scenes.filter { $0.activationState == .foregroundActive }
+        let candidates = foregroundScenes.isEmpty ? scenes : foregroundScenes
+        let window = candidates.flatMap(\.windows).first(where: \.isKeyWindow) ?? candidates.first?.windows.first
+        return window?.rootViewController
     }
 }
 
@@ -184,6 +192,10 @@ extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
 }
 
 extension UIWindow {
+    private var menuHostViewController: UIViewController? {
+        UIApplication.topViewController(rootViewController)
+    }
+
     override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
             guard let bridgeViewController = rootViewController as? CAPBridgeViewController,
@@ -230,7 +242,7 @@ extension UIWindow {
     @discardableResult
     private func showDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        guard let topVC = UIApplication.topViewController() else {
+        guard let topVC = self.menuHostViewController else {
             return false
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -365,7 +377,7 @@ extension UIWindow {
         })
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alertShake, animated: true)
             }
         }
@@ -388,7 +400,7 @@ extension UIWindow {
     }
 
     private func showPreviewSelector(plugin: CapacitorUpdaterPlugin) {
-        guard let topVC = UIApplication.topViewController() else {
+        guard let topVC = self.menuHostViewController else {
             return
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -456,7 +468,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -479,7 +491,7 @@ extension UIWindow {
         }
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -498,7 +510,7 @@ extension UIWindow {
     @discardableResult
     private func showChannelSelector(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) -> Bool {
         // Prevent multiple alerts from showing
-        guard let topVC = UIApplication.topViewController() else {
+        guard let topVC = self.menuHostViewController else {
             return false
         }
         if topVC.isKind(of: UIAlertController.self) {
@@ -582,7 +594,7 @@ extension UIWindow {
         }
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -627,7 +639,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -649,7 +661,7 @@ extension UIWindow {
         ])
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(progressAlert, animated: true) {
                     DispatchQueue.global(qos: .userInitiated).async {
                         // Set the channel - respect plugin's allowSetDefaultChannel config
@@ -664,6 +676,14 @@ extension UIWindow {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showError(message: "Failed to set channel: \(setResult.error)", plugin: plugin)
+                                }
+                            }
+                            return
+                        }
+                        guard plugin.persistDefaultChannelStateFromDefaults() else {
+                            DispatchQueue.main.async {
+                                progressAlert.dismiss(animated: true) {
+                                    self.showError(message: "Channel set to \(name), but local persistence failed.", plugin: plugin)
                                 }
                             }
                             return
@@ -718,8 +738,12 @@ extension UIWindow {
                             return
                         }
 
-                        // Check if there's an actual update available
-                        if latestKind == "up_to_date" || latest.url.isEmpty {
+                        // Check if there's an actual update available. A manifest-only
+                        // response legitimately has no URL (the files come from the
+                        // manifest, not a zip), so only report "already on latest" when
+                        // the URL is empty AND there is no manifest to download from.
+                        let hasManifest = !(latest.manifest?.isEmpty ?? true)
+                        if latestKind == "up_to_date" || (latest.url.isEmpty && !hasManifest) {
                             DispatchQueue.main.async {
                                 progressAlert.dismiss(animated: true) {
                                     self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)
@@ -794,7 +818,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -806,7 +830,7 @@ extension UIWindow {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
@@ -832,7 +856,7 @@ extension UIWindow {
         })
 
         DispatchQueue.main.async {
-            if let topVC = UIApplication.topViewController() {
+            if let topVC = self.menuHostViewController {
                 topVC.present(alert, animated: true)
             }
         }
