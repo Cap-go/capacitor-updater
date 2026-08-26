@@ -93,6 +93,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String AUTO_UPDATE_MODE_ALWAYS = "always";
     private static final String AUTO_UPDATE_MODE_ONLY_DOWNLOAD = "onlyDownload";
 
+    static final String UPDATE_KIND_BACKGROUND = "background";
+    static final String UPDATE_KIND_FOREGROUND = "foreground";
+    static final String UPDATE_KIND_APP_BOOT = "appBoot";
+
     private Logger logger;
 
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
@@ -175,6 +179,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreenTimedOut = false;
     private int splashscreenInvocationToken = 0;
     private String directUpdateMode = "false";
+    private String updateKind = UPDATE_KIND_BACKGROUND;
     private Boolean wasRecentlyInstalledOrUpdated = false;
     private volatile boolean onLaunchDirectUpdateUsed = false;
     Boolean shakeMenuEnabled = false;
@@ -873,6 +878,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
         this.configureAutoUpdateModeFromConfig();
+        this.updateKind = normalizedUpdateKind(this.getConfig().getString("updateKind", UPDATE_KIND_BACKGROUND));
         this.appReadyTimeout = Math.max(1000, this.getConfig().getInt("appReadyTimeout", 10000)); // Minimum 1 second
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
         this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
@@ -912,6 +918,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
         this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
+        this.applyAppBootUpdateIfNeeded();
         if (nativeBuildVersionChanged) {
             this.clearPreviewSessionForNativeBuildChange();
         }
@@ -2282,6 +2289,41 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return Math.max(600, valueSeconds);
     }
 
+    static String normalizedUpdateKind(final String value) {
+        if (value == null) {
+            return UPDATE_KIND_BACKGROUND;
+        }
+        final String normalized = value.trim();
+        switch (normalized) {
+            case UPDATE_KIND_BACKGROUND:
+            case UPDATE_KIND_FOREGROUND:
+            case UPDATE_KIND_APP_BOOT:
+                return normalized;
+            default:
+                return UPDATE_KIND_BACKGROUND;
+        }
+    }
+
+    private void applyAppBootUpdateIfNeeded() {
+        if (!UPDATE_KIND_APP_BOOT.equals(this.updateKind)) {
+            return;
+        }
+        if (this.isPreviewSessionStateActive()) {
+            return;
+        }
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        final BundleInfo next = this.implementation.getNextBundle();
+        if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+            logger.info("Applying pending bundle on appBoot: " + next.getVersionName());
+            if (this.implementation.set(next)) {
+                this.notifyBundleSet(next);
+                this.implementation.setNextBundle(null);
+            } else {
+                logger.error("Failed to apply appBoot bundle: " + next.getVersionName());
+            }
+        }
+    }
+
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
         if (!shouldConsumeOnLaunchDirectUpdate(this.directUpdateMode, plannedDirectUpdate)) {
             return;
@@ -2307,6 +2349,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.implementation != null) {
             this.implementation.directUpdate = isDirectUpdateMode(this.directUpdateMode);
         }
+    }
+
+    void setUpdateKindForTesting(final String updateKind) {
+        this.updateKind = normalizedUpdateKind(updateKind);
+    }
+
+    String getUpdateKindForTesting() {
+        return this.updateKind;
     }
 
     boolean shouldUseDirectUpdateForTesting() {

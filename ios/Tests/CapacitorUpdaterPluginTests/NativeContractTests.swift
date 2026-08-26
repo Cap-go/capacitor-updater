@@ -157,4 +157,18 @@ final class NativeContractTests: XCTestCase {
             )
         }
     }
+
+    func testUpdateKindMatchesNativeContract() throws {
+        for testCase in try contractCases("updateKind") {
+            let id = try string(testCase, "id", id: "updateKind")
+            let input = try dictionary(testCase, "input", id: id)
+            let expect = try dictionary(testCase, "expect", id: id)
+
+            XCTAssertEqual(
+                CapacitorUpdaterPlugin.normalizedUpdateKind(try optionalString(input, "kind", id: id)),
+                try string(expect, "kind", id: id),
+                id
+            )
+        }
+    }
 }

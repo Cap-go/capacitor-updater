@@ -83,6 +83,21 @@ declare module '@capacitor/cli' {
       autoUpdate?: boolean | 'off' | 'atBackground' | 'atInstall' | 'onLaunch' | 'always' | 'onlyDownload';
 
       /**
+       * Configure when live updates should be applied to the app.
+       *
+       * Supported values:
+       * - `'background'`: Apply updates automatically when the app is moved to background (default).
+       * - `'foreground'`: Apply updates while the app is in the foreground.
+       * - `'appBoot'`: Apply downloaded and pending update bundles during initial app boot before UI rendering.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 'background'
+       * @example 'appBoot'
+       */
+      updateKind?: UpdateKind;
+
+      /**
        * Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device.
        * Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native.
        * Only available for Android and iOS.
@@ -2571,6 +2586,15 @@ export interface TriggerUpdateCheckResult {
    */
   queued: boolean;
 }
+
+/**
+ * Modes that determine when an update bundle should be applied.
+ *
+ * Supported values are `'background'`, `'foreground'`, and `'appBoot'`.
+ *
+ * @public
+ */
+export type UpdateKind = 'background' | 'foreground' | 'appBoot';
 
 /**
  * Native gesture options that open the shake menu.

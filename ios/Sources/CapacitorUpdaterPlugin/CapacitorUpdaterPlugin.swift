@@ -107,6 +107,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let autoUpdateModeLaunch = "onLaunch"
     static let autoUpdateModeAlways = "always"
     static let autoUpdateModeOnlyDownload = "onlyDownload"
+    static let updateKindBackground = "background"
+    static let updateKindForeground = "foreground"
+    static let updateKindAppBoot = "appBoot"
     static let shakeMenuGestureShake = "shake"
     static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
     private static let previewLoaderTimeoutMs = 60000
@@ -177,6 +180,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var splashscreenInvocationToken = 0
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    var updateKind = CapacitorUpdaterPlugin.updateKindBackground
     var allowSetDefaultChannel = true
     var persistDefaultChannelOnReinstall = true
     private var keepUrlPathAfterReload = false
@@ -281,6 +285,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Loaded persisted updateUrl")
         }
         configureAutoUpdateModeFromConfig()
+        updateKind = Self.normalizedUpdateKind(getConfig().getString("updateKind", Self.updateKindBackground))
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
@@ -441,6 +446,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             didResetCurrentBundle: didResetCurrentBundle
         )
         self.reportNativeVersionStatsIfChanged()
+
+        self.applyAppBootUpdateIfNeeded()
 
         // Load the server
         // This is very much swift specific, android does not do that
@@ -4010,6 +4017,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return 0
         }
         return max(600, value)
+    }
+
+    static func normalizedUpdateKind(_ value: String?) -> String {
+        guard let value else {
+            return updateKindBackground
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch normalized {
+        case updateKindBackground, updateKindForeground, updateKindAppBoot:
+            return normalized
+        default:
+            return updateKindBackground
+        }
+    }
+
+    private func applyAppBootUpdateIfNeeded() {
+        guard self.updateKind == Self.updateKindAppBoot else {
+            return
+        }
+        guard !self.isPreviewSessionStateActive() else {
+            return
+        }
+        let current: BundleInfo = self.implementation.getCurrentBundle()
+        if let next = self.implementation.getNextBundle(),
+           !next.isErrorStatus(),
+           next.getId() != current.getId() {
+            logger.info("Applying pending bundle on appBoot: \(next.toString())")
+            if self.implementation.set(bundle: next) {
+                self.notifyBundleSet(next)
+                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            } else {
+                logger.error("Failed to apply appBoot bundle: \(next.toString())")
+            }
+        }
+    }
+
+    func setUpdateKindForTesting(_ updateKind: String) {
+        self.updateKind = Self.normalizedUpdateKind(updateKind)
+    }
+
+    func getUpdateKindForTesting() -> String {
+        return self.updateKind
+    }
+
+    func applyAppBootUpdateIfNeededForTesting() {
+        self.applyAppBootUpdateIfNeeded()
     }
 
     private func getOnLaunchDirectUpdateUsed() -> Bool {

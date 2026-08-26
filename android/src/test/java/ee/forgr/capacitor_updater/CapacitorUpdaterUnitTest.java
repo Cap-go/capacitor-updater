@@ -3997,6 +3997,55 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void testNormalizedUpdateKindVariants() {
+        assertEquals("background", CapacitorUpdaterPlugin.normalizedUpdateKind("background"));
+        assertEquals("foreground", CapacitorUpdaterPlugin.normalizedUpdateKind("foreground"));
+        assertEquals("appBoot", CapacitorUpdaterPlugin.normalizedUpdateKind("appBoot"));
+        assertEquals("background", CapacitorUpdaterPlugin.normalizedUpdateKind(null));
+        assertEquals("background", CapacitorUpdaterPlugin.normalizedUpdateKind(""));
+        assertEquals("appBoot", CapacitorUpdaterPlugin.normalizedUpdateKind("  appBoot  "));
+        assertEquals("background", CapacitorUpdaterPlugin.normalizedUpdateKind("unknown"));
+    }
+
+    @Test
+    public void testAppBootAppliesPendingBundleOnBoot() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        final InstallNextCapgoUpdater updater = new InstallNextCapgoUpdater();
+        final BundleInfo next = new BundleInfo("pending-boot-id", "2.0.0", BundleStatus.PENDING, new Date(), "boot123");
+        updater.nextBundle = next;
+
+        plugin.implementation = updater;
+        plugin.setLoggerForTesting(mock(Logger.class));
+        plugin.setUpdateKindForTesting("appBoot");
+
+        invokePrivateVoidMethod(plugin, "applyAppBootUpdateIfNeeded");
+
+        assertEquals(1, updater.setCalls);
+        assertEquals("pending-boot-id", updater.getCurrentBundle().getId());
+        assertNull(updater.getNextBundle());
+        assertTrue(plugin.hasNotifiedEvent("set"));
+    }
+
+    @Test
+    public void testBackgroundUpdateKindDoesNotApplyPendingBundleOnBoot() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        final InstallNextCapgoUpdater updater = new InstallNextCapgoUpdater();
+        final BundleInfo next = new BundleInfo("pending-boot-id", "2.0.0", BundleStatus.PENDING, new Date(), "boot123");
+        updater.nextBundle = next;
+
+        plugin.implementation = updater;
+        plugin.setLoggerForTesting(mock(Logger.class));
+        plugin.setUpdateKindForTesting("background");
+
+        invokePrivateVoidMethod(plugin, "applyAppBootUpdateIfNeeded");
+
+        assertEquals(0, updater.setCalls);
+        assertEquals(BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+        assertNotNull(updater.getNextBundle());
+        assertFalse(plugin.hasNotifiedEvent("set"));
+    }
+
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length() / 2];
         for (int i = 0; i < out.length; i++) {

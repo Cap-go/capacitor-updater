@@ -102,4 +102,17 @@ public class NativeContractTest {
             assertEquals(id, expected, CapacitorUpdaterPlugin.normalizedUpdateResponseKind(kind));
         }
     }
+
+    @Test
+    public void updateKindMatchesNativeContract() throws Exception {
+        JSONArray cases = contract().getJSONArray("updateKind");
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            String kind = nullableString(testCase.getJSONObject("input"), "kind");
+            String expected = testCase.getJSONObject("expect").getString("kind");
+
+            assertEquals(id, expected, CapacitorUpdaterPlugin.normalizedUpdateKind(kind));
+        }
+    }
 }

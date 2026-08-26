@@ -280,5 +280,70 @@
         "kind": "failed"
       }
     }
+  ],
+  "updateKind": [
+    {
+      "id": "update-kind.background",
+      "input": {
+        "kind": "background"
+      },
+      "expect": {
+        "kind": "background"
+      }
+    },
+    {
+      "id": "update-kind.foreground",
+      "input": {
+        "kind": "foreground"
+      },
+      "expect": {
+        "kind": "foreground"
+      }
+    },
+    {
+      "id": "update-kind.app-boot",
+      "input": {
+        "kind": "appBoot"
+      },
+      "expect": {
+        "kind": "appBoot"
+      }
+    },
+    {
+      "id": "update-kind.missing",
+      "input": {
+        "kind": null
+      },
+      "expect": {
+        "kind": "background"
+      }
+    },
+    {
+      "id": "update-kind.empty",
+      "input": {
+        "kind": ""
+      },
+      "expect": {
+        "kind": "background"
+      }
+    },
+    {
+      "id": "update-kind.whitespace",
+      "input": {
+        "kind": "  appBoot  "
+      },
+      "expect": {
+        "kind": "appBoot"
+      }
+    },
+    {
+      "id": "update-kind.invalid",
+      "input": {
+        "kind": "unknown-mode"
+      },
+      "expect": {
+        "kind": "background"
+      }
+    }
   ]
 }

@@ -2899,4 +2899,43 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
     }
 
+    func testNormalizedUpdateKindVariants() {
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind("background"), "background")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind("foreground"), "foreground")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind("appBoot"), "appBoot")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind(nil), "background")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind(""), "background")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind("  appBoot  "), "appBoot")
+        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedUpdateKind("unknown"), "background")
+    }
+
+    func testAppBootAppliesPendingBundleOnBoot() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let updater = ResetTrackingCapgoUpdater()
+        let next = BundleInfo(id: "pending-boot-id", version: "2.0.0", status: .PENDING, downloaded: Date(), checksum: "boot123")
+        updater.nextBundleValue = next
+
+        testPlugin.implementation = updater
+        testPlugin.setUpdateKindForTesting("appBoot")
+
+        testPlugin.applyAppBootUpdateIfNeededForTesting()
+
+        XCTAssertEqual(updater.setCalls, 1)
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("set"))
+    }
+
+    func testBackgroundUpdateKindDoesNotApplyPendingBundleOnBoot() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let updater = ResetTrackingCapgoUpdater()
+        let next = BundleInfo(id: "pending-boot-id", version: "2.0.0", status: .PENDING, downloaded: Date(), checksum: "boot123")
+        updater.nextBundleValue = next
+
+        testPlugin.implementation = updater
+        testPlugin.setUpdateKindForTesting("background")
+
+        testPlugin.applyAppBootUpdateIfNeededForTesting()
+
+        XCTAssertEqual(updater.setCalls, 0)
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("set"))
+    }
 }
