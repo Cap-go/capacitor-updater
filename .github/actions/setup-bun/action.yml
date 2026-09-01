@@ -24,7 +24,7 @@ runs:
       with:
         node-version: 24.x
     - name: Cache Bun runtime
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.bun
         key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
@@ -36,7 +36,7 @@ runs:
       run: ./scripts/ci/install-bun.sh
     - name: Cache Bun dependencies
       if: inputs.dependency-cache-key != '' && inputs.dependency-cache-path != ''
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ inputs.dependency-cache-path }}
         key: ${{ inputs.dependency-cache-key }}

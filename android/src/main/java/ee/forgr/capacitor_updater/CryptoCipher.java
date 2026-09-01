@@ -12,12 +12,11 @@ package ee.forgr.capacitor_updater;
  * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
  */
 import android.util.Base64;
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -157,26 +156,58 @@ public class CryptoCipher {
             byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
 
             SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-            byte[] content = new byte[(int) file.length()];
-
-            try (
-                final FileInputStream fis = new FileInputStream(file);
-                final BufferedInputStream bis = new BufferedInputStream(fis);
-                final DataInputStream dis = new DataInputStream(bis)
-            ) {
-                dis.readFully(content);
-                dis.close();
-                byte[] decrypted = CryptoCipher.decryptAES(content, sKey, iv);
-                // write the decrypted string to the file
-                try (final FileOutputStream fos = new FileOutputStream(file.getAbsolutePath())) {
-                    fos.write(decrypted);
-                }
-            }
+            decryptAesFile(file, sKey, iv);
         } catch (GeneralSecurityException e) {
             logger.info("decryptFile fail");
-            e.printStackTrace();
-            throw new IOException("GeneralSecurityException");
+            throw new IOException("GeneralSecurityException", e);
         }
+    }
+
+    static void decryptAesFile(File file, SecretKey key, byte[] iv) throws IOException, GeneralSecurityException {
+        if (file.length() == 0) {
+            throw new IOException("Empty encrypted data");
+        }
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getEncoded(), "AES"), new IvParameterSpec(iv));
+        File parent = file.getAbsoluteFile().getParentFile();
+        if (parent == null) {
+            throw new IOException("Cannot create temp file for " + file.getAbsolutePath());
+        }
+        File tempFile = File.createTempFile("capgo-aes-", ".tmp", parent);
+        try {
+            byte[] inBuf = new byte[ioBufferBytes()];
+            // Reuse one output buffer. cipher.update(in) allocates a new byte[] per chunk.
+            byte[] outBuf = new byte[inBuf.length + 16];
+            try (FileInputStream fis = new FileInputStream(file); FileOutputStream fos = new FileOutputStream(tempFile)) {
+                int n;
+                while ((n = fis.read(inBuf)) != -1) {
+                    int outLen = cipher.update(inBuf, 0, n, outBuf, 0);
+                    if (outLen > 0) {
+                        fos.write(outBuf, 0, outLen);
+                    }
+                }
+                int last = cipher.doFinal(outBuf, 0);
+                if (last > 0) {
+                    fos.write(outBuf, 0, last);
+                }
+            }
+            if (tempFile.length() == 0) {
+                throw new IOException("Empty decrypted data");
+            }
+            replaceFile(tempFile, file);
+            tempFile = null;
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+    }
+
+    static void replaceFile(File from, File to) throws IOException {
+        if (from.renameTo(to)) {
+            return;
+        }
+        throw new IOException("Failed to replace file: " + to.getAbsolutePath());
     }
 
     private static byte[] hexStringToByteArray(String s) {
@@ -303,8 +334,34 @@ public class CryptoCipher {
         }
     }
 
+    // 256 KiB: one size for checksum, copy, and decode.
+    // 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
+    static final int IO_BUFFER_BYTES = 256 * 1024;
+
+    static int ioBufferBytes() {
+        return IO_BUFFER_BYTES;
+    }
+
+    static int checksumBufferBytes() {
+        return IO_BUFFER_BYTES;
+    }
+
+    static int copyBufferBytes() {
+        return IO_BUFFER_BYTES;
+    }
+
     public static String calcChecksum(File file) {
-        final int BUFFER_SIZE = 1024 * 1024 * 5; // 5 MB buffer size
+        try (FileInputStream fis = new FileInputStream(file)) {
+            return calcChecksum(fis);
+        } catch (IOException e) {
+            logger.error("Cannot calculate checksum");
+            logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
+            return "";
+        }
+    }
+
+    public static String calcChecksum(InputStream inputStream) {
+        final int BUFFER_SIZE = checksumBufferBytes();
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -313,24 +370,38 @@ public class CryptoCipher {
             return "";
         }
 
-        try (FileInputStream fis = new FileInputStream(file)) {
+        try {
             byte[] buffer = new byte[BUFFER_SIZE];
             int length;
-            while ((length = fis.read(buffer)) != -1) {
+            while ((length = inputStream.read(buffer)) != -1) {
                 digest.update(buffer, 0, length);
             }
-            byte[] hash = digest.digest();
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
+            return digestToHex(digest);
         } catch (IOException e) {
             logger.error("Cannot calculate checksum");
-            logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
+            logger.debug("Error: " + e.getMessage());
             return "";
+        }
+    }
+
+    static String digestToHex(MessageDigest digest) {
+        byte[] hash = digest.digest();
+        StringBuilder hexString = new StringBuilder(hash.length * 2);
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) hexString.append('0');
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+
+    static String shortPathKey(String fileName) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update((fileName == null ? "" : fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return digestToHex(digest).substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return Integer.toHexString((fileName == null ? "" : fileName).hashCode());
         }
     }
 

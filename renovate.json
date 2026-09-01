@@ -111,6 +111,16 @@
         "gradle"
       ],
       "enabled": false
+    },
+    // Lifecycle 2.11 requires compileSdk 37 and Android Gradle plugin 9.1 through atomic group alignment
+    {
+      "matchPackageNames": [
+        "androidx.lifecycle:lifecycle-process"
+      ],
+      "matchManagers": [
+        "gradle"
+      ],
+      "enabled": false
     }
   ]
 }
