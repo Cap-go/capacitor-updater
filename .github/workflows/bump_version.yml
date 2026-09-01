@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - development
+      - v5
+      - v6
+      - v7
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
@@ -57,6 +60,21 @@ jobs:
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@2.0.19 --prerelease alpha --skip.changelog
+      - name: Tag existing version on LTS branches
+        if: github.ref == 'refs/heads/v5' || github.ref == 'refs/heads/v6' || github.ref == 'refs/heads/v7'
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          MAJOR=${VERSION%%.*}
+          if [ "$GITHUB_REF" != "refs/heads/v${MAJOR}" ]; then
+            echo "Ref $GITHUB_REF does not match package major $MAJOR"
+            exit 1
+          fi
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists"
+            exit 0
+          fi
+          git tag "$VERSION"
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
