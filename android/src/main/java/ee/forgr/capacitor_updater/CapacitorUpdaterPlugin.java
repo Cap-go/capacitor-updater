@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "7.51.13";
+    private final String pluginVersion = "8.51.15";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -881,7 +881,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
-        this.implementation.timeout = this.getConfig().getInt("responseTimeout", 20) * 1000;
+        int responseTimeoutSeconds = this.getConfig().getInt("responseTimeout", 20);
+        long responseTimeoutMillis = responseTimeoutSeconds > 0 ? (long) responseTimeoutSeconds * 1000L : 20_000L;
+        this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
+        DownloadService.applyHttpTimeouts(this.implementation.timeout);
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
@@ -2529,11 +2532,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
-        this.updateUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(UPDATE_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist updateUrl");
+                call.reject("Failed to persist updateUrl");
+                return;
+            }
         }
+        this.updateUrl = url;
         call.resolve();
     }
 
@@ -2550,11 +2557,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
-        this.implementation.statsUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(STATS_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist statsUrl");
+                call.reject("Failed to persist statsUrl");
+                return;
+            }
         }
+        this.implementation.statsUrl = url;
         call.resolve();
     }
 
@@ -2571,11 +2582,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setChannelUrl called without url");
             return;
         }
-        this.implementation.channelUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(CHANNEL_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist channelUrl");
+                call.reject("Failed to persist channelUrl");
+                return;
+            }
         }
+        this.implementation.channelUrl = url;
         call.resolve();
     }
 
@@ -4230,12 +4245,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return "preview_session";
         }
-        if (this.isDownloadStuckOrTimedOut()) {
-            logger.info("Download already in progress, skipping duplicate download request");
-            return "already_running";
+        synchronized (this) {
+            final Thread previousTask = this.backgroundDownloadTask;
+            final Thread task = this.backgroundDownload();
+            if (task == null) {
+                return "unavailable";
+            }
+            if (previousTask != null && previousTask == task) {
+                logger.info("Download already in progress, skipping duplicate download request");
+                return "already_running";
+            }
+            return "queued";
         }
-        this.backgroundDownload();
-        return "queued";
     }
 
     @PluginMethod
@@ -4748,9 +4769,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
-    private Thread backgroundDownload() {
+    private synchronized Thread backgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
+        }
+        if (this.isDownloadStuckOrTimedOut()) {
+            logger.info("Download already in progress, skipping duplicate download request");
+            return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
@@ -4760,8 +4785,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 ? "Update will occur next time app moves to background."
                 : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
-            // Wait for cleanup to complete before starting download
-            waitForCleanupIfNeeded();
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
                 return;
@@ -4774,7 +4797,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
-                    final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                    final BundleInfo currentBeforeCleanup = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
 
                     // Handle network errors and other failures first
                     if (jsRes.has("error") || jsRes.has("kind")) {
@@ -4782,8 +4805,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
                         int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
                         String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
-                        String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
+                        String latestVersion = jsRes.has("version") ? jsRes.getString("version") : currentBeforeCleanup.getVersionName();
+                        CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(
+                            kind,
+                            error,
+                            errorMessage,
+                            statusCode,
+                            latestVersion,
+                            currentBeforeCleanup
+                        );
                         CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(
                             jsRes,
                             jsRes.has("version") ? jsRes.getString("version") : ""
@@ -4803,7 +4833,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
-                            current,
+                            currentBeforeCleanup,
                             isFailure,
                             plannedDirectUpdate,
                             "download_fail",
@@ -4813,6 +4843,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     try {
+                        // File mutations wait here. getLatest already ran in parallel with cleanup.
+                        waitForCleanupIfNeeded();
+                        final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
@@ -5061,8 +5094,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         logger.error("error in update check " + e.getMessage());
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             "Error in update check",
-                            current.getVersionName(),
-                            current,
+                            currentBeforeCleanup.getVersionName(),
+                            currentBeforeCleanup,
                             true,
                             plannedDirectUpdate
                         );

@@ -9,7 +9,7 @@ on:
     branches:
       - renovate/**
   pull_request:
-    branches: [main, v7]
+    branches: [main, v5, v6, v7]
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 
@@ -35,8 +35,9 @@ jobs:
       - name: Enforce capacitor-swift-pm version
         run: |
           set -euo pipefail
-          if ! grep -Eq 'https://github.com/ionic-team/capacitor-swift-pm\.git"[[:space:]]*,[[:space:]]*from:[[:space:]]*"7\.0\.0"' Package.swift; then
-            echo "Expected capacitor-swift-pm to be pinned to 7.0.0 in Package.swift"
+          MAJOR=$(awk -F'"' '/"version":/{print $4; exit}' package.json | cut -d. -f1)
+          if ! grep -Eq "https://github.com/ionic-team/capacitor-swift-pm\\.git\"[[:space:]]*,[[:space:]]*from:[[:space:]]*\"${MAJOR}\\.0\\.0\"" Package.swift; then
+            echo "Expected capacitor-swift-pm to be pinned to ${MAJOR}.0.0 in Package.swift"
             exit 1
           fi
 
@@ -496,6 +497,8 @@ jobs:
           dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
+      - name: Self-test LTS constraint restore
+        run: bun .github/scripts/restore-lts-constraints.mjs --self-test
       - name: Lint
         id: lint_code
         run: bun run eslint && bun run prettier -- --check

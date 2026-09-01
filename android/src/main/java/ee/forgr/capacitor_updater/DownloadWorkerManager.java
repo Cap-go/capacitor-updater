@@ -1,6 +1,7 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.Context;
+import android.os.Build;
 import androidx.work.BackoffPolicy;
 import androidx.work.Configuration;
 import androidx.work.Constraints;
@@ -8,9 +9,18 @@ import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
+import androidx.work.OutOfQuotaPolicy;
+import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import androidx.work.WorkRequest;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class DownloadWorkerManager {
 
@@ -21,6 +31,7 @@ public class DownloadWorkerManager {
     }
 
     private static volatile boolean isInitialized = false;
+    private static final ExecutorService cancelExecutor = Executors.newSingleThreadExecutor();
 
     private static synchronized void initializeIfNeeded(Context context) {
         if (!isInitialized) {
@@ -120,6 +131,11 @@ public class DownloadWorkerManager {
             .addTag(id)
             .addTag(version)
             .addTag("capacitor_updater_download");
+        // Android 12+ expedited jobs skip the WorkManager delay without a
+        // foreground service. Older APIs require getForegroundInfo().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            workRequestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
+        }
 
         // More aggressive retry policy for emulators
         if (isEmulator) {
@@ -142,17 +158,101 @@ public class DownloadWorkerManager {
 
     public static void cancelVersionDownload(Context context, String version) {
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager.getInstance(context).cancelAllWorkByTag(version);
+        cancelExecutor.execute(() -> cancelVersionDownloadInternal(context, version, false));
+    }
+
+    public static boolean cancelVersionDownloadAndAwait(Context context, String version) {
+        initializeIfNeeded(context.getApplicationContext());
+        Future<?> future = cancelExecutor.submit(() -> cancelVersionDownloadInternal(context, version, true));
+        try {
+            future.get(10, TimeUnit.SECONDS);
+            return true;
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            logger.error("Timed out awaiting version download cancel");
+            return false;
+        } catch (Exception e) {
+            logger.error("Error awaiting version download cancel: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static Set<String> collectManifestIdsForVersion(WorkManager workManager, String version) {
+        Set<String> downloadIds = new HashSet<>();
+        try {
+            List<WorkInfo> workInfos = workManager.getWorkInfosByTag(version).get();
+            for (WorkInfo workInfo : workInfos) {
+                for (String tag : workInfo.getTags()) {
+                    if (!"capacitor_updater_download".equals(tag) && !version.equals(tag)) {
+                        downloadIds.add(tag);
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while collecting manifest ids before version cancel", e);
+        } catch (Exception e) {
+            logger.error("Error collecting manifest ids before version cancel: " + e.getMessage());
+        }
+        return downloadIds;
+    }
+
+    private static void clearManifestIds(Set<String> downloadIds) {
+        for (String downloadId : downloadIds) {
+            DataManager.getInstance().clearManifest(downloadId);
+        }
+    }
+
+    private static void cancelVersionDownloadInternal(Context context, String version, boolean awaitFinished) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
+        WorkManager workManager = WorkManager.getInstance(context);
+        Set<String> downloadIds = collectManifestIdsForVersion(workManager, version);
+        workManager.cancelAllWorkByTag(version);
+        clearManifestIds(downloadIds);
+        if (awaitFinished) {
+            awaitVersionWorkFinished(workManager, version);
+        }
+    }
+
+    private static void awaitVersionWorkFinished(WorkManager workManager, String version) {
+        for (int i = 0; i < 100; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IllegalStateException("Interrupted while waiting for version download cancel");
+            }
+            try {
+                boolean anyActive = workManager
+                    .getWorkInfosByTag(version)
+                    .get()
+                    .stream()
+                    .anyMatch((workInfo) -> !workInfo.getState().isFinished());
+                if (!anyActive) {
+                    return;
+                }
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for download cancel", e);
+            } catch (Exception e) {
+                throw new IllegalStateException("Error waiting for download cancel: " + e.getMessage(), e);
+            }
+        }
+        throw new IllegalStateException("Timed out waiting for version download cancel: " + version);
     }
 
     public static void cancelBundleDownload(Context context, String id, String version) {
         String uniqueWorkName = "bundle_" + id + "_" + version;
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName);
+        WorkManager workManager = WorkManager.getInstance(context);
+        workManager.cancelUniqueWork(uniqueWorkName);
+        DataManager.getInstance().clearManifest(id);
     }
 
     public static void cancelAllDownloads(Context context) {
         initializeIfNeeded(context.getApplicationContext());
-        WorkManager.getInstance(context).cancelAllWorkByTag("capacitor_updater_download");
+        WorkManager workManager = WorkManager.getInstance(context);
+        workManager.cancelAllWorkByTag("capacitor_updater_download");
+        DataManager.getInstance().clearAllManifests();
     }
 }

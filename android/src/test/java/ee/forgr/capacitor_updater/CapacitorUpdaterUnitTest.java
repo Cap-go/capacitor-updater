@@ -40,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -3232,6 +3233,42 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testTryCopyBuiltinFileCopiesWhenChecksumMatches() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path destDir = Files.createTempDirectory("capgo-builtin-file");
+        destDir.toFile().deleteOnExit();
+        final File source = destDir.resolve("source.js").toFile();
+        final File dest = destDir.resolve("index.js").toFile();
+        final byte[] content = "disk builtin js".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.toPath(), content);
+        final String hash = CryptoCipher.calcChecksum(source);
+
+        assertTrue(DownloadService.tryCopyBuiltinFile(source, dest, hash));
+        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertFalse(DownloadService.tryCopyBuiltinFile(source, dest, "deadbeef"));
+        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
+        assertFalse(DownloadService.tryCopyBuiltinFile(destDir.resolve("missing.js").toFile(), dest, hash));
+    }
+
+    @Test
+    public void applyHttpTimeoutsUpdatesSharedClientAndIgnoresNoops() {
+        final int original = DownloadService.httpTimeoutMs();
+        try {
+            DownloadService.applyHttpTimeouts(15_000);
+            assertEquals(15_000, DownloadService.httpTimeoutMs());
+            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
+            assertEquals(15_000, DownloadService.sharedClient.readTimeoutMillis());
+            assertEquals(15_000, DownloadService.sharedClient.writeTimeoutMillis());
+            final OkHttpClient beforeNoop = DownloadService.sharedClient;
+            DownloadService.applyHttpTimeouts(15_000);
+            assertSame(beforeNoop, DownloadService.sharedClient);
+            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
+        } finally {
+            DownloadService.applyHttpTimeouts(original);
+        }
+    }
+
+    @Test
     public void testManifestRejectsPlainAndBrotliTargetCollision() throws Exception {
         final Path destFolder = Files.createTempDirectory("capgo-manifest-dup");
         destFolder.toFile().deleteOnExit();
@@ -3789,6 +3826,53 @@ public class CapacitorUpdaterUnitTest {
 
         assertEquals(1, updater.pendingStatsCount());
         assertTrue(tempDir.resolve("capgo_pending_stats.json").toFile().exists());
+        assertFalse(backup.exists());
+        updater.shutdown();
+    }
+
+    @Test
+    public void persistEmptyQueueDeletesStaleStatsBackup() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-empty-bak");
+        tempDir.toFile().deleteOnExit();
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
+        Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+        Files.write(backup.toPath(), "[{\"action\":\"stale\",\"timestamp\":2}]".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.persistPendingStats();
+
+        assertTrue(queueFile.exists());
+        assertEquals("[]", new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
+        assertFalse(backup.exists());
+        updater.restorePendingStats();
+        assertEquals(0, updater.pendingStatsCount());
+        updater.shutdown();
+    }
+
+    @Test
+    public void restorePendingStatsIgnoresStaleBackupWhenQueueFileExists() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-stale-bak");
+        tempDir.toFile().deleteOnExit();
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
+        queueFile.deleteOnExit();
+        backup.deleteOnExit();
+        Files.write(queueFile.toPath(), "[{\"action\":\"fresh\",\"timestamp\":1}]".getBytes(StandardCharsets.UTF_8));
+        Files.write(
+            backup.toPath(),
+            "[{\"action\":\"stale\",\"timestamp\":2},{\"action\":\"stale-2\",\"timestamp\":3}]".getBytes(StandardCharsets.UTF_8)
+        );
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.restorePendingStats();
+
+        assertEquals(1, updater.pendingStatsCount());
+        assertTrue(queueFile.exists());
         assertFalse(backup.exists());
         updater.shutdown();
     }

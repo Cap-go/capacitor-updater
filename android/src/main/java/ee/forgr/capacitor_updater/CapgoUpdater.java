@@ -315,14 +315,17 @@ public class CapgoUpdater {
         return this.cachedKeyId;
     }
 
-    private File unzip(final String id, final File zipFile, final String dest) throws IOException {
+    File unzip(final String id, final File zipFile, final String dest) throws IOException {
+        return unzip(id, zipFile, dest, CryptoCipher.ioBufferBytes());
+    }
+
+    File unzip(final String id, final File zipFile, final String dest, final int bufferSize) throws IOException {
         final File targetDirectory = new File(this.documentsDir, dest);
         try (
             final BufferedInputStream bis = new BufferedInputStream(new FileInputStream(zipFile));
             final ZipInputStream zis = new ZipInputStream(bis)
         ) {
             int count;
-            final int bufferSize = 8192;
             final byte[] buffer = new byte[bufferSize];
             final long lengthTotal = zipFile.length();
             long lengthRead = bufferSize;
@@ -760,6 +763,13 @@ public class CapgoUpdater {
                                 }
                             });
                             break;
+                        case CANCELLED:
+                            DataManager.getInstance().clearManifest(id);
+                            CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
+                            if (cancelledFuture != null) {
+                                cancelledFuture.cancel(true);
+                            }
+                            break;
                     }
                 });
         });
@@ -780,6 +790,10 @@ public class CapgoUpdater {
             return;
         }
         observeWorkProgress(this.activity, id, setNext);
+
+        if (manifest != null) {
+            DataManager.getInstance().setManifest(id, manifest);
+        }
 
         DownloadWorkerManager.enqueueDownload(
             this.activity,
@@ -805,10 +819,6 @@ public class CapgoUpdater {
             this.customId,
             this.defaultChannel
         );
-
-        if (manifest != null) {
-            DataManager.getInstance().setManifest(manifest);
-        }
     }
 
     public Boolean finishDownload(
@@ -1398,7 +1408,10 @@ public class CapgoUpdater {
             BundleInfo existingBundle = this.getBundleInfoByName(version);
             if (existingBundle != null && existingBundle.isErrorStatus()) {
                 // Cancel the failed download and allow retry
-                DownloadWorkerManager.cancelVersionDownload(this.activity, version);
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version)) {
+                    logger.error("Failed to cancel previous download before retry");
+                    return;
+                }
                 logger.info("Retrying failed download for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
@@ -1419,7 +1432,9 @@ public class CapgoUpdater {
         BundleInfo existingBundle = this.getBundleInfoByName(version);
         if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted() || existingBundle.isDeleting())) {
             logger.info("Found existing failed bundle for version " + version + ", deleting before retry");
-            this.delete(existingBundle.getId(), true);
+            if (!Boolean.TRUE.equals(this.delete(existingBundle.getId(), true))) {
+                throw new IOException("Failed to delete existing bundle before retry");
+            }
         }
 
         final String id = this.randomString();
@@ -1472,7 +1487,9 @@ public class CapgoUpdater {
         BundleInfo existingBundle = this.getBundleInfoByName(version);
         if (existingBundle != null && (existingBundle.isErrorStatus() || existingBundle.isDeleted() || existingBundle.isDeleting())) {
             logger.info("Found existing failed bundle for version " + version + ", deleting before retry");
-            this.delete(existingBundle.getId(), true);
+            if (!Boolean.TRUE.equals(this.delete(existingBundle.getId(), true))) {
+                throw new IOException("Failed to delete existing bundle before retry");
+            }
         }
 
         final String id = this.randomString();
@@ -1587,7 +1604,10 @@ public class CapgoUpdater {
 
             // Cancel download for this version if active
             if (cancelActiveDownload && this.activity != null) {
-                DownloadWorkerManager.cancelVersionDownload(this.activity, deleted.getVersionName());
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName())) {
+                    logger.error("Failed to cancel active download before delete");
+                    return false;
+                }
             }
 
             if (bundle.exists()) {
@@ -1922,32 +1942,35 @@ public class CapgoUpdater {
             !fallbackIsPreviewFallback &&
             !previousIsNext;
         if (shouldDeletePrevious) {
-            // Cancel any in-flight download for the old version before the async boundary
-            // so a later download of the same version name is not cancelled mid-flight.
-            if (this.activity != null) {
-                DownloadWorkerManager.cancelVersionDownload(this.activity, previousFallbackVersion);
-            }
-            // Mark durable intent before fallback switch so a kill mid-flight still retries.
             if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
                 logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
                 logger.debug("Bundle ID: " + previousFallbackId);
                 this.enqueuePendingDelete(previousFallbackId);
             }
         }
+        boolean deletePreviousAsync = shouldDeletePrevious;
         this.setFallbackBundle(bundle);
-        if (shouldDeletePrevious) {
-            new Thread(() -> {
+        if (deletePreviousAsync) {
+            final String asyncPreviousFallbackId = previousFallbackId;
+            final String asyncPreviousFallbackVersion = previousFallbackVersion;
+            io.execute(() -> {
+                if (this.activity != null) {
+                    if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, asyncPreviousFallbackVersion)) {
+                        logger.error("Failed to cancel previous version download before delete");
+                        return;
+                    }
+                }
                 try {
-                    final Boolean res = this.delete(previousFallbackId, true, false);
+                    final Boolean res = this.delete(asyncPreviousFallbackId, true, false);
                     if (Boolean.TRUE.equals(res)) {
-                        logger.info("Deleted previous bundle: " + previousFallbackVersion);
+                        logger.info("Deleted previous bundle: " + asyncPreviousFallbackVersion);
                     } else {
-                        logger.debug("Previous bundle delete incomplete, will retry: " + previousFallbackId);
+                        logger.debug("Previous bundle delete incomplete, will retry: " + asyncPreviousFallbackId);
                     }
                 } catch (final IOException e) {
-                    logger.error("Failed to delete previous bundle: " + previousFallbackId + " " + e.getMessage());
+                    logger.error("Failed to delete previous bundle: " + asyncPreviousFallbackId + " " + e.getMessage());
                 }
-            }, "CapgoUpdater-autoDeletePrevious").start();
+            });
         }
     }
 
@@ -2878,6 +2901,11 @@ public class CapgoUpdater {
                     statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
                 }
             }
+            if (backup.exists() && !backup.delete()) {
+                if (logger != null) {
+                    logger.error("Failed to delete stats backup");
+                }
+            }
             if (!statsQueue.isEmpty()) {
                 if (logger != null) {
                     logger.info("Restored " + statsQueue.size() + " pending stats events");
@@ -2933,9 +2961,11 @@ public class CapgoUpdater {
             }
             try {
                 if (arr.length() == 0) {
-                    if (file.exists() && !file.delete()) {
+                    writeFileAtomically(file, "[]".getBytes(StandardCharsets.UTF_8));
+                    File backup = new File(file.getAbsolutePath() + ".bak");
+                    if (backup.exists() && !backup.delete()) {
                         if (logger != null) {
-                            logger.error("Failed to delete empty stats queue file");
+                            logger.error("Failed to delete empty stats backup");
                         }
                     }
                     return;
@@ -2966,7 +2996,7 @@ public class CapgoUpdater {
         }
     }
 
-    private static void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
+    private void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
         final File tmp = new File(file.getAbsolutePath() + ".tmp");
         File backup = null;
         try {
@@ -2988,7 +3018,9 @@ public class CapgoUpdater {
             }
             if (tmp.renameTo(file)) {
                 if (backup != null && backup.exists() && !backup.delete()) {
-                    backup.deleteOnExit();
+                    if (logger != null) {
+                        logger.error("Failed to delete stats backup");
+                    }
                 }
                 backup = null;
                 return;

@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "7.51.13"
+    private let pluginVersion: String = "8.51.15"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -191,9 +191,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Lock to ensure cleanup completes before downloads start
     private let cleanupLock = NSLock()
+    // Short lock for cleanupComplete/cleanupTimedOut only. Never hold across cleanupGroup.wait.
+    private let cleanupStateLock = NSLock()
     private let defaultChannelStateLock = NSLock()
     private let cleanupGroup = DispatchGroup()
     private var cleanupComplete = false
+    private var cleanupTimedOut = false
     private var cleanupThread: Thread?
     private var defaultChannelCleanupMustRetry = false
     private var persistCustomId = false
@@ -427,7 +430,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         self.implementation.beforeDownload = { [weak self] in
-            self?.waitForCleanupIfNeeded()
+            try self?.waitForCleanupIfNeeded()
         }
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
@@ -1035,9 +1038,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
-        // Enter before start so waiters never race past an unstarted cleanup thread.
+        // Enter before publishing incomplete state so waiters cannot hit an empty group.
+        self.cleanupStateLock.lock()
         self.cleanupComplete = false
+        self.cleanupTimedOut = false
         self.cleanupGroup.enter()
+        self.cleanupStateLock.unlock()
         cleanupThread = Thread {
             let bgTaskLock = NSLock()
             var cleanupBackgroundTask = UIBackgroundTaskIdentifier.invalid
@@ -1054,7 +1060,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             self.cleanupLock.lock()
             defer {
+                self.cleanupStateLock.lock()
                 self.cleanupComplete = true
+                self.cleanupStateLock.unlock()
                 self.cleanupLock.unlock()
                 self.cleanupGroup.leave()
                 endCleanupBackgroundTask()
@@ -1139,9 +1147,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         cleanupThread?.start()
     }
 
-    private func waitForCleanupIfNeeded() {
-        if cleanupComplete {
+    private func cleanupTimeoutError() -> NSError {
+        NSError(
+            domain: "CapacitorUpdater",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Cleanup did not finish before download"]
+        )
+    }
+
+    private func waitForCleanupIfNeeded() throws {
+        cleanupStateLock.lock()
+        let alreadyDone = cleanupComplete
+        let alreadyTimedOut = cleanupTimedOut
+        cleanupStateLock.unlock()
+        if alreadyDone {
             return  // Already done, no need to wait
+        }
+        if alreadyTimedOut {
+            throw cleanupTimeoutError()
         }
 
         logger.info("Waiting for cleanup to complete before starting download...")
@@ -1149,7 +1172,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if result == .timedOut {
             logger.warn("Cleanup wait timed out after 60s, cancelling leftover cleanup")
             cleanupThread?.cancel()
-            _ = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            let cancelled = cleanupGroup.wait(timeout: .now() + .seconds(60))
+            if cancelled == .timedOut {
+                cleanupStateLock.lock()
+                cleanupTimedOut = true
+                cleanupStateLock.unlock()
+                logger.error("Cleanup did not finish after cancel, aborting download")
+                throw cleanupTimeoutError()
+            }
             return
         }
         logger.info("Cleanup finished, proceeding with download")
@@ -1807,6 +1837,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Reload failed")
             call.reject("Reload failed")
         }
+    }
+
+    private func queueBundleForNextBackgroundInstall(_ next: BundleInfo) -> Bool {
+        guard self.implementation.setNextBundle(next: next.getId()) else {
+            self.logger.error("Failed to queue downloaded bundle as next: \(next.toString())")
+            return false
+        }
+        return true
     }
 
     private func applyDownloadedBundleForDirectUpdate(_ next: BundleInfo) -> Bool {
@@ -3993,6 +4031,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
     }
 
+    /// Incomplete leftovers must be downloaded again. Android already skips
+    /// `DOWNLOADING` here; iOS used to treat them as ready, then `setNextBundle`
+    /// failed quietly and the update never applied.
+    static func shouldRetryDownloadForExistingBundle(_ bundle: BundleInfo) -> Bool {
+        bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading()
+    }
+
     static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
         directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
     }
@@ -4220,7 +4265,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         // Live update checks/downloads are user-visible work. Using `.background`
         // lets the scheduler starve them for minutes while the app is active.
-        DispatchQueue.global(qos: .utility).async(execute: work)
+        DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
     private func beginDownloadBackgroundTask() {
@@ -4271,8 +4316,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         self.runBackgroundDownloadWork {
-            // Wait for cleanup to complete before starting download
-            self.waitForCleanupIfNeeded()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 return
@@ -4280,7 +4323,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.beginDownloadBackgroundTask()
             self.logger.info("Check for update via \(self.updateUrl)")
             let res = self.implementation.getLatest(url: url, channel: nil)
-            let current = self.implementation.getCurrentBundle()
+            var current = self.implementation.getCurrentBundle()
             if self.shouldBlockAutoUpdateForPreviewSession() {
                 self.clearDownloadInProgressState()
                 self.endBackGroundTask()
@@ -4299,6 +4342,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return
             }
+            // File mutations wait here. getLatest already ran in parallel with cleanup.
+            do {
+                try self.waitForCleanupIfNeeded()
+            } catch {
+                self.logger.error("Cleanup still running, skipping download")
+                self.clearDownloadInProgressState()
+                self.endBackGroundTask()
+                return
+            }
+            current = self.implementation.getCurrentBundle()
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
                 let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
@@ -4360,14 +4413,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if nextImpl == nil || nextImpl?.isDeleted() == true {
-                        if nextImpl?.isDeleted() == true {
-                            self.logger.info("Latest bundle already exists and will be deleted, download will overwrite it.")
-                            let res = self.implementation.delete(id: nextImpl!.getId(), removeInfo: true)
-                            if res {
-                                self.logger.info("Failed bundle deleted: \(nextImpl!.toString())")
+                    let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
+                    if needsDownload {
+                        if let existing = nextImpl {
+                            self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")
+                            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                            let deleted = self.implementation.delete(id: existing.getId(), removeInfo: true)
+                            if deleted {
+                                self.logger.info("Incomplete bundle deleted: \(existing.toString())")
                             } else {
-                                self.logger.error("Failed to delete failed bundle: \(nextImpl!.toString())")
+                                self.logger.error("Failed to delete incomplete bundle: \(existing.toString())")
                             }
                         }
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
@@ -4454,8 +4509,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
-                        } else {
-                            _ = self.implementation.setNextBundle(next: next.getId())
+                        } else if self.queueBundleForNextBackgroundInstall(next) {
                             self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "Direct update reload failed, update will install next background",
@@ -4464,20 +4518,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
+                        } else {
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Direct update reload failed, and next bundle could not be queued",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                         }
                     } else if self.shouldAutoSetNextBundle() {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
-                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
-                        _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(
-                            msg: "update downloaded, will install next background",
-                            latestVersionName: latestVersionName,
-                            current: current,
-                            error: false,
-                            plannedDirectUpdate: plannedDirectUpdate
-                        )
+                        if self.queueBundleForNextBackgroundInstall(next) {
+                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.endBackGroundTaskWithNotif(
+                                msg: "update downloaded, will install next background",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                        } else {
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update downloaded, but next bundle could not be queued",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                        }
                     } else {
                         self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)

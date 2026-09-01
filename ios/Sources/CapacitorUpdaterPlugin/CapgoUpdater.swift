@@ -45,7 +45,7 @@ import UIKit
     public var timeout: Double = 20
     public var statsUrl: String = ""
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
-    public var beforeDownload: (() -> Void)?
+    public var beforeDownload: (() throws -> Void)?
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
@@ -781,7 +781,7 @@ import UIKit
         }
     }
 
-    private func extractZipEntry(_ archive: Archive, entry: Entry, to destPath: URL) throws {
+    private func extractZipEntry(_ archive: Archive, entry: Entry, to destPath: URL, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
         let fileManager = FileManager.default
 
         switch entry.type {
@@ -804,14 +804,14 @@ import UIKit
                 fileHandle.closeFile()
             }
 
-            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+            _ = try archive.extract(entry, bufferSize: bufferSize, skipCRC32: true) { data in
                 if !data.isEmpty {
                     fileHandle.write(data)
                 }
             }
         case .symlink:
             var linkData = Data()
-            _ = try archive.extract(entry, bufferSize: 16 * 1024, skipCRC32: true) { data in
+            _ = try archive.extract(entry, bufferSize: bufferSize, skipCRC32: true) { data in
                 linkData.append(data)
             }
 
@@ -840,7 +840,7 @@ import UIKit
         }
     }
 
-    private func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool) throws {
+    func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
         try prepareFolder(source: base)
         let destPersist: URL = base.appendingPathComponent(id)
         let destUnZip: URL = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + randomString(length: 10))
@@ -887,7 +887,7 @@ import UIKit
                     try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
                 }
 
-                try self.extractZipEntry(archive, entry: entry, to: destPath)
+                try self.extractZipEntry(archive, entry: entry, to: destPath, bufferSize: bufferSize)
 
                 // Update progress
                 processedEntries += 1
@@ -1365,12 +1365,12 @@ import UIKit
         return json
     }
 
-    private func runBeforeDownload() {
-        beforeDownload?()
+    private func runBeforeDownload() throws {
+        try beforeDownload?()
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        self.runBeforeDownload()
+        try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -1736,6 +1736,38 @@ import UIKit
         try fileManager.copyItem(at: source, to: destination)
     }
 
+    func copyMatchingBuiltinFilesForTests(files: [(source: URL, dest: URL, hash: String)]) throws {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
+        let lock = NSLock()
+        var firstError: Error?
+        for file in files {
+            queue.addOperation { [weak self] in
+                guard let self else { return }
+                do {
+                    guard self.verifyChecksum(file: file.source, expectedHash: file.hash) else {
+                        throw NSError(
+                            domain: "CapgoInstallPerf",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "builtin checksum mismatch"]
+                        )
+                    }
+                    try self.copyItemReplacing(from: file.source, to: file.dest)
+                } catch {
+                    lock.lock()
+                    if firstError == nil {
+                        firstError = error
+                    }
+                    lock.unlock()
+                }
+            }
+        }
+        queue.waitUntilAllOperationsAreFinished()
+        if let firstError {
+            throw firstError
+        }
+    }
+
     /// Copy via a unique temp name then rename, so a crash cannot leave a
     /// non-empty partial file that `isReusableCacheFile` would trust.
     private func copyItemAtomically(from source: URL, to destination: URL) throws {
@@ -1941,7 +1973,7 @@ import UIKit
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        self.runBeforeDownload()
+        try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {

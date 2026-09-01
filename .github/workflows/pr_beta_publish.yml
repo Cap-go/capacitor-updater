@@ -123,7 +123,7 @@ jobs:
               '',
               `Requested by @${actor}.`,
               '',
-              `This run will publish the PR head to the \`beta\` npm tag and refresh \`pr-${prNumber}\`.`,
+              `This run will publish the PR head to the \`beta\` npm tag.`,
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');
@@ -200,16 +200,27 @@ jobs:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish to npm beta
+      - name: Install npm CLI for staged publishing
+        run: npm install -g npm@^11.15.0
+
+      - name: Stage publish to npm beta
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag beta --provenance --access public --ignore-scripts
+        run: |
+          npm --version
+          npm stage publish --tag beta --provenance --access public --ignore-scripts
 
-      - name: Add PR dist-tag
+
+      - name: Request stage approval
+        continue-on-error: true
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm dist-tag add "${{ steps.version.outputs.package_name }}@${{ steps.version.outputs.version }}" "pr-${{ steps.pr.outputs.pr_number }}"
-
+          GH_TOKEN: ${{ secrets.NPM_STAGE_DISPATCH_TOKEN }}
+        run: |
+          gh api --method POST repos/Cap-go/automations/dispatches \
+            -f event_type=npm-stage-approve \
+            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
+            -f "client_payload[run_id]=${GITHUB_RUN_ID}" \
+            -f "client_payload[package]=${{ steps.version.outputs.package_name }}"
       - name: Publish success comment
         if: ${{ success() }}
         uses: actions/github-script@v9
@@ -226,7 +237,7 @@ jobs:
               '',
               '## Beta npm build',
               '',
-              'Status: published',
+              'Status: staged',
               '',
               `Version: \`${version}\``,
               `Source: \`${shortSha}\``,
@@ -235,11 +246,7 @@ jobs:
               'Latest beta:',
               '```sh',
               `bun add ${packageName}@beta`,
-              '```',
-              '',
-              'This PR only:',
-              '```sh',
-              `bun add ${packageName}@pr-${prNumber}`,
+              `bun add ${packageName}@${version}`,
               '```',
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,

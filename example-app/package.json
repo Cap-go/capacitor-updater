@@ -13,14 +13,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@capacitor/core": "^7.4.3",
-    "@capacitor/android": "^7.4.3",
-    "@capacitor/ios": "^7.4.3",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "@capgo/capacitor-updater": "file:..",
     "@capacitor/splash-screen": "^7.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.3",
+    "@capacitor/cli": "^8.5.0",
     "typescript": "^5.9.2",
     "vite": "^7.3.1"
   },
