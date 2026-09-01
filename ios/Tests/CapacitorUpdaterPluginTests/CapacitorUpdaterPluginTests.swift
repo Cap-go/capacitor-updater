@@ -82,6 +82,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var lastDeletedId: String?
     var setNextBundleCalls = 0
     var lastSetNextBundleId: String?
+    var setNextBundleSucceeds = true
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
@@ -127,19 +128,11 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
-        return true
+        return setNextBundleSucceeds
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         sentStatsActions.append(action)
-    }
-}
-
-private final class FailSetNextCapgoUpdater: FreshDownloadCapgoUpdater {
-    override func setNextBundle(next: String?) -> Bool {
-        setNextBundleCalls += 1
-        lastSetNextBundleId = next
-        return next == nil
     }
 }
 
@@ -2146,7 +2139,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testFailedSetNextBundleAfterDownloadNotifiesFailure() {
         let downloaded = makeOnlyDownloadBundle()
-        let implementation = FailSetNextCapgoUpdater()
+        let implementation = FreshDownloadCapgoUpdater()
+        implementation.setNextBundleSucceeds = false
         let (testPlugin, _) = makeAtBackgroundPlugin(downloaded: downloaded, implementation: implementation)
 
         testPlugin.backgroundDownload()
