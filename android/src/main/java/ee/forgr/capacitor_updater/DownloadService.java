@@ -974,43 +974,6 @@ public class DownloadService extends Worker {
             if (!keepPartial && partial.exists() && !partial.delete()) {
                 logger.debug("Failed to delete manifest partial " + partial.getName());
             }
-            if (!keepPartial && partial.exists() && !partial.delete()) {
-                logger.debug("Failed to delete manifest partial " + partial.getName());
-            }
-        }
-    }
-
-    static String safePartialToken(String fileName) {
-        return CryptoCipher.shortPathKey(fileName);
-    }
-
-    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
-        String token = safePartialToken(fileName);
-        if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
-            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
-        }
-        String digest = CryptoCipher.shortPathKey((hash == null ? "" : hash) + "\0" + (fileName == null ? "" : fileName));
-        return new File(cacheDir, "partial_" + digest + "_" + token + ".tmp");
-    }
-
-    static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {
-        return existingBytes > 0 && statusCode == HttpURLConnection.HTTP_PARTIAL;
-    }
-
-    static void writeHttpBody(File dest, InputStream body, int statusCode, long existingBytes) throws IOException {
-        boolean append = shouldAppendHttpBody(statusCode, existingBytes);
-        byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
-        try (FileOutputStream fos = new FileOutputStream(dest, append)) {
-            int n;
-            long written = append ? existingBytes : 0;
-            while ((n = body.read(buffer)) != -1) {
-                fos.write(buffer, 0, n);
-                written += n;
-                if (written % (1024 * 1024) == 0) {
-                    fos.flush();
-                }
-            }
-            fos.flush();
         }
     }
 
