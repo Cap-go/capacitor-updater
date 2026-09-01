@@ -1809,6 +1809,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func queueBundleForNextBackgroundInstall(_ next: BundleInfo) -> Bool {
+        guard self.implementation.setNextBundle(next: next.getId()) else {
+            self.logger.error("Failed to queue downloaded bundle as next: \(next.toString())")
+            return false
+        }
+        return true
+    }
+
     private func applyDownloadedBundleForDirectUpdate(_ next: BundleInfo) -> Bool {
         let previousState = self.implementation.captureResetState()
         let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
@@ -3993,6 +4001,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
     }
 
+    /// Incomplete leftovers must be downloaded again. Android already skips
+    /// `DOWNLOADING` here; iOS used to treat them as ready, then `setNextBundle`
+    /// failed quietly and the update never applied.
+    static func shouldRetryDownloadForExistingBundle(_ bundle: BundleInfo) -> Bool {
+        bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading()
+    }
+
     static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
         directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
     }
@@ -4361,14 +4376,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    if nextImpl == nil || nextImpl?.isDeleted() == true {
-                        if nextImpl?.isDeleted() == true {
-                            self.logger.info("Latest bundle already exists and will be deleted, download will overwrite it.")
-                            let res = self.implementation.delete(id: nextImpl!.getId(), removeInfo: true)
-                            if res {
-                                self.logger.info("Failed bundle deleted: \(nextImpl!.toString())")
+                    let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
+                    if needsDownload {
+                        if let existing = nextImpl {
+                            self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")
+                            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                            let deleted = self.implementation.delete(id: existing.getId(), removeInfo: true)
+                            if deleted {
+                                self.logger.info("Incomplete bundle deleted: \(existing.toString())")
                             } else {
-                                self.logger.error("Failed to delete failed bundle: \(nextImpl!.toString())")
+                                self.logger.error("Failed to delete incomplete bundle: \(existing.toString())")
                             }
                         }
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
@@ -4455,8 +4472,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
-                        } else {
-                            _ = self.implementation.setNextBundle(next: next.getId())
+                        } else if self.queueBundleForNextBackgroundInstall(next) {
                             self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "Direct update reload failed, update will install next background",
@@ -4465,20 +4481,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
+                        } else {
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Direct update reload failed, and next bundle could not be queued",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
                         }
                     } else if self.shouldAutoSetNextBundle() {
                         if plannedDirectUpdate && !directUpdateAllowed {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
-                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
-                        _ = self.implementation.setNextBundle(next: next.getId())
-                        self.endBackGroundTaskWithNotif(
-                            msg: "update downloaded, will install next background",
-                            latestVersionName: latestVersionName,
-                            current: current,
-                            error: false,
-                            plannedDirectUpdate: plannedDirectUpdate
-                        )
+                        if self.queueBundleForNextBackgroundInstall(next) {
+                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.endBackGroundTaskWithNotif(
+                                msg: "update downloaded, will install next background",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                error: false,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                        } else {
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Update downloaded, but next bundle could not be queued",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                        }
                     } else {
                         self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
                         self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
