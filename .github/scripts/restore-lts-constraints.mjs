@@ -117,9 +117,17 @@ export function patchExampleVariablesGradle(src, android) {
   return out;
 }
 
+export function iosPlatformExpr(value) {
+  const raw = String(value);
+  if (raw.startsWith('.')) {
+    return raw;
+  }
+  return `"${raw}"`;
+}
+
 export function patchPackageSwift(src, target) {
   let out = src;
-  out = out.replace(/platforms:\s*\[\.iOS\([^)]+\)\]/, `platforms: [.iOS(${target.iosPlatform})]`);
+  out = out.replace(/platforms:\s*\[\.iOS\([^)]+\)\]/, `platforms: [.iOS(${iosPlatformExpr(target.iosPlatform)})]`);
   out = out.replace(
     /ionic-team\/capacitor-swift-pm\.git",\s*(?:from|exact):\s*"[^"]+"/,
     `ionic-team/capacitor-swift-pm.git", from: "${target.swiftPm}"`,
@@ -267,6 +275,13 @@ function selfTest() {
 
   const podspec = patchPodspec("s.ios.deployment_target = '15.0'", { iosDeployment: '14.0' });
   assert.equal(podspec, "s.ios.deployment_target = '14.0'");
+
+  const swift134 = patchPackageSwift(
+    `platforms: [.iOS("15.0")],
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")`,
+    { iosPlatform: '13.4', swiftPm: '5.0.0' },
+  );
+  assert.match(swift134, /\.iOS\("13\.4"\)/);
 
   const native = patchPluginVersion('private let pluginVersion: String = "8.51.15"', '8.51.15', '7.51.15');
   assert.equal(native, 'private let pluginVersion: String = "7.51.15"');

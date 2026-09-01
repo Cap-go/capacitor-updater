@@ -63,6 +63,7 @@ node "$RESTORE" --target "$TARGET" --repo-root "$ROOT" --config "$SCRIPT_STASH/l
 
 if command -v bun >/dev/null 2>&1; then
   bun install
+  bun run prettier -- --write || echo "prettier write failed; lockfile and constraint restore still applied"
   if [ -f example-app/package.json ]; then
     (
       cd example-app
