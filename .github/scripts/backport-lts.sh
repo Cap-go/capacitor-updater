@@ -59,7 +59,7 @@ if [ -n "$UNMERGED" ] || [ "$USED_PREFERRED_MERGE" != "true" ]; then
   exit 1
 fi
 
-node "$RESTORE" --target "$TARGET" --repo-root "$ROOT"
+node "$RESTORE" --target "$TARGET" --repo-root "$ROOT" --config "$SCRIPT_STASH/lts-backport.json"
 
 if command -v bun >/dev/null 2>&1; then
   bun install

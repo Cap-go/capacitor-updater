@@ -7,14 +7,23 @@
  *   node restore-lts-constraints.mjs --target v7
  *   node restore-lts-constraints.mjs --self-test
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPT_DIR, '..', '..');
-const CONFIG_PATH = join(SCRIPT_DIR, '..', 'lts-backport.json');
+
+export function resolveConfigPath(scriptDir = SCRIPT_DIR) {
+  const candidates = [join(scriptDir, 'lts-backport.json'), join(scriptDir, '..', 'lts-backport.json')];
+  const found = candidates.find((path) => existsSync(path));
+  if (!found) {
+    throw new Error(`lts-backport.json not found. Looked in: ${candidates.join(', ')}`);
+  }
+  return found;
+}
 
 const CAPACITOR_DEP_PREFIX = '@capacitor/';
 const NATIVE_PLUGIN_VERSION_FILES = [
@@ -22,7 +31,7 @@ const NATIVE_PLUGIN_VERSION_FILES = [
   'ios/Sources/CapacitorUpdaterPlugin/CapacitorUpdaterPlugin.swift',
 ];
 
-export function loadConfig(configPath = CONFIG_PATH) {
+export function loadConfig(configPath = resolveConfigPath()) {
   return JSON.parse(readFileSync(configPath, 'utf8'));
 }
 
@@ -264,11 +273,19 @@ function selfTest() {
 
   const config = loadConfig();
   assert.ok(config.targets.v5 && config.targets.v6 && config.targets.v7);
+
+  const stashDir = join(tmpdir(), `lts-restore-stash-${process.pid}`);
+  mkdirSync(stashDir, { recursive: true });
+  copyFileSync(resolveConfigPath(), join(stashDir, 'lts-backport.json'));
+  assert.equal(resolveConfigPath(stashDir), join(stashDir, 'lts-backport.json'));
+  assert.ok(loadConfig(resolveConfigPath(stashDir)).targets.v7);
+  rmSync(stashDir, { recursive: true, force: true });
+
   console.log('restore-lts-constraints self-test passed');
 }
 
 function parseArgs(argv) {
-  const args = { target: null, selfTest: false, repoRoot: REPO_ROOT };
+  const args = { target: null, selfTest: false, repoRoot: REPO_ROOT, config: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--self-test') {
@@ -278,6 +295,9 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--repo-root') {
       args.repoRoot = argv[i + 1];
+      i += 1;
+    } else if (arg === '--config') {
+      args.config = argv[i + 1];
       i += 1;
     }
   }
@@ -295,7 +315,7 @@ if (args.selfTest || args.target || isDirectRun) {
     console.error('Usage: restore-lts-constraints.mjs --target v5|v6|v7');
     process.exit(1);
   }
-  const config = loadConfig();
+  const config = loadConfig(args.config || resolveConfigPath());
   const target = config.targets[args.target];
   if (!target) {
     console.error(`Unknown target "${args.target}". Valid: ${Object.keys(config.targets).join(', ')}`);
