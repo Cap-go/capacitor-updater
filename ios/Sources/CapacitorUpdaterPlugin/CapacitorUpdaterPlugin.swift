@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "8.51.15"
+    private let pluginVersion: String = "6.51.15"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
