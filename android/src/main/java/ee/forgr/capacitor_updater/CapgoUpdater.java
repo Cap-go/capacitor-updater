@@ -1770,10 +1770,12 @@ public class CapgoUpdater {
     }
 
     void restoreResetState(final ResetState state) {
-        final String currentBundlePath =
-            state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty() ? "public" : state.currentBundlePath;
-        final String fallbackBundleId =
-            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
+        final String currentBundlePath = state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty()
+            ? "public"
+            : state.currentBundlePath;
+        final String fallbackBundleId = state.fallbackBundleId == null || state.fallbackBundleId.isEmpty()
+            ? BundleInfo.ID_BUILTIN
+            : state.fallbackBundleId;
 
         this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
         this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
@@ -2208,30 +2210,32 @@ public class CapgoUpdater {
                 .build();
 
             // User-Agent header is automatically added by DownloadService.sharedClient interceptor
-            DownloadService.sharedClient.newCall(request).enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        releaseRateLimitStatisticClaim();
-                        logger.error("Failed to send rate limit statistic");
-                        logger.debug("Error: " + e.getMessage());
-                    }
+            DownloadService.sharedClient
+                .newCall(request)
+                .enqueue(
+                    new okhttp3.Callback() {
+                        @Override
+                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                            releaseRateLimitStatisticClaim();
+                            logger.error("Failed to send rate limit statistic");
+                            logger.debug("Error: " + e.getMessage());
+                        }
 
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        // The body is unused here; closing the Response closes it.
-                        try (response) {
-                            if (response.isSuccessful()) {
-                                logger.info("Rate limit statistic sent");
-                            } else {
-                                releaseRateLimitStatisticClaim();
-                                logger.error("Error sending rate limit statistic");
-                                logger.debug("Response code: " + response.code());
+                        @Override
+                        public void onResponse(@NonNull Call call, @NonNull Response response) {
+                            // The body is unused here; closing the Response closes it.
+                            try (response) {
+                                if (response.isSuccessful()) {
+                                    logger.info("Rate limit statistic sent");
+                                } else {
+                                    releaseRateLimitStatisticClaim();
+                                    logger.error("Error sending rate limit statistic");
+                                    logger.debug("Response code: " + response.code());
+                                }
                             }
                         }
                     }
-                }
-            );
+                );
         } catch (final Exception e) {
             releaseRateLimitStatisticClaim();
             logger.error("Failed to send rate limit statistic");
@@ -2245,47 +2249,70 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(url).post(body).build();
 
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    retError.put("kind", "failed");
-                    callback.callback(retError);
-                }
+        DownloadService.sharedClient
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        Map<String, Object> retError = new HashMap<>();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        retError.put("kind", "failed");
+                        callback.callback(retError);
+                    }
 
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final int statusCode = response.code();
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        JSONObject jsonResponse = null;
-                        if (!responseData.isEmpty()) {
-                            try {
-                                jsonResponse = new JSONObject(responseData);
-                            } catch (JSONException ignored) {
-                                // Non-JSON responses are handled as response or parse errors below.
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            final int statusCode = response.code();
+                            final String responseData = responseBody != null ? responseBody.string() : "";
+                            JSONObject jsonResponse = null;
+                            if (!responseData.isEmpty()) {
+                                try {
+                                    jsonResponse = new JSONObject(responseData);
+                                } catch (JSONException ignored) {
+                                    // Non-JSON responses are handled as response or parse errors below.
+                                }
                             }
-                        }
 
-                        if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
-                            if (statusCode == 429) {
-                                final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                            if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
+                                if (statusCode == 429) {
+                                    final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                                    Map<String, Object> retError = new HashMap<>();
+                                    retError.put(
+                                        "error",
+                                        rateLimit.error.isEmpty() ? jsonResponse.optString("error", "too_many_requests") : rateLimit.error
+                                    );
+                                    retError.put(
+                                        "message",
+                                        rateLimit.message.isEmpty()
+                                            ? jsonResponse.optString("message", "Too many requests")
+                                            : rateLimit.message
+                                    );
+                                    if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
+                                        retError.put("kind", jsonResponse.getString("kind"));
+                                    } else {
+                                        retError.put("kind", "failed");
+                                    }
+                                    if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
+                                        retError.put("version", jsonResponse.getString("version"));
+                                    }
+                                    retError.put("statusCode", statusCode);
+                                    callback.callback(retError);
+                                    return;
+                                }
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put(
-                                    "error",
-                                    rateLimit.error.isEmpty() ? jsonResponse.optString("error", "too_many_requests") : rateLimit.error
-                                );
-                                retError.put(
-                                    "message",
-                                    rateLimit.message.isEmpty() ? jsonResponse.optString("message", "Too many requests") : rateLimit.message
-                                );
+                                if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
+                                    retError.put("error", jsonResponse.getString("error"));
+                                }
                                 if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
                                     retError.put("kind", jsonResponse.getString("kind"));
+                                }
+                                if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
                                 } else {
-                                    retError.put("kind", "failed");
+                                    retError.put("message", "server did not provide a message");
                                 }
                                 if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
                                     retError.put("version", jsonResponse.getString("version"));
@@ -2294,77 +2321,58 @@ public class CapgoUpdater {
                                 callback.callback(retError);
                                 return;
                             }
-                            Map<String, Object> retError = new HashMap<>();
-                            if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
-                                retError.put("error", jsonResponse.getString("error"));
+
+                            // Check for 429 rate limit without JSON body
+                            final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                            if (rateLimit.blocked) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", rateLimit.message);
+                                retError.put("error", rateLimit.error);
+                                retError.put("kind", "failed");
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
                             }
-                            if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
-                                retError.put("kind", jsonResponse.getString("kind"));
+
+                            if (!response.isSuccessful()) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
+                                retError.put("kind", "failed");
+                                retError.put("statusCode", statusCode);
+                                callback.callback(retError);
+                                return;
                             }
-                            if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
-                                retError.put("message", jsonResponse.getString("message"));
-                            } else {
-                                retError.put("message", "server did not provide a message");
+
+                            if (jsonResponse == null) {
+                                throw new JSONException("Response is not a JSON object");
                             }
-                            if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
-                                retError.put("version", jsonResponse.getString("version"));
-                            }
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
 
-                        // Check for 429 rate limit without JSON body
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            retError.put("kind", "failed");
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
+                            Map<String, Object> ret = new HashMap<>();
+                            ret.put("statusCode", statusCode);
 
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            retError.put("kind", "failed");
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (jsonResponse == null) {
-                            throw new JSONException("Response is not a JSON object");
-                        }
-
-                        Map<String, Object> ret = new HashMap<>();
-                        ret.put("statusCode", statusCode);
-
-                        Iterator<String> keys = jsonResponse.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (jsonResponse.has(key)) {
-                                if ("session_key".equals(key)) {
-                                    ret.put("sessionKey", jsonResponse.get(key));
-                                } else {
-                                    ret.put(key, jsonResponse.get(key));
+                            Iterator<String> keys = jsonResponse.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (jsonResponse.has(key)) {
+                                    if ("session_key".equals(key)) {
+                                        ret.put("sessionKey", jsonResponse.get(key));
+                                    } else {
+                                        ret.put(key, jsonResponse.get(key));
+                                    }
                                 }
                             }
+                            callback.callback(ret);
+                        } catch (JSONException e) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "JSON parse error: " + e.getMessage());
+                            retError.put("error", "parse_error");
+                            retError.put("kind", "failed");
+                            callback.callback(retError);
                         }
-                        callback.callback(ret);
-                    } catch (JSONException e) {
-                        Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "JSON parse error: " + e.getMessage());
-                        retError.put("error", "parse_error");
-                        retError.put("kind", "failed");
-                        callback.callback(retError);
                     }
                 }
-            }
-        );
+            );
     }
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
@@ -2547,91 +2555,93 @@ public class CapgoUpdater {
             .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
             .build();
 
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    callback.callback(retError);
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (response.code() == 400) {
-                            if (responseData.contains("channel_not_found") && !defaultChannel.isEmpty()) {
-                                Map<String, Object> ret = new HashMap<>();
-                                ret.put("channel", defaultChannel);
-                                ret.put("status", "default");
-                                logger.info("Channel get to \"" + ret);
-                                callback.callback(ret);
-                                return;
-                            }
-                        }
-
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (responseData.isEmpty()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Empty response body");
-                            retError.put("error", "no_response_body");
-                            callback.callback(retError);
-                            return;
-                        }
-                        JSONObject jsonResponse = new JSONObject(responseData);
-
-                        // Check for server-side errors first
-                        if (jsonResponse.has("error")) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("error", jsonResponse.getString("error"));
-                            if (jsonResponse.has("message")) {
-                                retError.put("message", jsonResponse.getString("message"));
-                            } else {
-                                retError.put("message", "server did not provide a message");
-                            }
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        Map<String, Object> ret = new HashMap<>();
-
-                        Iterator<String> keys = jsonResponse.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (jsonResponse.has(key)) {
-                                ret.put(key, jsonResponse.get(key));
-                            }
-                        }
-                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
-                        logger.info("Channel get to \"" + ret);
-                        callback.callback(ret);
-                    } catch (JSONException e) {
+        DownloadService.sharedClient
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "JSON parse error: " + e.getMessage());
-                        retError.put("error", "parse_error");
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
                         callback.callback(retError);
                     }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            final String responseData = responseBody != null ? responseBody.string() : "";
+                            final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
+                            if (rateLimit.blocked) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", rateLimit.message);
+                                retError.put("error", rateLimit.error);
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            if (response.code() == 400) {
+                                if (responseData.contains("channel_not_found") && !defaultChannel.isEmpty()) {
+                                    Map<String, Object> ret = new HashMap<>();
+                                    ret.put("channel", defaultChannel);
+                                    ret.put("status", "default");
+                                    logger.info("Channel get to \"" + ret);
+                                    callback.callback(ret);
+                                    return;
+                                }
+                            }
+
+                            if (!response.isSuccessful()) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            if (responseData.isEmpty()) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "no_response_body");
+                                callback.callback(retError);
+                                return;
+                            }
+                            JSONObject jsonResponse = new JSONObject(responseData);
+
+                            // Check for server-side errors first
+                            if (jsonResponse.has("error")) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("error", jsonResponse.getString("error"));
+                                if (jsonResponse.has("message")) {
+                                    retError.put("message", jsonResponse.getString("message"));
+                                } else {
+                                    retError.put("message", "server did not provide a message");
+                                }
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            Map<String, Object> ret = new HashMap<>();
+
+                            Iterator<String> keys = jsonResponse.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (jsonResponse.has(key)) {
+                                    ret.put(key, jsonResponse.get(key));
+                                }
+                            }
+                            persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
+                            logger.info("Channel get to \"" + ret);
+                            callback.callback(ret);
+                        } catch (JSONException e) {
+                            Map<String, Object> retError = new HashMap<>();
+                            retError.put("message", "JSON parse error: " + e.getMessage());
+                            retError.put("error", "parse_error");
+                            callback.callback(retError);
+                        }
+                    }
                 }
-            }
-        );
+            );
     }
 
     void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
@@ -2704,83 +2714,85 @@ public class CapgoUpdater {
 
         Request request = new Request.Builder().url(urlBuilder.build()).get().build();
 
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    callback.callback(retError);
-                }
+        DownloadService.sharedClient
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        Map<String, Object> retError = new HashMap<>();
+                        retError.put("message", "Request failed: " + e.getMessage());
+                        retError.put("error", "network_error");
+                        callback.callback(retError);
+                    }
 
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final String data = responseBody != null ? responseBody.string() : "";
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, data);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (data.isEmpty()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Empty response body");
-                            retError.put("error", "no_response_body");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        try {
-                            Map<String, Object> ret = parseListChannelsResponse(data);
-
-                            logger.info("Channels listed successfully");
-                            callback.callback(ret);
-                        } catch (JSONException arrayException) {
-                            // If not an array, try to parse as error object
-                            try {
-                                JSONObject json = new JSONObject(data);
-                                if (json.has("error")) {
-                                    Map<String, Object> retError = new HashMap<>();
-                                    retError.put("error", json.getString("error"));
-                                    if (json.has("message")) {
-                                        retError.put("message", json.getString("message"));
-                                    } else {
-                                        retError.put("message", "server did not provide a message");
-                                    }
-                                    callback.callback(retError);
-                                    return;
-                                }
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            final String data = responseBody != null ? responseBody.string() : "";
+                            final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, data);
+                            if (rateLimit.blocked) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Unexpected channels response format");
-                                retError.put("error", "parse_error");
+                                retError.put("message", rateLimit.message);
+                                retError.put("error", rateLimit.error);
                                 callback.callback(retError);
                                 return;
-                            } catch (JSONException objException) {
-                                // If neither array nor object, throw parse error
-                                arrayException.addSuppressed(objException);
+                            }
+
+                            if (!response.isSuccessful()) {
                                 Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "JSON parse error: " + arrayException.getMessage());
-                                retError.put("error", "parse_error");
+                                retError.put("message", "Server error: " + response.code());
+                                retError.put("error", "response_error");
                                 callback.callback(retError);
+                                return;
+                            }
+
+                            if (data.isEmpty()) {
+                                Map<String, Object> retError = new HashMap<>();
+                                retError.put("message", "Empty response body");
+                                retError.put("error", "no_response_body");
+                                callback.callback(retError);
+                                return;
+                            }
+
+                            try {
+                                Map<String, Object> ret = parseListChannelsResponse(data);
+
+                                logger.info("Channels listed successfully");
+                                callback.callback(ret);
+                            } catch (JSONException arrayException) {
+                                // If not an array, try to parse as error object
+                                try {
+                                    JSONObject json = new JSONObject(data);
+                                    if (json.has("error")) {
+                                        Map<String, Object> retError = new HashMap<>();
+                                        retError.put("error", json.getString("error"));
+                                        if (json.has("message")) {
+                                            retError.put("message", json.getString("message"));
+                                        } else {
+                                            retError.put("message", "server did not provide a message");
+                                        }
+                                        callback.callback(retError);
+                                        return;
+                                    }
+                                    Map<String, Object> retError = new HashMap<>();
+                                    retError.put("message", "Unexpected channels response format");
+                                    retError.put("error", "parse_error");
+                                    callback.callback(retError);
+                                    return;
+                                } catch (JSONException objException) {
+                                    // If neither array nor object, throw parse error
+                                    arrayException.addSuppressed(objException);
+                                    Map<String, Object> retError = new HashMap<>();
+                                    retError.put("message", "JSON parse error: " + arrayException.getMessage());
+                                    retError.put("error", "parse_error");
+                                    callback.callback(retError);
+                                }
                             }
                         }
                     }
                 }
-            }
-        );
+            );
     }
 
     static Map<String, Object> parseListChannelsResponse(final String data) throws JSONException {
@@ -3102,65 +3114,67 @@ public class CapgoUpdater {
             .build();
 
         final int eventCount = eventsToSend.size();
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    if (abandonStoppedStatsFlush()) {
-                        return;
-                    }
-                    requeueStatsEvents(eventsToSend);
-                    if (logger != null) {
-                        logger.error("Failed to send stats batch");
-                        logger.debug("Error: " + e.getMessage());
-                    }
-                    statsFlushInFlight.set(false);
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
+        DownloadService.sharedClient
+            .newCall(request)
+            .enqueue(
+                new okhttp3.Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         if (abandonStoppedStatsFlush()) {
                             return;
                         }
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
-                            requeueStatsEvents(eventsToSend);
-                            return;
+                        requeueStatsEvents(eventsToSend);
+                        if (logger != null) {
+                            logger.error("Failed to send stats batch");
+                            logger.debug("Error: " + e.getMessage());
                         }
-
-                        if (response.isSuccessful()) {
-                            synchronized (statsQueue) {
-                                statsInFlight.clear();
-                            }
-                            persistStatsQueue();
-                            if (logger != null) {
-                                logger.info("Stats batch sent successfully");
-                                logger.debug("Sent " + eventCount + " events");
-                            }
-                            runStatsCallbacks(eventsToSend);
-                        } else if (isTransientStatsFailure(response.code())) {
-                            requeueStatsEvents(eventsToSend);
-                            if (logger != null) {
-                                logger.error("Error sending stats batch");
-                                logger.debug("Retrying later, response code: " + response.code());
-                            }
-                        } else {
-                            synchronized (statsQueue) {
-                                statsInFlight.clear();
-                            }
-                            persistStatsQueue();
-                            if (logger != null) {
-                                logger.error("Dropping stats batch after permanent error");
-                                logger.debug("Response code: " + response.code());
-                            }
-                        }
-                    } finally {
                         statsFlushInFlight.set(false);
                     }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (ResponseBody responseBody = response.body()) {
+                            if (abandonStoppedStatsFlush()) {
+                                return;
+                            }
+                            final String responseData = responseBody != null ? responseBody.string() : "";
+                            if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
+                                requeueStatsEvents(eventsToSend);
+                                return;
+                            }
+
+                            if (response.isSuccessful()) {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                if (logger != null) {
+                                    logger.info("Stats batch sent successfully");
+                                    logger.debug("Sent " + eventCount + " events");
+                                }
+                                runStatsCallbacks(eventsToSend);
+                            } else if (isTransientStatsFailure(response.code())) {
+                                requeueStatsEvents(eventsToSend);
+                                if (logger != null) {
+                                    logger.error("Error sending stats batch");
+                                    logger.debug("Retrying later, response code: " + response.code());
+                                }
+                            } else {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                if (logger != null) {
+                                    logger.error("Dropping stats batch after permanent error");
+                                    logger.debug("Response code: " + response.code());
+                                }
+                            }
+                        } finally {
+                            statsFlushInFlight.set(false);
+                        }
+                    }
                 }
-            }
-        );
+            );
     }
 
     private boolean abandonStoppedStatsFlush() {
