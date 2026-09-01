@@ -161,27 +161,27 @@ public struct CryptoCipher {
         let bufferSize = checksumBufferBytes()
         var sha256 = SHA256()
 
-        let fileHandle: FileHandle
         do {
-            fileHandle = try FileHandle(forReadingFrom: filePath)
-        } catch {
-            logger.error("Cannot open file for checksum calculation")
-            logger.debug("Path: \(filePath.path), Error: \(error)")
-            return ""
-        }
-
-        defer {
+            let fileHandle: FileHandle
             do {
-                try fileHandle.close()
+                fileHandle = try FileHandle(forReadingFrom: filePath)
             } catch {
-                logger.error("Error closing file during checksum")
-                logger.debug("Error: \(error)")
+                logger.error("Cannot open file for checksum calculation")
+                logger.debug("Path: \(filePath.path), Error: \(error)")
+                return ""
             }
-        }
 
-        while autoreleasepool(invoking: {
-            let fileData: Data
-            if #available(iOS 13.4, *) {
+            defer {
+                do {
+                    try fileHandle.close()
+                } catch {
+                    logger.error("Error closing file during checksum")
+                    logger.debug("Error: \(error)")
+                }
+            }
+
+            while autoreleasepool(invoking: {
+                let fileData: Data
                 do {
                     fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
                 } catch {
@@ -189,17 +189,14 @@ public struct CryptoCipher {
                     logger.debug("Error: \(error)")
                     return false
                 }
-            } else {
-                fileData = fileHandle.readData(ofLength: bufferSize)
-            }
 
-            if fileData.count > 0 {
-                sha256.update(data: fileData)
-                return true // Continue
-            } else {
-                return false // End of file
-            }
-        }) {}
+                if fileData.count > 0 {
+                    sha256.update(data: fileData)
+                    return true // Continue
+                } else {
+                    return false // End of file
+                }
+            }) {}
 
             return hexString(from: sha256)
         } catch {
