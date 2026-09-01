@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 24.x
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: GitHub Releases to Discord
         uses: SethCohen/github-releases-to-discord@v1
         with:

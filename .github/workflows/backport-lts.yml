@@ -1,0 +1,77 @@
+name: Backport main to LTS
+
+on:
+  schedule:
+    # Daily at 6 AM UTC, same window as capacitor-plus sync
+    - cron: '0 6 * * *'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'example-app/**'
+      - '.github/**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Which LTS branch to backport onto'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - v5
+          - v6
+          - v7
+
+jobs:
+  matrix:
+    if: github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      branches: ${{ steps.set.outputs.branches }}
+    steps:
+      - name: Resolve LTS targets
+        id: set
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.branch }}" != "all" ] && [ -n "${{ github.event.inputs.branch }}" ]; then
+            echo 'branches=["${{ github.event.inputs.branch }}"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'branches=["v5","v6","v7"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  backport:
+    needs: matrix
+    if: needs.matrix.outputs.branches != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.matrix.outputs.branches) }}
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+      - name: Self-test constraint restore
+        run: node .github/scripts/restore-lts-constraints.mjs --self-test
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Backport main onto ${{ matrix.branch }}
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: bash .github/scripts/backport-lts.sh "${{ matrix.branch }}"

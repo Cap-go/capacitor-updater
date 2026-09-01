@@ -33,6 +33,37 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     }
 }
 
+private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+    private let eventLock = NSLock()
+    private var _notifiedEventNames: [String] = []
+    private var _notifiedEventPayloads: [String: [String: Any]] = [:]
+
+    var notifiedEventNames: [String] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventNames
+    }
+
+    var notifiedEventPayloads: [String: [String: Any]] {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _notifiedEventPayloads
+    }
+
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
+        eventLock.lock()
+        _notifiedEventNames.append(eventName)
+        if let data {
+            _notifiedEventPayloads[eventName] = data
+        }
+        eventLock.unlock()
+    }
+
+    override func endBackGroundTask() {
+        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
+    }
+}
+
 private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
@@ -46,8 +77,12 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         checksum: "builtin"
     )
     var onDownloadStart: (() -> Void)?
+    var downloadCalls = 0
+    var deleteCalls = 0
+    var lastDeletedId: String?
     var setNextBundleCalls = 0
     var lastSetNextBundleId: String?
+    var setNextBundleSucceeds = true
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
@@ -73,6 +108,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        downloadCalls += 1
         onDownloadStart?()
         if let downloadedBundleValue {
             return downloadedBundleValue
@@ -80,10 +116,19 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
     }
 
+    override func delete(id: String, removeInfo _: Bool) -> Bool {
+        deleteCalls += 1
+        lastDeletedId = id
+        if existingBundleValue?.getId() == id {
+            existingBundleValue = nil
+        }
+        return true
+    }
+
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
-        return true
+        return setNextBundleSucceeds
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
@@ -397,8 +442,9 @@ private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
         bundleInfos[id!]!
     }
 
-    override func saveBundleInfo(id: String, bundle: BundleInfo?) {
+    override func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
         bundleInfos[id] = bundle
+        return true
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
@@ -474,6 +520,31 @@ class CapacitorUpdaterTests: XCTestCase {
         CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
 
         return (testPlugin, freshDownloadImplementation)
+    }
+
+    private func makeAtBackgroundPlugin(
+        existing: BundleInfo? = nil,
+        downloaded: BundleInfo? = nil,
+        implementation: FreshDownloadCapgoUpdater = FreshDownloadCapgoUpdater()
+    ) -> (TestableCapacitorUpdaterPlugin, FreshDownloadCapgoUpdater) {
+        implementation.currentBundleValue = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        implementation.latestResponse = makeOnlyDownloadLatest()
+        implementation.existingBundleValue = existing
+        implementation.downloadedBundleValue = downloaded
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = implementation
+        testPlugin.setAutoUpdateModeForTesting("atBackground")
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
+
+        return (testPlugin, implementation)
     }
 
     private func assertOnlyDownloadLeavesUpdateManual(
@@ -581,6 +652,8 @@ class CapacitorUpdaterTests: XCTestCase {
             WebViewStatsReporter.statsAction(for: "web_content_process_terminated"),
             "webview_content_process_terminated"
         )
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_dom_content_loaded"), "webview_dom_content_loaded")
+        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_page_loaded"), "webview_page_loaded")
         XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unknown"), "webview_javascript_error")
     }
 
@@ -593,7 +666,9 @@ class CapacitorUpdaterTests: XCTestCase {
             "column": "20",
             "stack": String(repeating: "x", count: 3_000),
             "href": "capacitor://localhost",
-            "session_id": "session-1"
+            "session_id": "session-1",
+            "duration_ms": "123",
+            "page_started_at": "456"
         ])
 
         XCTAssertEqual(metadata["error_type"], "javascript_error")
@@ -603,8 +678,41 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(metadata["column"], "20")
         XCTAssertEqual(metadata["href"], "capacitor://localhost")
         XCTAssertEqual(metadata["session_id"], "session-1")
+        XCTAssertEqual(metadata["duration_ms"], "123")
+        XCTAssertEqual(metadata["page_started_at"], "456")
         XCTAssertEqual(metadata["stack"]?.count, 2_048)
         XCTAssertNil(metadata["tag_name"])
+    }
+
+    func testReportWebViewLoadStatsForwardsTimingMetadata() throws {
+        let implementation = HealthStatsCapgoUpdater()
+        let reporter = WebViewStatsReporter(implementation: implementation)
+        var resolved = false
+        let call = try XCTUnwrap(CAPPluginCall(
+            callbackId: "webview-load-stat",
+            options: [
+                "type": "webview_dom_content_loaded",
+                "message": "WebView DOM content loaded",
+                "duration_ms": "123",
+                "page_started_at": "456",
+                "session_id": "session-1"
+            ],
+            success: { _, _ in
+                resolved = true
+            },
+            error: { _ in
+                XCTFail("reportError should resolve successful WebView load stats")
+            }
+        ))
+
+        reporter.reportError(call)
+
+        XCTAssertTrue(resolved)
+        XCTAssertEqual(implementation.sentStatsActions, ["webview_dom_content_loaded"])
+        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+        XCTAssertEqual(implementation.lastStatsMetadata?["duration_ms"], "123")
+        XCTAssertEqual(implementation.lastStatsMetadata?["page_started_at"], "456")
+        XCTAssertEqual(implementation.lastStatsMetadata?["session_id"], "session-1")
     }
 
     func testBuildWebViewErrorMetadataSanitizesUrlValues() {
@@ -633,6 +741,8 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(script.contains("resource_error"))
         XCTAssertTrue(script.contains("securitypolicyviolation"))
         XCTAssertTrue(script.contains("webview_unclean_restart"))
+        XCTAssertTrue(script.contains("webview_dom_content_loaded"))
+        XCTAssertTrue(script.contains("webview_page_loaded"))
         XCTAssertTrue(script.contains("reportWebViewError"))
     }
 
@@ -712,6 +822,59 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(bundleInfo.isDeleted())
         XCTAssertFalse(bundleInfo.isErrorStatus())
+        XCTAssertFalse(bundleInfo.isDownloading())
+    }
+
+    func testBundleInfoDownloadingStatus() {
+        let bundleInfo = BundleInfo(
+            id: "stale-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+
+        XCTAssertTrue(bundleInfo.isDownloading())
+        XCTAssertTrue(bundleInfo.isDownloaded())
+        XCTAssertFalse(bundleInfo.isDeleted())
+        XCTAssertFalse(bundleInfo.isDeleting())
+        XCTAssertFalse(bundleInfo.isErrorStatus())
+    }
+
+    func testShouldRetryDownloadForIncompleteExistingBundles() {
+        let pending = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let downloading = BundleInfo(
+            id: "downloading-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        let deleting = BundleInfo(
+            id: "deleting-id",
+            version: "2.0.0",
+            status: .DELETING,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let deleted = BundleInfo(
+            id: "deleted-id",
+            version: "2.0.0",
+            status: .DELETED,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(pending))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(downloading))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleting))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleted))
     }
 
     func testBuildUserAgentStripsNonIsoCharacters() {
@@ -778,6 +941,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.ERROR.localizedString, "error")
         XCTAssertEqual(BundleStatus.PENDING.localizedString, "pending")
         XCTAssertEqual(BundleStatus.DELETED.localizedString, "deleted")
+        XCTAssertEqual(BundleStatus.DELETING.localizedString, "deleting")
         XCTAssertEqual(BundleStatus.DOWNLOADING.localizedString, "downloading")
     }
 
@@ -786,6 +950,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus.ERROR.storedValue, "error")
         XCTAssertEqual(BundleStatus.PENDING.storedValue, "pending")
         XCTAssertEqual(BundleStatus.DELETED.storedValue, "deleted")
+        XCTAssertEqual(BundleStatus.DELETING.storedValue, "deleting")
         XCTAssertEqual(BundleStatus.DOWNLOADING.storedValue, "downloading")
     }
 
@@ -794,6 +959,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(BundleStatus(localizedString: "error"), BundleStatus.ERROR)
         XCTAssertEqual(BundleStatus(localizedString: "pending"), BundleStatus.PENDING)
         XCTAssertEqual(BundleStatus(localizedString: "deleted"), BundleStatus.DELETED)
+        XCTAssertEqual(BundleStatus(localizedString: "deleting"), BundleStatus.DELETING)
         XCTAssertEqual(BundleStatus(localizedString: "downloading"), BundleStatus.DOWNLOADING)
         XCTAssertNil(BundleStatus(localizedString: "invalid"))
     }
@@ -801,6 +967,13 @@ class CapacitorUpdaterTests: XCTestCase {
     func testBundleStatusEncodesStableStoredValue() throws {
         let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
         XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
+    }
+
+    func testBundleStatusEncodesDeletingStoredValue() throws {
+        let data = try JSONEncoder().encode(BundleStatus.DELETING)
+        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
+        XCTAssertEqual(decoded, BundleStatus.DELETING)
+        XCTAssertEqual(decoded.storedValue, "deleting")
     }
 
     func testBundleStatusDecodesLegacyCaseKeyObject() throws {
@@ -850,6 +1023,310 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(result.message, "Unauthorized")
         XCTAssertEqual(updater.defaultChannel, "stable")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testDefaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupRunsForRestoredSameVersionReinstall() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertTrue(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: false,
+                restoredReinstall: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = true
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: true,
+                restoredReinstall: true
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: false,
+                resetWhenUpdate: true,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+
+        XCTAssertFalse(
+            testPlugin.shouldClearPersistedDefaultChannel(
+                nativeBuildVersionChanged: true,
+                resetWhenUpdate: false,
+                restoredReinstall: false
+            )
+        )
+    }
+
+    func testDefaultChannelCleanupClearsRestoredPreviewSnapshot() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let previewChannelKey = "CapacitorUpdater.previewPreviousDefaultChannel"
+        let previewChannelWasSetKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        let previewSnapshotFile = directory.appendingPathComponent("preview")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelKey)
+            UserDefaults.standard.removeObject(forKey: previewChannelWasSetKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+        UserDefaults.standard.set("stale", forKey: previewChannelKey)
+        UserDefaults.standard.set(true, forKey: previewChannelWasSetKey)
+
+        XCTAssertTrue(testPlugin.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        ))
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertTrue(state.exists)
+        XCTAssertNil(state.channel)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: previewSnapshotFile), .invalidated)
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: defaultChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelKey))
+        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelWasSetKey))
+    }
+
+    func testDefaultChannelCleanupReportsStateWriteFailure() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let nonDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        let stateFile = nonDirectory.appendingPathComponent("state")
+        let previewSnapshotFile = nonDirectory.appendingPathComponent("preview")
+        try Data().write(to: nonDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: nonDirectory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        XCTAssertFalse(testPlugin.clearPersistedDefaultChannel(
+            stateFile: stateFile,
+            previewSnapshotFile: previewSnapshotFile
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "stale")
+    }
+
+    func testDefaultChannelStatePersistsNewChannel() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try testPlugin.persistDefaultChannelState(channel: "beta", file: stateFile)
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertTrue(state.exists)
+        XCTAssertEqual(state.channel, "beta")
+    }
+
+    func testDefaultChannelPreviewSnapshotStatesRoundTrip() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let snapshotFile = directory.appendingPathComponent("preview")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .missing)
+
+        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: nil, file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot(nil))
+
+        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: "beta", file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot("beta"))
+
+        try testPlugin.invalidateDefaultChannelPreviewSnapshot(file: snapshotFile)
+        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .invalidated)
+    }
+
+    func testUnreadableDefaultChannelStateFallsBackToUserDefaults() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([0xFF]).write(to: stateFile)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        let state = testPlugin.defaultChannelState(file: stateFile)
+        XCTAssertFalse(state.isReadable)
+        XCTAssertEqual(testPlugin.persistedDefaultChannel(stateFile: stateFile), "beta")
+    }
+
+    func testUnreadableDefaultChannelStateDoesNotRestoreWhenPersistenceDisabled() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = false
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([0xFF]).write(to: stateFile)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
+    }
+
+    func testDefaultChannelStateOverridesStaleUserDefaults() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
+
+        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
+
+        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
+    }
+
+    func testDefaultChannelStateMirrorsDefaultsWithReinstallPersistenceEnabled() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.persistDefaultChannelOnReinstall = true
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
+        XCTAssertEqual(testPlugin.defaultChannelState(file: stateFile).channel, "beta")
+    }
+
+    func testDefaultChannelStateWriteFailureInvalidatesAuthoritativeState() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let stateFile = directory.appendingPathComponent("state", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateFile, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        }
+        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
+
+        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "beta")
+    }
+
+    func testDefaultChannelCleanupFailurePreservesInstallMarkerRetry() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        try Data().write(to: marker)
+        defer {
+            try? FileManager.default.removeItem(at: marker)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try testPlugin.invalidateDefaultChannelInstallMarker(marker: marker)
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+    }
+
+    func testDefaultChannelInstallMarkerFailureIsHandledOnce() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let nonDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
+        let marker = nonDirectory.appendingPathComponent("marker")
+        try Data().write(to: nonDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: nonDirectory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: markerDefaultsKey))
+        XCTAssertFalse(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: false))
+    }
+
+    func testDefaultChannelInstallMarkerReappliesBackupExclusion() throws {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
+        let marker = directory.appendingPathComponent("marker")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data().write(to: marker)
+        var markerResourceValues = URLResourceValues()
+        markerResourceValues.isExcludedFromBackup = false
+        var mutableMarker = marker
+        try mutableMarker.setResourceValues(markerResourceValues)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
+        }
+        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
+
+        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
+
+        let resourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(resourceValues.isExcludedFromBackup, true)
     }
 
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
@@ -1632,6 +2109,47 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
     }
 
+    func testStaleDownloadingBundleIsRedownloadedInsteadOfQueued() {
+        let stale = makeOnlyDownloadBundle(id: "stale-id", status: .DOWNLOADING, checksum: "")
+        let downloaded = makeOnlyDownloadBundle(id: "fresh-id")
+        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: stale, downloaded: downloaded)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertEqual(implementation.deleteCalls, 1)
+        XCTAssertEqual(implementation.lastDeletedId, "stale-id")
+        XCTAssertEqual(implementation.lastSetNextBundleId, "fresh-id")
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+    }
+
+    func testPendingExistingBundleIsReusedWithoutRedownload() {
+        let existing = makeOnlyDownloadBundle()
+        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: existing)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 0)
+        XCTAssertEqual(implementation.deleteCalls, 0)
+        XCTAssertEqual(implementation.setNextBundleCalls, 1)
+        XCTAssertEqual(implementation.lastSetNextBundleId, existing.getId())
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+    }
+
+    func testFailedSetNextBundleAfterDownloadNotifiesFailure() {
+        let downloaded = makeOnlyDownloadBundle()
+        let implementation = FreshDownloadCapgoUpdater()
+        implementation.setNextBundleSucceeds = false
+        let (testPlugin, _) = makeAtBackgroundPlugin(downloaded: downloaded, implementation: implementation)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(implementation.sentStatsActions.contains("download_fail"))
+    }
+
     func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
         let current = BundleInfo(
             id: "test-id",
@@ -2385,4 +2903,133 @@ class CapacitorUpdaterTests: XCTestCase {
             }
         }
     }
+
+    func testSendReadyToJsSkipsSemaphoreWaitWhenNotArmed() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady without wait")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        XCTAssertEqual(testPlugin.notifiedEventPayloads["appReady"]?["status"] as? String, "disabled")
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testSendReadyToJsWaitsOnlyWhenArmed() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(200)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady after armed wait timeout")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testSendReadyToJsUnblocksWhenNotifyAppReadySignals() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady after notify")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {
+            // Simulate notifyAppReady signalling the semaphore.
+            testPlugin.semaphoreReady.signal()
+        }
+
+        DispatchQueue.global().async {
+            for _ in 0..<80 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testClearPendingNotifyAppReadyPreventsWait() {
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.armPendingNotifyAppReadyForTesting()
+        testPlugin.clearPendingNotifyAppReadyForTesting()
+        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+        let expectation = expectation(description: "appReady after clear is immediate")
+        let start = Date()
+        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+    }
+
 }

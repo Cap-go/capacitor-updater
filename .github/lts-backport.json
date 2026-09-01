@@ -1,0 +1,61 @@
+{
+  "$comment": "Instructions for backporting main onto Capacitor LTS branches. After merging main (prefer main on conflicts), restore these pins so each major stays compatible. Add a new major here when main moves forward. npm dist-tags are applied by .github/workflows/build.yml from the tag major.",
+  "targets": {
+    "v5": {
+      "branch": "v5",
+      "major": 5,
+      "npmTag": "lts-v5",
+      "capacitorRange": "^5.0.0",
+      "docgen": "^0.2.1",
+      "iosDeployment": "13.0",
+      "iosPlatform": ".v13",
+      "swiftPm": "5.0.0",
+      "dropUiScene": true,
+      "android": {
+        "minSdk": 23,
+        "compileSdk": 35,
+        "targetSdk": 35,
+        "java": 21,
+        "okhttp": "4.12.0",
+        "agp": "8.7.2"
+      }
+    },
+    "v6": {
+      "branch": "v6",
+      "major": 6,
+      "npmTag": "lts-v6",
+      "capacitorRange": "^6.0.0",
+      "iosDeployment": "13.0",
+      "iosPlatform": ".v13",
+      "swiftPm": "6.0.0",
+      "bigIntExact": "5.2.0",
+      "dropUiScene": true,
+      "android": {
+        "minSdk": 22,
+        "compileSdk": 34,
+        "targetSdk": 34,
+        "java": 17,
+        "okhttp": "4.12.0",
+        "agp": "8.7.2"
+      }
+    },
+    "v7": {
+      "branch": "v7",
+      "major": 7,
+      "npmTag": "lts-v7",
+      "capacitorRange": "^7.0.0",
+      "iosDeployment": "14.0",
+      "iosPlatform": ".v14",
+      "swiftPm": "7.0.0",
+      "dropUiScene": true,
+      "android": {
+        "minSdk": 23,
+        "compileSdk": 35,
+        "targetSdk": 35,
+        "java": 21,
+        "okhttp": "4.12.0",
+        "agp": "8.7.2"
+      }
+    }
+  }
+}
