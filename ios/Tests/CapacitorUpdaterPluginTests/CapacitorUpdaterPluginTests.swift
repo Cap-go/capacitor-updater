@@ -77,8 +77,12 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         checksum: "builtin"
     )
     var onDownloadStart: (() -> Void)?
+    var downloadCalls = 0
+    var deleteCalls = 0
+    var lastDeletedId: String?
     var setNextBundleCalls = 0
     var lastSetNextBundleId: String?
+    var setNextBundleSucceeds = true
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
@@ -104,6 +108,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        downloadCalls += 1
         onDownloadStart?()
         if let downloadedBundleValue {
             return downloadedBundleValue
@@ -111,10 +116,19 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
     }
 
+    override func delete(id: String, removeInfo _: Bool) -> Bool {
+        deleteCalls += 1
+        lastDeletedId = id
+        if existingBundleValue?.getId() == id {
+            existingBundleValue = nil
+        }
+        return true
+    }
+
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
-        return true
+        return setNextBundleSucceeds
     }
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
@@ -508,6 +522,31 @@ class CapacitorUpdaterTests: XCTestCase {
         return (testPlugin, freshDownloadImplementation)
     }
 
+    private func makeAtBackgroundPlugin(
+        existing: BundleInfo? = nil,
+        downloaded: BundleInfo? = nil,
+        implementation: FreshDownloadCapgoUpdater = FreshDownloadCapgoUpdater()
+    ) -> (TestableCapacitorUpdaterPlugin, FreshDownloadCapgoUpdater) {
+        implementation.currentBundleValue = BundleInfo(
+            id: "test-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        implementation.latestResponse = makeOnlyDownloadLatest()
+        implementation.existingBundleValue = existing
+        implementation.downloadedBundleValue = downloaded
+
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.implementation = implementation
+        testPlugin.setAutoUpdateModeForTesting("atBackground")
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
+
+        return (testPlugin, implementation)
+    }
+
     private func assertOnlyDownloadLeavesUpdateManual(
         plugin testPlugin: TestableCapacitorUpdaterPlugin,
         implementation freshDownloadImplementation: FreshDownloadCapgoUpdater
@@ -783,6 +822,59 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(bundleInfo.isDeleted())
         XCTAssertFalse(bundleInfo.isErrorStatus())
+        XCTAssertFalse(bundleInfo.isDownloading())
+    }
+
+    func testBundleInfoDownloadingStatus() {
+        let bundleInfo = BundleInfo(
+            id: "stale-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+
+        XCTAssertTrue(bundleInfo.isDownloading())
+        XCTAssertTrue(bundleInfo.isDownloaded())
+        XCTAssertFalse(bundleInfo.isDeleted())
+        XCTAssertFalse(bundleInfo.isDeleting())
+        XCTAssertFalse(bundleInfo.isErrorStatus())
+    }
+
+    func testShouldRetryDownloadForIncompleteExistingBundles() {
+        let pending = BundleInfo(
+            id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let downloading = BundleInfo(
+            id: "downloading-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        let deleting = BundleInfo(
+            id: "deleting-id",
+            version: "2.0.0",
+            status: .DELETING,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let deleted = BundleInfo(
+            id: "deleted-id",
+            version: "2.0.0",
+            status: .DELETED,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(pending))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(downloading))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleting))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleted))
     }
 
     func testBuildUserAgentStripsNonIsoCharacters() {
@@ -2015,6 +2107,47 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(testPlugin.notifiedEventNames.contains("updateAvailable"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
         XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
+    }
+
+    func testStaleDownloadingBundleIsRedownloadedInsteadOfQueued() {
+        let stale = makeOnlyDownloadBundle(id: "stale-id", status: .DOWNLOADING, checksum: "")
+        let downloaded = makeOnlyDownloadBundle(id: "fresh-id")
+        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: stale, downloaded: downloaded)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertEqual(implementation.deleteCalls, 1)
+        XCTAssertEqual(implementation.lastDeletedId, "stale-id")
+        XCTAssertEqual(implementation.lastSetNextBundleId, "fresh-id")
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+    }
+
+    func testPendingExistingBundleIsReusedWithoutRedownload() {
+        let existing = makeOnlyDownloadBundle()
+        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: existing)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 0)
+        XCTAssertEqual(implementation.deleteCalls, 0)
+        XCTAssertEqual(implementation.setNextBundleCalls, 1)
+        XCTAssertEqual(implementation.lastSetNextBundleId, existing.getId())
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
+    }
+
+    func testFailedSetNextBundleAfterDownloadNotifiesFailure() {
+        let downloaded = makeOnlyDownloadBundle()
+        let implementation = FreshDownloadCapgoUpdater()
+        implementation.setNextBundleSucceeds = false
+        let (testPlugin, _) = makeAtBackgroundPlugin(downloaded: downloaded, implementation: implementation)
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
+        XCTAssertTrue(implementation.sentStatsActions.contains("download_fail"))
     }
 
     func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
