@@ -78,8 +78,13 @@ if [ "$DROP_UISCENE" = "true" ]; then
     example-app/ios/App/App/AppDelegate.swift \
     example-app/ios/App/App/Info.plist \
     example-app/ios/App/App.xcodeproj/project.pbxproj || true
+  git checkout "origin/${TARGET_BRANCH}" -- example-app/ios/App/Podfile || true
+  git checkout "origin/${TARGET_BRANCH}" -- example-app/ios/App/App.xcworkspace || true
   if [ -f example-app/ios/App/App/SceneDelegate.swift ]; then
     git rm -f example-app/ios/App/App/SceneDelegate.swift || rm -f example-app/ios/App/App/SceneDelegate.swift
+  fi
+  if [ -f example-app/ios/App/Podfile ]; then
+    rm -rf example-app/ios/App/CapApp-SPM
   fi
 fi
 

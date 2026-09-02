@@ -6,7 +6,6 @@
       "major": 5,
       "npmTag": "lts-v5",
       "capacitorRange": "^5.0.0",
-      "pinExampleApp": false,
       "docgen": "^0.3.0",
       "iosDeployment": "13.4",
       "iosPlatform": "13.4",

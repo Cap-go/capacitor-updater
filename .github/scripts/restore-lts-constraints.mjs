@@ -301,7 +301,6 @@ function selfTest() {
 
   const config = loadConfig();
   assert.ok(config.targets.v5 && config.targets.v6 && config.targets.v7);
-  assert.equal(config.targets.v5.pinExampleApp, false);
   assert.equal(config.targets.v6.android.minSdk, 23);
 
   const stashDir = join(tmpdir(), `lts-restore-stash-${process.pid}`);
