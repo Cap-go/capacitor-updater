@@ -305,10 +305,13 @@ function selfTest() {
 
   const stashDir = join(tmpdir(), `lts-restore-stash-${process.pid}`);
   mkdirSync(stashDir, { recursive: true });
-  copyFileSync(resolveConfigPath(), join(stashDir, 'lts-backport.json'));
-  assert.equal(resolveConfigPath(stashDir), join(stashDir, 'lts-backport.json'));
-  assert.ok(loadConfig(resolveConfigPath(stashDir)).targets.v7);
-  rmSync(stashDir, { recursive: true, force: true });
+  try {
+    copyFileSync(resolveConfigPath(), join(stashDir, 'lts-backport.json'));
+    assert.equal(resolveConfigPath(stashDir), join(stashDir, 'lts-backport.json'));
+    assert.ok(loadConfig(resolveConfigPath(stashDir)).targets.v7);
+  } finally {
+    rmSync(stashDir, { recursive: true, force: true });
+  }
 
   console.log('restore-lts-constraints self-test passed');
 }
