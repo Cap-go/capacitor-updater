@@ -237,13 +237,23 @@ jobs:
           for scenario in "${scenarios[@]}"; do
             app_artifact_path="$artifact_root/$scenario"
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
-            xcodebuild \
-              -project example-app/ios/App/App.xcodeproj \
-              -scheme App \
-              -configuration Debug \
-              -destination "generic/platform=iOS Simulator" \
-              -derivedDataPath "$derived_data_path" \
-              build
+            if [[ -d example-app/ios/App/App.xcworkspace ]]; then
+              xcodebuild \
+                -workspace example-app/ios/App/App.xcworkspace \
+                -scheme App \
+                -configuration Debug \
+                -destination "generic/platform=iOS Simulator" \
+                -derivedDataPath "$derived_data_path" \
+                build
+            else
+              xcodebuild \
+                -project example-app/ios/App/App.xcodeproj \
+                -scheme App \
+                -configuration Debug \
+                -destination "generic/platform=iOS Simulator" \
+                -derivedDataPath "$derived_data_path" \
+                build
+            fi
             mkdir -p "$app_artifact_path"
             ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
           done

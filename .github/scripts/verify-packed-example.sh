@@ -56,13 +56,22 @@ case "$platform" in
     fi
     bunx cap sync ios
     rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"/https___github_com_ionic_team_capacitor_swift_pm_releases_download_*
-    xcodebuild \
-      -project ios/App/App.xcodeproj \
-      -scheme App \
-      -destination generic/platform=iOS \
-      -clonedSourcePackagesDirPath "$tmp_root/plugin-example-swiftpm" \
-      -derivedDataPath "$tmp_root/plugin-example-derived-data" \
-      CODE_SIGNING_ALLOWED=NO
+    if [[ -d ios/App/App.xcworkspace ]]; then
+      xcodebuild \
+        -workspace ios/App/App.xcworkspace \
+        -scheme App \
+        -destination generic/platform=iOS \
+        -derivedDataPath "$tmp_root/plugin-example-derived-data" \
+        CODE_SIGNING_ALLOWED=NO
+    else
+      xcodebuild \
+        -project ios/App/App.xcodeproj \
+        -scheme App \
+        -destination generic/platform=iOS \
+        -clonedSourcePackagesDirPath "$tmp_root/plugin-example-swiftpm" \
+        -derivedDataPath "$tmp_root/plugin-example-derived-data" \
+        CODE_SIGNING_ALLOWED=NO
+    fi
     ;;
   web)
     ;;
