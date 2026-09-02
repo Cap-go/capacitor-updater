@@ -83,7 +83,7 @@ if [ "$DROP_UISCENE" = "true" ]; then
   if [ -f example-app/ios/App/App/SceneDelegate.swift ]; then
     git rm -f example-app/ios/App/App/SceneDelegate.swift || rm -f example-app/ios/App/App/SceneDelegate.swift
   fi
-  if [ -f example-app/ios/App/Podfile ]; then
+  if [[ -f example-app/ios/App/Podfile ]]; then
     rm -rf example-app/ios/App/CapApp-SPM
   fi
 fi
