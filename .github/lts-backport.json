@@ -6,6 +6,7 @@
       "major": 5,
       "npmTag": "lts-v5",
       "capacitorRange": "^5.0.0",
+      "pinExampleApp": false,
       "docgen": "^0.3.0",
       "iosDeployment": "13.4",
       "iosPlatform": "13.4",
@@ -31,9 +32,9 @@
       "bigIntExact": "5.2.0",
       "dropUiScene": true,
       "android": {
-        "minSdk": 22,
-        "compileSdk": 34,
-        "targetSdk": 34,
+        "minSdk": 23,
+        "compileSdk": 35,
+        "targetSdk": 35,
         "java": 17,
         "okhttp": "4.12.0",
         "agp": "8.7.2"

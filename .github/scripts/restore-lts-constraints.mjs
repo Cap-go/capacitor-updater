@@ -75,10 +75,11 @@ export function rewritePackageJson(pkg, target, nextVersion) {
 
 export function rewriteExamplePackageJson(pkg, target) {
   const extra = {};
+  const range = target.exampleCapacitorRange || target.capacitorRange;
   return {
     ...pkg,
-    dependencies: pinCapacitorDeps(pkg.dependencies, target.capacitorRange, extra),
-    devDependencies: pinCapacitorDeps(pkg.devDependencies, target.capacitorRange, extra),
+    dependencies: pinCapacitorDeps(pkg.dependencies, range, extra),
+    devDependencies: pinCapacitorDeps(pkg.devDependencies, range, extra),
   };
 }
 
@@ -172,7 +173,8 @@ export function applyConstraints(repoRoot, target) {
   writeJson(pkgPath, rewritePackageJson(pkg, target, toVersion));
 
   const examplePkgPath = join(repoRoot, 'example-app/package.json');
-  if (existsSync(examplePkgPath)) {
+  const pinExampleApp = target.pinExampleApp !== false;
+  if (existsSync(examplePkgPath) && pinExampleApp) {
     writeJson(examplePkgPath, rewriteExamplePackageJson(JSON.parse(readText(examplePkgPath)), target));
   }
 
@@ -199,7 +201,7 @@ export function applyConstraints(repoRoot, target) {
   writeText(swiftPath, patchPackageSwift(readText(swiftPath), target));
 
   const exampleSpmPath = join(repoRoot, 'example-app/ios/App/CapApp-SPM/Package.swift');
-  if (existsSync(exampleSpmPath)) {
+  if (existsSync(exampleSpmPath) && pinExampleApp) {
     writeText(exampleSpmPath, patchPackageSwift(readText(exampleSpmPath), target));
   }
 
@@ -283,11 +285,24 @@ function selfTest() {
   );
   assert.match(swift134, /\.iOS\("13\.4"\)/);
 
+  const examplePinned = rewriteExamplePackageJson(
+    {
+      dependencies: { '@capacitor/core': '^8.5.0', '@capacitor/ios': '^8.5.0' },
+      devDependencies: { '@capacitor/cli': '^8.5.0', typescript: '^5.9.2' },
+    },
+    { capacitorRange: '^5.0.0', exampleCapacitorRange: '^8.0.0' },
+  );
+  assert.equal(examplePinned.dependencies['@capacitor/core'], '^8.0.0');
+  assert.equal(examplePinned.devDependencies['@capacitor/cli'], '^8.0.0');
+  assert.equal(examplePinned.devDependencies.typescript, '^5.9.2');
+
   const native = patchPluginVersion('private let pluginVersion: String = "8.51.15"', '8.51.15', '7.51.15');
   assert.equal(native, 'private let pluginVersion: String = "7.51.15"');
 
   const config = loadConfig();
   assert.ok(config.targets.v5 && config.targets.v6 && config.targets.v7);
+  assert.equal(config.targets.v5.pinExampleApp, false);
+  assert.equal(config.targets.v6.android.minSdk, 23);
 
   const stashDir = join(tmpdir(), `lts-restore-stash-${process.pid}`);
   mkdirSync(stashDir, { recursive: true });
