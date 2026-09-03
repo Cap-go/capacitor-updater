@@ -75,6 +75,17 @@ public class DelayUpdateUtils {
                                     ", longValue: " +
                                     longValue
                             );
+                        } else {
+                            delayConditionListToKeep.add(condition);
+                            logger.info(
+                                "Background delay (value: " +
+                                    value +
+                                    ") condition kept at index " +
+                                    index +
+                                    " (source: " +
+                                    source.toString() +
+                                    ")"
+                            );
                         }
                     } else {
                         delayConditionListToKeep.add(condition);
