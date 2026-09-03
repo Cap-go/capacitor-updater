@@ -7,14 +7,23 @@
  *   node restore-lts-constraints.mjs --target v7
  *   node restore-lts-constraints.mjs --self-test
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPT_DIR, '..', '..');
-const CONFIG_PATH = join(SCRIPT_DIR, '..', 'lts-backport.json');
+
+export function resolveConfigPath(scriptDir = SCRIPT_DIR) {
+  const candidates = [join(scriptDir, 'lts-backport.json'), join(scriptDir, '..', 'lts-backport.json')];
+  const found = candidates.find((path) => existsSync(path));
+  if (!found) {
+    throw new Error(`lts-backport.json not found. Looked in: ${candidates.join(', ')}`);
+  }
+  return found;
+}
 
 const CAPACITOR_DEP_PREFIX = '@capacitor/';
 const NATIVE_PLUGIN_VERSION_FILES = [
@@ -22,7 +31,7 @@ const NATIVE_PLUGIN_VERSION_FILES = [
   'ios/Sources/CapacitorUpdaterPlugin/CapacitorUpdaterPlugin.swift',
 ];
 
-export function loadConfig(configPath = CONFIG_PATH) {
+export function loadConfig(configPath = resolveConfigPath()) {
   return JSON.parse(readFileSync(configPath, 'utf8'));
 }
 
@@ -66,10 +75,11 @@ export function rewritePackageJson(pkg, target, nextVersion) {
 
 export function rewriteExamplePackageJson(pkg, target) {
   const extra = {};
+  const range = target.exampleCapacitorRange || target.capacitorRange;
   return {
     ...pkg,
-    dependencies: pinCapacitorDeps(pkg.dependencies, target.capacitorRange, extra),
-    devDependencies: pinCapacitorDeps(pkg.devDependencies, target.capacitorRange, extra),
+    dependencies: pinCapacitorDeps(pkg.dependencies, range, extra),
+    devDependencies: pinCapacitorDeps(pkg.devDependencies, range, extra),
   };
 }
 
@@ -108,9 +118,17 @@ export function patchExampleVariablesGradle(src, android) {
   return out;
 }
 
+export function iosPlatformExpr(value) {
+  const raw = String(value);
+  if (raw.startsWith('.')) {
+    return raw;
+  }
+  return `"${raw}"`;
+}
+
 export function patchPackageSwift(src, target) {
   let out = src;
-  out = out.replace(/platforms:\s*\[\.iOS\([^)]+\)\]/, `platforms: [.iOS(${target.iosPlatform})]`);
+  out = out.replace(/platforms:\s*\[\.iOS\([^)]+\)\]/, `platforms: [.iOS(${iosPlatformExpr(target.iosPlatform)})]`);
   out = out.replace(
     /ionic-team\/capacitor-swift-pm\.git",\s*(?:from|exact):\s*"[^"]+"/,
     `ionic-team/capacitor-swift-pm.git", from: "${target.swiftPm}"`,
@@ -155,7 +173,8 @@ export function applyConstraints(repoRoot, target) {
   writeJson(pkgPath, rewritePackageJson(pkg, target, toVersion));
 
   const examplePkgPath = join(repoRoot, 'example-app/package.json');
-  if (existsSync(examplePkgPath)) {
+  const pinExampleApp = target.pinExampleApp !== false;
+  if (existsSync(examplePkgPath) && pinExampleApp) {
     writeJson(examplePkgPath, rewriteExamplePackageJson(JSON.parse(readText(examplePkgPath)), target));
   }
 
@@ -182,7 +201,7 @@ export function applyConstraints(repoRoot, target) {
   writeText(swiftPath, patchPackageSwift(readText(swiftPath), target));
 
   const exampleSpmPath = join(repoRoot, 'example-app/ios/App/CapApp-SPM/Package.swift');
-  if (existsSync(exampleSpmPath)) {
+  if (existsSync(exampleSpmPath) && pinExampleApp) {
     writeText(exampleSpmPath, patchPackageSwift(readText(exampleSpmPath), target));
   }
 
@@ -259,16 +278,46 @@ function selfTest() {
   const podspec = patchPodspec("s.ios.deployment_target = '15.0'", { iosDeployment: '14.0' });
   assert.equal(podspec, "s.ios.deployment_target = '14.0'");
 
+  const swift134 = patchPackageSwift(
+    `platforms: [.iOS("15.0")],
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")`,
+    { iosPlatform: '13.4', swiftPm: '5.0.0' },
+  );
+  assert.match(swift134, /\.iOS\("13\.4"\)/);
+
+  const examplePinned = rewriteExamplePackageJson(
+    {
+      dependencies: { '@capacitor/core': '^8.5.0', '@capacitor/ios': '^8.5.0' },
+      devDependencies: { '@capacitor/cli': '^8.5.0', typescript: '^5.9.2' },
+    },
+    { capacitorRange: '^5.0.0', exampleCapacitorRange: '^8.0.0' },
+  );
+  assert.equal(examplePinned.dependencies['@capacitor/core'], '^8.0.0');
+  assert.equal(examplePinned.devDependencies['@capacitor/cli'], '^8.0.0');
+  assert.equal(examplePinned.devDependencies.typescript, '^5.9.2');
+
   const native = patchPluginVersion('private let pluginVersion: String = "8.51.15"', '8.51.15', '7.51.15');
   assert.equal(native, 'private let pluginVersion: String = "7.51.15"');
 
   const config = loadConfig();
   assert.ok(config.targets.v5 && config.targets.v6 && config.targets.v7);
+  assert.equal(config.targets.v6.android.minSdk, 23);
+
+  const stashDir = join(tmpdir(), `lts-restore-stash-${process.pid}`);
+  mkdirSync(stashDir, { recursive: true });
+  try {
+    copyFileSync(resolveConfigPath(), join(stashDir, 'lts-backport.json'));
+    assert.equal(resolveConfigPath(stashDir), join(stashDir, 'lts-backport.json'));
+    assert.ok(loadConfig(resolveConfigPath(stashDir)).targets.v7);
+  } finally {
+    rmSync(stashDir, { recursive: true, force: true });
+  }
+
   console.log('restore-lts-constraints self-test passed');
 }
 
 function parseArgs(argv) {
-  const args = { target: null, selfTest: false, repoRoot: REPO_ROOT };
+  const args = { target: null, selfTest: false, repoRoot: REPO_ROOT, config: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--self-test') {
@@ -278,6 +327,9 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--repo-root') {
       args.repoRoot = argv[i + 1];
+      i += 1;
+    } else if (arg === '--config') {
+      args.config = argv[i + 1];
       i += 1;
     }
   }
@@ -295,7 +347,7 @@ if (args.selfTest || args.target || isDirectRun) {
     console.error('Usage: restore-lts-constraints.mjs --target v5|v6|v7');
     process.exit(1);
   }
-  const config = loadConfig();
+  const config = loadConfig(args.config || resolveConfigPath());
   const target = config.targets[args.target];
   if (!target) {
     console.error(`Unknown target "${args.target}". Valid: ${Object.keys(config.targets).join(', ')}`);
