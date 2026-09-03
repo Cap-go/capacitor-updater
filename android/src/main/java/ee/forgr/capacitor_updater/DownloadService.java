@@ -68,6 +68,7 @@ public class DownloadService extends Worker {
     public static final String pluginVersion = "plugin_version";
     public static final String INSTALL_SOURCE = "install_source";
     public static final String STATS_URL = "stats_url";
+    public static final String STATS_MODE = "stats_mode";
     public static final String DEVICE_ID = "device_id";
     public static final String CUSTOM_ID = "custom_id";
     public static final String VERSION_BUILD = "version_build";
@@ -411,22 +412,48 @@ public class DownloadService extends Worker {
                 return;
             }
 
-            JSONObject json = new JSONObject();
-            json.put("platform", "android");
-            json.put("app_id", getInputString(APP_ID, "unknown"));
-            json.put("plugin_version", getInputString(pluginVersion, "unknown"));
-            json.put("install_source", getInputString(INSTALL_SOURCE, ""));
-            json.put("version_name", version != null ? version : "");
-            json.put("old_version_name", "");
-            json.put("action", action);
-            json.put("device_id", getInputString(DEVICE_ID, ""));
-            json.put("custom_id", getInputString(CUSTOM_ID, ""));
-            json.put("version_build", getInputString(VERSION_BUILD, ""));
-            json.put("version_code", getInputString(VERSION_CODE, ""));
-            json.put("version_os", getInputString(VERSION_OS, currentVersionOs));
-            json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
-            json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
-            json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+            final String statsMode = CapgoUpdater.normalizeStatsMode(getInputData().getString(STATS_MODE));
+            if (!CapgoUpdater.shouldSendStatsAction(action, statsMode)) {
+                return;
+            }
+
+            JSONObject json;
+            if (CapgoUpdater.usesBillingStatsPayload(statsMode)) {
+                final JSONObject event = new JSONObject();
+                event.put("version_name", version != null ? version : "");
+                json = CapgoUpdater.createBillingStatsPayloadFromEvent(
+                    event,
+                    statsMode,
+                    action,
+                    System.currentTimeMillis(),
+                    "android",
+                    getInputString(DEVICE_ID, ""),
+                    getInputString(APP_ID, "unknown"),
+                    getInputString(VERSION_BUILD, ""),
+                    getInputString(VERSION_OS, currentVersionOs),
+                    getInputString(pluginVersion, "unknown"),
+                    getInputData().getBoolean(IS_EMULATOR, false),
+                    getInputData().getBoolean(IS_PROD, true)
+                );
+            } else {
+                json = new JSONObject();
+                json.put("platform", "android");
+                json.put("app_id", getInputString(APP_ID, "unknown"));
+                json.put("plugin_version", getInputString(pluginVersion, "unknown"));
+                json.put("install_source", getInputString(INSTALL_SOURCE, ""));
+                json.put("version_name", version != null ? version : "");
+                json.put("old_version_name", "");
+                json.put("action", action);
+                json.put("device_id", getInputString(DEVICE_ID, ""));
+                json.put("custom_id", getInputString(CUSTOM_ID, ""));
+                json.put("version_build", getInputString(VERSION_BUILD, ""));
+                json.put("version_code", getInputString(VERSION_CODE, ""));
+                json.put("version_os", getInputString(VERSION_OS, currentVersionOs));
+                json.put("defaultChannel", getInputString(DEFAULT_CHANNEL, ""));
+                json.put("is_prod", getInputData().getBoolean(IS_PROD, true));
+                json.put("is_emulator", getInputData().getBoolean(IS_EMULATOR, false));
+                json.put("stats_mode", statsMode);
+            }
 
             Request request = new Request.Builder()
                 .url(statsUrl)

@@ -207,6 +207,7 @@ struct StatsEvent: Codable {
     let defaultChannel: String?
     let key_id: String?
     let metadata: [String: String]?
+    let stats_mode: String?
     let timestamp: Int64
 
     enum CodingKeys: String, CodingKey {
@@ -228,6 +229,7 @@ struct StatsEvent: Codable {
         case defaultChannel
         case key_id
         case metadata
+        case stats_mode
         case timestamp
     }
 }
