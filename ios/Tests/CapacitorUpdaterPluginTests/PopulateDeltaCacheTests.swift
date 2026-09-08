@@ -325,6 +325,57 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 }
 
+extension PopulateDeltaCacheTests {
+    func testGetMissingBundleFilesReusesUncompressedBuiltinForBrotliEntry() throws {
+        let testId = try XCTUnwrap(bundleId)
+        let name = "\(testId).js"
+        let source = try write("builtin \(testId)", named: name, in: builtinFolder.appendingPathComponent("assets"))
+        let hash = CryptoCipher.calcChecksum(filePath: source)
+        let manifest = [ManifestEntry(file_name: "assets/\(name).br", file_hash: hash, download_url: nil)]
+
+        XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+
+        // A decoded filename match alone must not bypass checksum verification.
+        try "different content".write(to: source, atomically: true, encoding: .utf8)
+        XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
+    }
+
+    func testDownloadManifestReusesSignedUncompressedBuiltinForBrotliEntry() throws {
+        implementation.setLogger(Logger(withTag: "BrotliBuiltinTest", options: Logger.Options(level: .silent)))
+        implementation.setPublicKey(Fixture.publicKeyPem)
+        let name = "\(try XCTUnwrap(bundleId)).js"
+        let source = try write("", named: name, in: builtinFolder.appendingPathComponent("assets"))
+        let (signedHash, plainHash) = Fixture.firstDecryptChecksumCase
+        XCTAssertEqual(CryptoCipher.calcChecksum(filePath: source), plainHash)
+        let manifest = [ManifestEntry(
+            file_name: "assets/\(name).br",
+            file_hash: signedHash,
+            // Invalid URL makes any attempted download fail immediately: this must reuse builtin.
+            download_url: "http://["
+        )]
+
+        // Only checksum recovery is needed when builtin matches; no file/session decryption occurs.
+        let result = try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "signed-manifest")
+        defer {
+            _ = implementation.delete(id: result.getId(), removeInfo: true)
+            implementation.shutdown()
+        }
+        let destination = implementation.getBundleDirectory(id: result.getId())
+        XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("assets/\(name)")), Data())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("assets/\(name).br").path))
+    }
+
+    func testMissingBrotliEntryCannotReuseFileOutsideBuiltin() throws {
+        let name = "\(try XCTUnwrap(bundleId))-outside.js"
+        let source = try write("outside", named: name, in: builtinFolder.deletingLastPathComponent())
+        defer { try? FileManager.default.removeItem(at: source) }
+        let hash = CryptoCipher.calcChecksum(filePath: source)
+        let manifest = [ManifestEntry(file_name: "../\(name).br", file_hash: hash, download_url: nil)]
+
+        XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
+    }
+}
+
 final class IoBufferSizeTests: XCTestCase {
     func testIoBuffersAre256KiBForChecksumAndCopy() {
         XCTAssertEqual(CryptoCipher.ioBufferBytes(), 256 * 1024)

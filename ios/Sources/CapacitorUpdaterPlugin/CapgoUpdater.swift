@@ -1231,7 +1231,10 @@ import UIKit
         }
 
         let builtinFolder = self.builtinFolderURL()
-        let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+        // The .br suffix describes transport; builtin assets are uncompressed.
+        guard let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName) else {
+            return false
+        }
         if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
             return true
         }
@@ -1474,7 +1477,7 @@ import UIKit
             let builtinFilePath: URL
             do {
                 destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
-                builtinFilePath = try Self.resolvePathInsideDirectory(baseDirectory: builtinFolder, relativePath: fileName)
+                builtinFilePath = try Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName)
             } catch {
                 logger.error("Invalid manifest file path: \(fileName)")
                 self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
