@@ -46,7 +46,7 @@ public struct RSAPublicKey {
             return nil
         }
         guard SecKeyGetBlockSize(key) == 256,
-              SecKeyIsAlgorithmSupported(key, .encrypt, .rsaEncryptionRaw) else {
+              SecKeyIsAlgorithmSupported(key, .encrypt, .rsaEncryptionRaw) else { // NOSONAR intentional raw RSA for Node privateEncrypt / Capgo checksum recovery
             os_log(
                 "RSA key import failed: unsupported key (Capgo requires RSA-2048 with raw encryption)",
                 log: Self.log,
@@ -65,7 +65,7 @@ public struct RSAPublicKey {
         // publicDecrypt. Do NOT use encryption PKCS#1 padding here: the recovered
         // block already contains signature (type-1) padding, checked below.
         var error: Unmanaged<CFError>?
-        guard let recovered = SecKeyCreateEncryptedData(key, .rsaEncryptionRaw, data as CFData, &error) else {
+        guard let recovered = SecKeyCreateEncryptedData(key, .rsaEncryptionRaw, data as CFData, &error) else { // NOSONAR intentional raw RSA for Node privateEncrypt / Capgo checksum recovery
             os_log(
                 "RSA raw recovery failed: %{public}@",
                 log: Self.log,
