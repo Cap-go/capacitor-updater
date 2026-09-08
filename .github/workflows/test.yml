@@ -258,6 +258,9 @@ jobs:
           overwrite: true
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Wait before final Android app upload
+        if: steps.upload_android_app_1.outcome == 'failure' && steps.upload_android_app_2.outcome == 'failure'
+        run: sleep 15
       - name: Upload Android app (attempt 3)
         if: steps.upload_android_app_1.outcome == 'failure' && steps.upload_android_app_2.outcome == 'failure'
         uses: actions/upload-artifact@v7
