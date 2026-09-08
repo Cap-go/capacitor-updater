@@ -247,6 +247,7 @@ import UIKit
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
             task.cancel()
+            _ = semaphore.wait(timeout: .now() + 5)
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
         }
@@ -283,6 +284,7 @@ import UIKit
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
             task.cancel()
+            _ = semaphore.wait(timeout: .now() + 5)
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return DownloadRequestResult(
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
