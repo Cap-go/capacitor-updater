@@ -105,6 +105,7 @@ jobs:
   maestro_web_assets:
     permissions:
       contents: read
+      actions: write
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: Build Maestro web assets
@@ -135,6 +136,16 @@ jobs:
             .maestro-artifacts
           include-hidden-files: true
           if-no-files-found: error
+      - name: Clear partial Maestro web assets artifact before upload retry
+        if: steps.upload_maestro_web_assets_1.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate -q ".artifacts[] | select(.name==\"maestro-web-assets\") | .id" | head -1)"
+          if [[ -n "$artifact_id" ]]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" || true
+          fi
+          sleep 30
       - name: Upload reusable Maestro web assets (attempt 2)
         if: steps.upload_maestro_web_assets_1.outcome == 'failure'
         id: upload_maestro_web_assets_2
@@ -148,6 +159,16 @@ jobs:
             .maestro-artifacts
           include-hidden-files: true
           if-no-files-found: error
+      - name: Clear partial Maestro web assets artifact before final upload retry
+        if: steps.upload_maestro_web_assets_1.outcome == 'failure' && steps.upload_maestro_web_assets_2.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate -q ".artifacts[] | select(.name==\"maestro-web-assets\") | .id" | head -1)"
+          if [[ -n "$artifact_id" ]]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" || true
+          fi
+          sleep 30
       - name: Upload reusable Maestro web assets (attempt 3)
         if: steps.upload_maestro_web_assets_1.outcome == 'failure' && steps.upload_maestro_web_assets_2.outcome == 'failure'
         uses: actions/upload-artifact@v7
@@ -163,6 +184,7 @@ jobs:
   maestro_android_apps:
     permissions:
       contents: read
+      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -209,7 +231,7 @@ jobs:
           path: .
       - name: Wait before retrying Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 2)
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
         id: download_maestro_web_assets_2
@@ -220,7 +242,7 @@ jobs:
           path: .
       - name: Wait before final Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 3)
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
@@ -237,6 +259,16 @@ jobs:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Clear partial Android app artifact before upload retry
+        if: steps.upload_android_app_1.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate -q ".artifacts[] | select(.name==\"maestro-android-app-${{ matrix.scenario }}\") | .id" | head -1)"
+          if [[ -n "$artifact_id" ]]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" || true
+          fi
+          sleep 30
       - name: Upload Android app (attempt 2)
         if: steps.upload_android_app_1.outcome == 'failure'
         id: upload_android_app_2
@@ -247,6 +279,16 @@ jobs:
           overwrite: true
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Clear partial Android app artifact before final upload retry
+        if: steps.upload_android_app_1.outcome == 'failure' && steps.upload_android_app_2.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate -q ".artifacts[] | select(.name==\"maestro-android-app-${{ matrix.scenario }}\") | .id" | head -1)"
+          if [[ -n "$artifact_id" ]]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" || true
+          fi
+          sleep 30
       - name: Upload Android app (attempt 3)
         if: steps.upload_android_app_1.outcome == 'failure' && steps.upload_android_app_2.outcome == 'failure'
         uses: actions/upload-artifact@v7
@@ -259,6 +301,7 @@ jobs:
   maestro_ios_apps:
     permissions:
       contents: read
+      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: macOS-latest
@@ -286,7 +329,7 @@ jobs:
           path: .
       - name: Wait before retrying Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 2)
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
         id: download_maestro_web_assets_2
@@ -297,7 +340,7 @@ jobs:
           path: .
       - name: Wait before final Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 3)
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
@@ -347,6 +390,7 @@ jobs:
   maestro_android_example_app:
     permissions:
       contents: read
+      actions: write
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -440,6 +484,7 @@ jobs:
   maestro_ios_example_app:
     permissions:
       contents: read
+      actions: write
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -505,6 +550,7 @@ jobs:
   maestro_ios_live_update:
     permissions:
       contents: read
+      actions: write
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -602,6 +648,7 @@ jobs:
   maestro_android_scenarios:
     permissions:
       contents: read
+      actions: read
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -654,7 +701,7 @@ jobs:
           path: .
       - name: Wait before retrying Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 2)
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
         id: download_maestro_web_assets_2
@@ -665,7 +712,7 @@ jobs:
           path: .
       - name: Wait before final Maestro web assets download
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download reusable Maestro web assets (attempt 3)
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
@@ -681,7 +728,7 @@ jobs:
           path: example-app/android/app/build/outputs/apk/debug
       - name: Wait before retrying Android app download
         if: steps.download_android_app_1.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download Android app (attempt 2)
         if: steps.download_android_app_1.outcome == 'failure'
         id: download_android_app_2
@@ -692,7 +739,7 @@ jobs:
           path: example-app/android/app/build/outputs/apk/debug
       - name: Wait before final Android app download
         if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
-        run: sleep 15
+        run: sleep 30
       - name: Download Android app (attempt 3)
         if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
         uses: actions/download-artifact@v8
