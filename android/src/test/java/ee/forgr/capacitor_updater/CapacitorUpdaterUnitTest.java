@@ -4064,15 +4064,6 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(CapgoUpdater.STATS_MODE_BILLING_ONLY, CapgoUpdater.normalizeStatsMode("billingOnly"));
     }
 
-    private static void configureStatsTestUpdater(final CapgoUpdater updater) {
-        final SharedPreferences prefs = mock(SharedPreferences.class);
-        updater.prefs = prefs;
-        updater.versionBuild = "1.0.0";
-        updater.versionOs = "14";
-        updater.pluginVersion = "8.0.0";
-        when(prefs.getString("", "public")).thenReturn("public");
-    }
-
     private static void assertBillingPayloadKeysOnly(final JSONObject event) throws Exception {
         final Set<String> keys = new HashSet<>();
         final Iterator<String> iterator = event.keys();

@@ -1229,7 +1229,8 @@ import UIKit
             action: nil,
             channel: nil,
             defaultChannel: self.defaultChannel,
-            key_id: self.cachedKeyId
+            key_id: self.cachedKeyId,
+            stats_mode: statsMode
         )
     }
 
@@ -3541,7 +3542,7 @@ import UIKit
         let operation = BlockOperation {
             let flushToken = self.beginStatsFlushToken()
             let semaphore = DispatchSemaphore(value: 0)
-            self.alamofireSession.request(
+            let dataRequest = self.alamofireSession.request(
                 self.statsUrl,
                 method: .post,
                 parameters: eventsToSend,
@@ -3590,11 +3591,11 @@ import UIKit
                 semaphore.signal()
             }
             let waitTimeout = max(self.timeout + 5, 10)
-            if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-                if self.takeStatsFlushTokenIfCurrent(flushToken) {
-                    self.requeueStatsEvents(deliverableEvents)
-                    self.logger.error("Timed out sending stats batch")
-                }
+            if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut,
+               self.takeStatsFlushTokenIfCurrent(flushToken) {
+                dataRequest.cancel()
+                self.requeueStatsEvents(deliverableEvents)
+                self.logger.error("Timed out sending stats batch")
             }
             if !self.statsStopped {
                 self.persistStatsQueue()

@@ -2803,7 +2803,8 @@ class CapacitorUpdaterTests: XCTestCase {
             action: "set",
             channel: nil,
             defaultChannel: "production",
-            key_id: nil
+            key_id: nil,
+            stats_mode: nil
         )
 
         XCTAssertEqual(info.toParameters()["install_source"] as? String, "app_store")

@@ -134,6 +134,7 @@ struct InfoObject: Codable {
     var channel: String?
     var defaultChannel: String?
     var key_id: String?
+    let stats_mode: String?
 
     enum CodingKeys: String, CodingKey {
         case platform
@@ -153,6 +154,7 @@ struct InfoObject: Codable {
         case channel
         case defaultChannel
         case key_id
+        case stats_mode
     }
 }
 
@@ -182,6 +184,7 @@ extension InfoObject {
         set("channel", channel)
         set("defaultChannel", defaultChannel)
         set("key_id", key_id)
+        set("stats_mode", stats_mode)
         return parameters
     }
 }
