@@ -9,9 +9,9 @@ import Security
 import os.log
 
 /// Isolated raw RSA primitives for Capgo v2 checksum/session-key recovery.
-/// SonarCloud automatic analysis has no Swift // NOSONAR; this file is excluded
-/// in `.sonarcloud.properties` because `.rsaEncryptionRaw` is intentional wire
-/// compatibility with Node `privateEncrypt` / `publicDecrypt`.
+/// SonarCloud automatic analysis has no Swift // NOSONAR; swift:S5542 is ignored
+/// via `.sonarcloud.properties` multicriteria because `.rsaEncryptionRaw` is
+/// intentional wire compatibility with Node `privateEncrypt` / `publicDecrypt`.
 enum CapgoRawRsa {
     private static let log = OSLog(subsystem: "ee.forgr.capacitor_updater", category: "RSA")
 
