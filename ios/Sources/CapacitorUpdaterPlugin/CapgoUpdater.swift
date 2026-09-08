@@ -49,7 +49,7 @@ import UIKit
     public static let statsModeUpdatesOnly = "updatesOnly"
     public static let statsModeBillingOnly = "billingOnly"
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
-    public var beforeDownload: (() -> Void)?
+    public var beforeDownload: (() throws -> Void)?
     public var channelUrl: String = ""
     public var defaultChannel: String = ""
     public var appId: String = ""
@@ -1563,12 +1563,12 @@ import UIKit
         return json
     }
 
-    private func runBeforeDownload() {
-        beforeDownload?()
+    private func runBeforeDownload() throws {
+        try beforeDownload?()
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        self.runBeforeDownload()
+        try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
         let destFolder = self.getBundleDirectory(id: id)
@@ -2171,7 +2171,7 @@ import UIKit
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        self.runBeforeDownload()
+        try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
         if version != getLocalUpdateVersion(for: id) {

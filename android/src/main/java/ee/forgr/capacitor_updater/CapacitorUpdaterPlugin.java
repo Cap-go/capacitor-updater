@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.51.14";
+    private final String pluginVersion = "8.51.15";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -2537,11 +2537,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
-        this.updateUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(UPDATE_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist updateUrl");
+                call.reject("Failed to persist updateUrl");
+                return;
+            }
         }
+        this.updateUrl = url;
         call.resolve();
     }
 
@@ -2558,11 +2562,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
-        this.implementation.statsUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(STATS_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist statsUrl");
+                call.reject("Failed to persist statsUrl");
+                return;
+            }
         }
+        this.implementation.statsUrl = url;
         call.resolve();
     }
 
@@ -2579,11 +2587,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setChannelUrl called without url");
             return;
         }
-        this.implementation.channelUrl = url;
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(CHANNEL_URL_PREF_KEY, url);
-            this.editor.apply();
+            if (!this.editor.commit()) {
+                logger.error("Failed to persist channelUrl");
+                call.reject("Failed to persist channelUrl");
+                return;
+            }
         }
+        this.implementation.channelUrl = url;
         call.resolve();
     }
 

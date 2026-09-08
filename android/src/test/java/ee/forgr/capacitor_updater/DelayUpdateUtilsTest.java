@@ -83,6 +83,27 @@ public class DelayUpdateUtilsTest {
     }
 
     @Test
+    public void checkCancelDelay_foregroundKeepsUnexpiredBackgroundCondition() throws Exception {
+        JSONArray stored = new JSONArray();
+        stored.put(new JSONObject().put("kind", "background").put("value", "60000"));
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
+        when(prefs.getLong(eq(DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY), anyLong())).thenReturn(System.currentTimeMillis() - 1000L);
+
+        utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(editor).putString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), captor.capture());
+        verify(editor).commit();
+        verify(editor, never()).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+
+        JSONArray updated = new JSONArray(captor.getValue());
+        assertEquals(1, updated.length());
+        JSONObject remaining = updated.getJSONObject(0);
+        assertEquals("background", remaining.getString("kind"));
+        assertEquals("60000", remaining.getString("value"));
+    }
+
+    @Test
     public void checkCancelDelay_foregroundRemovesExpiredBackgroundCondition() throws Exception {
         JSONArray stored = new JSONArray();
         stored.put(new JSONObject().put("kind", "background").put("value", "1"));
