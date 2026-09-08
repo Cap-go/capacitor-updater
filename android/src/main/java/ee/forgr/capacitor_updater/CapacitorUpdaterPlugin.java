@@ -727,7 +727,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.pluginVersion = this.pluginVersion;
             this.implementation.versionCode = this.getVersionCode(pInfo);
             // Removed unused OkHttpClient creation - using shared client in DownloadService instead
-            this.currentVersionNative = new NativeSemver(this.getConfig().getString("version", pInfo.versionName));
+            this.currentVersionNative = NativeSemver.parseOrDefault(this.getConfig().getString("version", pInfo.versionName), "0.0.0");
             this.currentBuildVersion = this.getVersionCode(pInfo);
             this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
         } catch (final PackageManager.NameNotFoundException e) {

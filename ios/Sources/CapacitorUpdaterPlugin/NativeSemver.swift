@@ -2,41 +2,93 @@ import Foundation
 
 /// Lightweight semver-style comparator for native app version strings.
 /// Replaces the third-party Version dependency for delay-update checks.
-public struct NativeSemver: Comparable, CustomStringConvertible {
+public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
     private let original: String
-    private let numericParts: [Int]
+    private let numericParts: [UInt64]
+    private let prerelease: String?
+
+    public static func parseOrDefault(_ version: String?, fallback: String = "0.0.0") -> NativeSemver {
+        guard let version, !version.isEmpty else {
+            return (try? NativeSemver(fallback)) ?? NativeSemver(fallback: fallback)
+        }
+        return (try? NativeSemver(version)) ?? NativeSemver(fallback: fallback)
+    }
 
     public init(_ version: String) throws {
         guard !version.isEmpty else {
             throw NativeSemverError.empty
         }
-        let parts = Self.parseNumericParts(version)
+        let core = Self.splitCoreAndPrerelease(version)
+        let parts = Self.parseNumericParts(core.core)
         guard !parts.isEmpty else {
             throw NativeSemverError.noNumericComponents(version)
         }
         self.original = version
         self.numericParts = parts
+        self.prerelease = core.prerelease
+    }
+
+    private init(fallback: String) {
+        self.original = fallback
+        self.numericParts = [0, 0, 0]
+        self.prerelease = nil
     }
 
     public var description: String {
         original
     }
 
-    public static func < (lhs: NativeSemver, rhs: NativeSemver) -> Bool {
-        let maxCount = max(lhs.numericParts.count, rhs.numericParts.count)
-        for index in 0..<maxCount {
-            let left = index < lhs.numericParts.count ? lhs.numericParts[index] : 0
-            let right = index < rhs.numericParts.count ? rhs.numericParts[index] : 0
-            if left != right {
-                return left < right
-            }
-        }
-        return false
+    public static func == (lhs: NativeSemver, rhs: NativeSemver) -> Bool {
+        lhs.compareCoreAndPrerelease(to: rhs) == 0
     }
 
-    private static func parseNumericParts(_ version: String) -> [Int] {
-        var parts: [Int] = []
-        for segment in version.split(whereSeparator: { $0 == "." || $0 == "-" || $0 == "+" || $0 == "_" }) {
+    public static func < (lhs: NativeSemver, rhs: NativeSemver) -> Bool {
+        lhs.compareCoreAndPrerelease(to: rhs) < 0
+    }
+
+    private func compareCoreAndPrerelease(to other: NativeSemver) -> Int {
+        let maxCount = max(numericParts.count, other.numericParts.count)
+        for index in 0..<maxCount {
+            let left = index < numericParts.count ? numericParts[index] : 0
+            let right = index < other.numericParts.count ? other.numericParts[index] : 0
+            if left < right {
+                return -1
+            }
+            if left > right {
+                return 1
+            }
+        }
+        switch (prerelease, other.prerelease) {
+        case (nil, nil):
+            return 0
+        case (nil, _):
+            return 1
+        case (_, nil):
+            return -1
+        case let (left?, right?):
+            if left == right {
+                return 0
+            }
+            return left < right ? -1 : 1
+        }
+    }
+
+    private static func splitCoreAndPrerelease(_ version: String) -> (core: String, prerelease: String?) {
+        var working = version
+        if let plusIndex = working.firstIndex(of: "+") {
+            working = String(working[..<plusIndex])
+        }
+        if let dashIndex = working.firstIndex(of: "-") {
+            let core = String(working[..<dashIndex])
+            let prerelease = String(working[working.index(after: dashIndex)...])
+            return (core, prerelease.isEmpty ? nil : prerelease)
+        }
+        return (working, nil)
+    }
+
+    private static func parseNumericParts(_ core: String) -> [UInt64] {
+        var parts: [UInt64] = []
+        for segment in core.split(separator: ".", omittingEmptySubsequences: false) {
             guard !segment.isEmpty else {
                 continue
             }
@@ -48,11 +100,18 @@ public struct NativeSemver: Comparable, CustomStringConvertible {
                 }
                 end += 1
             }
-            if end > 0, let value = Int(segment.prefix(end)) {
+            if end > 0, let value = parseNumericComponent(String(segment.prefix(end))) {
                 parts.append(value)
             }
         }
         return parts
+    }
+
+    private static func parseNumericComponent(_ digits: String) -> UInt64? {
+        if digits.count > 20 {
+            return UInt64.max
+        }
+        return UInt64(digits)
     }
 }
 

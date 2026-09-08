@@ -260,11 +260,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             // crash the app on purpose
             fatalError("Cannot get version name")
         }
-        do {
-            currentVersionNative = try NativeSemver(versionName)
-        } catch {
-            logger.error("Cannot parse versionName \(versionName)")
-        }
+        currentVersionNative = NativeSemver.parseOrDefault(versionName)
         currentBuildVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         logger.info("version native \(self.currentVersionNative.description)")
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!

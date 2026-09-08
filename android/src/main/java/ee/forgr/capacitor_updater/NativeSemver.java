@@ -12,22 +12,59 @@ public final class NativeSemver implements Comparable<NativeSemver> {
 
     private final String original;
     private final List<Long> numericParts;
+    private final String prerelease;
+
+    public static NativeSemver parseOrDefault(final String version, final String fallback) {
+        try {
+            if (version == null || version.isEmpty()) {
+                return new NativeSemver(fallback);
+            }
+            return new NativeSemver(version);
+        } catch (final IllegalArgumentException ignored) {
+            return new NativeSemver(fallback);
+        }
+    }
 
     public NativeSemver(final String version) {
         if (version == null || version.isEmpty()) {
             throw new IllegalArgumentException("Version must not be empty");
         }
         this.original = version;
-        this.numericParts = parseNumericParts(version);
+        final CoreParts core = splitCoreAndPrerelease(version);
+        this.numericParts = parseNumericParts(core.core);
+        this.prerelease = core.prerelease;
         if (numericParts.isEmpty()) {
             throw new IllegalArgumentException("Version has no numeric components: " + version);
         }
     }
 
-    private static List<Long> parseNumericParts(final String version) {
+    private static final class CoreParts {
+
+        private final String core;
+        private final String prerelease;
+
+        private CoreParts(final String core, final String prerelease) {
+            this.core = core;
+            this.prerelease = prerelease;
+        }
+    }
+
+    private static CoreParts splitCoreAndPrerelease(final String version) {
+        String working = version;
+        final int plusIdx = working.indexOf('+');
+        if (plusIdx >= 0) {
+            working = working.substring(0, plusIdx);
+        }
+        final int dashIdx = working.indexOf('-');
+        if (dashIdx >= 0) {
+            return new CoreParts(working.substring(0, dashIdx), working.substring(dashIdx + 1));
+        }
+        return new CoreParts(working, null);
+    }
+
+    private static List<Long> parseNumericParts(final String core) {
         final List<Long> parts = new ArrayList<>();
-        final String[] segments = version.split("[.\\-+_]");
-        for (final String segment : segments) {
+        for (final String segment : core.split("\\.")) {
             if (segment.isEmpty()) {
                 continue;
             }
@@ -36,10 +73,21 @@ public final class NativeSemver implements Comparable<NativeSemver> {
                 end++;
             }
             if (end > 0) {
-                parts.add(Long.parseLong(segment.substring(0, end)));
+                parts.add(parseNumericComponent(segment.substring(0, end)));
             }
         }
         return parts;
+    }
+
+    private static long parseNumericComponent(final String digits) {
+        if (digits.length() > 19) {
+            return Long.MAX_VALUE;
+        }
+        try {
+            return Long.parseLong(digits);
+        } catch (final NumberFormatException ignored) {
+            return Long.MAX_VALUE;
+        }
     }
 
     public boolean isAtLeast(final String version) {
@@ -67,7 +115,16 @@ public final class NativeSemver implements Comparable<NativeSemver> {
                 return 1;
             }
         }
-        return 0;
+        if (prerelease == null && other.prerelease == null) {
+            return 0;
+        }
+        if (prerelease == null) {
+            return 1;
+        }
+        if (other.prerelease == null) {
+            return -1;
+        }
+        return prerelease.compareTo(other.prerelease);
     }
 
     @Override
@@ -83,11 +140,11 @@ public final class NativeSemver implements Comparable<NativeSemver> {
         if (!(other instanceof NativeSemver)) {
             return false;
         }
-        return compareTo((NativeSemver) other) == 0 && Objects.equals(original, ((NativeSemver) other).original);
+        return compareTo((NativeSemver) other) == 0;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(original, numericParts);
+        return Objects.hash(numericParts, prerelease);
     }
 }
