@@ -21,7 +21,7 @@ public struct RSAPublicKey {
 
     public static func load(rsaPublicKey: String) -> RSAPublicKey? {
         guard let der = pemToDer(rsaPublicKey) else {
-            os_log("RSA key import failed: invalid PEM/base64", log: log, type: .error)
+            os_log("RSA key import failed: invalid PEM/base64", log: Self.log, type: .error)
             return nil
         }
 
@@ -39,7 +39,7 @@ public struct RSAPublicKey {
         guard let key = SecKeyCreateWithData(der as CFData, attributes as CFDictionary, &error) else {
             os_log(
                 "RSA key import failed: %{public}@",
-                log: log,
+                log: Self.log,
                 type: .error,
                 String(describing: error?.takeRetainedValue())
             )
@@ -49,7 +49,7 @@ public struct RSAPublicKey {
               SecKeyIsAlgorithmSupported(key, .encrypt, .rsaEncryptionRaw) else {
             os_log(
                 "RSA key import failed: unsupported key (Capgo requires RSA-2048 with raw encryption)",
-                log: log,
+                log: Self.log,
                 type: .error
             )
             return nil
@@ -68,7 +68,7 @@ public struct RSAPublicKey {
         guard let recovered = SecKeyCreateEncryptedData(key, .rsaEncryptionRaw, data as CFData, &error) else {
             os_log(
                 "RSA raw recovery failed: %{public}@",
-                log: log,
+                log: Self.log,
                 type: .error,
                 String(describing: error?.takeRetainedValue())
             )
