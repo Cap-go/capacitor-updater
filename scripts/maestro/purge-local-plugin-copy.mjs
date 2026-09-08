@@ -8,20 +8,19 @@ import { exampleAppDir, repoRoot } from './scenarios.mjs';
 export function purgeLocalPluginCopy() {
   for (const root of [exampleAppDir, repoRoot]) {
     const bunDir = `${root}/node_modules/.bun`;
+    let entries = [];
     try {
-      for (const entry of readdirSync(bunDir)) {
-        if (entry.startsWith('@capgo+capacitor-updater@')) {
-          rmSync(`${bunDir}/${entry}`, { recursive: true, force: true });
-        }
+      entries = readdirSync(bunDir);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    for (const entry of entries) {
+      if (entry.startsWith('@capgo+capacitor-updater@')) {
+        rmSync(`${bunDir}/${entry}`, { recursive: true, force: true });
       }
-    } catch {
-      // .bun may not exist yet.
     }
 
-    try {
-      rmSync(`${root}/node_modules/@capgo/capacitor-updater`, { recursive: true, force: true });
-    } catch {
-      // Package link may not exist yet.
-    }
+    // force:true ignores missing paths; other I/O errors still throw.
+    rmSync(`${root}/node_modules/@capgo/capacitor-updater`, { recursive: true, force: true });
   }
 }
