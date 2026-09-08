@@ -136,8 +136,6 @@ final class PopulateDeltaCacheTests: XCTestCase {
         let lookup = implementation.manifestHashLookup(manifest: manifest, sessionKey: "")
 
         XCTAssertEqual(lookup["assets/app.js"]?.hash, "plainhash")
-        // The original (unstripped) manifest name must be preserved — it's what the
-        // built-in bundle actually stores the file under.
         XCTAssertEqual(lookup["assets/app.js"]?.originalFileName, "assets/app.js.br")
         XCTAssertNil(lookup["assets/app.js.br"])
     }
@@ -215,16 +213,14 @@ final class PopulateDeltaCacheTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile.path))
     }
 
-    /// Regression test: the built-in bundle stores brotli manifest entries under
-    /// their original (`.br`-suffixed) name, while the extracted bundle file on disk
-    /// is always named without it. The builtin lookup must resolve against the
-    /// manifest's original name, not the extracted file's own path, or this match
-    /// silently never fires for any compressed asset.
+    /// Regression test: brotli manifest entries are extracted without the `.br`
+    /// suffix, while builtin assets are stored uncompressed. populateDeltaCache must
+    /// resolve the builtin path the same way as isManifestEntryAvailableLocally.
     func testPopulateDeltaCacheSkipsBrotliFilesAlreadyAvailableFromBuiltin() throws {
         let content = "shared builtin content \(bundleId!)"
         let extractedFileURL = try write(content, named: "app.js", in: bundleDir.appendingPathComponent("assets"))
         let realHash = CryptoCipher.calcChecksum(filePath: extractedFileURL)
-        try write(content, named: "app.js.br", in: builtinFolder.appendingPathComponent("assets"))
+        try write(content, named: "app.js", in: builtinFolder.appendingPathComponent("assets"))
         let manifest = [
             ManifestEntry(file_name: "assets/app.js.br", file_hash: realHash, download_url: nil)
         ]
