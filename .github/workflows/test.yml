@@ -125,7 +125,31 @@ jobs:
           install-example: 'true'
       - name: Build reusable Maestro web assets
         run: bun scripts/maestro/build-bundles.mjs all
-      - name: Upload reusable Maestro web assets
+      - name: Upload reusable Maestro web assets (attempt 1)
+        id: upload_maestro_web_assets_1
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: |
+            dist
+            .maestro-artifacts
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Upload reusable Maestro web assets (attempt 2)
+        if: steps.upload_maestro_web_assets_1.outcome == 'failure'
+        id: upload_maestro_web_assets_2
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-web-assets
+          path: |
+            dist
+            .maestro-artifacts
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Upload reusable Maestro web assets (attempt 3)
+        if: steps.upload_maestro_web_assets_1.outcome == 'failure' && steps.upload_maestro_web_assets_2.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: maestro-web-assets
@@ -183,7 +207,25 @@ jobs:
           path: .
       - name: Build Android app
         run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
-      - name: Upload Android app
+      - name: Upload Android app (attempt 1)
+        id: upload_android_app_1
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload Android app (attempt 2)
+        if: steps.upload_android_app_1.outcome == 'failure'
+        id: upload_android_app_2
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload Android app (attempt 3)
+        if: steps.upload_android_app_1.outcome == 'failure' && steps.upload_android_app_2.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: maestro-android-app-${{ matrix.scenario }}
@@ -518,7 +560,7 @@ jobs:
   maestro_android_scenarios:
     permissions:
       contents: read
-      actions: read
+      actions: write
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -562,12 +604,44 @@ jobs:
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Download reusable Maestro web assets
+      - name: Download reusable Maestro web assets (attempt 1)
+        id: download_maestro_web_assets_1
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
           path: .
-      - name: Download Android app
+      - name: Download reusable Maestro web assets (attempt 2)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        id: download_maestro_web_assets_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download reusable Maestro web assets (attempt 3)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download Android app (attempt 1)
+        id: download_android_app_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug
+      - name: Download Android app (attempt 2)
+        if: steps.download_android_app_1.outcome == 'failure'
+        id: download_android_app_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-android-app-${{ matrix.scenario }}
+          path: example-app/android/app/build/outputs/apk/debug
+      - name: Download Android app (attempt 3)
+        if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
         uses: actions/download-artifact@v8
         with:
           name: maestro-android-app-${{ matrix.scenario }}
