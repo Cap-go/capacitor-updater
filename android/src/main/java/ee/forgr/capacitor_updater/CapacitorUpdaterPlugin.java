@@ -858,7 +858,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
         logger.info("init for device " + this.implementation.deviceID);
-        logger.info("version native " + this.currentVersionNative.getOriginalString());
+        logger.info("version native " + this.currentVersionNative);
         this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);

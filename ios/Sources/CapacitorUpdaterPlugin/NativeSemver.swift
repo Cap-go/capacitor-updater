@@ -2,11 +2,11 @@ import Foundation
 
 /// Lightweight semver-style comparator for native app version strings.
 /// Replaces the third-party Version dependency for delay-update checks.
-struct NativeSemver: Comparable, CustomStringConvertible {
+public struct NativeSemver: Comparable, CustomStringConvertible {
     private let original: String
     private let numericParts: [Int]
 
-    init(_ version: String) throws {
+    public init(_ version: String) throws {
         guard !version.isEmpty else {
             throw NativeSemverError.empty
         }
@@ -18,11 +18,11 @@ struct NativeSemver: Comparable, CustomStringConvertible {
         self.numericParts = parts
     }
 
-    var description: String {
+    public var description: String {
         original
     }
 
-    static func < (lhs: NativeSemver, rhs: NativeSemver) -> Bool {
+    public static func < (lhs: NativeSemver, rhs: NativeSemver) -> Bool {
         let maxCount = max(lhs.numericParts.count, rhs.numericParts.count)
         for index in 0..<maxCount {
             let left = index < lhs.numericParts.count ? lhs.numericParts[index] : 0
@@ -56,7 +56,7 @@ struct NativeSemver: Comparable, CustomStringConvertible {
     }
 }
 
-enum NativeSemverError: Error {
+public enum NativeSemverError: Error {
     case empty
     case noNumericComponents(String)
 }

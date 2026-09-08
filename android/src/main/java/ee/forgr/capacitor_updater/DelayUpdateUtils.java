@@ -130,7 +130,7 @@ public class DelayUpdateUtils {
                     if (!"".equals(value)) {
                         try {
                             final NativeSemver versionLimit = new NativeSemver(value);
-                            if (this.currentVersionNative.isAtLeast(versionLimit)) {
+                            if (this.currentVersionNative.compareTo(versionLimit) >= 0) {
                                 logger.info(
                                     "Native version delay (value: " + value + ") condition removed due to above limit at index " + index
                                 );
