@@ -105,7 +105,6 @@ jobs:
   maestro_web_assets:
     permissions:
       contents: read
-      actions: write
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: Build Maestro web assets
@@ -143,6 +142,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: maestro-web-assets
+          overwrite: true
           path: |
             dist
             .maestro-artifacts
@@ -153,6 +153,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: maestro-web-assets
+          overwrite: true
           path: |
             dist
             .maestro-artifacts
@@ -162,7 +163,6 @@ jobs:
   maestro_android_apps:
     permissions:
       contents: read
-      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -200,7 +200,29 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
           cache: gradle
-      - name: Download reusable Maestro web assets
+      - name: Download reusable Maestro web assets (attempt 1)
+        id: download_maestro_web_assets_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before retrying Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 2)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        id: download_maestro_web_assets_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before final Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 3)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
@@ -222,6 +244,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: maestro-android-app-${{ matrix.scenario }}
+          overwrite: true
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload Android app (attempt 3)
@@ -229,13 +252,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: maestro-android-app-${{ matrix.scenario }}
+          overwrite: true
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
   maestro_ios_apps:
     permissions:
       contents: read
-      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: macOS-latest
@@ -254,7 +277,29 @@ jobs:
             node_modules
             example-app/node_modules
           install-example: 'true'
-      - name: Download reusable Maestro web assets
+      - name: Download reusable Maestro web assets (attempt 1)
+        id: download_maestro_web_assets_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before retrying Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 2)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        id: download_maestro_web_assets_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before final Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 3)
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
         with:
           name: maestro-web-assets
@@ -302,7 +347,6 @@ jobs:
   maestro_android_example_app:
     permissions:
       contents: read
-      actions: write
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -396,7 +440,6 @@ jobs:
   maestro_ios_example_app:
     permissions:
       contents: read
-      actions: write
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -462,7 +505,6 @@ jobs:
   maestro_ios_live_update:
     permissions:
       contents: read
-      actions: write
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -560,7 +602,6 @@ jobs:
   maestro_android_scenarios:
     permissions:
       contents: read
-      actions: write
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -611,6 +652,9 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Wait before retrying Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure'
+        run: sleep 15
       - name: Download reusable Maestro web assets (attempt 2)
         if: steps.download_maestro_web_assets_1.outcome == 'failure'
         id: download_maestro_web_assets_2
@@ -619,6 +663,9 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Wait before final Maestro web assets download
+        if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
+        run: sleep 15
       - name: Download reusable Maestro web assets (attempt 3)
         if: steps.download_maestro_web_assets_1.outcome == 'failure' && steps.download_maestro_web_assets_2.outcome == 'failure'
         uses: actions/download-artifact@v8
@@ -632,6 +679,9 @@ jobs:
         with:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
+      - name: Wait before retrying Android app download
+        if: steps.download_android_app_1.outcome == 'failure'
+        run: sleep 15
       - name: Download Android app (attempt 2)
         if: steps.download_android_app_1.outcome == 'failure'
         id: download_android_app_2
@@ -640,6 +690,9 @@ jobs:
         with:
           name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
+      - name: Wait before final Android app download
+        if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
+        run: sleep 15
       - name: Download Android app (attempt 3)
         if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
         uses: actions/download-artifact@v8
