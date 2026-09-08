@@ -1,7 +1,6 @@
 package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
-import io.github.g00fy2.versioncompare.Version;
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -21,9 +20,9 @@ public class DelayUpdateUtils {
 
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
-    private final Version currentVersionNative;
+    private final NativeSemver currentVersionNative;
 
-    public DelayUpdateUtils(SharedPreferences prefs, SharedPreferences.Editor editor, Version currentVersionNative, Logger logger) {
+    public DelayUpdateUtils(SharedPreferences prefs, SharedPreferences.Editor editor, NativeSemver currentVersionNative, Logger logger) {
         this.prefs = prefs;
         this.editor = editor;
         this.currentVersionNative = currentVersionNative;
@@ -130,7 +129,7 @@ public class DelayUpdateUtils {
                 case DelayUntilNext.nativeVersion:
                     if (!"".equals(value)) {
                         try {
-                            final Version versionLimit = new Version(value);
+                            final NativeSemver versionLimit = new NativeSemver(value);
                             if (this.currentVersionNative.isAtLeast(versionLimit)) {
                                 logger.info(
                                     "Native version delay (value: " + value + ") condition removed due to above limit at index " + index

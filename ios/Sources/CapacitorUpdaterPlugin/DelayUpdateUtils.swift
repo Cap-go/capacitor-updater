@@ -13,7 +13,6 @@
 //
 
 import Foundation
-import Version
 
 public class DelayUpdateUtils {
 
@@ -23,7 +22,7 @@ public class DelayUpdateUtils {
     // swiftlint:enable identifier_name
     private let logger: Logger
 
-    private let currentVersionNative: Version
+    private let currentVersionNative: NativeSemver
 
     public enum CancelDelaySource {
         case killed
@@ -39,7 +38,7 @@ public class DelayUpdateUtils {
         }
     }
 
-    public init(currentVersionNative: Version, logger: Logger) {
+    public init(currentVersionNative: NativeSemver, logger: Logger) {
         self.currentVersionNative = currentVersionNative
         self.logger = logger
     }
@@ -117,7 +116,7 @@ public class DelayUpdateUtils {
             case "nativeVersion":
                 if let value = value, !value.isEmpty {
                     do {
-                        let versionLimit = try Version(value)
+                        let versionLimit = try NativeSemver(value)
                         if currentVersionNative >= versionLimit {
                             // swiftlint:disable:next line_length
                             logger.info("Native version delay (value: \(value)) condition removed due to above limit at index \(index)")

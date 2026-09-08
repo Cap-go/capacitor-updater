@@ -8,7 +8,6 @@ import Foundation
 import Capacitor
 import UIKit
 import WebKit
-import Version
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -147,7 +146,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
-    private var currentVersionNative: Version = "0.0.0"
+    private var currentVersionNative: NativeSemver = (try? NativeSemver("0.0.0"))!
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
@@ -262,7 +261,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Cannot get version name")
         }
         do {
-            currentVersionNative = try Version(versionName)
+            currentVersionNative = try NativeSemver(versionName)
         } catch {
             logger.error("Cannot parse versionName \(versionName)")
         }
@@ -4892,8 +4891,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Determine update availability by comparing versions
                         if let availableVersion = availableVersion {
                             do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
+                                let currentVer = try NativeSemver(currentVersionName)
+                                let availableVer = try NativeSemver(availableVersion)
                                 if availableVer > currentVer {
                                     result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
                                 } else {

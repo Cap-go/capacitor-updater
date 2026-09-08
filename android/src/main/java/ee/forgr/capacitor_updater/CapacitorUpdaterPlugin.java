@@ -48,7 +48,7 @@ import com.google.android.play.core.install.InstallStateUpdatedListener;
 import com.google.android.play.core.install.model.AppUpdateType;
 import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
-import io.github.g00fy2.versioncompare.Version;
+import ee.forgr.capacitor_updater.NativeSemver;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -164,7 +164,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoUpdate = false;
     private String autoUpdateMode = AUTO_UPDATE_MODE_OFF;
     private String updateUrl = "";
-    private Version currentVersionNative;
+    private NativeSemver currentVersionNative;
     private String currentBuildVersion;
     private Thread backgroundTask;
     private Boolean taskRunning = false;
@@ -727,7 +727,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.pluginVersion = this.pluginVersion;
             this.implementation.versionCode = this.getVersionCode(pInfo);
             // Removed unused OkHttpClient creation - using shared client in DownloadService instead
-            this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
+            this.currentVersionNative = new NativeSemver(this.getConfig().getString("version", pInfo.versionName));
             this.currentBuildVersion = this.getVersionCode(pInfo);
             this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
         } catch (final PackageManager.NameNotFoundException e) {
