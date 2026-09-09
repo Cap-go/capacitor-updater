@@ -2131,13 +2131,6 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
-      if (scenarioId === 'manual-zip' && platform !== 'ios') {
-        markPendingBootAction('verify-persisted-config-after-get-latest-boot');
-        return {
-          message: 'Queued persisted-config verification for the next boot after getLatest().',
-        };
-      }
-
       markPendingBootAction('verify-persisted-config-boot');
       return {
         message: 'Queued persisted-config verification for the next boot.',
