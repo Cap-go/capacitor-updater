@@ -2146,10 +2146,8 @@ const actions = [
     run: async () =>
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
-        probeLatest:
-          platform !== 'ios' &&
-          scenarioId !== 'manual-zip-config-guards' &&
-          scenarioId !== 'manual-zip-no-persist',
+        // getLatest is already exercised in the smoke sequence; boot only re-checks persisted URLs.
+        probeLatest: false,
       }),
   },
   {
