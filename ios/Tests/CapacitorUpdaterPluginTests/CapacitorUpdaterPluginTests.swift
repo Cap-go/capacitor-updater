@@ -652,11 +652,13 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(implementation.sentStatsActions.isEmpty)
     }
 
-    func testStatsModeQueueBehavior() throws {
+    func testStatsModeNormalization() {
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode(nil), CapgoUpdater.statsModeAll)
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
         XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeBillingOnly))
+    }
 
+    func testStatsModeBillingOnlyFiltersAndPayload() {
         let billingUpdater = makeStatsModeTestUpdater()
         defer { cleanupStatsTest(billingUpdater) }
         billingUpdater.versionBuild = "1.0.0"
@@ -668,7 +670,9 @@ class CapacitorUpdaterTests: XCTestCase {
         stopStatsFlushForTests(billingUpdater)
         XCTAssertEqual(billingUpdater.queuedStatsActionsForTests(), ["download_complete", "set"])
         assertAllBillingPayloadKeysOnly(billingUpdater)
+    }
 
+    func testStatsModeRestoreUnderUpdatesOnly() throws {
         let pendingFileURL = pendingStatsFileURLForTests()
         defer { try? FileManager.default.removeItem(at: pendingFileURL) }
         let restoredPayload = """
@@ -684,9 +688,13 @@ class CapacitorUpdaterTests: XCTestCase {
         restoredUpdater.restorePendingStats()
         restoredUpdater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
         stopStatsFlushForTests(restoredUpdater)
-        XCTAssertEqual(restoredUpdater.firstQueuedStatsEventForTests()?.action, "set")
-        XCTAssertEqual(restoredUpdater.firstQueuedStatsEventForTests()?.stats_mode, CapgoUpdater.statsModeUpdatesOnly)
+        XCTAssertEqual(restoredUpdater.queuedStatsActionsForTests(), ["set"])
+        XCTAssertEqual(restoredUpdater.queuedStatsEventsForTests().map(\.stats_mode), [CapgoUpdater.statsModeUpdatesOnly])
+    }
 
+    func testStatsModeRestoreUnderBillingOnly() throws {
+        let pendingFileURL = pendingStatsFileURLForTests()
+        defer { try? FileManager.default.removeItem(at: pendingFileURL) }
         let billingRestorePayload = """
         [
           {"action":"set","timestamp":3,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"2.0.0","custom_id":"user-1","metadata":{"source":"test"},"stats_mode":"all"}
@@ -699,17 +707,22 @@ class CapacitorUpdaterTests: XCTestCase {
         billingRestoreUpdater.restorePendingStats()
         billingRestoreUpdater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
         stopStatsFlushForTests(billingRestoreUpdater)
+        XCTAssertEqual(billingRestoreUpdater.queuedStatsActionsForTests(), ["set"])
         assertAllBillingPayloadKeysOnly(billingRestoreUpdater)
-        XCTAssertEqual(billingRestoreUpdater.firstQueuedStatsEventForTests()?.stats_mode, CapgoUpdater.statsModeBillingOnly)
+        XCTAssertEqual(billingRestoreUpdater.queuedStatsEventsForTests().map(\.stats_mode), [CapgoUpdater.statsModeBillingOnly])
+    }
 
+    func testStatsModeInFlightFilteringAfterUpdatesOnly() {
         let filteredUpdater = makeStatsModeTestUpdater()
         defer { cleanupStatsTest(filteredUpdater) }
         filteredUpdater.sendStats(action: "app_crash", versionName: "1.0.0")
         filteredUpdater.sendStats(action: "set", versionName: "2.0.0")
         filteredUpdater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
         stopStatsFlushForTests(filteredUpdater)
-        XCTAssertEqual(filteredUpdater.firstQueuedStatsEventForTests()?.action, "set")
+        XCTAssertEqual(filteredUpdater.queuedStatsActionsForTests(), ["set"])
+    }
 
+    func testStatsModeUpdatesOnlyFiltersHealthEvents() {
         let updatesOnlyUpdater = makeStatsModeTestUpdater()
         defer { cleanupStatsTest(updatesOnlyUpdater) }
         updatesOnlyUpdater.statsMode = CapgoUpdater.statsModeUpdatesOnly
@@ -717,8 +730,10 @@ class CapacitorUpdaterTests: XCTestCase {
         updatesOnlyUpdater.sendStats(action: "download_71", versionName: "1.0.0")
         updatesOnlyUpdater.sendStats(action: "download_fail", versionName: "1.0.0")
         stopStatsFlushForTests(updatesOnlyUpdater)
-        XCTAssertEqual(updatesOnlyUpdater.firstQueuedStatsEventForTests()?.action, "download_fail")
+        XCTAssertEqual(updatesOnlyUpdater.queuedStatsActionsForTests(), ["download_fail"])
+    }
 
+    func testStatsModeAllModeOrdering() {
         let allModeUpdater = makeStatsModeTestUpdater()
         defer { cleanupStatsTest(allModeUpdater) }
         allModeUpdater.statsMode = CapgoUpdater.statsModeAll

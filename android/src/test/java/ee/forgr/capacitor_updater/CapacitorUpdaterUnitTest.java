@@ -4077,6 +4077,7 @@ public class CapacitorUpdaterUnitTest {
 
         assertEquals(1, updater.pendingStatsCount());
         assertEquals("set", updater.firstQueuedStatsEventForTests().getString("action"));
+        assertEquals(CapgoUpdater.STATS_MODE_UPDATES_ONLY, updater.firstQueuedStatsEventForTests().getString("stats_mode"));
         updater.shutdown();
     }
 

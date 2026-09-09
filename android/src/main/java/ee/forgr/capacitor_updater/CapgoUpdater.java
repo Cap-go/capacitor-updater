@@ -2176,7 +2176,12 @@ public class CapgoUpdater {
             return null;
         }
         if (!usesBillingStatsPayload(this.statsMode)) {
-            return event;
+            try {
+                event.put("stats_mode", this.statsMode);
+                return event;
+            } catch (JSONException e) {
+                return null;
+            }
         }
         try {
             final long timestamp = event.has("timestamp") ? event.optLong("timestamp") : System.currentTimeMillis();
