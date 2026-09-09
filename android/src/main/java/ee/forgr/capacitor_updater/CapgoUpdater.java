@@ -2187,17 +2187,14 @@ public class CapgoUpdater {
     }
 
     private void filterPendingStatsForCurrentMode() {
-        final boolean hadPendingEvents;
+        final boolean hadQueuedEvents;
         synchronized (statsQueue) {
-            hadPendingEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
+            hadQueuedEvents = !statsQueue.isEmpty();
             final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue);
             statsQueue.clear();
             statsQueue.addAll(filteredQueue);
-            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight);
-            statsInFlight.clear();
-            statsInFlight.addAll(filteredInFlight);
         }
-        if (hadPendingEvents) {
+        if (hadQueuedEvents) {
             persistStatsQueue();
         }
     }
