@@ -61,7 +61,7 @@ jobs:
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Setup java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -169,7 +169,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -287,7 +287,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '21'
@@ -546,7 +546,7 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Setup java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '21'

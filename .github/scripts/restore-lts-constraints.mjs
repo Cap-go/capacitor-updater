@@ -133,12 +133,6 @@ export function patchPackageSwift(src, target) {
     /ionic-team\/capacitor-swift-pm\.git",\s*(?:from|exact):\s*"[^"]+"/,
     `ionic-team/capacitor-swift-pm.git", from: "${target.swiftPm}"`,
   );
-  if (target.bigIntExact) {
-    out = out.replace(
-      /\.package\(url: "https:\/\/github\.com\/attaswift\/BigInt\.git", [^)]+\)/,
-      `.package(url: "https://github.com/attaswift/BigInt.git", exact: "${target.bigIntExact}")`,
-    );
-  }
   return out;
 }
 
@@ -259,13 +253,11 @@ function selfTest() {
 
   const swift = patchPackageSwift(
     `platforms: [.iOS("15.0")],
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0"),
-        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.7.0")`,
-    { iosPlatform: '.v13', swiftPm: '6.0.0', bigIntExact: '5.2.0' },
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")`,
+    { iosPlatform: '.v13', swiftPm: '6.0.0' },
   );
   assert.match(swift, /\.iOS\(\.v13\)/);
   assert.match(swift, /from: "6\.0\.0"/);
-  assert.match(swift, /exact: "5\.2\.0"/);
 
   const exampleSpm = patchPackageSwift(
     `platforms: [.iOS(.v15)],

@@ -28,7 +28,6 @@
       "iosDeployment": "13.4",
       "iosPlatform": "13.4",
       "swiftPm": "6.0.0",
-      "bigIntExact": "5.2.0",
       "dropUiScene": true,
       "android": {
         "minSdk": 23,

@@ -13,8 +13,7 @@ let package = Package(
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "6.0.0"),
         .package(url: "https://github.com/Alamofire/Alamofire.git", .upToNextMajor(from: "5.12.0")),
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.20"),
-        .package(url: "https://github.com/mrackwitz/Version.git", exact: "0.8.0"),
-        .package(url: "https://github.com/attaswift/BigInt.git", exact: "5.2.0")
+        .package(url: "https://github.com/mrackwitz/Version.git", exact: "0.8.0")
     ],
     targets: [
         .target(
@@ -24,8 +23,7 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
                 .product(name: "Alamofire", package: "Alamofire"),
-                .product(name: "Version", package: "Version"),
-                .product(name: "BigInt", package: "BigInt")
+                .product(name: "Version", package: "Version")
             ],
             path: "ios/Sources/CapacitorUpdaterPlugin"),
         .testTarget(
