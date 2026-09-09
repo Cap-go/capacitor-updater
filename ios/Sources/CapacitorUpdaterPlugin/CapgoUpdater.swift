@@ -3598,9 +3598,19 @@ import UIKit
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             )
+            // Only publish if this flush is still current and stats remain enabled;
+            // otherwise a concurrent setStatsUrl("") could miss canceling us.
             self.statsFlushTokenLock.lock()
-            self.activeStatsDataRequest = dataRequest
+            let shouldPublish = self.activeStatsFlushToken == flushToken && !self.statsUrl.isEmpty && !self.statsStopped
+            if shouldPublish {
+                self.activeStatsDataRequest = dataRequest
+            }
             self.statsFlushTokenLock.unlock()
+            guard shouldPublish else {
+                dataRequest.cancel()
+                self.clearStatsInFlight()
+                return
+            }
             dataRequest.responseData { response in
                 guard self.takeStatsFlushTokenIfCurrent(flushToken) else {
                     semaphore.signal()
