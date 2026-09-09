@@ -86,6 +86,7 @@ import UIKit
     private var statsFlushTimer: Timer?
     private var statsStopped = false
     private var activeStatsFlushToken: UUID?
+    private var activeStatsDataRequest: Request?
     private let statsFlushTokenLock = NSLock()
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
@@ -3545,7 +3546,10 @@ import UIKit
             // instead of requeueing/persisting events after stats were disabled.
             statsFlushTokenLock.lock()
             activeStatsFlushToken = nil
+            let requestToCancel = activeStatsDataRequest
+            activeStatsDataRequest = nil
             statsFlushTokenLock.unlock()
+            requestToCancel?.cancel()
             statsQueueLock.lock()
             statsQueue.removeAll()
             statsInFlight.removeAll()
@@ -3593,7 +3597,11 @@ import UIKit
                 parameters: eventsToSend,
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
-            ).responseData { response in
+            )
+            self.statsFlushTokenLock.lock()
+            self.activeStatsDataRequest = dataRequest
+            self.statsFlushTokenLock.unlock()
+            dataRequest.responseData { response in
                 guard self.takeStatsFlushTokenIfCurrent(flushToken) else {
                     semaphore.signal()
                     return
@@ -3648,6 +3656,11 @@ import UIKit
                 self.requeueStatsEvents(deliverableEvents)
                 self.logger.error("Timed out sending stats batch")
             }
+            self.statsFlushTokenLock.lock()
+            if self.activeStatsDataRequest === dataRequest {
+                self.activeStatsDataRequest = nil
+            }
+            self.statsFlushTokenLock.unlock()
             if !self.statsStopped {
                 self.persistStatsQueue()
             }
@@ -3671,7 +3684,11 @@ import UIKit
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
-        guard !statsStopped, !statsUrl.isEmpty, !events.isEmpty else { return }
+        guard !statsStopped, !events.isEmpty else { return }
+        guard !statsUrl.isEmpty else {
+            clearStatsInFlight()
+            return
+        }
         statsQueueLock.lock()
         statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
