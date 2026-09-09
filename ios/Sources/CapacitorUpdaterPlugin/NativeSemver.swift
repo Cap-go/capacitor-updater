@@ -66,11 +66,65 @@ public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
         case (_, nil):
             return -1
         case let (left?, right?):
-            if left == right {
+            return Self.comparePrerelease(left, right)
+        }
+    }
+
+    private static func comparePrerelease(_ left: String, _ right: String) -> Int {
+        let leftIds = left.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        let rightIds = right.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        let maxCount = max(leftIds.count, rightIds.count)
+        for index in 0..<maxCount {
+            if index >= leftIds.count {
+                return -1
+            }
+            if index >= rightIds.count {
+                return 1
+            }
+            let cmp = comparePrereleaseIdentifier(leftIds[index], rightIds[index])
+            if cmp != 0 {
+                return cmp
+            }
+        }
+        return 0
+    }
+
+    private static func comparePrereleaseIdentifier(_ left: String, _ right: String) -> Int {
+        let leftNumeric = isNumericIdentifier(left)
+        let rightNumeric = isNumericIdentifier(right)
+        if leftNumeric && rightNumeric {
+            let leftDigits = stripLeadingZeros(left)
+            let rightDigits = stripLeadingZeros(right)
+            if leftDigits.count != rightDigits.count {
+                return leftDigits.count < rightDigits.count ? -1 : 1
+            }
+            if leftDigits == rightDigits {
                 return 0
             }
-            return left < right ? -1 : 1
+            return leftDigits < rightDigits ? -1 : 1
         }
+        if leftNumeric {
+            return -1
+        }
+        if rightNumeric {
+            return 1
+        }
+        if left == right {
+            return 0
+        }
+        return left < right ? -1 : 1
+    }
+
+    private static func isNumericIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { $0.isNumber }
+    }
+
+    private static func stripLeadingZeros(_ digits: String) -> String {
+        var result = digits
+        while result.count > 1 && result.first == "0" {
+            result.removeFirst()
+        }
+        return result
     }
 
     private static func splitCoreAndPrerelease(_ version: String) -> (core: String, prerelease: String?) {
@@ -88,7 +142,7 @@ public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
 
     private static func parseNumericParts(_ core: String) -> [UInt64] {
         var parts: [UInt64] = []
-        for segment in core.split(separator: ".", omittingEmptySubsequences: false) {
+        for segment in core.replacingOccurrences(of: "_", with: ".").split(separator: ".", omittingEmptySubsequences: false) {
             guard !segment.isEmpty else {
                 continue
             }
@@ -111,7 +165,7 @@ public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
         if digits.count > 20 {
             return UInt64.max
         }
-        return UInt64(digits)
+        return UInt64(digits) ?? UInt64.max
     }
 }
 

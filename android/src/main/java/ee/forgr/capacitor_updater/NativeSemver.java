@@ -64,7 +64,7 @@ public final class NativeSemver implements Comparable<NativeSemver> {
 
     private static List<Long> parseNumericParts(final String core) {
         final List<Long> parts = new ArrayList<>();
-        for (final String segment : core.split("\\.")) {
+        for (final String segment : core.split("[._]")) {
             if (segment.isEmpty()) {
                 continue;
             }
@@ -124,7 +124,70 @@ public final class NativeSemver implements Comparable<NativeSemver> {
         if (other.prerelease == null) {
             return -1;
         }
-        return prerelease.compareTo(other.prerelease);
+        return comparePrerelease(prerelease, other.prerelease);
+    }
+
+    private static int comparePrerelease(final String left, final String right) {
+        final String[] leftIds = left.split("\\.");
+        final String[] rightIds = right.split("\\.");
+        final int max = Math.max(leftIds.length, rightIds.length);
+        for (int i = 0; i < max; i++) {
+            if (i >= leftIds.length) {
+                return -1;
+            }
+            if (i >= rightIds.length) {
+                return 1;
+            }
+            final int cmp = comparePrereleaseIdentifier(leftIds[i], rightIds[i]);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return 0;
+    }
+
+    private static int comparePrereleaseIdentifier(final String left, final String right) {
+        final boolean leftNumeric = isNumericIdentifier(left);
+        final boolean rightNumeric = isNumericIdentifier(right);
+        if (leftNumeric && rightNumeric) {
+            // SemVer: compare numeric identifiers by digit magnitude (length, then lexical).
+            final int lengthCmp = Integer.compare(stripLeadingZeros(left).length(), stripLeadingZeros(right).length());
+            if (lengthCmp != 0) {
+                return lengthCmp;
+            }
+            final int digitCmp = stripLeadingZeros(left).compareTo(stripLeadingZeros(right));
+            if (digitCmp != 0) {
+                return digitCmp;
+            }
+            return 0;
+        }
+        if (leftNumeric) {
+            return -1;
+        }
+        if (rightNumeric) {
+            return 1;
+        }
+        return left.compareTo(right);
+    }
+
+    private static boolean isNumericIdentifier(final String value) {
+        if (value.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String stripLeadingZeros(final String digits) {
+        int i = 0;
+        while (i < digits.length() - 1 && digits.charAt(i) == '0') {
+            i++;
+        }
+        return digits.substring(i);
     }
 
     @Override
@@ -145,6 +208,10 @@ public final class NativeSemver implements Comparable<NativeSemver> {
 
     @Override
     public int hashCode() {
-        return Objects.hash(numericParts, prerelease);
+        final List<Long> normalized = new ArrayList<>(numericParts);
+        while (normalized.size() > 1 && normalized.get(normalized.size() - 1) == 0L) {
+            normalized.remove(normalized.size() - 1);
+        }
+        return Objects.hash(normalized, prerelease);
     }
 }

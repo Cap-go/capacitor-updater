@@ -36,4 +36,28 @@ public class NativeSemverTest {
         assertEquals("0.0.0", NativeSemver.parseOrDefault("", "0.0.0").toString());
         assertEquals("0.0.0", NativeSemver.parseOrDefault(null, "0.0.0").toString());
     }
+
+    @Test
+    public void betaDotTwoIsLessThanBetaDotTen() {
+        assertTrue(new NativeSemver("1.0.0-beta.2").compareTo(new NativeSemver("1.0.0-beta.10")) < 0);
+        assertTrue(new NativeSemver("1.0.0-beta.10").compareTo(new NativeSemver("1.0.0-beta.2")) > 0);
+    }
+
+    @Test
+    public void numericPrereleaseIdentifierPrecedesNonNumeric() {
+        assertTrue(new NativeSemver("1.0.0-1").compareTo(new NativeSemver("1.0.0-alpha")) < 0);
+        assertTrue(new NativeSemver("1.0.0-alpha.1").compareTo(new NativeSemver("1.0.0-alpha.beta")) < 0);
+    }
+
+    @Test
+    public void underscoreSeparatesNumericCoreComponents() {
+        assertEquals(0, new NativeSemver("1.2_3").compareTo(new NativeSemver("1.2.3")));
+        assertTrue(new NativeSemver("1.2_3").compareTo(new NativeSemver("1.2")) > 0);
+    }
+
+    @Test
+    public void hashCodeMatchesEqualsForZeroPaddedVersions() {
+        assertEquals(new NativeSemver("1.0").hashCode(), new NativeSemver("1.0.0").hashCode());
+        assertEquals(new NativeSemver("1.0.0-beta").hashCode(), new NativeSemver("1.0-beta").hashCode());
+    }
 }
