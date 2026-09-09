@@ -164,7 +164,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoDeletePrevious = true;
     private Boolean autoUpdate = false;
     private String autoUpdateMode = AUTO_UPDATE_MODE_OFF;
-    private String updateUrl = "";
+    private volatile String updateUrl = "";
     private Version currentVersionNative;
     private String currentBuildVersion;
     private Thread backgroundTask;
@@ -792,7 +792,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
         CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
-        this.implementation.persistModifyUrls = Boolean.TRUE.equals(this.persistModifyUrl);
         CapgoUpdater.setReloadLiveModifyUrlsHook(this, this::reloadPersistedModifyUrlsIfConfigured);
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);

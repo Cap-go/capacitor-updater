@@ -90,8 +90,6 @@ public class CapgoUpdater {
     /** Optional gate run before any download touches disk (e.g. wait for launch cleanup). */
     public Runnable downloadGate = null;
     public SharedPreferences prefs;
-    public boolean persistModifyUrls = false;
-
     public File documentsDir;
     public File noBackupDir;
     public Boolean directUpdate = false;
@@ -103,7 +101,7 @@ public class CapgoUpdater {
     public String CAP_SERVER_PATH = "";
 
     public String customId = "";
-    public String statsUrl = "";
+    public volatile String statsUrl = "";
     private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
     private static volatile String liveChannelUrl = null; // null = unpublished; "" = disabled
     private static volatile Runnable reloadLiveModifyUrlsHook;
@@ -112,7 +110,7 @@ public class CapgoUpdater {
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
     public String statsMode = STATS_MODE_ALL;
-    public String channelUrl = "";
+    public volatile String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
     public volatile boolean previewSession = false;
@@ -2308,7 +2306,6 @@ public class CapgoUpdater {
         json.put("is_prod", this.isProd());
         json.put("install_source", this.getInstallSource());
         json.put("defaultChannel", this.defaultChannel);
-        json.put("stats_mode", this.statsMode);
 
         // Add encryption key ID if encryption is enabled (use cached value)
         if (!this.cachedKeyId.isEmpty()) {
@@ -2512,6 +2509,7 @@ public class CapgoUpdater {
             json.put("version_name", current.getVersionName());
             json.put("old_version_name", "");
             json.put("action", "rate_limit_reached");
+            json.put("stats_mode", this.statsMode);
 
             Request request = new Request.Builder()
                 .url(statsUrl)

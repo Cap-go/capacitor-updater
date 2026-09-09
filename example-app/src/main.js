@@ -2146,8 +2146,8 @@ const actions = [
     run: async () =>
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
-        // getLatest is already exercised in the smoke sequence; boot only re-checks persisted URLs.
-        probeLatest: false,
+        // Avoid a duplicate call when bootstrap already ran the boot probe.
+        probeLatest: state.lastGetLatestCheck === 'not-run',
       }),
   },
   {
