@@ -1,4 +1,5 @@
 import { runCommand } from './command.mjs';
+import { purgeLocalPluginCopy } from './purge-local-plugin-copy.mjs';
 import { createBuildEnv, exampleAppDir, getScenario } from './scenarios.mjs';
 
 const scenarioId = process.argv[2];
@@ -19,6 +20,8 @@ const env = {
   }),
   CAPGO_DIRECT_UPDATE: scenario.directUpdate,
 };
+
+purgeLocalPluginCopy();
 
 await runCommand('bun', ['install'], {
   cwd: exampleAppDir,

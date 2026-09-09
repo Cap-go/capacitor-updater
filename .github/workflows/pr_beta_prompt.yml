@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
       - name: Upsert beta publish comment
