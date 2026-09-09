@@ -2206,10 +2206,7 @@ public class CapgoUpdater {
         }
     }
 
-    private List<QueuedStatsEvent> filterQueuedStatsEvents(
-        final List<QueuedStatsEvent> events,
-        final List<QueuedStatsEvent> discardedOut
-    ) {
+    private List<QueuedStatsEvent> filterQueuedStatsEvents(final List<QueuedStatsEvent> events, final List<QueuedStatsEvent> discardedOut) {
         final List<QueuedStatsEvent> filtered = new ArrayList<>();
         for (final QueuedStatsEvent queuedEvent : events) {
             final JSONObject prepared = prepareStatsEventForCurrentMode(queuedEvent.event);
