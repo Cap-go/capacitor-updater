@@ -4082,6 +4082,34 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void statsModeBillingOnlyConvertsRestoredEventsToBillingPayload() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-stats-billing-restore");
+        tempDir.toFile().deleteOnExit();
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        queueFile.deleteOnExit();
+        Files.write(
+            queueFile.toPath(),
+            "[{\"action\":\"app_crash\",\"timestamp\":1},{\"action\":\"set\",\"version_name\":\"2.0.0\",\"custom_id\":\"drop-me\",\"timestamp\":2}]".getBytes(
+                StandardCharsets.UTF_8
+            )
+        );
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.statsUrl = "https://example.com/stats";
+        updater.restorePendingStats();
+        updater.setStatsMode(CapgoUpdater.STATS_MODE_BILLING_ONLY);
+
+        assertEquals(1, updater.pendingStatsCount());
+        final JSONObject queued = updater.firstQueuedStatsEventForTests();
+        assertEquals("set", queued.getString("action"));
+        assertEquals("2.0.0", queued.getString("version_name"));
+        assertEquals(CapgoUpdater.STATS_MODE_BILLING_ONLY, queued.getString("stats_mode"));
+        assertBillingPayloadKeysOnly(queued);
+        updater.shutdown();
+    }
+
+    @Test
     public void createBillingStatsPayloadFromEventPreservesQueuedFieldValues() throws Exception {
         final JSONObject event = new JSONObject();
         event.put("platform", "android");
