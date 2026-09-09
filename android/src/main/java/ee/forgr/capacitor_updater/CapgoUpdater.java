@@ -3117,9 +3117,6 @@ public class CapgoUpdater {
                     json.put("metadata", new JSONObject(metadata));
                 }
             }
-            if (!json.has("stats_mode")) {
-                json.put("stats_mode", this.statsMode);
-            }
         } catch (JSONException e) {
             if (logger != null) {
                 logger.error("Error preparing stats");

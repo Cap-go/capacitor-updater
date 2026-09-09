@@ -655,6 +655,7 @@ class CapacitorUpdaterTests: XCTestCase {
     func testStatsModeQueueBehavior() throws {
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode(nil), CapgoUpdater.statsModeAll)
         XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeBillingOnly))
 
         let billingUpdater = makeStatsModeTestUpdater()
         defer { cleanupStatsTest(billingUpdater) }

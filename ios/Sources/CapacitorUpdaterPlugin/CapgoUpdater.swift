@@ -44,10 +44,14 @@ import UIKit
     public var pluginVersion: String = ""
     public var timeout: Double = 20
     public var statsUrl: String = ""
-    public var statsMode: String = CapgoUpdater.statsModeAll
     public static let statsModeAll = "all"
     public static let statsModeUpdatesOnly = "updatesOnly"
     public static let statsModeBillingOnly = "billingOnly"
+    private var _statsMode: String = CapgoUpdater.statsModeAll
+    public var statsMode: String {
+        get { _statsMode }
+        set { _statsMode = Self.normalizeStatsMode(newValue) }
+    }
     /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
     public var beforeDownload: (() throws -> Void)?
     public var channelUrl: String = ""
@@ -183,7 +187,7 @@ import UIKit
     }
 
     func setStatsMode(_ statsMode: String) {
-        self.statsMode = Self.normalizeStatsMode(statsMode)
+        self.statsMode = statsMode
         filterPendingStatsForCurrentMode()
     }
 

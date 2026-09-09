@@ -4053,6 +4053,7 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
         assertTrue(CapgoUpdater.shouldSendStatsAction("download_fail", CapgoUpdater.STATS_MODE_UPDATES_ONLY));
         assertFalse(CapgoUpdater.shouldSendStatsAction("download_71", CapgoUpdater.STATS_MODE_BILLING_ONLY));
+        assertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", CapgoUpdater.STATS_MODE_BILLING_ONLY));
         assertTrue(CapgoUpdater.shouldSendStatsAction("set", CapgoUpdater.STATS_MODE_BILLING_ONLY));
         assertTrue(CapgoUpdater.shouldSendStatsAction("download_complete", CapgoUpdater.STATS_MODE_BILLING_ONLY));
     }
