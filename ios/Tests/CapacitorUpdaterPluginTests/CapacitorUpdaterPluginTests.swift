@@ -37,6 +37,13 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private let eventLock = NSLock()
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
+    private var _appReadyNotifiedAt: Date?
+
+    var appReadyNotifiedAt: Date? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyNotifiedAt
+    }
 
     var notifiedEventNames: [String] {
         eventLock.lock()
@@ -53,6 +60,9 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
         eventLock.lock()
         _notifiedEventNames.append(eventName)
+        if eventName == "appReady" {
+            _appReadyNotifiedAt = Date()
+        }
         if let data {
             _notifiedEventPayloads[eventName] = data
         }
@@ -2968,7 +2978,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testSendReadyToJsUnblocksWhenNotifyAppReadySignals() {
         let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.setAppReadyTimeoutForTesting(500)
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
         testPlugin.armPendingNotifyAppReadyForTesting()
         let bundle = BundleInfo(
             id: BundleInfo.ID_BUILTIN,
@@ -2979,17 +2990,30 @@ class CapacitorUpdaterTests: XCTestCase {
         )
 
         let expectation = expectation(description: "appReady after notify")
-        let start = Date()
         testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
 
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {
+        DispatchQueue.global().async {
+            // Wait until sendReadyToJs enters semaphoreWait. The armed flag is cleared
+            // before the wait starts, so polling that flag can signal too early.
+            for _ in 0..<400 {
+                if testPlugin.didEnterSemaphoreWaitForTestingState {
+                    break
+                }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            XCTAssertTrue(testPlugin.didEnterSemaphoreWaitForTestingState)
+
+            let signalStart = Date()
             // Simulate notifyAppReady signalling the semaphore.
             testPlugin.semaphoreReady.signal()
-        }
 
-        DispatchQueue.global().async {
             for _ in 0..<80 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
+                if let notifiedAt = testPlugin.appReadyNotifiedAt {
+                    XCTAssertGreaterThanOrEqual(
+                        notifiedAt.timeIntervalSince1970,
+                        signalStart.timeIntervalSince1970
+                    )
+                    XCTAssertLessThan(notifiedAt.timeIntervalSince(signalStart), 0.5)
                     expectation.fulfill()
                     return
                 }
@@ -2997,8 +3021,7 @@ class CapacitorUpdaterTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 2.0)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
 
