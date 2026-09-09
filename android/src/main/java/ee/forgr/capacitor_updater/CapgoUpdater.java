@@ -104,6 +104,7 @@ public class CapgoUpdater {
     public String customId = "";
     public String statsUrl = "";
     private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
+    private static volatile String liveChannelUrl = null; // null = unpublished; "" = disabled
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
@@ -174,6 +175,18 @@ public class CapgoUpdater {
             return fallback == null ? "" : fallback;
         }
         // Published value wins, including "" after setStatsUrl("").
+        return live;
+    }
+
+    static void publishLiveChannelUrl(final String channelUrl) {
+        liveChannelUrl = channelUrl == null ? "" : channelUrl;
+    }
+
+    static String resolveChannelUrl(final String fallback) {
+        final String live = liveChannelUrl;
+        if (live == null) {
+            return fallback == null ? "" : fallback;
+        }
         return live;
     }
 
@@ -2732,7 +2745,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
@@ -2791,7 +2804,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
@@ -2934,7 +2947,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
