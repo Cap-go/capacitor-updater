@@ -2208,10 +2208,13 @@ public class CapgoUpdater {
         final boolean hadQueuedEvents;
         final List<QueuedStatsEvent> discardedEvents = new ArrayList<>();
         synchronized (statsQueue) {
-            hadQueuedEvents = !statsQueue.isEmpty();
+            hadQueuedEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
             final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue, discardedEvents);
             statsQueue.clear();
             statsQueue.addAll(filteredQueue);
+            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight, discardedEvents);
+            statsInFlight.clear();
+            statsInFlight.addAll(filteredInFlight);
         }
         runStatsCallbacks(discardedEvents);
         if (hadQueuedEvents) {
