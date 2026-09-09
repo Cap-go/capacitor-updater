@@ -3541,12 +3541,18 @@ import UIKit
             return
         }
         guard !statsUrl.isEmpty else {
+            // Invalidate any in-flight flush so late network callbacks discard
+            // instead of requeueing/persisting events after stats were disabled.
+            statsFlushTokenLock.lock()
+            activeStatsFlushToken = nil
+            statsFlushTokenLock.unlock()
             statsQueueLock.lock()
             statsQueue.removeAll()
             statsInFlight.removeAll()
             statsQueueLock.unlock()
             statsFlushTimer?.invalidate()
             statsFlushTimer = nil
+            operationQueue.cancelAllOperations()
             persistStatsQueue()
             return
         }
@@ -3593,6 +3599,12 @@ import UIKit
                     return
                 }
                 if self.abandonStoppedStatsFlush() {
+                    semaphore.signal()
+                    return
+                }
+                // Stats disabled while this request was in flight — drop the batch.
+                if self.statsUrl.isEmpty {
+                    self.clearStatsInFlight()
                     semaphore.signal()
                     return
                 }
@@ -3659,7 +3671,7 @@ import UIKit
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
-        guard !statsStopped, !events.isEmpty else { return }
+        guard !statsStopped, !statsUrl.isEmpty, !events.isEmpty else { return }
         statsQueueLock.lock()
         statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
