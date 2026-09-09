@@ -793,6 +793,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
         }
+        CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
@@ -860,6 +861,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
+        this.reloadPersistedStatsUrlIfConfigured();
         this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
@@ -2549,6 +2551,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         call.resolve();
     }
 
+    private void reloadPersistedStatsUrlIfConfigured() {
+        if (!Boolean.TRUE.equals(this.persistModifyUrl) || this.prefs == null || this.implementation == null) {
+            return;
+        }
+
+        if (this.prefs.contains(STATS_URL_PREF_KEY)) {
+            final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
+            if (storedStatsUrl != null && !storedStatsUrl.isEmpty()) {
+                this.implementation.statsUrl = storedStatsUrl;
+            }
+        }
+
+        CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
+    }
+
     @PluginMethod
     public void setStatsUrl(final PluginCall call) {
         if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
@@ -2571,6 +2588,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
         this.implementation.statsUrl = url;
+        CapgoUpdater.publishLiveStatsUrl(url);
         call.resolve();
     }
 

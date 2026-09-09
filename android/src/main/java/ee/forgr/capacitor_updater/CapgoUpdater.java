@@ -103,6 +103,7 @@ public class CapgoUpdater {
 
     public String customId = "";
     public String statsUrl = "";
+    private static volatile String liveStatsUrl = "";
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
@@ -160,6 +161,18 @@ public class CapgoUpdater {
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
+    }
+
+    static void publishLiveStatsUrl(final String statsUrl) {
+        liveStatsUrl = statsUrl == null ? "" : statsUrl;
+    }
+
+    static String resolveStatsUrl(final String fallback) {
+        final String live = liveStatsUrl;
+        if (live != null && !live.isEmpty()) {
+            return live;
+        }
+        return fallback == null ? "" : fallback;
     }
 
     private final FilenameFilter filter = (f, name) -> {
@@ -2441,7 +2454,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             releaseRateLimitStatisticClaim();
@@ -3100,7 +3113,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             if (onSent != null) {
                 onSent.run();
@@ -3331,7 +3344,7 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             synchronized (statsQueue) {
                 statsQueue.clear();
