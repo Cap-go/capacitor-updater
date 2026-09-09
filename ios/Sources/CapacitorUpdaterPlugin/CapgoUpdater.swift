@@ -287,18 +287,20 @@ import UIKit
     private func filterPendingStatsForCurrentMode() {
         statsQueueLock.lock()
         let hadQueuedEvents = !statsQueue.isEmpty
-        statsQueue = filterQueuedStatsEvents(statsQueue)
+        var discardedEvents: [QueuedStatsEvent] = []
+        statsQueue = filterQueuedStatsEvents(statsQueue, discardedEvents: &discardedEvents)
         statsQueueLock.unlock()
+        runStatsCallbacks(discardedEvents)
         if hadQueuedEvents {
             persistStatsQueue()
         }
     }
 
-    private func filterQueuedStatsEvents(_ events: [QueuedStatsEvent]) -> [QueuedStatsEvent] {
+    private func filterQueuedStatsEvents(_ events: [QueuedStatsEvent], discardedEvents: inout [QueuedStatsEvent]) -> [QueuedStatsEvent] {
         var filtered: [QueuedStatsEvent] = []
         for queuedEvent in events {
             guard let prepared = prepareStatsEventForCurrentMode(queuedEvent.event) else {
-                queuedEvent.onSent?()
+                discardedEvents.append(queuedEvent)
                 continue
             }
             filtered.append(QueuedStatsEvent(event: prepared, onSent: queuedEvent.onSent))
@@ -3577,7 +3579,9 @@ import UIKit
         statsQueueLock.unlock()
         persistStatsQueue()
 
-        let deliverableEvents = filterQueuedStatsEvents(queuedEvents)
+        var discardedEvents: [QueuedStatsEvent] = []
+        let deliverableEvents = filterQueuedStatsEvents(queuedEvents, discardedEvents: &discardedEvents)
+        runStatsCallbacks(discardedEvents)
         let eventsToSend = deliverableEvents.map(\.event)
 
         if eventsToSend.isEmpty {

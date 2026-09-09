@@ -4061,7 +4061,9 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void statsModeUpdatesOnlyDropsRestoredHealthEventsFromPendingQueue() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-stats-filter");
+        tempDir.toFile().deleteOnExit();
         final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        queueFile.deleteOnExit();
         Files.write(
             queueFile.toPath(),
             "[{\"action\":\"app_moved_to_background\",\"timestamp\":1},{\"action\":\"set\",\"version_name\":\"2.0.0\",\"timestamp\":2}]".getBytes(
