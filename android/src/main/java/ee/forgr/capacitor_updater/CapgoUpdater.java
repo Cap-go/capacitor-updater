@@ -92,9 +92,6 @@ public class CapgoUpdater {
     public SharedPreferences prefs;
     public boolean persistModifyUrls = false;
 
-    private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
-    private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
-
     public File documentsDir;
     public File noBackupDir;
     public Boolean directUpdate = false;
@@ -193,28 +190,7 @@ public class CapgoUpdater {
         }
     }
 
-    private void syncPersistedModifyUrlsFromPrefs() {
-        if (!this.persistModifyUrls || this.prefs == null) {
-            return;
-        }
-        if (this.prefs.contains(STATS_URL_PREF_KEY)) {
-            final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.statsUrl);
-            if (storedStatsUrl != null) {
-                this.statsUrl = storedStatsUrl;
-                publishLiveStatsUrl(storedStatsUrl);
-            }
-        }
-        if (this.prefs.contains(CHANNEL_URL_PREF_KEY)) {
-            final String storedChannelUrl = this.prefs.getString(CHANNEL_URL_PREF_KEY, this.channelUrl);
-            if (storedChannelUrl != null) {
-                this.channelUrl = storedChannelUrl;
-                publishLiveChannelUrl(storedChannelUrl);
-            }
-        }
-    }
-
     private void reloadPersistedModifyUrlsBeforeSend() {
-        this.syncPersistedModifyUrlsFromPrefs();
         reloadLiveModifyUrlsIfAvailable();
     }
 

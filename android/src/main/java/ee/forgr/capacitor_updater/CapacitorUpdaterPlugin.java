@@ -2599,13 +2599,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
     }
 
-    private String currentUpdateUrlForNetwork() {
-        synchronized (this.modifyUrlsLock) {
-            this.reloadPersistedModifyUrlsUnderLock();
-            return this.updateUrl;
-        }
-    }
-
     @PluginMethod
     public void setStatsUrl(final PluginCall call) {
         if (!this.getConfig().getBoolean("allowModifyUrl", false)) {
@@ -4233,8 +4226,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         };
 
-        final String updateUrlForRequest = this.currentUpdateUrlForNetwork();
         startNewThread(() -> {
+            final String updateUrlForRequest;
+            synchronized (CapacitorUpdaterPlugin.this.modifyUrlsLock) {
+                CapacitorUpdaterPlugin.this.reloadPersistedModifyUrlsUnderLock();
+                updateUrlForRequest = CapacitorUpdaterPlugin.this.updateUrl;
+            }
             if (hasPreviewAppId) {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(updateUrlForRequest, channel, previewAppId, latestCallback);
                 return;
