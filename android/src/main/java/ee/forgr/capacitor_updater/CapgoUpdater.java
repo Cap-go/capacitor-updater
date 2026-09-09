@@ -103,7 +103,7 @@ public class CapgoUpdater {
 
     public String customId = "";
     public String statsUrl = "";
-    private static volatile String liveStatsUrl = "";
+    private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
@@ -169,10 +169,12 @@ public class CapgoUpdater {
 
     static String resolveStatsUrl(final String fallback) {
         final String live = liveStatsUrl;
-        if (live != null && !live.isEmpty()) {
-            return live;
+        if (live == null) {
+            // Live URL has not been published yet — keep worker/captured fallback.
+            return fallback == null ? "" : fallback;
         }
-        return fallback == null ? "" : fallback;
+        // Published value wins, including "" after setStatsUrl("").
+        return live;
     }
 
     private final FilenameFilter filter = (f, name) -> {
