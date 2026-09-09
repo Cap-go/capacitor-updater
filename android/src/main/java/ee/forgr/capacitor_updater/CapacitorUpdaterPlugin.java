@@ -778,12 +778,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            if (this.prefs.contains(STATS_URL_PREF_KEY)) {
-                final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
-                if (storedStatsUrl != null) {
-                    this.implementation.statsUrl = storedStatsUrl;
-                    logger.info("Loaded persisted statsUrl");
-                }
+            if (this.restorePersistedStatsUrl()) {
+                logger.info("Loaded persisted statsUrl");
             }
             if (this.prefs.contains(CHANNEL_URL_PREF_KEY)) {
                 final String storedChannelUrl = this.prefs.getString(CHANNEL_URL_PREF_KEY, this.implementation.channelUrl);
@@ -2551,18 +2547,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         call.resolve();
     }
 
+    private boolean restorePersistedStatsUrl() {
+        if (this.prefs == null || this.implementation == null || !this.prefs.contains(STATS_URL_PREF_KEY)) {
+            return false;
+        }
+        final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
+        if (storedStatsUrl == null) {
+            return false;
+        }
+        this.implementation.statsUrl = storedStatsUrl;
+        return true;
+    }
+
     private void reloadPersistedStatsUrlIfConfigured() {
         if (!Boolean.TRUE.equals(this.persistModifyUrl) || this.prefs == null || this.implementation == null) {
             return;
         }
-
-        if (this.prefs.contains(STATS_URL_PREF_KEY)) {
-            final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
-            if (storedStatsUrl != null && !storedStatsUrl.isEmpty()) {
-                this.implementation.statsUrl = storedStatsUrl;
-            }
-        }
-
+        this.restorePersistedStatsUrl();
         CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
     }
 
