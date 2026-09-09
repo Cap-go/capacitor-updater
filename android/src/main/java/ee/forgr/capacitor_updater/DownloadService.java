@@ -407,6 +407,7 @@ public class DownloadService extends Worker {
 
     private void sendStatsAsync(String action, String version) {
         try {
+            CapgoUpdater.reloadLiveModifyUrlsIfAvailable();
             String statsUrl = CapgoUpdater.resolveStatsUrl(getInputData().getString(STATS_URL));
             if (statsUrl == null || statsUrl.isEmpty()) {
                 return;

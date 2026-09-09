@@ -791,6 +791,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
         CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
+        CapgoUpdater.setReloadLiveModifyUrlsHook(this::reloadPersistedModifyUrlsIfConfigured);
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
@@ -843,6 +844,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.versionOs = Build.VERSION.RELEASE;
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
+        this.reloadPersistedModifyUrlsIfConfigured();
         this.implementation.restorePendingStats();
         this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
 
@@ -1737,6 +1739,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
+        this.reloadPersistedModifyUrlsIfConfigured();
         this.launchStartReported = true;
         final BundleInfo current = this.implementation.getCurrentBundle();
         final Map<String, String> metadata = new HashMap<>();
@@ -5284,6 +5287,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+        this.reloadPersistedModifyUrlsIfConfigured();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_foreground", current.getVersionName());
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
         this.delayUpdateUtils.unsetBackgroundTimestamp();

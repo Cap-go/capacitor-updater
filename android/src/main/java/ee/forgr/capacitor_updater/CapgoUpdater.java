@@ -105,6 +105,7 @@ public class CapgoUpdater {
     public String statsUrl = "";
     private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
     private static volatile String liveChannelUrl = null; // null = unpublished; "" = disabled
+    private static volatile Runnable reloadLiveModifyUrlsHook;
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
@@ -166,6 +167,17 @@ public class CapgoUpdater {
 
     static void publishLiveStatsUrl(final String statsUrl) {
         liveStatsUrl = statsUrl == null ? "" : statsUrl;
+    }
+
+    static void setReloadLiveModifyUrlsHook(final Runnable hook) {
+        reloadLiveModifyUrlsHook = hook;
+    }
+
+    static void reloadLiveModifyUrlsIfAvailable() {
+        final Runnable hook = reloadLiveModifyUrlsHook;
+        if (hook != null) {
+            hook.run();
+        }
     }
 
     static String resolveStatsUrl(final String fallback) {
@@ -843,7 +855,7 @@ public class CapgoUpdater {
             this.pluginVersion,
             this.isProd(),
             this.getInstallSource(),
-            this.statsUrl,
+            resolveStatsUrl(this.statsUrl),
             this.statsMode,
             this.deviceID,
             this.versionBuild,
@@ -2472,6 +2484,7 @@ public class CapgoUpdater {
             return;
         }
 
+        reloadLiveModifyUrlsIfAvailable();
         String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             // The URL was cleared after the claim was taken; nothing went out, so hand it back.
@@ -3131,6 +3144,7 @@ public class CapgoUpdater {
             return;
         }
 
+        reloadLiveModifyUrlsIfAvailable();
         String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             if (onSent != null) {
@@ -3362,6 +3376,7 @@ public class CapgoUpdater {
             return;
         }
 
+        reloadLiveModifyUrlsIfAvailable();
         String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             synchronized (statsQueue) {
