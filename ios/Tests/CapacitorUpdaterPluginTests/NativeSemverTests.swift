@@ -32,4 +32,19 @@ final class NativeSemverTests: XCTestCase {
         let maxRepresentable = try NativeSemver(String(UInt64.max))
         XCTAssertEqual(oversized, maxRepresentable)
     }
+
+    func testUnicodeNumericPrereleaseIsNotNumericIdentifier() throws {
+        // Superscript ² is Unicode numeric (No) but not an ASCII digit; treat as non-numeric.
+        // With Character.isNumber, ² would be numeric and precede "alpha"; ASCII-only keeps lexical order.
+        XCTAssertLessThan(try NativeSemver("1.0.0-alpha"), try NativeSemver("1.0.0-²"))
+        XCTAssertLessThan(try NativeSemver("1.0.0-1"), try NativeSemver("1.0.0-²"))
+    }
+
+    func testUnicodeDigitsInCoreAreNotParsedAsNumeric() throws {
+        // Pure Unicode digits yield no ASCII numeric components.
+        XCTAssertThrowsError(try NativeSemver("١٢٣"))
+        // Leading Arabic-Indic digit stops the digit run; trailing ASCII digits still parse.
+        let mixed = try NativeSemver("1١.2.3")
+        XCTAssertEqual(mixed, try NativeSemver("1.2.3"))
+    }
 }

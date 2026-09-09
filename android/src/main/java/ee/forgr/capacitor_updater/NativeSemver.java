@@ -69,7 +69,7 @@ public final class NativeSemver implements Comparable<NativeSemver> {
                 continue;
             }
             int end = 0;
-            while (end < segment.length() && Character.isDigit(segment.charAt(end))) {
+            while (end < segment.length() && isAsciiDigit(segment.charAt(end))) {
                 end++;
             }
             if (end > 0) {
@@ -170,12 +170,17 @@ public final class NativeSemver implements Comparable<NativeSemver> {
         return left.compareTo(right);
     }
 
+    /** SemVer numeric identifiers are ASCII digits only (`0`–`9`), not Unicode Nd/No. */
+    private static boolean isAsciiDigit(final char c) {
+        return c >= '0' && c <= '9';
+    }
+
     private static boolean isNumericIdentifier(final String value) {
         if (value.isEmpty()) {
             return false;
         }
         for (int i = 0; i < value.length(); i++) {
-            if (!Character.isDigit(value.charAt(i))) {
+            if (!isAsciiDigit(value.charAt(i))) {
                 return false;
             }
         }

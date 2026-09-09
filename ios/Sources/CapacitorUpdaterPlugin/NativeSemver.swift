@@ -115,8 +115,17 @@ public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
         return left < right ? -1 : 1
     }
 
+    /// SemVer numeric identifiers are ASCII digits only (`0`–`9`), not Unicode Nd/No.
+    private static func isAsciiDigit(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.value >= 48 && scalar.value <= 57
+    }
+
+    private static func isAsciiDigit(_ character: Character) -> Bool {
+        character.unicodeScalars.count == 1 && isAsciiDigit(character.unicodeScalars.first!)
+    }
+
     private static func isNumericIdentifier(_ value: String) -> Bool {
-        !value.isEmpty && value.allSatisfy { $0.isNumber }
+        !value.isEmpty && value.unicodeScalars.allSatisfy(isAsciiDigit)
     }
 
     private static func stripLeadingZeros(_ digits: String) -> String {
@@ -149,7 +158,7 @@ public struct NativeSemver: Comparable, CustomStringConvertible, Equatable {
             var end = 0
             while end < segment.count {
                 let scalar = segment[segment.index(segment.startIndex, offsetBy: end)]
-                if !scalar.isNumber {
+                if !isAsciiDigit(scalar) {
                     break
                 }
                 end += 1

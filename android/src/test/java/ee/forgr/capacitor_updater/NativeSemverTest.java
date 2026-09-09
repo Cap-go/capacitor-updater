@@ -60,4 +60,24 @@ public class NativeSemverTest {
         assertEquals(new NativeSemver("1.0").hashCode(), new NativeSemver("1.0.0").hashCode());
         assertEquals(new NativeSemver("1.0.0-beta").hashCode(), new NativeSemver("1.0-beta").hashCode());
     }
+
+    @Test
+    public void unicodeNumericPrereleaseIsNotNumericIdentifier() {
+        // Superscript ² is Unicode numeric (No) but not an ASCII digit; treat as non-numeric.
+        assertTrue(new NativeSemver("1.0.0-alpha").compareTo(new NativeSemver("1.0.0-\u00B2")) < 0);
+        assertTrue(new NativeSemver("1.0.0-1").compareTo(new NativeSemver("1.0.0-\u00B2")) < 0);
+    }
+
+    @Test
+    public void unicodeDigitsInCoreAreNotParsedAsNumeric() {
+        // Pure Unicode digits yield no ASCII numeric components.
+        try {
+            new NativeSemver("\u0661\u0662\u0663");
+            throw new AssertionError("expected IllegalArgumentException");
+        } catch (final IllegalArgumentException ignored) {
+            // expected
+        }
+        // Leading Arabic-Indic digit stops the digit run; trailing ASCII digits still parse.
+        assertEquals(0, new NativeSemver("1\u0661.2.3").compareTo(new NativeSemver("1.2.3")));
+    }
 }
