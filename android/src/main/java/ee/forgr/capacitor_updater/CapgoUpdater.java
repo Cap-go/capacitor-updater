@@ -109,7 +109,7 @@ public class CapgoUpdater {
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
-    public String statsMode = STATS_MODE_ALL;
+    public volatile String statsMode = STATS_MODE_ALL;
     public volatile String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
