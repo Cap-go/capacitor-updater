@@ -37,6 +37,13 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private let eventLock = NSLock()
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
+    private var _appReadyNotifiedAt: Date?
+
+    var appReadyNotifiedAt: Date? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyNotifiedAt
+    }
 
     var notifiedEventNames: [String] {
         eventLock.lock()
@@ -53,6 +60,9 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
         eventLock.lock()
         _notifiedEventNames.append(eventName)
+        if eventName == "appReady" {
+            _appReadyNotifiedAt = Date()
+        }
         if let data {
             _notifiedEventPayloads[eventName] = data
         }
@@ -2968,8 +2978,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testSendReadyToJsUnblocksWhenNotifyAppReadySignals() {
         let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        let waitTimeoutMs = 500
-        testPlugin.setAppReadyTimeoutForTesting(waitTimeoutMs)
+        testPlugin.setAppReadyTimeoutForTesting(500)
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
         testPlugin.armPendingNotifyAppReadyForTesting()
         let bundle = BundleInfo(
             id: BundleInfo.ID_BUILTIN,
@@ -2983,26 +2993,27 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
 
         DispatchQueue.global().async {
-            // Wait until sendReadyToJs consumes the armed flag and enters semaphoreWait.
-            // CI can delay DispatchQueue.global work; measuring from test start includes that
-            // scheduling latency and flakes. Signal only once the wait is armed.
-            var waitStarted = Date()
+            // Wait until sendReadyToJs enters semaphoreWait. The armed flag is cleared
+            // before the wait starts, so polling that flag can signal too early.
             for _ in 0..<400 {
-                if !testPlugin.isPendingNotifyAppReadyForTesting {
-                    waitStarted = Date()
+                if testPlugin.didEnterSemaphoreWaitForTestingState {
                     break
                 }
                 Thread.sleep(forTimeInterval: 0.01)
             }
+            XCTAssertTrue(testPlugin.didEnterSemaphoreWaitForTestingState)
 
             let signalStart = Date()
             // Simulate notifyAppReady signalling the semaphore.
             testPlugin.semaphoreReady.signal()
 
             for _ in 0..<80 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    XCTAssertLessThan(Date().timeIntervalSince(signalStart), 0.5)
-                    XCTAssertLessThan(Date().timeIntervalSince(waitStarted), Double(waitTimeoutMs) / 1000.0)
+                if let notifiedAt = testPlugin.appReadyNotifiedAt {
+                    XCTAssertGreaterThanOrEqual(
+                        notifiedAt.timeIntervalSince1970,
+                        signalStart.timeIntervalSince1970
+                    )
+                    XCTAssertLessThan(notifiedAt.timeIntervalSince(signalStart), 0.5)
                     expectation.fulfill()
                     return
                 }
