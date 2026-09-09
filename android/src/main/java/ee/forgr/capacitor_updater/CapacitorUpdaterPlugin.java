@@ -1730,16 +1730,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reportAppLaunchStart() {
-        if (
-            this.implementation == null ||
-            this.implementation.statsUrl == null ||
-            this.implementation.statsUrl.isEmpty() ||
-            this.launchStartReported
-        ) {
+        if (this.implementation == null || this.launchStartReported) {
             return;
         }
 
         this.reloadPersistedModifyUrlsIfConfigured();
+        if (this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
+            return;
+        }
+
         this.launchStartReported = true;
         final BundleInfo current = this.implementation.getCurrentBundle();
         final Map<String, String> metadata = new HashMap<>();
