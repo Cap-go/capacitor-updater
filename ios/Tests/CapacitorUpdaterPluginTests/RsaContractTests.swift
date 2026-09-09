@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import XCTest
 @testable import CapacitorUpdaterPlugin
 
@@ -22,6 +23,12 @@ final class RsaContractTests: XCTestCase {
         case invalidRoot
         case invalidCases(String)
         case invalidCase(String)
+    }
+
+    private struct SignedVector {
+        let key: String
+        let ciphertext: Data
+        let plaintext: Data
     }
 
     override class func setUp() {
@@ -192,5 +199,78 @@ final class RsaContractTests: XCTestCase {
             let loaded = RSAPublicKey.load(rsaPublicKey: publicKey) != nil
             XCTAssertEqual(loaded, shouldLoad, id)
         }
+    }
+
+    private func signedVector() throws -> SignedVector {
+        let testCase = try XCTUnwrap(contractCases("rsaPublicDecrypt").first)
+        let input = try dictionary(testCase, "input", id: "signedVector")
+        let expect = try dictionary(testCase, "expect", id: "signedVector")
+        let ciphertext = try XCTUnwrap(hexToData(string(input, "ciphertextHex", id: "signedVector")))
+        let plaintext = try XCTUnwrap(hexToData(string(expect, "plaintextHex", id: "signedVector")))
+        return SignedVector(key: try fixturePublicKey(), ciphertext: ciphertext, plaintext: plaintext)
+    }
+
+    func testPublicDecryptRejectsModifiedAndWrongLengthSignatures() throws {
+        let vector = try signedVector()
+        let key = try XCTUnwrap(RSAPublicKey.load(rsaPublicKey: vector.key))
+        XCTAssertNil(key.decrypt(data: Data()))
+        XCTAssertNil(key.decrypt(data: Data(vector.ciphertext.dropLast())))
+        XCTAssertNil(key.decrypt(data: vector.ciphertext + Data([0])))
+        for index in vector.ciphertext.indices {
+            var changed = vector.ciphertext
+            changed[index] ^= 1
+            XCTAssertNil(key.decrypt(data: changed), "Modified signature byte \(index)")
+        }
+    }
+
+    func testTypeOnePaddingRequiresCompleteValidBlock() {
+        let payload = [UInt8](repeating: 0xab, count: 32)
+        let valid = Data([0, 1] + [UInt8](repeating: 0xff, count: 221) + [0] + payload)
+        XCTAssertEqual(RSAPublicKey.unpadSignature(valid), Data(payload))
+
+        // RFC 8017 permits a minimum of eight padding bytes.
+        let longestPayload = Data(repeating: 0xab, count: 245)
+        let minimumPadding = Data([0, 1] + [UInt8](repeating: 0xff, count: 8) + [0]) + longestPayload
+        XCTAssertEqual(RSAPublicKey.unpadSignature(minimumPadding), longestPayload)
+        let shortPadding = Data([0, 1] + [UInt8](repeating: 0xff, count: 7) + [0]) + Data(repeating: 0xab, count: 246)
+        XCTAssertNil(RSAPublicKey.unpadSignature(shortPadding))
+
+        for (index, replacement) in [(0, UInt8(1)), (1, UInt8(2)), (2, UInt8(0x7f))] {
+            var malformed = valid
+            malformed[index] = replacement
+            XCTAssertNil(RSAPublicKey.unpadSignature(malformed))
+        }
+        XCTAssertNil(RSAPublicKey.unpadSignature(Data([0, 1] + [UInt8](repeating: 0xff, count: 254))))
+        XCTAssertNil(RSAPublicKey.unpadSignature(Data([0, 1] + [UInt8](repeating: 0xff, count: 253) + [0])))
+        XCTAssertNil(RSAPublicKey.unpadSignature(Data(valid.dropLast())))
+        XCTAssertNil(RSAPublicKey.unpadSignature(valid + Data([0])))
+    }
+
+    func testKeyCacheHandlesInvalidKeysRotationAndConcurrentCallers() throws {
+        let vector = try signedVector()
+        let original = try XCTUnwrap(RSAPublicKey.load(rsaPublicKey: vector.key))
+        XCTAssertEqual(original.decrypt(data: vector.ciphertext), vector.plaintext)
+        XCTAssertNil(RSAPublicKey.load(rsaPublicKey: "not-a-public-key"))
+        XCTAssertNil(RSAPublicKey.load(rsaPublicKey: "YWJj"))
+
+        let attributes: [CFString: Any] = [kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: 2048]
+        let privateKey = try XCTUnwrap(SecKeyCreateRandomKey(attributes as CFDictionary, nil))
+        let publicKey = try XCTUnwrap(SecKeyCopyPublicKey(privateKey))
+        let encoded = try XCTUnwrap(SecKeyCopyExternalRepresentation(publicKey, nil)) as Data
+        let otherPem = "-----BEGIN RSA PUBLIC KEY-----\n\(encoded.base64EncodedString())\n-----END RSA PUBLIC KEY-----"
+        let other = try XCTUnwrap(RSAPublicKey.load(rsaPublicKey: otherPem))
+        XCTAssertNil(other.decrypt(data: vector.ciphertext))
+        XCTAssertEqual(original.decrypt(data: vector.ciphertext), vector.plaintext, "Imported instances retain their own key")
+
+        DispatchQueue.concurrentPerform(iterations: 128) { index in
+            let useOriginal = index.isMultiple(of: 2)
+            let loaded = RSAPublicKey.load(rsaPublicKey: useOriginal ? vector.key : otherPem)
+            XCTAssertNotNil(loaded)
+            XCTAssertEqual(loaded?.decrypt(data: vector.ciphertext), useOriginal ? vector.plaintext : nil)
+        }
+
+        let escaped = vector.key.replacingOccurrences(of: "\n", with: "\\n")
+        let reloaded = try XCTUnwrap(RSAPublicKey.load(rsaPublicKey: escaped))
+        XCTAssertEqual(reloaded.decrypt(data: vector.ciphertext), vector.plaintext)
     }
 }
