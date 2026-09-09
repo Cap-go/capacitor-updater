@@ -152,6 +152,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
     private final Object previewSessionsLock = new Object();
+    private final Object modifyUrlsLock = new Object();
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
     private Boolean persistModifyUrl = false;
@@ -2529,15 +2530,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(UPDATE_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist updateUrl");
-                call.reject("Failed to persist updateUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(UPDATE_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist updateUrl");
+                    call.reject("Failed to persist updateUrl");
+                    return;
+                }
             }
+            this.updateUrl = url;
         }
-        this.updateUrl = url;
         call.resolve();
     }
 
@@ -2578,6 +2581,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reloadPersistedModifyUrlsIfConfigured() {
+        synchronized (this.modifyUrlsLock) {
+            this.reloadPersistedModifyUrlsUnderLock();
+        }
+    }
+
+    private void reloadPersistedModifyUrlsUnderLock() {
         if (!Boolean.TRUE.equals(this.persistModifyUrl) || this.prefs == null || this.implementation == null) {
             CapgoUpdater.publishLiveStatsUrl(this.implementation == null ? "" : this.implementation.statsUrl);
             CapgoUpdater.publishLiveChannelUrl(this.implementation == null ? "" : this.implementation.channelUrl);
@@ -2588,6 +2597,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.restorePersistedUpdateUrl();
         CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
         CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
+    }
+
+    private String currentUpdateUrlForNetwork() {
+        synchronized (this.modifyUrlsLock) {
+            this.reloadPersistedModifyUrlsUnderLock();
+            return this.updateUrl;
+        }
     }
 
     @PluginMethod
@@ -2603,16 +2619,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(STATS_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist statsUrl");
-                call.reject("Failed to persist statsUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(STATS_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist statsUrl");
+                    call.reject("Failed to persist statsUrl");
+                    return;
+                }
             }
+            this.implementation.statsUrl = url;
+            CapgoUpdater.publishLiveStatsUrl(url);
         }
-        this.implementation.statsUrl = url;
-        CapgoUpdater.publishLiveStatsUrl(url);
         call.resolve();
     }
 
@@ -2629,16 +2647,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setChannelUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(CHANNEL_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist channelUrl");
-                call.reject("Failed to persist channelUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(CHANNEL_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist channelUrl");
+                    call.reject("Failed to persist channelUrl");
+                    return;
+                }
             }
+            this.implementation.channelUrl = url;
+            CapgoUpdater.publishLiveChannelUrl(url);
         }
-        this.implementation.channelUrl = url;
-        CapgoUpdater.publishLiveChannelUrl(url);
         call.resolve();
     }
 
@@ -4213,17 +4233,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         };
 
+        final String updateUrlForRequest = this.currentUpdateUrlForNetwork();
         startNewThread(() -> {
             if (hasPreviewAppId) {
-                CapacitorUpdaterPlugin.this.implementation.getLatest(
-                    CapacitorUpdaterPlugin.this.updateUrl,
-                    channel,
-                    previewAppId,
-                    latestCallback
-                );
+                CapacitorUpdaterPlugin.this.implementation.getLatest(updateUrlForRequest, channel, previewAppId, latestCallback);
                 return;
             }
-            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, latestCallback);
+            CapacitorUpdaterPlugin.this.implementation.getLatest(updateUrlForRequest, channel, latestCallback);
         });
     }
 
