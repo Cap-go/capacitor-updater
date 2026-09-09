@@ -629,6 +629,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
             XCTAssertTrue(implementation.sentStatsActions.isEmpty)
 
+            // Reset duplicate marker so updates-only / allowsNonUpdateStats is actually exercised.
+            UserDefaults.standard.removeObject(forKey: "CapacitorUpdater.lastReportedUncleanSessionId")
             implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
             tracker.reportPreviousUncleanForegroundExit()
             XCTAssertTrue(implementation.sentStatsActions.isEmpty)

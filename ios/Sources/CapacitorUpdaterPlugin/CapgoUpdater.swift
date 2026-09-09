@@ -3541,6 +3541,13 @@ import UIKit
             return
         }
         guard !statsUrl.isEmpty else {
+            statsQueueLock.lock()
+            statsQueue.removeAll()
+            statsInFlight.removeAll()
+            statsQueueLock.unlock()
+            statsFlushTimer?.invalidate()
+            statsFlushTimer = nil
+            persistStatsQueue()
             return
         }
         // While Retry-After is active, keep stats queued and skip the network call.
