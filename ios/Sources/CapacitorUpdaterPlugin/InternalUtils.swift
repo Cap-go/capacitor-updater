@@ -184,7 +184,6 @@ extension InfoObject {
         set("channel", channel)
         set("defaultChannel", defaultChannel)
         set("key_id", key_id)
-        set("stats_mode", stats_mode)
         return parameters
     }
 }

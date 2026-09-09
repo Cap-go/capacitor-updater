@@ -894,13 +894,15 @@ import UIKit
         parameters.action = "rate_limit_reached"
         parameters.version_name = current.getVersionName()
         parameters.old_version_name = ""
+        var requestParameters = parameters.toParameters()
+        requestParameters["stats_mode"] = statsMode
 
         // Send synchronously using semaphore (safe because we're on a background queue)
         let semaphore = DispatchSemaphore(value: 0)
         self.alamofireSession.request(
             self.statsUrl,
             method: .post,
-            parameters: parameters.toParameters(),
+            parameters: requestParameters,
             encoding: JSONEncoding.default,
             requestModifier: { $0.timeoutInterval = self.timeout }
         ).responseData { response in

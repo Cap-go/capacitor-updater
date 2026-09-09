@@ -2146,8 +2146,8 @@ const actions = [
     run: async () =>
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
-        // Avoid a duplicate call when bootstrap already ran the boot probe.
-        probeLatest: state.bootProbe !== 'success',
+        // Probe only when bootstrap did not already attempt the Android manual-zip boot probe.
+        probeLatest: state.bootProbe === 'not-needed',
       }),
   },
   {
