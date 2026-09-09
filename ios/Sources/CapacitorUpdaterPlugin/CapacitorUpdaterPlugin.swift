@@ -219,7 +219,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Best-effort flag: set before we expect notifyAppReady (load/reload).
     // No lock — never held across waits; a rare race only mis-times one wait.
     private var pendingNotifyAppReady = false
-    private(set) var didEnterSemaphoreWaitForTesting = false
+    private let semaphoreWaitTestingLock = NSLock()
+    private var didEnterSemaphoreWaitForTesting = false
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -598,7 +599,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func semaphoreWait(waitTime: Int) {
         // print("\\(CapgoUpdater.TAG) semaphoreWait \\(waitTime)")
+        semaphoreWaitTestingLock.lock()
         didEnterSemaphoreWaitForTesting = true
+        semaphoreWaitTestingLock.unlock()
         let result = semaphoreReady.wait(timeout: .now() + .milliseconds(waitTime))
         if result == .timedOut {
             logger.error("Semaphore wait timed out after \(waitTime)ms")
@@ -4109,11 +4112,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func resetSemaphoreWaitTestingStateForTesting() {
+        semaphoreWaitTestingLock.lock()
         didEnterSemaphoreWaitForTesting = false
+        semaphoreWaitTestingLock.unlock()
     }
 
     var didEnterSemaphoreWaitForTestingState: Bool {
-        didEnterSemaphoreWaitForTesting
+        semaphoreWaitTestingLock.lock()
+        defer { semaphoreWaitTestingLock.unlock() }
+        return didEnterSemaphoreWaitForTesting
     }
 
     func clearPendingNotifyAppReadyForTesting() {
