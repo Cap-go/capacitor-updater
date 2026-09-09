@@ -685,6 +685,7 @@ class CapacitorUpdaterTests: XCTestCase {
         restoredUpdater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
         stopStatsFlushForTests(restoredUpdater)
         XCTAssertEqual(restoredUpdater.firstQueuedStatsEventForTests()?.action, "set")
+        XCTAssertEqual(restoredUpdater.firstQueuedStatsEventForTests()?.stats_mode, CapgoUpdater.statsModeUpdatesOnly)
 
         let billingRestorePayload = """
         [

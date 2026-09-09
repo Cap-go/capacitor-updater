@@ -103,10 +103,10 @@ public class CapgoUpdater {
 
     public String customId = "";
     public String statsUrl = "";
-    public String statsMode = STATS_MODE_ALL;
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
+    public String statsMode = STATS_MODE_ALL;
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
@@ -2187,14 +2187,17 @@ public class CapgoUpdater {
     }
 
     private void filterPendingStatsForCurrentMode() {
-        final boolean hadQueuedEvents;
+        final boolean hadPendingEvents;
         synchronized (statsQueue) {
-            hadQueuedEvents = !statsQueue.isEmpty();
+            hadPendingEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
             final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue);
             statsQueue.clear();
             statsQueue.addAll(filteredQueue);
+            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight);
+            statsInFlight.clear();
+            statsInFlight.addAll(filteredInFlight);
         }
-        if (hadQueuedEvents) {
+        if (hadPendingEvents) {
             persistStatsQueue();
         }
     }
@@ -3340,20 +3343,19 @@ public class CapgoUpdater {
             return;
         }
 
-        final List<QueuedStatsEvent> eventsToSend;
+        final List<QueuedStatsEvent> deliverableEvents;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
                 statsFlushInFlight.set(false);
                 return;
             }
-            eventsToSend = new ArrayList<>(statsQueue);
+            final List<QueuedStatsEvent> eventsToSend = new ArrayList<>(statsQueue);
             statsQueue.clear();
             statsInFlight.clear();
-            statsInFlight.addAll(eventsToSend);
+            deliverableEvents = filterQueuedStatsEvents(eventsToSend);
+            statsInFlight.addAll(deliverableEvents);
         }
         persistStatsQueue();
-
-        final List<QueuedStatsEvent> deliverableEvents = filterQueuedStatsEvents(eventsToSend);
         JSONArray jsonArray = new JSONArray();
         for (QueuedStatsEvent queuedEvent : deliverableEvents) {
             jsonArray.put(queuedEvent.event);

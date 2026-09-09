@@ -4081,6 +4081,48 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void createBillingStatsPayloadFromEventPreservesQueuedFieldValues() throws Exception {
+        final JSONObject event = new JSONObject();
+        event.put("platform", "android");
+        event.put("device_id", "device-42");
+        event.put("app_id", "com.example.app");
+        event.put("version_build", "1.0.0");
+        event.put("version_name", "2.0.0");
+        event.put("version_os", "14");
+        event.put("plugin_version", "8.0.0");
+        event.put("is_emulator", true);
+        event.put("is_prod", false);
+        event.put("action", "set");
+        event.put("timestamp", 999L);
+        event.put("custom_id", "should-be-stripped");
+        event.put("metadata", new JSONObject().put("key", "value"));
+
+        final JSONObject payload = CapgoUpdater.createBillingStatsPayloadFromEvent(
+            event,
+            CapgoUpdater.STATS_MODE_BILLING_ONLY,
+            "set",
+            999L,
+            "default-platform",
+            "default-device",
+            "default-app",
+            "default-build",
+            "default-os",
+            "default-plugin",
+            false,
+            true
+        );
+
+        assertEquals("device-42", payload.getString("device_id"));
+        assertEquals("com.example.app", payload.getString("app_id"));
+        assertEquals("1.0.0", payload.getString("version_build"));
+        assertEquals("14", payload.getString("version_os"));
+        assertEquals("8.0.0", payload.getString("plugin_version"));
+        assertTrue(payload.getBoolean("is_emulator"));
+        assertFalse(payload.getBoolean("is_prod"));
+        assertBillingPayloadKeysOnly(payload);
+    }
+
+    @Test
     public void createBillingStatsPayloadUsesAllowListedFieldsOnly() throws Exception {
         final JSONObject payload = CapgoUpdater.createBillingStatsPayload(
             "android",

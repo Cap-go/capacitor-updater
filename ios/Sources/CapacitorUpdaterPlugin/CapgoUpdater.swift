@@ -247,6 +247,31 @@ import UIKit
         makeBillingStatsEvent(action: action, versionNameOverride: versionName, timestampOverride: timestamp)
     }
 
+    private func eventWithCurrentStatsMode(_ event: StatsEvent) -> StatsEvent {
+        StatsEvent(
+            platform: event.platform,
+            device_id: event.device_id,
+            app_id: event.app_id,
+            custom_id: event.custom_id,
+            version_build: event.version_build,
+            version_code: event.version_code,
+            version_os: event.version_os,
+            version_name: event.version_name,
+            old_version_name: event.old_version_name,
+            plugin_version: event.plugin_version,
+            is_emulator: event.is_emulator,
+            is_prod: event.is_prod,
+            installSource: event.installSource,
+            action: event.action,
+            channel: event.channel,
+            defaultChannel: event.defaultChannel,
+            key_id: event.key_id,
+            metadata: event.metadata,
+            stats_mode: statsMode,
+            timestamp: event.timestamp
+        )
+    }
+
     private func prepareStatsEventForCurrentMode(_ event: StatsEvent) -> StatsEvent? {
         let action = event.action ?? ""
         if !Self.shouldSendStatsAction(action, statsMode: statsMode) {
@@ -255,7 +280,7 @@ import UIKit
         if Self.usesBillingStatsPayload(statsMode) {
             return createBillingStatsEvent(from: event, action: action)
         }
-        return event
+        return eventWithCurrentStatsMode(event)
     }
 
     private func filterPendingStatsForCurrentMode() {
@@ -3417,7 +3442,10 @@ import UIKit
             if statsQueue.count >= CapgoUpdater.maxPendingStats {
                 break
             }
-            statsQueue.append(QueuedStatsEvent(event: event, onSent: nil))
+            guard let prepared = prepareStatsEventForCurrentMode(event) else {
+                continue
+            }
+            statsQueue.append(QueuedStatsEvent(event: prepared, onSent: nil))
         }
         let restoredCount = statsQueue.count
         statsQueueLock.unlock()
