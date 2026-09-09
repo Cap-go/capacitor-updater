@@ -3608,7 +3608,15 @@ import UIKit
             self.statsFlushTokenLock.unlock()
             guard shouldPublish else {
                 dataRequest.cancel()
-                self.clearStatsInFlight()
+                // If shutdown raced us, keep in-flight so shutdown's forced persist
+                // can retain the batch; only clear when stats were intentionally disabled.
+                self.statsPersistLock.lock()
+                let shouldClearInFlight = !self.statsStopped
+                self.statsPersistLock.unlock()
+                if shouldClearInFlight {
+                    self.clearStatsInFlight()
+                    self.persistStatsQueue()
+                }
                 return
             }
             dataRequest.responseData { response in
