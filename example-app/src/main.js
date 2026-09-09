@@ -2131,13 +2131,6 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
-      if (scenarioId === 'manual-zip' && platform !== 'ios') {
-        markPendingBootAction('verify-persisted-config-after-get-latest-boot');
-        return {
-          message: 'Queued persisted-config verification for the next boot after getLatest().',
-        };
-      }
-
       markPendingBootAction('verify-persisted-config-boot');
       return {
         message: 'Queued persisted-config verification for the next boot.',
@@ -2153,10 +2146,8 @@ const actions = [
     run: async () =>
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
-        probeLatest:
-          platform !== 'ios' &&
-          scenarioId !== 'manual-zip-config-guards' &&
-          scenarioId !== 'manual-zip-no-persist',
+        // Probe only when bootstrap did not already attempt the Android manual-zip boot probe.
+        probeLatest: state.bootProbe === 'not-needed',
       }),
   },
   {

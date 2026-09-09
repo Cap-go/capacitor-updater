@@ -24,6 +24,10 @@ final class AppHealthTracker {
     }
 
     func reportPreviousUncleanForegroundExit() {
+        guard implementation.allowsNonUpdateStats() else {
+            return
+        }
+
         let defaults = UserDefaults.standard
         let previousSessionId = defaults.string(forKey: appSessionIdDefaultsKey)
         let lastReportedSessionId = defaults.string(forKey: lastReportedUncleanSessionDefaultsKey)
@@ -71,6 +75,10 @@ final class AppHealthTracker {
     }
 
     func reportMemoryWarning() {
+        guard implementation.allowsNonUpdateStats() else {
+            return
+        }
+
         let current = implementation.getCurrentBundle()
         implementation.sendStats(
             action: "app_memory_warning",

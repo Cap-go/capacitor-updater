@@ -90,7 +90,6 @@ public class CapgoUpdater {
     /** Optional gate run before any download touches disk (e.g. wait for launch cleanup). */
     public Runnable downloadGate = null;
     public SharedPreferences prefs;
-
     public File documentsDir;
     public File noBackupDir;
     public Boolean directUpdate = false;
@@ -102,8 +101,16 @@ public class CapgoUpdater {
     public String CAP_SERVER_PATH = "";
 
     public String customId = "";
-    public String statsUrl = "";
-    public String channelUrl = "";
+    public volatile String statsUrl = "";
+    private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
+    private static volatile String liveChannelUrl = null; // null = unpublished; "" = disabled
+    private static volatile Runnable reloadLiveModifyUrlsHook;
+    private static volatile CapacitorUpdaterPlugin reloadLiveModifyUrlsHookOwner;
+    public static final String STATS_MODE_ALL = "all";
+    public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
+    public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
+    public volatile String statsMode = STATS_MODE_ALL;
+    public volatile String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
     public volatile boolean previewSession = false;
@@ -156,6 +163,55 @@ public class CapgoUpdater {
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
+    }
+
+    static void publishLiveStatsUrl(final String statsUrl) {
+        liveStatsUrl = statsUrl == null ? "" : statsUrl;
+    }
+
+    static void setReloadLiveModifyUrlsHook(final CapacitorUpdaterPlugin owner, final Runnable hook) {
+        reloadLiveModifyUrlsHookOwner = owner;
+        reloadLiveModifyUrlsHook = hook;
+    }
+
+    static void clearReloadLiveModifyUrlsHook(final CapacitorUpdaterPlugin owner) {
+        if (reloadLiveModifyUrlsHookOwner == owner) {
+            reloadLiveModifyUrlsHookOwner = null;
+            reloadLiveModifyUrlsHook = null;
+        }
+    }
+
+    static void reloadLiveModifyUrlsIfAvailable() {
+        final Runnable hook = reloadLiveModifyUrlsHook;
+        if (hook != null) {
+            hook.run();
+        }
+    }
+
+    private void reloadPersistedModifyUrlsBeforeSend() {
+        reloadLiveModifyUrlsIfAvailable();
+    }
+
+    static String resolveStatsUrl(final String fallback) {
+        final String live = liveStatsUrl;
+        if (live == null) {
+            // Live URL has not been published yet — keep worker/captured fallback.
+            return fallback == null ? "" : fallback;
+        }
+        // Published value wins, including "" after setStatsUrl("").
+        return live;
+    }
+
+    static void publishLiveChannelUrl(final String channelUrl) {
+        liveChannelUrl = channelUrl == null ? "" : channelUrl;
+    }
+
+    static String resolveChannelUrl(final String fallback) {
+        final String live = liveChannelUrl;
+        if (live == null) {
+            return fallback == null ? "" : fallback;
+        }
+        return live;
     }
 
     private final FilenameFilter filter = (f, name) -> {
@@ -811,7 +867,8 @@ public class CapgoUpdater {
             this.pluginVersion,
             this.isProd(),
             this.getInstallSource(),
-            this.statsUrl,
+            resolveStatsUrl(this.statsUrl),
+            this.statsMode,
             this.deviceID,
             this.versionBuild,
             this.versionCode,
@@ -1985,6 +2042,251 @@ public class CapgoUpdater {
         this.finalizeResetTransition(currentBundleName, internal);
     }
 
+    private static final Set<String> UPDATES_ONLY_STATS_ACTIONS = Set.of(
+        "download_complete",
+        "download_manifest_start",
+        "download_manifest_complete",
+        "download_manifest_file_fail",
+        "download_manifest_checksum_fail",
+        "download_manifest_brotli_fail",
+        "download_zip_start",
+        "download_zip_complete",
+        "download_fail",
+        "finish_download_fail",
+        "unzip_fail",
+        "decrypt_fail",
+        "checksum_fail",
+        "checksum_required",
+        "windows_path_fail",
+        "canonical_path_fail",
+        "directory_path_fail",
+        "manifest_path_fail",
+        "insufficient_disk_space",
+        "low_mem_fail",
+        "set",
+        "set_fail",
+        "set_next",
+        "reset",
+        "delete",
+        "update_fail",
+        "blocked_by_server_url",
+        "rate_limit_reached"
+    );
+
+    private static final Set<String> BILLING_ONLY_STATS_ACTIONS = Set.of(
+        "set",
+        "download_complete",
+        "set_fail",
+        "update_fail",
+        "download_fail"
+    );
+
+    static String normalizeStatsMode(final String statsMode) {
+        if (STATS_MODE_UPDATES_ONLY.equals(statsMode) || STATS_MODE_BILLING_ONLY.equals(statsMode)) {
+            return statsMode;
+        }
+        return STATS_MODE_ALL;
+    }
+
+    static boolean isUpdatesOnlyStatsAction(final String action) {
+        return action != null && UPDATES_ONLY_STATS_ACTIONS.contains(action);
+    }
+
+    static boolean isBillingOnlyStatsAction(final String action) {
+        return action != null && BILLING_ONLY_STATS_ACTIONS.contains(action);
+    }
+
+    static boolean shouldSendStatsAction(final String action, final String statsMode) {
+        return switch (normalizeStatsMode(statsMode)) {
+            case STATS_MODE_ALL -> true;
+            case STATS_MODE_BILLING_ONLY -> action != null && !action.isEmpty() && isBillingOnlyStatsAction(action);
+            default -> action != null && !action.isEmpty() && isUpdatesOnlyStatsAction(action);
+        };
+    }
+
+    static boolean usesBillingStatsPayload(final String statsMode) {
+        return STATS_MODE_BILLING_ONLY.equals(normalizeStatsMode(statsMode));
+    }
+
+    static final Set<String> BILLING_STATS_PAYLOAD_KEYS = Set.of(
+        "platform",
+        "device_id",
+        "app_id",
+        "version_build",
+        "version_name",
+        "version_os",
+        "plugin_version",
+        "is_emulator",
+        "is_prod",
+        "stats_mode",
+        "action",
+        "timestamp"
+    );
+
+    public boolean allowsNonUpdateStats() {
+        return STATS_MODE_ALL.equals(normalizeStatsMode(this.statsMode));
+    }
+
+    public void setStatsMode(final String statsMode) {
+        this.statsMode = normalizeStatsMode(statsMode);
+        filterPendingStatsForCurrentMode();
+    }
+
+    static JSONObject createBillingStatsPayload(
+        final String platform,
+        final String deviceId,
+        final String appId,
+        final String versionBuild,
+        final String versionName,
+        final String versionOs,
+        final String pluginVersion,
+        final boolean isEmulator,
+        final boolean isProd,
+        final String statsMode,
+        final String action,
+        final long timestamp
+    ) throws JSONException {
+        final JSONObject json = new JSONObject();
+        json.put("platform", platform);
+        json.put("device_id", deviceId);
+        json.put("app_id", appId);
+        json.put("version_build", versionBuild);
+        json.put("version_name", versionName);
+        json.put("version_os", versionOs);
+        json.put("plugin_version", pluginVersion);
+        json.put("is_emulator", isEmulator);
+        json.put("is_prod", isProd);
+        json.put("stats_mode", statsMode);
+        json.put("action", action);
+        json.put("timestamp", timestamp);
+        return json;
+    }
+
+    static JSONObject createBillingStatsPayloadFromEvent(
+        final JSONObject event,
+        final String statsMode,
+        final String action,
+        final long timestamp,
+        final String defaultPlatform,
+        final String defaultDeviceId,
+        final String defaultAppId,
+        final String defaultVersionBuild,
+        final String defaultVersionOs,
+        final String defaultPluginVersion,
+        final boolean defaultIsEmulator,
+        final boolean defaultIsProd
+    ) throws JSONException {
+        return createBillingStatsPayload(
+            event.optString("platform", defaultPlatform),
+            event.optString("device_id", defaultDeviceId),
+            event.optString("app_id", defaultAppId),
+            event.optString("version_build", defaultVersionBuild),
+            event.optString("version_name", ""),
+            event.optString("version_os", defaultVersionOs),
+            event.optString("plugin_version", defaultPluginVersion),
+            event.has("is_emulator") ? event.optBoolean("is_emulator") : defaultIsEmulator,
+            event.has("is_prod") ? event.optBoolean("is_prod") : defaultIsProd,
+            statsMode,
+            action,
+            timestamp
+        );
+    }
+
+    private JSONObject createBillingStatsObject(final String versionName, final String action) throws JSONException {
+        return createBillingStatsObject(versionName, action, System.currentTimeMillis());
+    }
+
+    private JSONObject createBillingStatsObject(final String versionName, final String action, final long timestamp) throws JSONException {
+        final JSONObject event = new JSONObject();
+        event.put("version_name", versionName);
+        return createBillingStatsObject(event, action, timestamp);
+    }
+
+    private JSONObject createBillingStatsObject(final JSONObject event, final String action, final long timestamp) throws JSONException {
+        return createBillingStatsPayloadFromEvent(
+            event,
+            this.statsMode,
+            action,
+            timestamp,
+            "android",
+            this.deviceID,
+            this.appId,
+            this.versionBuild,
+            this.versionOs,
+            this.pluginVersion,
+            this.isEmulator(),
+            this.isProd()
+        );
+    }
+
+    private JSONObject prepareStatsEventForCurrentMode(final JSONObject event) {
+        if (event == null) {
+            return null;
+        }
+        final String action = event.optString("action", "");
+        if (!shouldSendStatsAction(action, this.statsMode)) {
+            return null;
+        }
+        if (!usesBillingStatsPayload(this.statsMode)) {
+            try {
+                event.put("stats_mode", this.statsMode);
+                return event;
+            } catch (JSONException e) {
+                return null;
+            }
+        }
+        try {
+            final long timestamp = event.has("timestamp") ? event.optLong("timestamp") : System.currentTimeMillis();
+            return createBillingStatsObject(event, action, timestamp);
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    private void filterPendingStatsForCurrentMode() {
+        final boolean hadQueuedEvents;
+        final List<QueuedStatsEvent> discardedEvents = new ArrayList<>();
+        synchronized (statsQueue) {
+            hadQueuedEvents = !statsQueue.isEmpty() || !statsInFlight.isEmpty();
+            final List<QueuedStatsEvent> filteredQueue = filterQueuedStatsEvents(statsQueue, discardedEvents);
+            statsQueue.clear();
+            statsQueue.addAll(filteredQueue);
+            final List<QueuedStatsEvent> filteredInFlight = filterQueuedStatsEvents(statsInFlight, discardedEvents);
+            statsInFlight.clear();
+            statsInFlight.addAll(filteredInFlight);
+        }
+        runStatsCallbacks(discardedEvents);
+        if (hadQueuedEvents) {
+            persistStatsQueue();
+        }
+    }
+
+    private List<QueuedStatsEvent> filterQueuedStatsEvents(final List<QueuedStatsEvent> events, final List<QueuedStatsEvent> discardedOut) {
+        final List<QueuedStatsEvent> filtered = new ArrayList<>();
+        for (final QueuedStatsEvent queuedEvent : events) {
+            final JSONObject prepared = prepareStatsEventForCurrentMode(queuedEvent.event);
+            if (prepared == null) {
+                discardedOut.add(queuedEvent);
+                continue;
+            }
+            filtered.add(new QueuedStatsEvent(prepared, queuedEvent.onSent));
+        }
+        return filtered;
+    }
+
+    JSONObject firstQueuedStatsEventForTests() {
+        synchronized (statsQueue) {
+            if (statsQueue.isEmpty()) {
+                return null;
+            }
+            try {
+                return new JSONObject(statsQueue.get(0).event.toString());
+            } catch (JSONException e) {
+                return null;
+            }
+        }
+    }
+
     private JSONObject createInfoObject() throws JSONException {
         return this.createInfoObject(null);
     }
@@ -2188,7 +2490,13 @@ public class CapgoUpdater {
      * Dispatched through OkHttp so no caller thread waits on the request.
      */
     private void sendRateLimitStatistic() {
-        String statsUrl = this.statsUrl;
+        if (!shouldSendStatsAction("rate_limit_reached", this.statsMode)) {
+            releaseRateLimitStatisticClaim();
+            return;
+        }
+
+        this.reloadPersistedModifyUrlsBeforeSend();
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             // The URL was cleared after the claim was taken; nothing went out, so hand it back.
             releaseRateLimitStatisticClaim();
@@ -2201,6 +2509,7 @@ public class CapgoUpdater {
             json.put("version_name", current.getVersionName());
             json.put("old_version_name", "");
             json.put("action", "rate_limit_reached");
+            json.put("stats_mode", this.statsMode);
 
             Request request = new Request.Builder()
                 .url(statsUrl)
@@ -2461,7 +2770,9 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        this.reloadPersistedModifyUrlsBeforeSend();
+
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
@@ -2520,7 +2831,9 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        this.reloadPersistedModifyUrlsBeforeSend();
+
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
@@ -2663,7 +2976,9 @@ public class CapgoUpdater {
             return;
         }
 
-        String channelUrl = this.channelUrl;
+        this.reloadPersistedModifyUrlsBeforeSend();
+
+        String channelUrl = resolveChannelUrl(this.channelUrl);
         if (channelUrl == null || channelUrl.isEmpty()) {
             logger.error("Channel URL is not set");
             final Map<String, Object> retError = new HashMap<>();
@@ -2840,20 +3155,35 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
+        if (!shouldSendStatsAction(action, this.statsMode)) {
+            if (onSent != null) {
+                onSent.run();
+            }
+            return;
+        }
+
+        this.reloadPersistedModifyUrlsBeforeSend();
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
+            if (onSent != null) {
+                onSent.run();
+            }
             return;
         }
 
         JSONObject json;
         try {
-            json = this.createInfoObject();
-            json.put("version_name", versionName);
-            json.put("old_version_name", oldVersionName);
-            json.put("action", action);
-            json.put("timestamp", System.currentTimeMillis());
-            if (metadata != null && !metadata.isEmpty()) {
-                json.put("metadata", new JSONObject(metadata));
+            if (usesBillingStatsPayload(this.statsMode)) {
+                json = this.createBillingStatsObject(versionName, action);
+            } else {
+                json = this.createInfoObject();
+                json.put("version_name", versionName);
+                json.put("old_version_name", oldVersionName);
+                json.put("action", action);
+                json.put("timestamp", System.currentTimeMillis());
+                if (metadata != null && !metadata.isEmpty()) {
+                    json.put("metadata", new JSONObject(metadata));
+                }
             }
         } catch (JSONException e) {
             if (logger != null) {
@@ -3064,7 +3394,8 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
+        this.reloadPersistedModifyUrlsBeforeSend();
+        String statsUrl = resolveStatsUrl(this.statsUrl);
         if (statsUrl == null || statsUrl.isEmpty()) {
             synchronized (statsQueue) {
                 statsQueue.clear();
@@ -3078,22 +3409,33 @@ public class CapgoUpdater {
             return;
         }
 
-        final List<QueuedStatsEvent> eventsToSend;
+        final List<QueuedStatsEvent> deliverableEvents;
+        final List<QueuedStatsEvent> discardedEvents = new ArrayList<>();
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
                 statsFlushInFlight.set(false);
                 return;
             }
-            eventsToSend = new ArrayList<>(statsQueue);
+            final List<QueuedStatsEvent> eventsToSend = new ArrayList<>(statsQueue);
             statsQueue.clear();
             statsInFlight.clear();
-            statsInFlight.addAll(eventsToSend);
+            deliverableEvents = filterQueuedStatsEvents(eventsToSend, discardedEvents);
+            statsInFlight.addAll(deliverableEvents);
         }
+        runStatsCallbacks(discardedEvents);
         persistStatsQueue();
-
         JSONArray jsonArray = new JSONArray();
-        for (QueuedStatsEvent queuedEvent : eventsToSend) {
+        for (QueuedStatsEvent queuedEvent : deliverableEvents) {
             jsonArray.put(queuedEvent.event);
+        }
+
+        if (jsonArray.length() == 0) {
+            synchronized (statsQueue) {
+                statsInFlight.clear();
+            }
+            persistStatsQueue();
+            statsFlushInFlight.set(false);
+            return;
         }
 
         Request request = new Request.Builder()
@@ -3101,7 +3443,7 @@ public class CapgoUpdater {
             .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
             .build();
 
-        final int eventCount = eventsToSend.size();
+        final int eventCount = deliverableEvents.size();
         DownloadService.sharedClient.newCall(request).enqueue(
             new okhttp3.Callback() {
                 @Override
@@ -3109,7 +3451,7 @@ public class CapgoUpdater {
                     if (abandonStoppedStatsFlush()) {
                         return;
                     }
-                    requeueStatsEvents(eventsToSend);
+                    requeueStatsEvents(deliverableEvents);
                     if (logger != null) {
                         logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
@@ -3125,7 +3467,7 @@ public class CapgoUpdater {
                         }
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(deliverableEvents);
                             return;
                         }
 
@@ -3138,9 +3480,9 @@ public class CapgoUpdater {
                                 logger.info("Stats batch sent successfully");
                                 logger.debug("Sent " + eventCount + " events");
                             }
-                            runStatsCallbacks(eventsToSend);
+                            runStatsCallbacks(deliverableEvents);
                         } else if (isTransientStatsFailure(response.code())) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(deliverableEvents);
                             if (logger != null) {
                                 logger.error("Error sending stats batch");
                                 logger.debug("Retrying later, response code: " + response.code());

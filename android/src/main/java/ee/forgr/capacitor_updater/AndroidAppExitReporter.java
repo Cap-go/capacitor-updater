@@ -54,6 +54,11 @@ final class AndroidAppExitReporter {
                     continue;
                 }
 
+                if (!implementation.allowsNonUpdateStats()) {
+                    newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
+                    continue;
+                }
+
                 implementation.sendStats(action, versionName, "", buildApplicationExitMetadata(exitInfo));
                 newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
             }

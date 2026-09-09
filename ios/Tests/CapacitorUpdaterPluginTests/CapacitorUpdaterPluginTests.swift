@@ -592,7 +592,7 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
     }
 
-    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
+    private func withSeededUncleanForegroundSession(_ body: () -> Void) {
         let defaults = UserDefaults.standard
         let keys = [
             "CapacitorUpdater.appSessionId",
@@ -606,24 +606,35 @@ class CapacitorUpdaterTests: XCTestCase {
         defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
         defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
         defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
+        body()
+    }
 
-        let implementation = HealthStatsCapgoUpdater()
-        let tracker = AppHealthTracker(implementation: implementation)
+    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
+        withSeededUncleanForegroundSession {
+            let implementation = HealthStatsCapgoUpdater()
+            let tracker = AppHealthTracker(implementation: implementation)
 
-        tracker.reportPreviousUncleanForegroundExit()
+            tracker.reportPreviousUncleanForegroundExit()
 
-        XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
-        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
-        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
-        XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
-        XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
+            XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
+            XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
+            XCTAssertEqual(implementation.lastStatsOldVersionName, "")
+            XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
+            XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
+            XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
+            XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
 
-        implementation.sentStatsActions.removeAll()
-        tracker.reportPreviousUncleanForegroundExit()
+            implementation.sentStatsActions.removeAll()
+            tracker.reportPreviousUncleanForegroundExit()
 
-        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+            XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+
+            // Reset duplicate marker so updates-only / allowsNonUpdateStats is actually exercised.
+            UserDefaults.standard.removeObject(forKey: "CapacitorUpdater.lastReportedUncleanSessionId")
+            implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
+            tracker.reportPreviousUncleanForegroundExit()
+            XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+        }
     }
 
     func testReportsMemoryWarningAsHealthStat() {
@@ -636,6 +647,151 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
         XCTAssertEqual(implementation.lastStatsOldVersionName, "")
         XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
+
+        implementation.sentStatsActions.removeAll()
+        implementation.statsMode = CapgoUpdater.statsModeUpdatesOnly
+        tracker.reportMemoryWarning()
+        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
+    }
+
+    func testStatsModeNormalization() {
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode(nil), CapgoUpdater.statsModeAll)
+        XCTAssertEqual(CapgoUpdater.normalizeStatsMode("invalid"), CapgoUpdater.statsModeAll)
+        XCTAssertFalse(CapgoUpdater.shouldSendStatsAction("app_crash", statsMode: CapgoUpdater.statsModeBillingOnly))
+    }
+
+    func testStatsModeBillingOnlyFiltersAndPayload() {
+        let billingUpdater = makeStatsModeTestUpdater()
+        defer { cleanupStatsTest(billingUpdater) }
+        billingUpdater.versionBuild = "1.0.0"
+        billingUpdater.pluginVersion = "8.0.0"
+        billingUpdater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
+        billingUpdater.sendStats(action: "download_71", versionName: "1.0.0")
+        billingUpdater.sendStats(action: "download_complete", versionName: "1.0.0")
+        billingUpdater.sendStats(action: "set", versionName: "2.0.0", oldVersionName: "1.0.0")
+        stopStatsFlushForTests(billingUpdater)
+        XCTAssertEqual(billingUpdater.queuedStatsActionsForTests(), ["download_complete", "set"])
+        assertAllBillingPayloadKeysOnly(billingUpdater)
+    }
+
+    func testStatsModeRestoreUnderUpdatesOnly() throws {
+        let pendingFileURL = pendingStatsFileURLForTests()
+        defer { try? FileManager.default.removeItem(at: pendingFileURL) }
+        let restoredPayload = """
+        [
+          {"action":"app_moved_to_background","timestamp":1,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"1.0.0"},
+          {"action":"set","timestamp":2,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"2.0.0"}
+        ]
+        """.data(using: .utf8)!
+        try restoredPayload.write(to: pendingFileURL, options: .atomic)
+
+        let restoredUpdater = makeStatsModeTestUpdater(statsUrl: "")
+        defer { cleanupStatsTest(restoredUpdater) }
+        restoredUpdater.restorePendingStats()
+        restoredUpdater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+        stopStatsFlushForTests(restoredUpdater)
+        XCTAssertEqual(restoredUpdater.queuedStatsActionsForTests(), ["set"])
+        XCTAssertEqual(restoredUpdater.queuedStatsEventsForTests().map(\.stats_mode), [CapgoUpdater.statsModeUpdatesOnly])
+    }
+
+    func testStatsModeRestoreUnderBillingOnly() throws {
+        let pendingFileURL = pendingStatsFileURLForTests()
+        defer { try? FileManager.default.removeItem(at: pendingFileURL) }
+        let billingRestorePayload = """
+        [
+          {"action":"set","timestamp":3,"platform":"ios","device_id":"device-1","app_id":"com.example.app","version_name":"2.0.0","custom_id":"user-1","metadata":{"source":"test"},"stats_mode":"all"}
+        ]
+        """.data(using: .utf8)!
+        try billingRestorePayload.write(to: pendingFileURL, options: .atomic)
+
+        let billingRestoreUpdater = makeStatsModeTestUpdater(statsUrl: "")
+        defer { cleanupStatsTest(billingRestoreUpdater) }
+        billingRestoreUpdater.restorePendingStats()
+        billingRestoreUpdater.setStatsMode(CapgoUpdater.statsModeBillingOnly)
+        stopStatsFlushForTests(billingRestoreUpdater)
+        XCTAssertEqual(billingRestoreUpdater.queuedStatsActionsForTests(), ["set"])
+        assertAllBillingPayloadKeysOnly(billingRestoreUpdater)
+        XCTAssertEqual(billingRestoreUpdater.queuedStatsEventsForTests().map(\.stats_mode), [CapgoUpdater.statsModeBillingOnly])
+    }
+
+    func testStatsModeInFlightFilteringAfterUpdatesOnly() {
+        let filteredUpdater = makeStatsModeTestUpdater()
+        defer { cleanupStatsTest(filteredUpdater) }
+        filteredUpdater.sendStats(action: "app_crash", versionName: "1.0.0")
+        filteredUpdater.sendStats(action: "set", versionName: "2.0.0")
+        filteredUpdater.setStatsMode(CapgoUpdater.statsModeUpdatesOnly)
+        stopStatsFlushForTests(filteredUpdater)
+        XCTAssertEqual(filteredUpdater.queuedStatsActionsForTests(), ["set"])
+    }
+
+    func testStatsModeUpdatesOnlyFiltersHealthEvents() {
+        let updatesOnlyUpdater = makeStatsModeTestUpdater()
+        defer { cleanupStatsTest(updatesOnlyUpdater) }
+        updatesOnlyUpdater.statsMode = CapgoUpdater.statsModeUpdatesOnly
+        updatesOnlyUpdater.sendStats(action: "app_crash", versionName: "1.0.0")
+        updatesOnlyUpdater.sendStats(action: "download_71", versionName: "1.0.0")
+        updatesOnlyUpdater.sendStats(action: "download_fail", versionName: "1.0.0")
+        stopStatsFlushForTests(updatesOnlyUpdater)
+        XCTAssertEqual(updatesOnlyUpdater.queuedStatsActionsForTests(), ["download_fail"])
+    }
+
+    func testStatsModeAllModeOrdering() {
+        let allModeUpdater = makeStatsModeTestUpdater()
+        defer { cleanupStatsTest(allModeUpdater) }
+        allModeUpdater.statsMode = CapgoUpdater.statsModeAll
+        allModeUpdater.sendStats(action: "app_crash", versionName: "1.0.0")
+        allModeUpdater.sendStats(action: "set", versionName: "2.0.0")
+        stopStatsFlushForTests(allModeUpdater)
+        XCTAssertEqual(allModeUpdater.queuedStatsActionsForTests(), ["app_crash", "set"])
+    }
+
+    private func makeStatsModeTestUpdater(statsUrl: String = "https://example.com/stats") -> CapgoUpdater {
+        let updater = CapgoUpdater()
+        configureStatsTestUpdater(updater)
+        updater.statsUrl = statsUrl
+        return updater
+    }
+
+    private func libraryDirForStatsTests() -> URL {
+        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+    }
+
+    private func pendingStatsFileURLForTests() -> URL {
+        libraryDirForStatsTests().appendingPathComponent("capgo_pending_stats.json")
+    }
+
+    private func configureStatsTestUpdater(_ updater: CapgoUpdater) {
+        updater.setLogger(Logger(withTag: "StatsModeTests", options: Logger.Options(level: .silent)))
+        updater.deviceID = "device-1"
+        updater.appId = "com.example.app"
+    }
+
+    private func stopStatsFlushForTests(_ updater: CapgoUpdater) {
+        updater.shutdown()
+    }
+
+    private func cleanupStatsTest(_ updater: CapgoUpdater) {
+        updater.shutdown()
+        try? FileManager.default.removeItem(at: pendingStatsFileURLForTests())
+    }
+
+    private func assertBillingPayloadKeysOnly(_ event: StatsEvent?) {
+        guard let event else {
+            XCTFail("Expected billing stats event")
+            return
+        }
+        guard let data = try? JSONEncoder().encode(event),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            XCTFail("Failed to encode billing stats event")
+            return
+        }
+        XCTAssertEqual(Set(json.keys), CapgoUpdater.billingStatsPayloadKeys)
+    }
+
+    private func assertAllBillingPayloadKeysOnly(_ updater: CapgoUpdater) {
+        for event in updater.queuedStatsEventsForTests() {
+            assertBillingPayloadKeysOnly(event)
+        }
     }
 
     func testMapsWebViewErrorTypesToStatsActions() {
@@ -2799,7 +2955,8 @@ class CapacitorUpdaterTests: XCTestCase {
             action: "set",
             channel: nil,
             defaultChannel: "production",
-            key_id: nil
+            key_id: nil,
+            stats_mode: nil
         )
 
         XCTAssertEqual(info.toParameters()["install_source"] as? String, "app_store")

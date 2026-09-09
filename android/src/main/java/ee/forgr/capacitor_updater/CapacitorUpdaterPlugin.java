@@ -152,6 +152,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private SharedPreferences.Editor editor;
     private SharedPreferences prefs;
     private final Object previewSessionsLock = new Object();
+    private final Object modifyUrlsLock = new Object();
     protected CapgoUpdater implementation;
     private Boolean persistCustomId = false;
     private Boolean persistModifyUrl = false;
@@ -163,7 +164,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoDeletePrevious = true;
     private Boolean autoUpdate = false;
     private String autoUpdateMode = AUTO_UPDATE_MODE_OFF;
-    private String updateUrl = "";
+    private volatile String updateUrl = "";
     private Version currentVersionNative;
     private String currentBuildVersion;
     private Thread backgroundTask;
@@ -777,22 +778,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.implementation.statsUrl = this.getConfig().getString("statsUrl", statsUrlDefault);
         this.implementation.channelUrl = this.getConfig().getString("channelUrl", channelUrlDefault);
+        this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            if (this.prefs.contains(STATS_URL_PREF_KEY)) {
-                final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
-                if (storedStatsUrl != null) {
-                    this.implementation.statsUrl = storedStatsUrl;
-                    logger.info("Loaded persisted statsUrl");
-                }
+            if (this.restorePersistedStatsUrl()) {
+                logger.info("Loaded persisted statsUrl");
             }
-            if (this.prefs.contains(CHANNEL_URL_PREF_KEY)) {
-                final String storedChannelUrl = this.prefs.getString(CHANNEL_URL_PREF_KEY, this.implementation.channelUrl);
-                if (storedChannelUrl != null) {
-                    this.implementation.channelUrl = storedChannelUrl;
-                    logger.info("Loaded persisted channelUrl");
-                }
+            if (this.restorePersistedChannelUrl()) {
+                logger.info("Loaded persisted channelUrl");
+            }
+            if (this.restorePersistedUpdateUrl()) {
+                logger.info("Loaded persisted updateUrl");
             }
         }
+        CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
+        CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
+        CapgoUpdater.setReloadLiveModifyUrlsHook(this, this::reloadPersistedModifyUrlsIfConfigured);
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
@@ -845,7 +845,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.versionOs = Build.VERSION.RELEASE;
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
+        this.reloadPersistedModifyUrlsIfConfigured();
         this.implementation.restorePendingStats();
+        this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
@@ -859,19 +861,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
+        this.reloadPersistedModifyUrlsIfConfigured();
         this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
-        this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            if (this.prefs.contains(UPDATE_URL_PREF_KEY)) {
-                final String storedUpdateUrl = this.prefs.getString(UPDATE_URL_PREF_KEY, this.updateUrl);
-                if (storedUpdateUrl != null) {
-                    this.updateUrl = storedUpdateUrl;
-                    logger.info("Loaded persisted updateUrl");
-                }
-            }
-        }
         this.configureAutoUpdateModeFromConfig();
         this.appReadyTimeout = Math.max(1000, this.getConfig().getInt("appReadyTimeout", 10000)); // Minimum 1 second
         this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
@@ -1738,12 +1731,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void reportAppLaunchStart() {
-        if (
-            this.implementation == null ||
-            this.implementation.statsUrl == null ||
-            this.implementation.statsUrl.isEmpty() ||
-            this.launchStartReported
-        ) {
+        if (this.implementation == null || this.launchStartReported) {
+            return;
+        }
+
+        this.reloadPersistedModifyUrlsIfConfigured();
+        if (this.implementation.statsUrl == null || this.implementation.statsUrl.isEmpty()) {
             return;
         }
 
@@ -1900,6 +1893,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void reportWebViewStats(final String action, final Map<String, String> metadata) {
         if (this.implementation == null) {
+            return;
+        }
+
+        if (!this.implementation.allowsNonUpdateStats()) {
             return;
         }
 
@@ -2532,16 +2529,73 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(UPDATE_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist updateUrl");
-                call.reject("Failed to persist updateUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(UPDATE_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist updateUrl");
+                    call.reject("Failed to persist updateUrl");
+                    return;
+                }
             }
+            this.updateUrl = url;
         }
-        this.updateUrl = url;
         call.resolve();
+    }
+
+    private boolean restorePersistedStatsUrl() {
+        if (this.prefs == null || this.implementation == null || !this.prefs.contains(STATS_URL_PREF_KEY)) {
+            return false;
+        }
+        final String storedStatsUrl = this.prefs.getString(STATS_URL_PREF_KEY, this.implementation.statsUrl);
+        if (storedStatsUrl == null) {
+            return false;
+        }
+        this.implementation.statsUrl = storedStatsUrl;
+        return true;
+    }
+
+    private boolean restorePersistedChannelUrl() {
+        if (this.prefs == null || this.implementation == null || !this.prefs.contains(CHANNEL_URL_PREF_KEY)) {
+            return false;
+        }
+        final String storedChannelUrl = this.prefs.getString(CHANNEL_URL_PREF_KEY, this.implementation.channelUrl);
+        if (storedChannelUrl == null) {
+            return false;
+        }
+        this.implementation.channelUrl = storedChannelUrl;
+        return true;
+    }
+
+    private boolean restorePersistedUpdateUrl() {
+        if (this.prefs == null || !this.prefs.contains(UPDATE_URL_PREF_KEY)) {
+            return false;
+        }
+        final String storedUpdateUrl = this.prefs.getString(UPDATE_URL_PREF_KEY, this.updateUrl);
+        if (storedUpdateUrl == null) {
+            return false;
+        }
+        this.updateUrl = storedUpdateUrl;
+        return true;
+    }
+
+    private void reloadPersistedModifyUrlsIfConfigured() {
+        synchronized (this.modifyUrlsLock) {
+            this.reloadPersistedModifyUrlsUnderLock();
+        }
+    }
+
+    private void reloadPersistedModifyUrlsUnderLock() {
+        if (!Boolean.TRUE.equals(this.persistModifyUrl) || this.prefs == null || this.implementation == null) {
+            CapgoUpdater.publishLiveStatsUrl(this.implementation == null ? "" : this.implementation.statsUrl);
+            CapgoUpdater.publishLiveChannelUrl(this.implementation == null ? "" : this.implementation.channelUrl);
+            return;
+        }
+        this.restorePersistedStatsUrl();
+        this.restorePersistedChannelUrl();
+        this.restorePersistedUpdateUrl();
+        CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
+        CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
     }
 
     @PluginMethod
@@ -2557,15 +2611,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(STATS_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist statsUrl");
-                call.reject("Failed to persist statsUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(STATS_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist statsUrl");
+                    call.reject("Failed to persist statsUrl");
+                    return;
+                }
             }
+            this.implementation.statsUrl = url;
+            CapgoUpdater.publishLiveStatsUrl(url);
         }
-        this.implementation.statsUrl = url;
         call.resolve();
     }
 
@@ -2582,15 +2639,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setChannelUrl called without url");
             return;
         }
-        if (Boolean.TRUE.equals(this.persistModifyUrl)) {
-            this.editor.putString(CHANNEL_URL_PREF_KEY, url);
-            if (!this.editor.commit()) {
-                logger.error("Failed to persist channelUrl");
-                call.reject("Failed to persist channelUrl");
-                return;
+        synchronized (this.modifyUrlsLock) {
+            if (Boolean.TRUE.equals(this.persistModifyUrl)) {
+                this.editor.putString(CHANNEL_URL_PREF_KEY, url);
+                if (!this.editor.commit()) {
+                    logger.error("Failed to persist channelUrl");
+                    call.reject("Failed to persist channelUrl");
+                    return;
+                }
             }
+            this.implementation.channelUrl = url;
+            CapgoUpdater.publishLiveChannelUrl(url);
         }
-        this.implementation.channelUrl = url;
         call.resolve();
     }
 
@@ -2709,6 +2769,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         try {
             logger.info("setChannel " + channel + " triggerAutoUpdate: " + triggerAutoUpdate);
+            this.reloadPersistedModifyUrlsIfConfigured();
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.setChannel(
                     channel,
@@ -2763,6 +2824,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void getChannel(final PluginCall call) {
         try {
             logger.info("getChannel");
+            this.reloadPersistedModifyUrlsIfConfigured();
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.getChannel(
                     (res) -> {
@@ -2794,6 +2856,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void listChannels(final PluginCall call) {
         try {
             logger.info("listChannels");
+            this.reloadPersistedModifyUrlsIfConfigured();
             startNewThread(() ->
                 CapacitorUpdaterPlugin.this.implementation.listChannels((res) -> {
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
@@ -4163,16 +4226,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         };
 
         startNewThread(() -> {
+            final String updateUrlForRequest;
+            synchronized (CapacitorUpdaterPlugin.this.modifyUrlsLock) {
+                CapacitorUpdaterPlugin.this.reloadPersistedModifyUrlsUnderLock();
+                updateUrlForRequest = CapacitorUpdaterPlugin.this.updateUrl;
+            }
             if (hasPreviewAppId) {
-                CapacitorUpdaterPlugin.this.implementation.getLatest(
-                    CapacitorUpdaterPlugin.this.updateUrl,
-                    channel,
-                    previewAppId,
-                    latestCallback
-                );
+                CapacitorUpdaterPlugin.this.implementation.getLatest(updateUrlForRequest, channel, previewAppId, latestCallback);
                 return;
             }
-            CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, channel, latestCallback);
+            CapacitorUpdaterPlugin.this.implementation.getLatest(updateUrlForRequest, channel, latestCallback);
         });
     }
 
@@ -5235,6 +5298,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+        this.reloadPersistedModifyUrlsIfConfigured();
         CapacitorUpdaterPlugin.this.implementation.sendStats("app_moved_to_foreground", current.getVersionName());
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
         this.delayUpdateUtils.unsetBackgroundTimestamp();
@@ -5838,6 +5902,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             // Note: onDestroy is not reliably called - also check on next app launch
             this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
             this.delayUpdateUtils.setBackgroundTimestamp(0);
+
+            CapgoUpdater.clearReloadLiveModifyUrlsHook(this);
 
             // Clean up shake menu
             if (shakeMenu != null) {

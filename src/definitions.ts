@@ -115,17 +115,49 @@ declare module '@capacitor/cli' {
       /**
        * Configure the URL / endpoint to which update statistics are sent.
        *
-       * Only available for Android and iOS. Set to "" to disable stats reporting.
+       * Only available for Android and iOS. Set to "" to disable all stats reporting.
        * Native stats include update lifecycle events, app health signals such as crashes,
        * Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals
        * such as JavaScript errors, unhandled promise rejections, resource load failures,
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
+       * Use `statsMode` to limit native stats to the
+       * update pipeline (`updatesOnly`) or a HIPAA-friendly billing minimum (`billingOnly`)
+       * while keeping `statsUrl` enabled.
+       *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
       statsUrl?: string;
+
+      /**
+       * Controls which native HTTP stats are sent to `statsUrl`.
+       *
+       * - `all` (default): send update lifecycle, health, WebView, and analytics stats.
+       * - `updatesOnly`: send only update-pipeline actions (download/install/set/delete/reset and
+       *   related failures). Drops health, WebView, launch timing, foreground/background markers,
+       *   and native version change events. Full payload is kept.
+       * - `billingOnly`: send only `set`, `download_complete`, and failure signals
+       *   (`set_fail`, `update_fail`, `download_fail`) with a reduced payload that still
+       *   satisfies the Capgo `/stats` API: `app_id`, `device_id`, `platform`, `version_name`,
+       *   `version_os`, `is_emulator`, `is_prod`, `version_build`, and `plugin_version`.
+       *   Omits `custom_id`, `metadata`, `version_code`, `install_source`, `defaultChannel`,
+       *   `channel`, `key_id`, and `old_version_name`.
+       *
+       * Every native stats HTTP request also sends `stats_mode` so the backend can avoid
+       * persisting or logging sensitive device fields when `billingOnly` is active.
+       *
+       * Local JavaScript listeners such as `addListener('download')` are unchanged. This option
+       * only affects native stats HTTP requests. Set `statsUrl` to `""` to disable all stats.
+       * Preview sessions still skip all stats.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default all
+       * @since 8.52.0
+       */
+      statsMode?: 'all' | 'updatesOnly' | 'billingOnly';
 
       /**
        * Configure the public key for end to end live update encryption Version 2

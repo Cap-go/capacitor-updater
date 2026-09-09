@@ -167,6 +167,11 @@ final class WebViewStatsReporter {
     }
 
     func reportError(_ call: CAPPluginCall) {
+        guard implementation.allowsNonUpdateStats() else {
+            call.resolve()
+            return
+        }
+
         let errorType = call.getString("type") ?? "javascript_error"
         let current = implementation.getCurrentBundle()
         implementation.sendStats(
