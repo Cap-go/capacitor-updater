@@ -2147,7 +2147,7 @@ const actions = [
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
         // Avoid a duplicate call when bootstrap already ran the boot probe.
-        probeLatest: state.lastGetLatestCheck === 'not-run',
+        probeLatest: state.bootProbe !== 'success',
       }),
   },
   {
