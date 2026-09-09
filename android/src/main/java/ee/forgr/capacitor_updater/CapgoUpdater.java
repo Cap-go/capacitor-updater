@@ -90,6 +90,7 @@ public class CapgoUpdater {
     /** Optional gate run before any download touches disk (e.g. wait for launch cleanup). */
     public Runnable downloadGate = null;
     public SharedPreferences prefs;
+    public boolean persistModifyUrls = false;
 
     private static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     private static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
@@ -109,6 +110,7 @@ public class CapgoUpdater {
     private static volatile String liveStatsUrl = null; // null = unpublished; "" = disabled
     private static volatile String liveChannelUrl = null; // null = unpublished; "" = disabled
     private static volatile Runnable reloadLiveModifyUrlsHook;
+    private static volatile CapacitorUpdaterPlugin reloadLiveModifyUrlsHookOwner;
     public static final String STATS_MODE_ALL = "all";
     public static final String STATS_MODE_UPDATES_ONLY = "updatesOnly";
     public static final String STATS_MODE_BILLING_ONLY = "billingOnly";
@@ -172,8 +174,16 @@ public class CapgoUpdater {
         liveStatsUrl = statsUrl == null ? "" : statsUrl;
     }
 
-    static void setReloadLiveModifyUrlsHook(final Runnable hook) {
+    static void setReloadLiveModifyUrlsHook(final CapacitorUpdaterPlugin owner, final Runnable hook) {
+        reloadLiveModifyUrlsHookOwner = owner;
         reloadLiveModifyUrlsHook = hook;
+    }
+
+    static void clearReloadLiveModifyUrlsHook(final CapacitorUpdaterPlugin owner) {
+        if (reloadLiveModifyUrlsHookOwner == owner) {
+            reloadLiveModifyUrlsHookOwner = null;
+            reloadLiveModifyUrlsHook = null;
+        }
     }
 
     static void reloadLiveModifyUrlsIfAvailable() {
@@ -184,7 +194,7 @@ public class CapgoUpdater {
     }
 
     private void syncPersistedModifyUrlsFromPrefs() {
-        if (this.prefs == null) {
+        if (!this.persistModifyUrls || this.prefs == null) {
             return;
         }
         if (this.prefs.contains(STATS_URL_PREF_KEY)) {

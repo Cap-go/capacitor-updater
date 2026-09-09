@@ -791,7 +791,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         CapgoUpdater.publishLiveStatsUrl(this.implementation.statsUrl);
         CapgoUpdater.publishLiveChannelUrl(this.implementation.channelUrl);
-        CapgoUpdater.setReloadLiveModifyUrlsHook(this::reloadPersistedModifyUrlsIfConfigured);
+        this.implementation.persistModifyUrls = Boolean.TRUE.equals(this.persistModifyUrl);
+        CapgoUpdater.setReloadLiveModifyUrlsHook(this, this::reloadPersistedModifyUrlsIfConfigured);
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
@@ -4213,7 +4214,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         };
 
         startNewThread(() -> {
-            CapacitorUpdaterPlugin.this.reloadPersistedModifyUrlsIfConfigured();
             if (hasPreviewAppId) {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(
                     CapacitorUpdaterPlugin.this.updateUrl,
@@ -5890,6 +5890,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             // Note: onDestroy is not reliably called - also check on next app launch
             this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
             this.delayUpdateUtils.setBackgroundTimestamp(0);
+
+            CapgoUpdater.clearReloadLiveModifyUrlsHook(this);
 
             // Clean up shake menu
             if (shakeMenu != null) {
