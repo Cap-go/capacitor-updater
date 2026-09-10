@@ -276,7 +276,7 @@ import UIKit
             }
 
             if let location {
-                if requestError == nil && isSuccessfulDownloadStatus(httpResponse?.statusCode) {
+                if requestError == nil && self.isSuccessfulDownloadStatus(httpResponse?.statusCode) {
                     do {
                         if FileManager.default.fileExists(atPath: temporaryDownloadURL.path) {
                             try FileManager.default.removeItem(at: temporaryDownloadURL)
