@@ -620,7 +620,7 @@ jobs:
   maestro_android_scenarios:
     permissions:
       contents: read
-      actions: write
+      actions: read
     needs:
       - maestro_web_assets
       - maestro_android_apps
