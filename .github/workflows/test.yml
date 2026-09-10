@@ -266,7 +266,7 @@ jobs:
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     env:
       CAPGO_MAESTRO_SUCCESS_MARKER: ${{ github.workspace }}/maestro-android-smoke.pass
-      CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER: ${{ runner.temp }}/artifact-ladder-sleep-total
+      CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER: ${{ github.workspace }}/.artifact-ladder-sleep-total
     strategy:
       fail-fast: false
       matrix:
