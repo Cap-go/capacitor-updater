@@ -6,7 +6,6 @@
 
 import Foundation
 import ZIPFoundation
-import Alamofire
 import Compression
 import UIKit
 
@@ -172,7 +171,68 @@ import UIKit
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
     }
 
-    private lazy var alamofireSession: Session = {
+    static func shouldPreserveDownloadTempFile(error: Error?) -> Bool {
+        guard let nsError = error as? NSError else {
+            return false
+        }
+
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+
+    private func preserveDownloadedFile(at source: URL, to destination: URL) -> URL? {
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: source, to: destination)
+            return destination
+        } catch {
+            try? FileManager.default.removeItem(at: source)
+            return nil
+        }
+    }
+
+    static func shouldPreserveDownloadedTempFile(error: Error?, statusCode: Int?) -> Bool {
+        if let statusCode, !isSuccessfulDownloadStatus(statusCode) {
+            return false
+        }
+        if shouldPreserveDownloadTempFile(error: error) {
+            return true
+        }
+        return error == nil && isSuccessfulDownloadStatus(statusCode)
+    }
+
+    private static func isSuccessfulDownloadStatus(_ statusCode: Int?) -> Bool {
+        guard let statusCode else {
+            return false
+        }
+        return statusCode >= 200 && statusCode < 300
+    }
+
+    private func partialFileURL(fromResumeData resumeData: Data, destination: URL) -> URL? {
+        let waitTimeout: TimeInterval = 5
+        let semaphore = DispatchSemaphore(value: 0)
+        var preservedURL: URL?
+        let task = self.urlSession.downloadTask(withResumeData: resumeData) { location, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            if let location {
+                if Self.shouldPreserveDownloadedTempFile(error: error, statusCode: statusCode) {
+                    preservedURL = self.preserveDownloadedFile(at: location, to: destination)
+                } else {
+                    try? FileManager.default.removeItem(at: location)
+                }
+            }
+            semaphore.signal()
+        }
+        task.resume()
+        DispatchQueue.global().async {
+            task.cancel(byProducingResumeData: { _ in })
+        }
+        _ = semaphore.wait(timeout: .now() + waitTimeout)
+        return preservedURL
+    }
+
+    private lazy var urlSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
         configuration.httpCookieStorage = nil
@@ -180,9 +240,8 @@ import UIKit
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
-        return Session(configuration: configuration)
+        return URLSession(configuration: configuration)
     }()
-    private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
 
     public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
     public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
@@ -239,16 +298,17 @@ import UIKit
         var responseData: Data?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        let dataRequest = self.alamofireSession.request(request).responseData(queue: self.networkResponseQueue) { response in
-            responseData = response.data
-            httpResponse = response.response
-            requestError = response.error
+        let task = self.urlSession.dataTask(with: request) { data, response, error in
+            responseData = data
+            httpResponse = response as? HTTPURLResponse
+            requestError = error
             semaphore.signal()
         }
-        dataRequest.resume()
+        task.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            dataRequest.cancel()
+            task.cancel()
+            _ = semaphore.wait(timeout: .now() + 5)
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
         }
@@ -262,20 +322,45 @@ import UIKit
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
+        var resumeDataFromCancel: Data?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let destination: DownloadRequest.Destination = { _, _ in
-            (temporaryDownloadURL, [.removePreviousFile, .createIntermediateDirectories])
-        }
-        let downloadRequest = self.alamofireSession.download(request, to: destination).response(queue: self.networkResponseQueue) { response in
-            tempFileURL = response.fileURL
-            httpResponse = response.response
-            requestError = response.error
+        let task = self.urlSession.downloadTask(with: request) { location, response, error in
+            httpResponse = response as? HTTPURLResponse
+            if let error {
+                requestError = error
+            }
+
+            if let location {
+                if requestError == nil && Self.isSuccessfulDownloadStatus(httpResponse?.statusCode) {
+                    tempFileURL = self.preserveDownloadedFile(at: location, to: temporaryDownloadURL)
+                    if tempFileURL == nil {
+                        requestError = NSError(
+                            domain: "DownloadError",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "Failed to preserve downloaded file"]
+                        )
+                    }
+                } else if Self.shouldPreserveDownloadTempFile(error: requestError) {
+                    tempFileURL = self.preserveDownloadedFile(at: location, to: temporaryDownloadURL)
+                } else {
+                    try? FileManager.default.removeItem(at: location)
+                }
+            }
             semaphore.signal()
         }
-        downloadRequest.resume()
+        task.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            downloadRequest.cancel()
+            let resumeDataSemaphore = DispatchSemaphore(value: 0)
+            task.cancel(byProducingResumeData: { resumeData in
+                resumeDataFromCancel = resumeData
+                resumeDataSemaphore.signal()
+            })
+            _ = semaphore.wait(timeout: .now() + 5)
+            _ = resumeDataSemaphore.wait(timeout: .now() + 1)
+            if tempFileURL == nil, let resumeData = resumeDataFromCancel {
+                tempFileURL = partialFileURL(fromResumeData: resumeData, destination: temporaryDownloadURL)
+            }
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return DownloadRequestResult(
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
@@ -666,30 +751,30 @@ import UIKit
         parameters.version_name = current.getVersionName()
         parameters.old_version_name = ""
 
+        guard let url = URL(string: self.statsUrl),
+              let request = createRequest(url: url, method: "POST", parameters: parameters.toParameters()) else {
+            CapgoUpdater.releaseRateLimitStatisticClaim()
+            return
+        }
+
         // Send synchronously using semaphore (safe because we're on a background queue)
         let semaphore = DispatchSemaphore(value: 0)
-        self.alamofireSession.request(
-            self.statsUrl,
-            method: .post,
-            parameters: parameters.toParameters(),
-            encoding: JSONEncoding.default,
-            requestModifier: { $0.timeoutInterval = self.timeout }
-        ).responseData { response in
-            let statusCode = response.response?.statusCode
-            switch response.result {
-            case .success where (200...299).contains(statusCode ?? 0):
+        let task = self.urlSession.dataTask(with: request) { data, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            if error == nil, let statusCode, (200...299).contains(statusCode) {
                 self.logger.info("Rate limit statistic sent")
-            case .success:
+            } else if error == nil {
                 CapgoUpdater.releaseRateLimitStatisticClaim()
                 self.logger.error("Error sending rate limit statistic")
                 self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
-            case let .failure(error):
+            } else {
                 CapgoUpdater.releaseRateLimitStatisticClaim()
                 self.logger.error("Error sending rate limit statistic")
-                self.logger.debug("Error: \(error.localizedDescription)")
+                self.logger.debug("Error: \(error!.localizedDescription)")
             }
             semaphore.signal()
         }
+        task.resume()
         semaphore.wait()
     }
 
@@ -3301,24 +3386,49 @@ import UIKit
 
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
-            self.alamofireSession.request(
-                self.statsUrl,
-                method: .post,
-                parameters: eventsToSend,
-                encoder: JSONParameterEncoder.default,
-                requestModifier: { $0.timeoutInterval = self.timeout }
-            ).responseData { response in
+            guard let url = URL(string: self.statsUrl) else {
+                self.requeueStatsEvents(queuedEvents)
+                semaphore.signal()
+                semaphore.wait()
+                if !self.statsStopped {
+                    self.persistStatsQueue()
+                }
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = self.timeout
+            request.setValue(self.userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            do {
+                request.httpBody = try JSONEncoder().encode(eventsToSend)
+            } catch {
+                self.requeueStatsEvents(queuedEvents)
+                self.logger.error("Error encoding stats batch")
+                self.logger.debug("Error: \(error.localizedDescription)")
+                semaphore.signal()
+                semaphore.wait()
+                if !self.statsStopped {
+                    self.persistStatsQueue()
+                }
+                return
+            }
+
+            let task = self.urlSession.dataTask(with: request) { data, response, error in
+                let httpResponse = response as? HTTPURLResponse
                 if self.abandonStoppedStatsFlush() {
                     semaphore.signal()
                     return
                 }
-                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
+                if self.checkAndHandleRateLimitResponse(statusCode: httpResponse?.statusCode, data: data, response: httpResponse).blocked {
                     self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
                     return
                 }
 
-                if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                if let statusCode = httpResponse?.statusCode, !(200...299).contains(statusCode) {
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
                         self.requeueStatsEvents(queuedEvents)
                         self.logger.error("Error sending stats batch")
@@ -3332,19 +3442,20 @@ import UIKit
                     return
                 }
 
-                switch response.result {
-                case .success:
+                if error == nil {
                     self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(queuedEvents)
-                case let .failure(error):
+                } else {
                     self.requeueStatsEvents(queuedEvents)
                     self.logger.error("Error sending stats batch")
-                    self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
+                    let bodyPreview = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
+                    self.logger.debug("Response: \(bodyPreview), Error: \(error!.localizedDescription)")
                 }
                 semaphore.signal()
             }
+            task.resume()
             semaphore.wait()
             if !self.statsStopped {
                 self.persistStatsQueue()

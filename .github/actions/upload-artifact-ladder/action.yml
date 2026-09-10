@@ -1,0 +1,85 @@
+name: Upload artifact with retry ladder
+description: >-
+  Upload a GitHub Actions artifact with two retries. Later attempts use -r2 and -r3
+  suffixes and run only when every prior upload did not succeed.
+inputs:
+  artifact-name:
+    description: Primary artifact name. Fallbacks use `${name}-r2` and `${name}-r3`.
+    required: true
+  path:
+    description: Files to upload.
+    required: true
+  if-no-files-found:
+    description: Behavior when no files are found.
+    default: error
+  include-hidden-files:
+    description: Whether to include hidden files.
+    default: 'false'
+  retry-delay-seconds:
+    description: Delay between attempts in seconds.
+    default: '15'
+  max-retry-delay-seconds:
+    description: Maximum total sleep across all retry waits in this ladder.
+    default: '30'
+  sleep-counter-file:
+    description: >-
+      Optional file tracking cumulative retry sleep. Defaults to an upload-specific
+      counter so download ladders in the same job cannot consume this budget.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: upload_primary_1
+      name: Upload ${{ inputs.artifact-name }} (attempt 1)
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}
+    - id: wait_primary_2
+      name: Wait before retrying upload
+      if: steps.upload_primary_1.outcome != 'success'
+      shell: bash
+      run: |
+        counter_file="${{ inputs.sleep-counter-file }}"
+        if [[ -z "$counter_file" ]]; then
+          counter_file="${RUNNER_TEMP}/artifact-upload-ladder-sleep-total"
+        fi
+        ./.github/actions/download-artifact-ladder/sleep-capped.sh \
+          "${{ inputs.retry-delay-seconds }}" \
+          "${{ inputs.max-retry-delay-seconds }}" \
+          "$counter_file"
+    - id: upload_primary_2
+      name: Upload ${{ inputs.artifact-name }}-r2 (attempt 2)
+      if: steps.upload_primary_1.outcome != 'success'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}-r2
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}
+    - id: wait_primary_3
+      name: Wait before final upload
+      if: steps.upload_primary_1.outcome != 'success' && steps.upload_primary_2.outcome != 'success'
+      shell: bash
+      run: |
+        counter_file="${{ inputs.sleep-counter-file }}"
+        if [[ -z "$counter_file" ]]; then
+          counter_file="${RUNNER_TEMP}/artifact-upload-ladder-sleep-total"
+        fi
+        ./.github/actions/download-artifact-ladder/sleep-capped.sh \
+          "${{ inputs.retry-delay-seconds }}" \
+          "${{ inputs.max-retry-delay-seconds }}" \
+          "$counter_file"
+    - id: upload_primary_3
+      name: Upload ${{ inputs.artifact-name }}-r3 (attempt 3)
+      if: steps.upload_primary_1.outcome != 'success' && steps.upload_primary_2.outcome != 'success'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}-r3
+        path: ${{ inputs.path }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}

@@ -105,6 +105,8 @@ jobs:
   maestro_web_assets:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; this job only publishes artifacts.
+      actions: write
     timeout-minutes: 10
     runs-on: ubuntu-latest
     name: Build Maestro web assets
@@ -125,18 +127,19 @@ jobs:
       - name: Build reusable Maestro web assets
         run: bun scripts/maestro/build-bundles.mjs all
       - name: Upload reusable Maestro web assets
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/upload-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: |
             dist
             .maestro-artifacts
-          include-hidden-files: true
-          if-no-files-found: error
+          include-hidden-files: 'true'
 
   maestro_android_apps:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; download ladder only needs read.
+      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -175,22 +178,23 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
       - name: Build Android app
         run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
       - name: Upload Android app
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/upload-artifact-ladder
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          artifact-name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
 
   maestro_ios_apps:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; download ladder only needs read.
+      actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
     runs-on: macOS-latest
@@ -210,9 +214,9 @@ jobs:
             example-app/node_modules
           install-example: 'true'
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
       - name: Build iOS app
         run: |
@@ -248,11 +252,10 @@ jobs:
             ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
           done
       - name: Upload iOS apps
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/upload-artifact-ladder
         with:
-          name: maestro-ios-apps
+          artifact-name: maestro-ios-apps
           path: ${{ runner.temp }}/maestro-ios-apps
-          if-no-files-found: error
 
   maestro_android_example_app:
     permissions:
@@ -265,6 +268,8 @@ jobs:
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     env:
       CAPGO_MAESTRO_SUCCESS_MARKER: ${{ github.workspace }}/maestro-android-smoke.pass
+      # Shared 45s retry-sleep budget across both download ladders (not 90s).
+      CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER: ${{ github.workspace }}/.artifact-ladder-sleep-total
     strategy:
       fail-fast: false
       matrix:
@@ -297,15 +302,19 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
+          max-retry-delay-seconds: '45'
+          sleep-counter-file: ${{ env.CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER }}
       - name: Download Android app
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          artifact-name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
+          max-retry-delay-seconds: '45'
+          sleep-counter-file: ${{ env.CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER }}
       - name: Enable KVM group perms
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -340,12 +349,6 @@ jobs:
             exit 1
           fi
           echo "Android smoke Maestro scenario '${{ matrix.scenario }}' passed."
-      - name: Upload Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-android-${{ matrix.scenario }}
-          path: maestro-results
 
   maestro_ios_example_app:
     permissions:
@@ -384,14 +387,14 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
       - name: Download iOS app
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-ios-apps
+          artifact-name: maestro-ios-apps
           path: maestro-ios-apps
       - name: Run Maestro smoke tests
         run: >-
@@ -405,12 +408,6 @@ jobs:
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
-      - name: Upload Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-${{ matrix.scenario }}
-          path: maestro-results-ios
 
   maestro_ios_live_update:
     permissions:
@@ -449,14 +446,14 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
       - name: Download iOS app
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-ios-apps
+          artifact-name: maestro-ios-apps
           path: maestro-ios-apps
       - name: Run live update Maestro flows
         run: |
@@ -470,12 +467,6 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
-      - name: Upload live update Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-live-update-${{ matrix.scenario }}
-          path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
   web:
     permissions:
@@ -556,14 +547,14 @@ jobs:
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-web-assets
+          artifact-name: maestro-web-assets
           path: .
       - name: Download Android app
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-ladder
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          artifact-name: maestro-android-app-${{ matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
       - name: Enable KVM group perms
         run: |
