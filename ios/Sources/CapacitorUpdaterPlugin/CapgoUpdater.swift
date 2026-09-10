@@ -192,13 +192,21 @@ import UIKit
         }
     }
 
+    private func shouldPreserveDownloadedTempFile(error: Error?, statusCode: Int?) -> Bool {
+        if Self.shouldPreserveDownloadTempFile(error: error) {
+            return true
+        }
+        return error == nil && isSuccessfulDownloadStatus(statusCode)
+    }
+
     private func partialFileURL(fromResumeData resumeData: Data, destination: URL) -> URL? {
         let waitTimeout: TimeInterval = 5
         let semaphore = DispatchSemaphore(value: 0)
         var preservedURL: URL?
-        let task = self.urlSession.downloadTask(withResumeData: resumeData) { location, _, error in
+        let task = self.urlSession.downloadTask(withResumeData: resumeData) { location, response, error in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
             if let location {
-                if error == nil || Self.shouldPreserveDownloadTempFile(error: error) {
+                if self.shouldPreserveDownloadedTempFile(error: error, statusCode: statusCode) {
                     preservedURL = self.preserveDownloadedFile(at: location, to: destination)
                 } else {
                     try? FileManager.default.removeItem(at: location)
@@ -340,10 +348,13 @@ import UIKit
         task.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
+            let resumeDataSemaphore = DispatchSemaphore(value: 0)
             task.cancel(byProducingResumeData: { resumeData in
                 resumeDataFromCancel = resumeData
+                resumeDataSemaphore.signal()
             })
             _ = semaphore.wait(timeout: .now() + 5)
+            _ = resumeDataSemaphore.wait(timeout: .now() + 1)
             if tempFileURL == nil, let resumeData = resumeDataFromCancel {
                 tempFileURL = partialFileURL(fromResumeData: resumeData, destination: temporaryDownloadURL)
             }
