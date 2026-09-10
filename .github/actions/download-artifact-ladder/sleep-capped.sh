@@ -26,6 +26,6 @@ if [[ "$sleep_seconds" -gt "$remaining" ]]; then
   sleep_seconds="$remaining"
 fi
 
-echo "Sleeping ${sleep_seconds}s before artifact download retry (${current_total}s / ${max_total_seconds}s used)."
+echo "Sleeping ${sleep_seconds}s before artifact retry (${current_total}s / ${max_total_seconds}s used)."
 sleep "$sleep_seconds"
 echo "$((current_total + sleep_seconds))" >"$counter_file"
