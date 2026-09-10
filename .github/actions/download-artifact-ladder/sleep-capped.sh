@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Caps cumulative retry sleep. Callers may pass a shared counter file so multiple
+# ladders in one job share a single budget (see maestro_android_example_app).
 set -euo pipefail
 
 delay_seconds="${1:?delay seconds required}"
