@@ -1,5 +1,6 @@
 package ee.forgr.capacitor_updater;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -10,8 +11,10 @@ import java.util.Objects;
  */
 public final class NativeSemver implements Comparable<NativeSemver> {
 
+    private static final BigInteger UINT64_MAX = new BigInteger("18446744073709551615");
+
     private final String original;
-    private final List<Long> numericParts;
+    private final List<BigInteger> numericParts;
     private final String prerelease;
 
     public static NativeSemver parseOrDefault(final String version, final String fallback) {
@@ -57,13 +60,14 @@ public final class NativeSemver implements Comparable<NativeSemver> {
         }
         final int dashIdx = working.indexOf('-');
         if (dashIdx >= 0) {
-            return new CoreParts(working.substring(0, dashIdx), working.substring(dashIdx + 1));
+            final String prereleasePart = working.substring(dashIdx + 1);
+            return new CoreParts(working.substring(0, dashIdx), prereleasePart.isEmpty() ? null : prereleasePart);
         }
         return new CoreParts(working, null);
     }
 
-    private static List<Long> parseNumericParts(final String core) {
-        final List<Long> parts = new ArrayList<>();
+    private static List<BigInteger> parseNumericParts(final String core) {
+        final List<BigInteger> parts = new ArrayList<>();
         for (final String segment : core.split("[._]")) {
             if (segment.isEmpty()) {
                 continue;
@@ -79,14 +83,15 @@ public final class NativeSemver implements Comparable<NativeSemver> {
         return parts;
     }
 
-    private static long parseNumericComponent(final String digits) {
-        if (digits.length() > 19) {
-            return Long.MAX_VALUE;
+    private static BigInteger parseNumericComponent(final String digits) {
+        if (digits.length() > 20) {
+            return UINT64_MAX;
         }
         try {
-            return Long.parseLong(digits);
+            final BigInteger value = new BigInteger(digits);
+            return value.compareTo(UINT64_MAX) > 0 ? UINT64_MAX : value;
         } catch (final NumberFormatException ignored) {
-            return Long.MAX_VALUE;
+            return UINT64_MAX;
         }
     }
 
@@ -106,13 +111,11 @@ public final class NativeSemver implements Comparable<NativeSemver> {
     public int compareTo(final NativeSemver other) {
         final int max = Math.max(numericParts.size(), other.numericParts.size());
         for (int i = 0; i < max; i++) {
-            final long left = i < numericParts.size() ? numericParts.get(i) : 0L;
-            final long right = i < other.numericParts.size() ? other.numericParts.get(i) : 0L;
-            if (left < right) {
-                return -1;
-            }
-            if (left > right) {
-                return 1;
+            final BigInteger left = i < numericParts.size() ? numericParts.get(i) : BigInteger.ZERO;
+            final BigInteger right = i < other.numericParts.size() ? other.numericParts.get(i) : BigInteger.ZERO;
+            final int cmp = left.compareTo(right);
+            if (cmp != 0) {
+                return cmp;
             }
         }
         if (prerelease == null && other.prerelease == null) {
@@ -213,8 +216,8 @@ public final class NativeSemver implements Comparable<NativeSemver> {
 
     @Override
     public int hashCode() {
-        final List<Long> normalized = new ArrayList<>(numericParts);
-        while (normalized.size() > 1 && normalized.get(normalized.size() - 1) == 0L) {
+        final List<BigInteger> normalized = new ArrayList<>(numericParts);
+        while (normalized.size() > 1 && normalized.get(normalized.size() - 1).equals(BigInteger.ZERO)) {
             normalized.remove(normalized.size() - 1);
         }
         return Objects.hash(normalized, prerelease);

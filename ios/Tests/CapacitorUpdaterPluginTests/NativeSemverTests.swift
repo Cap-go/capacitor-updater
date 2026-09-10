@@ -33,6 +33,15 @@ final class NativeSemverTests: XCTestCase {
         XCTAssertEqual(oversized, maxRepresentable)
     }
 
+    func testEmptyPrereleaseEqualsRelease() throws {
+        XCTAssertEqual(try NativeSemver("1.0.0-"), try NativeSemver("1.0.0"))
+    }
+
+    func testOverflowValuesAboveSignedLongMaxCompareCorrectly() throws {
+        XCTAssertLessThan(try NativeSemver("9223372036854775808"), try NativeSemver("9223372036854775809"))
+        XCTAssertGreaterThan(try NativeSemver("9223372036854775809"), try NativeSemver("9223372036854775808"))
+    }
+
     func testUnicodeNumericPrereleaseIsNotNumericIdentifier() throws {
         // Superscript ² is Unicode numeric (No) but not an ASCII digit; treat as non-numeric.
         // With Character.isNumber, ² would be numeric and precede "alpha"; ASCII-only keeps lexical order.

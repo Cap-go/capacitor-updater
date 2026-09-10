@@ -69,6 +69,23 @@ public class NativeSemverTest {
     }
 
     @Test
+    public void emptyPrereleaseEqualsRelease() {
+        assertEquals(0, new NativeSemver("1.0.0-").compareTo(new NativeSemver("1.0.0")));
+        assertTrue(new NativeSemver("1.0.0-").equals(new NativeSemver("1.0.0")));
+    }
+
+    @Test
+    public void overflowValuesAboveSignedLongMaxCompareCorrectly() {
+        assertTrue(new NativeSemver("9223372036854775808").compareTo(new NativeSemver("9223372036854775809")) < 0);
+        assertTrue(new NativeSemver("9223372036854775809").compareTo(new NativeSemver("9223372036854775808")) > 0);
+    }
+
+    @Test
+    public void oversizedNumericComponentSaturates() {
+        assertEquals(0, new NativeSemver("18446744073709551616").compareTo(new NativeSemver("18446744073709551615")));
+    }
+
+    @Test
     public void unicodeDigitsInCoreAreNotParsedAsNumeric() {
         // Pure Unicode digits yield no ASCII numeric components.
         try {
