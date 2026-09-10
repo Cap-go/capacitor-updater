@@ -255,6 +255,13 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: false)
     }
 
+    private func isSuccessfulDownloadStatus(_ statusCode: Int?) -> Bool {
+        guard let statusCode else {
+            return false
+        }
+        return statusCode >= 200 && statusCode < 300
+    }
+
     private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
@@ -263,20 +270,26 @@ import UIKit
         var requestError: Error?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let task = self.urlSession.downloadTask(with: request) { location, response, error in
-            if let location {
-                do {
-                    if FileManager.default.fileExists(atPath: temporaryDownloadURL.path) {
-                        try FileManager.default.removeItem(at: temporaryDownloadURL)
-                    }
-                    try FileManager.default.moveItem(at: location, to: temporaryDownloadURL)
-                    tempFileURL = temporaryDownloadURL
-                } catch {
-                    requestError = error
-                }
-            }
             httpResponse = response as? HTTPURLResponse
-            if requestError == nil {
+            if let error {
                 requestError = error
+            }
+
+            if let location {
+                if requestError == nil && isSuccessfulDownloadStatus(httpResponse?.statusCode) {
+                    do {
+                        if FileManager.default.fileExists(atPath: temporaryDownloadURL.path) {
+                            try FileManager.default.removeItem(at: temporaryDownloadURL)
+                        }
+                        try FileManager.default.moveItem(at: location, to: temporaryDownloadURL)
+                        tempFileURL = temporaryDownloadURL
+                    } catch {
+                        requestError = error
+                        try? FileManager.default.removeItem(at: location)
+                    }
+                } else {
+                    try? FileManager.default.removeItem(at: location)
+                }
             }
             semaphore.signal()
         }

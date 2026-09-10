@@ -105,6 +105,7 @@ jobs:
   maestro_web_assets:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; this job only publishes artifacts.
       actions: write
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -137,6 +138,7 @@ jobs:
   maestro_android_apps:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; download ladder only needs read.
       actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
@@ -191,6 +193,7 @@ jobs:
   maestro_ios_apps:
     permissions:
       contents: read
+      # upload-artifact requires actions: write; download ladder only needs read.
       actions: write
     needs: maestro_web_assets
     timeout-minutes: 10
@@ -257,7 +260,7 @@ jobs:
   maestro_android_example_app:
     permissions:
       contents: read
-      actions: write
+      actions: read
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -347,17 +350,11 @@ jobs:
             exit 1
           fi
           echo "Android smoke Maestro scenario '${{ matrix.scenario }}' passed."
-      - name: Upload Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-android-${{ matrix.scenario }}
-          path: maestro-results
 
   maestro_ios_example_app:
     permissions:
       contents: read
-      actions: write
+      actions: read
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -413,17 +410,11 @@ jobs:
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
-      - name: Upload Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-${{ matrix.scenario }}
-          path: maestro-results-ios
 
   maestro_ios_live_update:
     permissions:
       contents: read
-      actions: write
+      actions: read
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -479,12 +470,6 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
-      - name: Upload live update Maestro artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-live-update-${{ matrix.scenario }}
-          path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
   web:
     permissions:
