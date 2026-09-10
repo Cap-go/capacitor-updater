@@ -37,7 +37,7 @@ runs:
       name: Wait before retrying upload
       if: steps.upload_primary_1.outcome != 'success'
       shell: bash
-      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}"
+      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}" "${RUNNER_TEMP}/artifact-upload-ladder-sleep-total"
     - id: upload_primary_2
       name: Upload ${{ inputs.artifact-name }}-r2 (attempt 2)
       if: steps.upload_primary_1.outcome != 'success'
@@ -52,7 +52,7 @@ runs:
       name: Wait before final upload
       if: steps.upload_primary_1.outcome != 'success' && steps.upload_primary_2.outcome != 'success'
       shell: bash
-      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}"
+      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}" "${RUNNER_TEMP}/artifact-upload-ladder-sleep-total"
     - id: upload_primary_3
       name: Upload ${{ inputs.artifact-name }}-r3 (attempt 3)
       if: steps.upload_primary_1.outcome != 'success' && steps.upload_primary_2.outcome != 'success'

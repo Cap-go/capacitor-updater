@@ -5,7 +5,7 @@ set -euo pipefail
 
 delay_seconds="${1:?delay seconds required}"
 max_total_seconds="${2:?max total seconds required}"
-counter_file="${RUNNER_TEMP}/artifact-ladder-sleep-total"
+counter_file="${RUNNER_TEMP}/artifact-download-ladder-sleep-total"
 if [[ -n "${3:-}" ]]; then
   counter_file="$3"
 fi
