@@ -266,6 +266,7 @@ jobs:
     name: Android example app Maestro smoke / ${{ matrix.scenario }}
     env:
       CAPGO_MAESTRO_SUCCESS_MARKER: ${{ github.workspace }}/maestro-android-smoke.pass
+      # Shared 45s retry-sleep budget across both download ladders (not 90s).
       CAPGO_ARTIFACT_LADDER_SLEEP_COUNTER: ${{ github.workspace }}/.artifact-ladder-sleep-total
     strategy:
       fail-fast: false
