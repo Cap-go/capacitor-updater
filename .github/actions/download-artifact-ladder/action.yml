@@ -1,0 +1,68 @@
+name: Download artifact with retry ladder
+description: >-
+  Download a GitHub Actions artifact with two primary retries and -r2/-r3 fallback
+  names. Each later attempt runs only when every prior attempt did not succeed.
+inputs:
+  artifact-name:
+    description: Primary artifact name. Fallbacks use `${name}-r2` and `${name}-r3`.
+    required: true
+  path:
+    description: Download destination path.
+    required: true
+  retry-delay-seconds:
+    description: Delay between attempts in seconds.
+    default: '15'
+  max-retry-delay-seconds:
+    description: Maximum total sleep across all retry waits in this ladder.
+    default: '45'
+  sleep-counter-file:
+    description: Optional file tracking cumulative retry sleep for shared budgets across ladders.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: download_primary_1
+      name: Download ${{ inputs.artifact-name }} (attempt 1)
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.path }}
+    - id: wait_primary_2
+      name: Wait before retrying download
+      if: steps.download_primary_1.outcome != 'success'
+      shell: bash
+      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}" "${{ inputs.sleep-counter-file }}"
+    - id: download_primary_2
+      name: Download ${{ inputs.artifact-name }} (attempt 2)
+      if: steps.download_primary_1.outcome != 'success'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.path }}
+    - id: wait_r2
+      name: Wait before fallback download
+      if: steps.download_primary_1.outcome != 'success' && steps.download_primary_2.outcome != 'success'
+      shell: bash
+      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}" "${{ inputs.sleep-counter-file }}"
+    - id: download_r2
+      name: Download ${{ inputs.artifact-name }}-r2 (fallback)
+      if: steps.download_primary_1.outcome != 'success' && steps.download_primary_2.outcome != 'success'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}-r2
+        path: ${{ inputs.path }}
+    - id: wait_r3
+      name: Wait before final fallback download
+      if: steps.download_primary_1.outcome != 'success' && steps.download_primary_2.outcome != 'success' && steps.download_r2.outcome != 'success'
+      shell: bash
+      run: ./.github/actions/download-artifact-ladder/sleep-capped.sh "${{ inputs.retry-delay-seconds }}" "${{ inputs.max-retry-delay-seconds }}" "${{ inputs.sleep-counter-file }}"
+    - id: download_r3
+      name: Download ${{ inputs.artifact-name }}-r3 (final fallback)
+      if: steps.download_primary_1.outcome != 'success' && steps.download_primary_2.outcome != 'success' && steps.download_r2.outcome != 'success'
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}-r3
+        path: ${{ inputs.path }}
