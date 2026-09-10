@@ -260,7 +260,6 @@ jobs:
   maestro_android_example_app:
     permissions:
       contents: read
-      actions: read
     needs:
       - maestro_web_assets
       - maestro_android_apps
@@ -354,7 +353,6 @@ jobs:
   maestro_ios_example_app:
     permissions:
       contents: read
-      actions: read
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -414,7 +412,6 @@ jobs:
   maestro_ios_live_update:
     permissions:
       contents: read
-      actions: read
     needs:
       - maestro_web_assets
       - maestro_ios_apps
@@ -506,7 +503,6 @@ jobs:
   maestro_android_scenarios:
     permissions:
       contents: read
-      actions: read
     needs:
       - maestro_web_assets
       - maestro_android_apps

@@ -398,6 +398,16 @@ final class StreamDecodeTests: XCTestCase {
         XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 0))
     }
 
+    func testShouldPreserveDownloadTempFileOnlyForCancelledDownloads() {
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        let timedOut = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        let badRequest = NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL)
+        XCTAssertTrue(CapgoUpdater.shouldPreserveDownloadTempFile(error: cancelled))
+        XCTAssertFalse(CapgoUpdater.shouldPreserveDownloadTempFile(error: timedOut))
+        XCTAssertFalse(CapgoUpdater.shouldPreserveDownloadTempFile(error: badRequest))
+        XCTAssertFalse(CapgoUpdater.shouldPreserveDownloadTempFile(error: nil))
+    }
+
     func testManifestPartialURLIsStableForSha256AndPath() {
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-partial-\(UUID().uuidString)")
         let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -171,6 +171,49 @@ import UIKit
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
     }
 
+    static func shouldPreserveDownloadTempFile(error: Error?) -> Bool {
+        guard let nsError = error as? NSError else {
+            return false
+        }
+
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+
+    private func preserveDownloadedFile(at source: URL, to destination: URL) -> URL? {
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: source, to: destination)
+            return destination
+        } catch {
+            try? FileManager.default.removeItem(at: source)
+            return nil
+        }
+    }
+
+    private func partialFileURL(fromResumeData resumeData: Data, destination: URL) -> URL? {
+        let waitTimeout: TimeInterval = 5
+        let semaphore = DispatchSemaphore(value: 0)
+        var preservedURL: URL?
+        let task = self.urlSession.downloadTask(withResumeData: resumeData) { location, _, error in
+            if let location {
+                if error == nil || Self.shouldPreserveDownloadTempFile(error: error) {
+                    preservedURL = self.preserveDownloadedFile(at: location, to: destination)
+                } else {
+                    try? FileManager.default.removeItem(at: location)
+                }
+            }
+            semaphore.signal()
+        }
+        task.resume()
+        DispatchQueue.global().async {
+            task.cancel(byProducingResumeData: { _ in })
+        }
+        _ = semaphore.wait(timeout: .now() + waitTimeout)
+        return preservedURL
+    }
+
     private lazy var urlSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
@@ -268,6 +311,7 @@ import UIKit
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
+        var resumeDataFromCancel: Data?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let task = self.urlSession.downloadTask(with: request) { location, response, error in
             httpResponse = response as? HTTPURLResponse
@@ -277,16 +321,16 @@ import UIKit
 
             if let location {
                 if requestError == nil && self.isSuccessfulDownloadStatus(httpResponse?.statusCode) {
-                    do {
-                        if FileManager.default.fileExists(atPath: temporaryDownloadURL.path) {
-                            try FileManager.default.removeItem(at: temporaryDownloadURL)
-                        }
-                        try FileManager.default.moveItem(at: location, to: temporaryDownloadURL)
-                        tempFileURL = temporaryDownloadURL
-                    } catch {
-                        requestError = error
-                        try? FileManager.default.removeItem(at: location)
+                    tempFileURL = self.preserveDownloadedFile(at: location, to: temporaryDownloadURL)
+                    if tempFileURL == nil {
+                        requestError = NSError(
+                            domain: "DownloadError",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "Failed to preserve downloaded file"]
+                        )
                     }
+                } else if Self.shouldPreserveDownloadTempFile(error: requestError) {
+                    tempFileURL = self.preserveDownloadedFile(at: location, to: temporaryDownloadURL)
                 } else {
                     try? FileManager.default.removeItem(at: location)
                 }
@@ -296,8 +340,13 @@ import UIKit
         task.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            task.cancel()
+            task.cancel(byProducingResumeData: { resumeData in
+                resumeDataFromCancel = resumeData
+            })
             _ = semaphore.wait(timeout: .now() + 5)
+            if tempFileURL == nil, let resumeData = resumeDataFromCancel {
+                tempFileURL = partialFileURL(fromResumeData: resumeData, destination: temporaryDownloadURL)
+            }
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return DownloadRequestResult(
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
