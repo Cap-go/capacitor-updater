@@ -17,7 +17,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
-import io.github.g00fy2.versioncompare.Version;
+import ee.forgr.capacitor_updater.NativeSemver;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -1360,10 +1360,10 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testVersionComparison() {
-        Version version1 = new Version("1.0.0");
-        Version version2 = new Version("1.0.1");
-        Version version3 = new Version("2.0.0");
-        Version version4 = new Version("1.0.0");
+        NativeSemver version1 = new NativeSemver("1.0.0");
+        NativeSemver version2 = new NativeSemver("1.0.1");
+        NativeSemver version3 = new NativeSemver("2.0.0");
+        NativeSemver version4 = new NativeSemver("1.0.0");
 
         assertTrue(version1.isLowerThan(version2));
         assertTrue(version2.isLowerThan(version3));
@@ -1373,8 +1373,8 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testVersionIsAtLeast() {
-        Version version1 = new Version("1.0.0");
-        Version version2 = new Version("1.0.1");
+        NativeSemver version1 = new NativeSemver("1.0.0");
+        NativeSemver version2 = new NativeSemver("1.0.1");
 
         assertTrue(version2.isAtLeast("1.0.0"));
         assertTrue(version2.isAtLeast("1.0.1"));
@@ -3790,6 +3790,31 @@ public class CapacitorUpdaterUnitTest {
 
         final JSONArray missing = updater.getMissingBundleFiles(manifest, "");
         assertEquals(0, missing.length());
+    }
+
+    @Test
+    public void getMissingBundleFilesReusesUncompressedBuiltinForBrotliEntry() throws Exception {
+        CryptoCipher.setLogger(mock(Logger.class));
+        final Path docsDir = Files.createTempDirectory("capgo-missing-builtin-br-docs");
+        final File filesDir = Files.createTempDirectory("capgo-missing-builtin-br-files").toFile();
+        final File cacheDir = Files.createTempDirectory("capgo-missing-builtin-br-cache").toFile();
+        final Path builtinDir = filesDir.toPath().resolve("public/assets");
+        Files.createDirectories(builtinDir);
+        final byte[] content = "builtin brotli reuse".getBytes(StandardCharsets.UTF_8);
+        Files.write(builtinDir.resolve("app.js"), content);
+        final String hash = CryptoCipher.calcChecksum(builtinDir.resolve("app.js").toFile());
+
+        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
+        final JSONArray manifest = new JSONArray();
+        final JSONObject entry = new JSONObject();
+        entry.put("file_name", "assets/app.js.br");
+        entry.put("file_hash", hash);
+        manifest.put(entry);
+
+        assertEquals(0, updater.getMissingBundleFiles(manifest, "").length());
+
+        Files.write(builtinDir.resolve("app.js"), "changed".getBytes(StandardCharsets.UTF_8));
+        assertEquals(1, updater.getMissingBundleFiles(manifest, "").length());
     }
 
     @Test

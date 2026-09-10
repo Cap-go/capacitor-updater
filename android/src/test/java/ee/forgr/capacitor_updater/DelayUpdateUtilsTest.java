@@ -7,7 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import android.content.SharedPreferences;
-import io.github.g00fy2.versioncompare.Version;
+import ee.forgr.capacitor_updater.NativeSemver;
 import java.util.ArrayList;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,7 +40,7 @@ public class DelayUpdateUtilsTest {
         when(editor.remove(anyString())).thenReturn(editor);
         when(editor.commit()).thenReturn(true);
 
-        utils = new DelayUpdateUtils(prefs, editor, new Version("1.0.0"), logger);
+        utils = new DelayUpdateUtils(prefs, editor, new NativeSemver("1.0.0"), logger);
     }
 
     @Test
