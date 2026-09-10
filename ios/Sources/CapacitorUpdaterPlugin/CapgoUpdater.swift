@@ -192,11 +192,21 @@ import UIKit
         }
     }
 
-    private func shouldPreserveDownloadedTempFile(error: Error?, statusCode: Int?) -> Bool {
-        if Self.shouldPreserveDownloadTempFile(error: error) {
+    static func shouldPreserveDownloadedTempFile(error: Error?, statusCode: Int?) -> Bool {
+        if let statusCode, !isSuccessfulDownloadStatus(statusCode) {
+            return false
+        }
+        if shouldPreserveDownloadTempFile(error: error) {
             return true
         }
         return error == nil && isSuccessfulDownloadStatus(statusCode)
+    }
+
+    private static func isSuccessfulDownloadStatus(_ statusCode: Int?) -> Bool {
+        guard let statusCode else {
+            return false
+        }
+        return statusCode >= 200 && statusCode < 300
     }
 
     private func partialFileURL(fromResumeData resumeData: Data, destination: URL) -> URL? {
@@ -206,7 +216,7 @@ import UIKit
         let task = self.urlSession.downloadTask(withResumeData: resumeData) { location, response, error in
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             if let location {
-                if self.shouldPreserveDownloadedTempFile(error: error, statusCode: statusCode) {
+                if Self.shouldPreserveDownloadedTempFile(error: error, statusCode: statusCode) {
                     preservedURL = self.preserveDownloadedFile(at: location, to: destination)
                 } else {
                     try? FileManager.default.removeItem(at: location)
@@ -306,13 +316,6 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: false)
     }
 
-    private func isSuccessfulDownloadStatus(_ statusCode: Int?) -> Bool {
-        guard let statusCode else {
-            return false
-        }
-        return statusCode >= 200 && statusCode < 300
-    }
-
     private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
@@ -328,7 +331,7 @@ import UIKit
             }
 
             if let location {
-                if requestError == nil && self.isSuccessfulDownloadStatus(httpResponse?.statusCode) {
+                if requestError == nil && Self.isSuccessfulDownloadStatus(httpResponse?.statusCode) {
                     tempFileURL = self.preserveDownloadedFile(at: location, to: temporaryDownloadURL)
                     if tempFileURL == nil {
                         requestError = NSError(
