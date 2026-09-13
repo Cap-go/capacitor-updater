@@ -3,6 +3,7 @@ ext {
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
     androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.3.0'
     androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.7.0'
+    okhttpVersion = project.hasProperty('okhttpVersion') ? rootProject.ext.okhttpVersion : '4.12.0'
 }
 
 buildscript {
@@ -69,7 +70,7 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation 'org.brotli:dec:0.1.2'
-    implementation 'com.squareup.okhttp3:okhttp:5.4.0'
+    implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
 }
 
 tasks.withType(Test) {
