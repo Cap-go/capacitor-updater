@@ -54,7 +54,7 @@ final class AndroidAppExitReporter {
                     continue;
                 }
 
-                if (!implementation.allowsNonUpdateStats()) {
+                if (!CapgoUpdater.shouldSendStatsAction(action, implementation.statsMode)) {
                     newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
                     continue;
                 }

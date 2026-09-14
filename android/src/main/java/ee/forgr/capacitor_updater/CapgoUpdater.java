@@ -3228,7 +3228,11 @@ public class CapgoUpdater {
                     if (statsQueue.size() >= MAX_PENDING_STATS) {
                         break;
                     }
-                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                    final JSONObject prepared = prepareStatsEventForCurrentMode(arr.getJSONObject(i));
+                    if (prepared == null) {
+                        continue;
+                    }
+                    statsQueue.add(new QueuedStatsEvent(prepared, null));
                 }
             }
             if (backup.exists() && !backup.delete()) {

@@ -846,8 +846,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
         this.reloadPersistedModifyUrlsIfConfigured();
-        this.implementation.restorePendingStats();
         this.implementation.setStatsMode(this.getConfig().getString("statsMode", CapgoUpdater.STATS_MODE_ALL));
+        this.implementation.restorePendingStats();
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
