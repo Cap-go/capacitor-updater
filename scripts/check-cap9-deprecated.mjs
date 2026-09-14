@@ -10,9 +10,21 @@
  *   node scripts/check-cap9-deprecated.mjs --dir path
  */
 
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".build",
+  ".gradle",
+  "Pods",
+  "DerivedData",
+  ".swiftpm",
+  ".git",
+  "example-app",
+]);
 
 /** @type {{ id: string, pattern: RegExp, exts: string[], ignoreLine?: RegExp }[]} */
 const RULES = [
@@ -85,14 +97,21 @@ const RULES = [
 const CORDova_SPM_LINE =
   /\.product\s*\(\s*name\s*:\s*"Cordova"\s*,\s*package\s*:\s*"capacitor-swift-pm"\s*\)/;
 
-function resolvePluginDir(raw) {
-  const base = process.cwd();
-  const resolved = path.resolve(base, raw || ".");
-  if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
-    console.error(`[cap9-deprecated] ERROR: --dir must stay under ${base}`);
-    process.exit(2);
+function readText(p) {
+  try {
+    return fs.readFileSync(p, "utf8");
+  } catch {
+    return "";
   }
-  return resolved;
+}
+
+function exists(p) {
+  try {
+    fs.accessSync(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseArgs(argv) {
@@ -100,128 +119,129 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dir" || a === "--pluginDir") {
-      out.dir = resolvePluginDir(argv[++i]);
+      out.dir = path.resolve(argv[++i] || ".");
       continue;
     }
   }
   return out;
 }
 
-function withPluginDir(pluginDir, fn) {
-  const previousCwd = process.cwd();
-  process.chdir(pluginDir);
-  try {
-    return fn();
-  } finally {
-    process.chdir(previousCwd);
+function walkFiles(rootDir, exts) {
+  const out = [];
+  const stack = [rootDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue;
+        stack.push(path.join(dir, e.name));
+        continue;
+      }
+      if (!e.isFile()) continue;
+      for (const ext of exts) {
+        if (e.name.endsWith(ext)) {
+          out.push(path.join(dir, e.name));
+          break;
+        }
+      }
+    }
   }
+  out.sort();
+  return out;
 }
 
-function readPackageJson() {
-  try {
-    return JSON.parse(fs.readFileSync("package.json", "utf8"));
-  } catch (e) {
-    console.error(`[cap9-deprecated] ERROR: invalid package.json: ${e?.message || e}`);
-    process.exit(2);
-  }
-}
-
-function collectScanPaths(pkg) {
+function collectScanRoots(pluginDir, pkg) {
   const cap = typeof pkg.capacitor === "object" && pkg.capacitor ? pkg.capacitor : {};
-  const paths = [];
+  const roots = [];
   if (cap.android) {
-    paths.push("android/src/main");
+    const androidMain = path.join(pluginDir, "android", "src", "main");
+    if (exists(androidMain)) roots.push(androidMain);
   }
   if (cap.ios) {
-    paths.push(fs.existsSync("ios/Sources") ? "ios/Sources" : "ios");
+    const iosSources = path.join(pluginDir, "ios", "Sources");
+    if (exists(iosSources)) roots.push(iosSources);
+    else {
+      const iosDir = path.join(pluginDir, "ios");
+      if (exists(iosDir)) roots.push(iosDir);
+    }
   }
-  if (fs.existsSync("Package.swift")) {
-    paths.push("Package.swift");
-  }
-  return paths.filter((p) => fs.existsSync(p));
+  const packageSwift = path.join(pluginDir, "Package.swift");
+  if (exists(packageSwift)) roots.push(packageSwift);
+  return roots;
 }
 
-function globArgsForExts(exts) {
-  const args = [];
-  for (const ext of exts) {
-    args.push("--glob", `*${ext}`);
-  }
-  return args;
-}
+function scanFile(filePath, rule) {
+  const ext = path.extname(filePath);
+  if (!rule.exts.includes(ext)) return [];
 
-function scanRule(scanPaths, rule) {
-  if (!scanPaths.length) {
-    return [];
-  }
-
-  const rgArgs = [
-    "--line-number",
-    "--no-heading",
-    "--color=never",
-    "--pcre2",
-    ...globArgsForExts(rule.exts),
-    rule.pattern.source,
-    ...scanPaths,
-  ];
-
-  const proc = spawnSync("rg", rgArgs, { encoding: "utf8" });
-  if (proc.status === 1) {
-    return [];
-  }
-  if (proc.status !== 0) {
-    console.error(`[cap9-deprecated] ERROR: rg failed (${proc.stderr || proc.stdout})`);
-    process.exit(2);
-  }
-
+  const txt = readText(filePath);
+  const lines = txt.split(/\r?\n/);
   const hits = [];
-  for (const line of proc.stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const match = line.match(/^(.+?):(\d+):(.+)$/);
-    if (!match) continue;
-    const [, filePath, lineNo, text] = match;
-    const relFile = filePath;
-    if (relFile.endsWith("Package.swift") && CORDova_SPM_LINE.test(text)) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (filePath.endsWith("Package.swift") && CORDova_SPM_LINE.test(line)) {
       continue;
     }
-    if (rule.ignoreLine?.test(text)) {
-      continue;
+    if (rule.ignoreLine?.test(line)) continue;
+    if (rule.pattern.test(line)) {
+      hits.push({ line: i + 1, text: line.trim() });
     }
-    hits.push({
-      file: relFile,
-      line: Number(lineNo),
-      text: text.trim(),
-    });
   }
   return hits;
 }
 
 const args = parseArgs(process.argv);
 const pluginDir = args.dir;
+const pkgPath = path.join(pluginDir, "package.json");
 
-if (!fs.existsSync(path.join(pluginDir, "package.json"))) {
+if (!exists(pkgPath)) {
   console.error(`[cap9-deprecated] ERROR: missing package.json in ${pluginDir}`);
   process.exit(2);
 }
 
-const { pkg, scanPaths, violations } = withPluginDir(pluginDir, () => {
-  const loadedPkg = readPackageJson();
-  const capConfig = typeof loadedPkg.capacitor === "object" && loadedPkg.capacitor ? loadedPkg.capacitor : {};
-  if (!capConfig.android && !capConfig.ios) {
-    return { pkg: loadedPkg, scanPaths: [], violations: [] };
-  }
+let pkg;
+try {
+  pkg = JSON.parse(readText(pkgPath));
+} catch (e) {
+  console.error(`[cap9-deprecated] ERROR: invalid package.json (${pkgPath}): ${e?.message || e}`);
+  process.exit(2);
+}
 
-  const roots = collectScanPaths(loadedPkg);
-  const found = [];
+const cap = typeof pkg.capacitor === "object" && pkg.capacitor ? pkg.capacitor : {};
+if (!cap.android && !cap.ios) {
+  process.exit(0);
+}
+
+const scanRoots = collectScanRoots(pluginDir, pkg);
+const allExts = [...new Set(RULES.flatMap((r) => r.exts))];
+const files = [];
+for (const root of scanRoots) {
+  if (root.endsWith("Package.swift")) {
+    files.push(root);
+    continue;
+  }
+  files.push(...walkFiles(root, allExts));
+}
+
+const violations = [];
+for (const file of files) {
   for (const rule of RULES) {
-    for (const hit of scanRule(roots, rule)) {
-      found.push({ rule: rule.id, ...hit });
+    const hits = scanFile(file, rule);
+    for (const hit of hits) {
+      violations.push({
+        rule: rule.id,
+        file: path.relative(pluginDir, file),
+        line: hit.line,
+        text: hit.text,
+      });
     }
   }
-  return { pkg: loadedPkg, scanPaths: roots, violations: found };
-});
-
-if (!pkg.capacitor?.android && !pkg.capacitor?.ios) {
-  process.exit(0);
 }
 
 if (violations.length) {
