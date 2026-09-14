@@ -138,7 +138,7 @@ public class Logger {
         self.tag = tag
         if let config = config {
             // The logger plugin's name is LoggerBridge, we want to look at the config
-            // named "Logger", so we can't use plugin.getConfigValue().
+            // LoggerBridge plugin id differs from config key "Logger".
             if let configLevel = loggerPluginConfig("level", from: config) as? String,
                let logLevel = LogLevel[configLevel] {
                 level = logLevel

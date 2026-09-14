@@ -5603,6 +5603,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("In-app update launcher is not available");
             return false;
         }
+        if (pendingAppUpdateCallId != null) {
+            return false;
+        }
 
         bridge.saveCall(call);
         pendingAppUpdateCallId = call.getCallbackId();
