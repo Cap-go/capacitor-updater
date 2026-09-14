@@ -107,29 +107,36 @@ function parseArgs(argv) {
   return out;
 }
 
-function readPackageJson(pluginDir) {
-  const pkgPath = path.join(pluginDir, "package.json");
+function withPluginDir(pluginDir, fn) {
+  const previousCwd = process.cwd();
+  process.chdir(pluginDir);
   try {
-    return JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    return fn();
+  } finally {
+    process.chdir(previousCwd);
+  }
+}
+
+function readPackageJson() {
+  try {
+    return JSON.parse(fs.readFileSync("package.json", "utf8"));
   } catch (e) {
-    console.error(`[cap9-deprecated] ERROR: invalid package.json (${pkgPath}): ${e?.message || e}`);
+    console.error(`[cap9-deprecated] ERROR: invalid package.json: ${e?.message || e}`);
     process.exit(2);
   }
 }
 
-function collectScanPaths(pluginDir, pkg) {
+function collectScanPaths(pkg) {
   const cap = typeof pkg.capacitor === "object" && pkg.capacitor ? pkg.capacitor : {};
   const paths = [];
   if (cap.android) {
-    paths.push(path.join(pluginDir, "android", "src", "main"));
+    paths.push("android/src/main");
   }
   if (cap.ios) {
-    const iosSources = path.join(pluginDir, "ios", "Sources");
-    paths.push(fs.existsSync(iosSources) ? iosSources : path.join(pluginDir, "ios"));
+    paths.push(fs.existsSync("ios/Sources") ? "ios/Sources" : "ios");
   }
-  const packageSwift = path.join(pluginDir, "Package.swift");
-  if (fs.existsSync(packageSwift)) {
-    paths.push(packageSwift);
+  if (fs.existsSync("Package.swift")) {
+    paths.push("Package.swift");
   }
   return paths.filter((p) => fs.existsSync(p));
 }
@@ -142,7 +149,7 @@ function globArgsForExts(exts) {
   return args;
 }
 
-function scanRule(pluginDir, scanPaths, rule) {
+function scanRule(scanPaths, rule) {
   if (!scanPaths.length) {
     return [];
   }
@@ -172,7 +179,7 @@ function scanRule(pluginDir, scanPaths, rule) {
     const match = line.match(/^(.+?):(\d+):(.+)$/);
     if (!match) continue;
     const [, filePath, lineNo, text] = match;
-    const relFile = path.relative(pluginDir, filePath);
+    const relFile = filePath;
     if (relFile.endsWith("Package.swift") && CORDova_SPM_LINE.test(text)) {
       continue;
     }
@@ -196,18 +203,25 @@ if (!fs.existsSync(path.join(pluginDir, "package.json"))) {
   process.exit(2);
 }
 
-const pkg = readPackageJson(pluginDir);
-const cap = typeof pkg.capacitor === "object" && pkg.capacitor ? pkg.capacitor : {};
-if (!cap.android && !cap.ios) {
-  process.exit(0);
-}
-
-const scanPaths = collectScanPaths(pluginDir, pkg);
-const violations = [];
-for (const rule of RULES) {
-  for (const hit of scanRule(pluginDir, scanPaths, rule)) {
-    violations.push({ rule: rule.id, ...hit });
+const { pkg, scanPaths, violations } = withPluginDir(pluginDir, () => {
+  const loadedPkg = readPackageJson();
+  const capConfig = typeof loadedPkg.capacitor === "object" && loadedPkg.capacitor ? loadedPkg.capacitor : {};
+  if (!capConfig.android && !capConfig.ios) {
+    return { pkg: loadedPkg, scanPaths: [], violations: [] };
   }
+
+  const roots = collectScanPaths(loadedPkg);
+  const found = [];
+  for (const rule of RULES) {
+    for (const hit of scanRule(roots, rule)) {
+      found.push({ rule: rule.id, ...hit });
+    }
+  }
+  return { pkg: loadedPkg, scanPaths: roots, violations: found };
+});
+
+if (!pkg.capacitor?.android && !pkg.capacitor?.ios) {
+  process.exit(0);
 }
 
 if (violations.length) {
