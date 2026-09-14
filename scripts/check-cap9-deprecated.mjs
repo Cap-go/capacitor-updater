@@ -248,7 +248,7 @@ if (violations.length) {
   const relDir = path.relative(process.cwd(), pluginDir) || ".";
   console.error(`[cap9-deprecated] FAIL in ${relDir}`);
   for (const v of violations) {
-    console.error(`  - ${v.rule}: ${v.file}:${v.line}: ${v.text}`);
+    console.error(`- ${v.rule}: ${v.file}:${v.line}: ${v.text}`);
   }
   process.exit(1);
 }
