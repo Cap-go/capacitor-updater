@@ -114,12 +114,22 @@ function exists(p) {
   }
 }
 
+function resolvePluginDir(raw) {
+  const base = process.cwd();
+  const resolved = path.resolve(base, raw || ".");
+  if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
+    console.error(`[cap9-deprecated] ERROR: --dir must stay under ${base}`);
+    process.exit(2);
+  }
+  return resolved;
+}
+
 function parseArgs(argv) {
   const out = { dir: process.cwd() };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dir" || a === "--pluginDir") {
-      out.dir = path.resolve(argv[++i] || ".");
+      out.dir = resolvePluginDir(argv[++i]);
       continue;
     }
   }
