@@ -62,12 +62,12 @@ fi
 node "$RESTORE" --target "$TARGET" --repo-root "$ROOT" --config "$SCRIPT_STASH/lts-backport.json"
 
 if command -v bun >/dev/null 2>&1; then
-  bun install
+  bun install --ignore-scripts
   bun run prettier -- --write || echo "prettier write failed; lockfile and constraint restore still applied"
   if [ -f example-app/package.json ]; then
     (
       cd example-app
-      bun install
+      bun install --ignore-scripts
       bunx cap sync || echo "cap sync failed; lockfile and constraint restore still applied"
     )
   fi

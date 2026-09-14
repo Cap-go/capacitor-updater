@@ -201,7 +201,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install npm CLI for staged publishing
-        run: npm install -g npm@^11.15.0
+        run: npm install -g npm@11.15.0 --ignore-scripts
 
       - name: Stage publish to npm beta
         env:
