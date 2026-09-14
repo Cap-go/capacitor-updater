@@ -5616,14 +5616,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         bridge.saveCall(call);
         pendingAppUpdateCallId = call.getCallbackId();
 
-        final AppUpdateManager manager = getAppUpdateManager();
-        final boolean flowStarted = manager.startUpdateFlowForResult(cachedAppUpdateInfo, appUpdateActivityResultLauncher, options);
-        if (!flowStarted) {
+        try {
+            final AppUpdateManager manager = getAppUpdateManager();
+            final boolean flowStarted = manager.startUpdateFlowForResult(cachedAppUpdateInfo, appUpdateActivityResultLauncher, options);
+            if (!flowStarted) {
+                pendingAppUpdateCallId = null;
+                bridge.releaseCall(call);
+                return false;
+            }
+            return true;
+        } catch (final Exception e) {
             pendingAppUpdateCallId = null;
             bridge.releaseCall(call);
-            return false;
+            throw e;
         }
-        return true;
     }
 
     @PluginMethod
