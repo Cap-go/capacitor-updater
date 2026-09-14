@@ -10,16 +10,21 @@
  *   node scripts/check-cap9-deprecated.mjs --dir path
  */
 
+import fs from "node:fs";
 import path from "node:path";
-import {
-  BASE_SKIP_DIRS,
-  parsePluginDirArgs,
-  pathExists,
-  readTextFile,
-  walkFiles,
-} from "./plugin-check-common.mjs";
 
-const SKIP_DIRS = new Set([...BASE_SKIP_DIRS, "example-app"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".build",
+  ".gradle",
+  "Pods",
+  "DerivedData",
+  ".swiftpm",
+  ".git",
+  "example-app",
+]);
 
 /** @type {{ id: string, pattern: RegExp, exts: string[], ignoreLine?: RegExp }[]} */
 const RULES = [
@@ -92,23 +97,111 @@ const RULES = [
 const CORDova_SPM_LINE =
   /\.product\s*\(\s*name\s*:\s*"Cordova"\s*,\s*package\s*:\s*"capacitor-swift-pm"\s*\)/;
 
+function pluginRootReal(pluginDir) {
+  return fs.realpathSync.native(path.resolve(pluginDir));
+}
+
+function resolveInsidePluginRoot(pluginDir, targetPath) {
+  const root = pluginRootReal(pluginDir);
+  let resolved;
+  try {
+    resolved = fs.realpathSync.native(path.resolve(root, targetPath));
+  } catch {
+    return null;
+  }
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    return null;
+  }
+  return resolved;
+}
+
+function readText(pluginDir, p) {
+  const safe = resolveInsidePluginRoot(pluginDir, p);
+  if (!safe) {
+    return "";
+  }
+  try {
+    return fs.readFileSync(safe, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function exists(pluginDir, p) {
+  return resolveInsidePluginRoot(pluginDir, p) !== null;
+}
+
+function resolvePluginDir(raw) {
+  const base = process.cwd();
+  const resolved = path.resolve(base, raw || ".");
+  if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
+    console.error(`[cap9-deprecated] ERROR: --dir must stay under ${base}`);
+    process.exit(2);
+  }
+  return resolved;
+}
+
+function parseArgs(argv) {
+  const out = { dir: process.cwd() };
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--dir" || a === "--pluginDir") {
+      out.dir = resolvePluginDir(argv[++i]);
+      continue;
+    }
+  }
+  return out;
+}
+
+function walkFiles(pluginDir, rootDir, exts) {
+  const out = [];
+  const stack = [resolveInsidePluginRoot(pluginDir, rootDir)].filter(Boolean);
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name)) continue;
+        const child = path.join(dir, e.name);
+        if (resolveInsidePluginRoot(pluginDir, child) === null) continue;
+        stack.push(child);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      for (const ext of exts) {
+        if (e.name.endsWith(ext)) {
+          out.push(path.join(dir, e.name));
+          break;
+        }
+      }
+    }
+  }
+  out.sort();
+  return out;
+}
+
 function collectScanRoots(pluginDir, pkg) {
   const cap = typeof pkg.capacitor === "object" && pkg.capacitor ? pkg.capacitor : {};
   const roots = [];
   if (cap.android) {
     const androidMain = path.join(pluginDir, "android", "src", "main");
-    if (pathExists(androidMain, pluginDir)) roots.push(androidMain);
+    if (exists(pluginDir, androidMain)) roots.push(androidMain);
   }
   if (cap.ios) {
     const iosSources = path.join(pluginDir, "ios", "Sources");
-    if (pathExists(iosSources, pluginDir)) roots.push(iosSources);
+    if (exists(pluginDir, iosSources)) roots.push(iosSources);
     else {
       const iosDir = path.join(pluginDir, "ios");
-      if (pathExists(iosDir, pluginDir)) roots.push(iosDir);
+      if (exists(pluginDir, iosDir)) roots.push(iosDir);
     }
   }
   const packageSwift = path.join(pluginDir, "Package.swift");
-  if (pathExists(packageSwift, pluginDir)) roots.push(packageSwift);
+  if (exists(pluginDir, packageSwift)) roots.push(packageSwift);
   return roots;
 }
 
@@ -116,7 +209,7 @@ function scanFile(pluginDir, filePath, rule) {
   const ext = path.extname(filePath);
   if (!rule.exts.includes(ext)) return [];
 
-  const txt = readTextFile(filePath, pluginDir);
+  const txt = readText(pluginDir, filePath);
   const lines = txt.split(/\r?\n/);
   const hits = [];
   for (let i = 0; i < lines.length; i++) {
@@ -132,18 +225,18 @@ function scanFile(pluginDir, filePath, rule) {
   return hits;
 }
 
-const args = parsePluginDirArgs(process.argv);
+const args = parseArgs(process.argv);
 const pluginDir = args.dir;
 const pkgPath = path.join(pluginDir, "package.json");
 
-if (!pathExists(pkgPath, pluginDir)) {
+if (!exists(pluginDir, pkgPath)) {
   console.error(`[cap9-deprecated] ERROR: missing package.json in ${pluginDir}`);
   process.exit(2);
 }
 
 let pkg;
 try {
-  pkg = JSON.parse(readTextFile(pkgPath, pluginDir));
+  pkg = JSON.parse(readText(pluginDir, pkgPath));
 } catch (e) {
   console.error(`[cap9-deprecated] ERROR: invalid package.json (${pkgPath}): ${e?.message || e}`);
   process.exit(2);
@@ -159,10 +252,11 @@ const allExts = [...new Set(RULES.flatMap((r) => r.exts))];
 const files = [];
 for (const root of scanRoots) {
   if (root.endsWith("Package.swift")) {
-    files.push(root);
+    const safeRoot = resolveInsidePluginRoot(pluginDir, root);
+    if (safeRoot) files.push(safeRoot);
     continue;
   }
-  files.push(...walkFiles(root, allExts, SKIP_DIRS, pluginDir));
+  files.push(...walkFiles(pluginDir, root, allExts));
 }
 
 const violations = [];
