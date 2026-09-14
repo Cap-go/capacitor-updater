@@ -17,65 +17,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-
-const SKIP_DIRS = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  ".build",
-  ".gradle",
-  "Pods",
-  "DerivedData",
-  ".swiftpm",
-  ".git",
-]);
-
-function readText(p) {
-  try {
-    return fs.readFileSync(p, "utf8");
-  } catch {
-    return "";
-  }
-}
-
-function exists(p) {
-  try {
-    fs.accessSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function walkFiles(rootDir, exts) {
-  const out = [];
-  const stack = [rootDir];
-  while (stack.length) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        if (SKIP_DIRS.has(e.name)) continue;
-        stack.push(path.join(dir, e.name));
-        continue;
-      }
-      if (!e.isFile()) continue;
-      for (const ext of exts) {
-        if (e.name.endsWith(ext)) {
-          out.push(path.join(dir, e.name));
-          break;
-        }
-      }
-    }
-  }
-  out.sort();
-  return out;
-}
+import { parsePluginDirArgs, pathExists, readTextFile, walkFiles } from "./plugin-check-common.mjs";
 
 function uniq(arr) {
   const out = [];
@@ -86,30 +28,18 @@ function uniq(arr) {
   return out;
 }
 
-function parseArgs(argv) {
-  const out = { dir: process.cwd() };
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--dir" || a === "--pluginDir") {
-      out.dir = path.resolve(argv[++i] || ".");
-      continue;
-    }
-  }
-  return out;
-}
-
-const args = parseArgs(process.argv);
+const args = parsePluginDirArgs(process.argv);
 const pluginDir = args.dir;
 const pkgPath = path.join(pluginDir, "package.json");
 
-if (!exists(pkgPath)) {
+if (!pathExists(pkgPath, pluginDir)) {
   console.error(`[wiring] ERROR: missing package.json in ${pluginDir}`);
   process.exit(2);
 }
 
 let pkg;
 try {
-  pkg = JSON.parse(readText(pkgPath));
+  pkg = JSON.parse(readTextFile(pkgPath, pluginDir));
 } catch (e) {
   console.error(`[wiring] ERROR: invalid package.json (${pkgPath}): ${e?.message || e}`);
   process.exit(2);
@@ -128,11 +58,11 @@ if (!supportsAndroid && !supportsIos) {
 // ---------------- JS (registerPlugin) ----------------
 const jsSrcDir = path.join(pluginDir, "src");
 let jsName = "";
-if (exists(jsSrcDir)) {
-  const jsFiles = walkFiles(jsSrcDir, [".ts", ".js"]);
+if (pathExists(jsSrcDir, pluginDir)) {
+  const jsFiles = walkFiles(jsSrcDir, [".ts", ".js"], undefined, pluginDir);
   const reRegister = /registerPlugin(?:<[^>]*>)?\(\s*['"]([^'"]+)['"]/;
   for (const f of jsFiles) {
-    const m = reRegister.exec(readText(f));
+    const m = reRegister.exec(readTextFile(f, pluginDir));
     if (m) {
       jsName = m[1];
       break;
@@ -144,10 +74,10 @@ if (exists(jsSrcDir)) {
 let androidNames = [];
 if (supportsAndroid) {
   const androidMain = path.join(pluginDir, "android", "src", "main");
-  const files = walkFiles(androidMain, [".java", ".kt"]);
+  const files = walkFiles(androidMain, [".java", ".kt"], undefined, pluginDir);
   const foundAnnotations = [];
   for (const f of files) {
-    const txt = readText(f);
+    const txt = readTextFile(f, pluginDir);
     if (!txt.includes("@CapacitorPlugin")) continue;
     foundAnnotations.push(f);
     const m =
@@ -170,11 +100,13 @@ if (supportsAndroid) {
 let iosJsNames = [];
 if (supportsIos) {
   const iosDir = path.join(pluginDir, "ios");
-  const scanRoot = exists(path.join(iosDir, "Sources")) ? path.join(iosDir, "Sources") : iosDir;
-  const swiftFiles = walkFiles(scanRoot, [".swift"]);
+  const scanRoot = pathExists(path.join(iosDir, "Sources"), pluginDir)
+    ? path.join(iosDir, "Sources")
+    : iosDir;
+  const swiftFiles = walkFiles(scanRoot, [".swift"], undefined, pluginDir);
   const reJsName = /\bjsName\s*=\s*"([^"]+)"/g;
   for (const f of swiftFiles) {
-    const txt = readText(f);
+    const txt = readTextFile(f, pluginDir);
     if (!txt.includes("jsName")) continue;
     let m;
     while ((m = reJsName.exec(txt))) iosJsNames.push(m[1]);
@@ -184,13 +116,13 @@ if (supportsIos) {
 
 // ---------------- Podspec/SPM ----------------
 function parsePodspecName(podspecPath) {
-  const txt = readText(podspecPath);
+  const txt = readTextFile(podspecPath, pluginDir);
   const m = /\bs\.name\s*=\s*'([^']+)'/.exec(txt);
   return m ? m[1] : "";
 }
 
 function parseSpmNames(packageSwiftPath) {
-  const txt = readText(packageSwiftPath);
+  const txt = readTextFile(packageSwiftPath, pluginDir);
   const pkg = /Package\(\s*name\s*:\s*"([^"]+)"/.exec(txt)?.[1] || "";
   const libs = [];
   const reLib = /\.library\(\s*name\s*:\s*"([^"]+)"/g;
@@ -228,7 +160,7 @@ if (supportsIos) {
   if (podspecs.length > 1) errors.push(`iOS: multiple podspecs at plugin root: ${podspecs.map((p) => path.basename(p))}`);
 
   const pkgSwift = path.join(pluginDir, "Package.swift");
-  if (!exists(pkgSwift)) {
+  if (!pathExists(pkgSwift, pluginDir)) {
     errors.push("iOS: missing Package.swift at plugin root");
   } else if (podspecs.length) {
     const podName = parsePodspecName(podspecs[0]);
