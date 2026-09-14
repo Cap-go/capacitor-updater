@@ -5574,6 +5574,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private JSObject appUpdateResult(final int code) {
+        final JSObject result = new JSObject();
+        result.put("code", code);
+        return result;
+    }
+
     private void handleAppUpdateActivityResult(final ActivityResult activityResult) {
         final String callbackId = pendingAppUpdateCallId;
         pendingAppUpdateCallId = null;
@@ -5586,15 +5592,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        final JSObject result = new JSObject();
+        final int resultCode;
         if (activityResult.getResultCode() == Activity.RESULT_OK) {
-            result.put("code", RESULT_OK);
+            resultCode = RESULT_OK;
         } else if (activityResult.getResultCode() == Activity.RESULT_CANCELED) {
-            result.put("code", RESULT_CANCELED);
+            resultCode = RESULT_CANCELED;
         } else {
-            result.put("code", RESULT_FAILED);
+            resultCode = RESULT_FAILED;
         }
-        savedCall.resolve(result);
+        savedCall.resolve(appUpdateResult(resultCode));
         bridge.releaseCall(savedCall);
     }
 
@@ -5737,15 +5743,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             final AppUpdateOptions options = AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build();
             if (!launchAppUpdateFlow(call, options)) {
-                JSObject result = new JSObject();
-                result.put("code", RESULT_FAILED);
-                call.resolve(result);
+                call.resolve(appUpdateResult(RESULT_FAILED));
             }
         } catch (Exception e) {
             logger.error("Failed to start immediate update: " + e.getMessage());
-            JSObject result = new JSObject();
-            result.put("code", RESULT_FAILED);
-            call.resolve(result);
+            call.resolve(appUpdateResult(RESULT_FAILED));
         }
     }
 
@@ -5806,15 +5808,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             final AppUpdateOptions options = AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build();
             if (!launchAppUpdateFlow(call, options)) {
-                JSObject result = new JSObject();
-                result.put("code", RESULT_FAILED);
-                call.resolve(result);
+                call.resolve(appUpdateResult(RESULT_FAILED));
             }
         } catch (Exception e) {
             logger.error("Failed to start flexible update: " + e.getMessage());
-            JSObject result = new JSObject();
-            result.put("code", RESULT_FAILED);
-            call.resolve(result);
+            call.resolve(appUpdateResult(RESULT_FAILED));
         }
     }
 
