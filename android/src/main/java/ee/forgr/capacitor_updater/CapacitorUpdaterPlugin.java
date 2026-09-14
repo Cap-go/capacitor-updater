@@ -5790,6 +5790,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
+            if (appUpdateActivityResultLauncher == null) {
+                call.reject("In-app update launcher is not available");
+                return;
+            }
+            if (pendingAppUpdateCallId != null) {
+                call.resolve(appUpdateResult(RESULT_FAILED));
+                return;
+            }
+
             // Register listener for flexible update state changes
             AppUpdateManager manager = getAppUpdateManager();
 
@@ -5814,10 +5823,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             final AppUpdateOptions options = AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build();
             if (!launchAppUpdateFlow(call, options)) {
+                manager.unregisterListener(installStateUpdatedListener);
+                installStateUpdatedListener = null;
                 call.resolve(appUpdateResult(RESULT_FAILED));
             }
         } catch (Exception e) {
             logger.error("Failed to start flexible update: " + e.getMessage());
+            if (installStateUpdatedListener != null) {
+                try {
+                    getAppUpdateManager().unregisterListener(installStateUpdatedListener);
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                installStateUpdatedListener = null;
+            }
             call.resolve(appUpdateResult(RESULT_FAILED));
         }
     }
