@@ -24,6 +24,10 @@ import android.view.ViewGroup;
 import android.webkit.RenderProcessGoneDetail;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.pm.PackageInfoCompat;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.CapConfig;
@@ -291,7 +295,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
     private AppUpdateInfo cachedAppUpdateInfo;
-    private static final int APP_UPDATE_REQUEST_CODE = 9001;
+    private ActivityResultLauncher<IntentSenderRequest> appUpdateActivityResultLauncher;
+    private String pendingAppUpdateCallId;
     private InstallStateUpdatedListener installStateUpdatedListener;
 
     private PackageInfo getCurrentPackageInfo() throws PackageManager.NameNotFoundException {
@@ -681,6 +686,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+
+        appUpdateActivityResultLauncher = bridge.registerForActivityResult(
+            new ActivityResultContracts.StartIntentSenderForResult(),
+            this::handleAppUpdateActivityResult
+        );
 
         // Initialize logger with osLogging config
         // Default to true for both platforms to enable system logging by default
@@ -5564,6 +5574,49 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private void handleAppUpdateActivityResult(final ActivityResult activityResult) {
+        final String callbackId = pendingAppUpdateCallId;
+        pendingAppUpdateCallId = null;
+        if (callbackId == null) {
+            return;
+        }
+
+        final PluginCall savedCall = bridge.getSavedCall(callbackId);
+        if (savedCall == null) {
+            return;
+        }
+
+        final JSObject result = new JSObject();
+        if (activityResult.getResultCode() == Activity.RESULT_OK) {
+            result.put("code", RESULT_OK);
+        } else if (activityResult.getResultCode() == Activity.RESULT_CANCELED) {
+            result.put("code", RESULT_CANCELED);
+        } else {
+            result.put("code", RESULT_FAILED);
+        }
+        savedCall.resolve(result);
+        bridge.releaseCall(savedCall);
+    }
+
+    private boolean launchAppUpdateFlow(final PluginCall call, final AppUpdateOptions options) {
+        if (appUpdateActivityResultLauncher == null) {
+            call.reject("In-app update launcher is not available");
+            return false;
+        }
+
+        bridge.saveCall(call);
+        pendingAppUpdateCallId = call.getCallbackId();
+
+        final AppUpdateManager manager = getAppUpdateManager();
+        final boolean flowStarted = manager.startUpdateFlowForResult(cachedAppUpdateInfo, appUpdateActivityResultLauncher, options);
+        if (!flowStarted) {
+            pendingAppUpdateCallId = null;
+            bridge.releaseCall(call);
+            return false;
+        }
+        return true;
+    }
+
     @PluginMethod
     public void getAppUpdateInfo(final PluginCall call) {
         logger.info("Getting Play Store update info");
@@ -5679,16 +5732,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
-
-            AppUpdateManager manager = getAppUpdateManager();
-            manager.startUpdateFlowForResult(
-                cachedAppUpdateInfo,
-                activity,
-                AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
-                APP_UPDATE_REQUEST_CODE
-            );
+            final AppUpdateOptions options = AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build();
+            if (!launchAppUpdateFlow(call, options)) {
+                JSObject result = new JSObject();
+                result.put("code", RESULT_FAILED);
+                call.resolve(result);
+            }
         } catch (Exception e) {
             logger.error("Failed to start immediate update: " + e.getMessage());
             JSObject result = new JSObject();
@@ -5752,15 +5801,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             manager.registerListener(installStateUpdatedListener);
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
-
-            manager.startUpdateFlowForResult(
-                cachedAppUpdateInfo,
-                activity,
-                AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build(),
-                APP_UPDATE_REQUEST_CODE
-            );
+            final AppUpdateOptions options = AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build();
+            if (!launchAppUpdateFlow(call, options)) {
+                JSObject result = new JSObject();
+                result.put("code", RESULT_FAILED);
+                call.resolve(result);
+            }
         } catch (Exception e) {
             logger.error("Failed to start flexible update: " + e.getMessage());
             JSObject result = new JSObject();
@@ -5786,30 +5832,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (Exception e) {
             logger.error("Error completing flexible update: " + e.getMessage());
             call.reject("Error completing flexible update: " + e.getMessage());
-        }
-    }
-
-    @Override
-    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
-        super.handleOnActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == APP_UPDATE_REQUEST_CODE) {
-            PluginCall savedCall = bridge.getSavedCall("com.getcapacitor.PluginCall");
-            if (savedCall == null) {
-                // Try to get any saved call (for backward compatibility)
-                return;
-            }
-
-            JSObject result = new JSObject();
-            if (resultCode == Activity.RESULT_OK) {
-                result.put("code", RESULT_OK);
-            } else if (resultCode == Activity.RESULT_CANCELED) {
-                result.put("code", RESULT_CANCELED);
-            } else {
-                result.put("code", RESULT_FAILED);
-            }
-            savedCall.resolve(result);
-            bridge.releaseCall(savedCall);
         }
     }
 
