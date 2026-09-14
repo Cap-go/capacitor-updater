@@ -121,6 +121,18 @@
         "gradle"
       ],
       "enabled": false
+    },
+    // OkHttp 5 is binary-incompatible with the 4.x line. Gradle resolves one OkHttp
+    // version per app, so a 5.x pin forces every host-app library that uses OkHttp 4.x
+    // onto OkHttp 5 and breaks it at runtime. Hold this dependency on the 4.x line.
+    {
+      "matchPackagePatterns": [
+        "^com\\.squareup\\.okhttp3:"
+      ],
+      "matchManagers": [
+        "gradle"
+      ],
+      "allowedVersions": "/^4\\./"
     }
   ]
 }

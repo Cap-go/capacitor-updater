@@ -928,10 +928,7 @@ import UIKit
 
     struct ManifestLookupEntry {
         let hash: String
-        /// The manifest's own file name, `.br` suffix included when present. The
-        /// built-in bundle stores files under this exact name (see
-        /// isManifestEntryAvailableLocally), unlike the extracted/cached copy which
-        /// is always named without the suffix.
+        /// The manifest's own file name, `.br` suffix included when present.
         let originalFileName: String
     }
 
@@ -994,10 +991,14 @@ import UIKit
 
             // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
             // so there's no need to also duplicate this file into the delta cache
-            let builtinRelativePath = knownEntry?.originalFileName ?? relativePath
-            let builtinFilePath = builtinFolder.appendingPathComponent(builtinRelativePath)
-            let isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
-                verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+            let builtinLookupName = knownEntry?.originalFileName ?? relativePath
+            let isBuiltinOrigin: Bool
+            if let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: builtinLookupName) {
+                isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
+                    verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+            } else {
+                isBuiltinOrigin = false
+            }
             if isBuiltinOrigin {
                 continue
             }
@@ -1231,7 +1232,10 @@ import UIKit
         }
 
         let builtinFolder = self.builtinFolderURL()
-        let builtinFilePath = builtinFolder.appendingPathComponent(fileName)
+        // The .br suffix describes transport; builtin assets are uncompressed.
+        guard let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName) else {
+            return false
+        }
         if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
             return true
         }
@@ -1474,7 +1478,7 @@ import UIKit
             let builtinFilePath: URL
             do {
                 destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
-                builtinFilePath = try Self.resolvePathInsideDirectory(baseDirectory: builtinFolder, relativePath: fileName)
+                builtinFilePath = try Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName)
             } catch {
                 logger.error("Invalid manifest file path: \(fileName)")
                 self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
