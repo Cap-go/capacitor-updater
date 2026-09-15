@@ -138,17 +138,17 @@ public class Logger {
         self.tag = tag
         if let config = config {
             // The logger plugin's name is LoggerBridge, we want to look at the config
-            // named "Logger", so we can't use plugin.getConfigValue().
-            if let configLevel = getConfigValue("level", from: config) as? String,
+            // named "Logger", so we can't use the Capacitor plugin config helper.
+            if let configLevel = instanceConfigValue("level", from: config) as? String,
                let logLevel = LogLevel[configLevel] {
                 level = logLevel
             }
 
-            if let configLabels = getConfigValue("labels", from: config) as? [String: String] {
+            if let configLabels = instanceConfigValue("labels", from: config) as? [String: String] {
                 labels = configLabels
             }
 
-            if let configSyslog = getConfigValue("useSyslog", from: config) as? Bool {
+            if let configSyslog = instanceConfigValue("useSyslog", from: config) as? Bool {
                 useSyslog = configSyslog
             }
         }
@@ -160,7 +160,7 @@ public class Logger {
         }
     }
 
-    private func getConfigValue(_ configKey: String, from config: InstanceConfiguration) -> Any? {
+    private func instanceConfigValue(_ configKey: String, from config: InstanceConfiguration) -> Any? {
         if let config = config.pluginConfigurations as? JSObject {
             return config[keyPath: KeyPath(stringLiteral: "Logger.\(configKey)")]
         }

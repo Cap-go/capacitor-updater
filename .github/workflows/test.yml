@@ -60,6 +60,8 @@ jobs:
           dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
+      - name: Check Cap 9 deprecated APIs
+        run: bun run check:cap9-deprecated
       - name: Setup java
         uses: actions/setup-java@v6
         with:
@@ -92,6 +94,8 @@ jobs:
           dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
+      - name: Check Cap 9 deprecated APIs
+        run: bun run check:cap9-deprecated
       - name: Build
         id: build_code
         run: bun run verify:ios
@@ -605,6 +609,8 @@ jobs:
           dependency-cache-path: node_modules
       - name: Check plugin wiring
         run: bun run check:wiring
+      - name: Check Cap 9 deprecated APIs
+        run: bun run check:cap9-deprecated
       - name: Self-test LTS constraint restore
         run: bun .github/scripts/restore-lts-constraints.mjs --self-test
       - name: Lint

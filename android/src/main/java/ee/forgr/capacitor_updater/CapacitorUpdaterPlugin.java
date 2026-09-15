@@ -290,6 +290,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
+    private PluginCall pendingAppUpdateCall;
     private AppUpdateInfo cachedAppUpdateInfo;
     private static final int APP_UPDATE_REQUEST_CODE = 9001;
     private InstallStateUpdatedListener installStateUpdatedListener;
@@ -5679,8 +5680,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
+            call.setKeepAlive(true);
+            pendingAppUpdateCall = call;
 
             AppUpdateManager manager = getAppUpdateManager();
             manager.startUpdateFlowForResult(
@@ -5752,8 +5753,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             manager.registerListener(installStateUpdatedListener);
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
+            call.setKeepAlive(true);
+            pendingAppUpdateCall = call;
 
             manager.startUpdateFlowForResult(
                 cachedAppUpdateInfo,
@@ -5794,11 +5795,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         super.handleOnActivityResult(requestCode, resultCode, data);
 
         if (requestCode == APP_UPDATE_REQUEST_CODE) {
-            PluginCall savedCall = bridge.getSavedCall("com.getcapacitor.PluginCall");
+            PluginCall savedCall = pendingAppUpdateCall;
             if (savedCall == null) {
-                // Try to get any saved call (for backward compatibility)
                 return;
             }
+            pendingAppUpdateCall = null;
 
             JSObject result = new JSObject();
             if (resultCode == Activity.RESULT_OK) {
@@ -5809,7 +5810,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 result.put("code", RESULT_FAILED);
             }
             savedCall.resolve(result);
-            bridge.releaseCall(savedCall);
+            savedCall.setKeepAlive(false);
         }
     }
 
