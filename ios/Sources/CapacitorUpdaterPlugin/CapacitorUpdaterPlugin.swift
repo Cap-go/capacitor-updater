@@ -1237,7 +1237,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func saveCallForAsyncHandling(_ call: CAPPluginCall) {
-        bridge?.saveCall(call)
+        call.keepAlive = true
     }
 
     private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
