@@ -85,7 +85,6 @@ const RULES = [
     id: "CAPBridge",
     pattern: /\bCAPBridge\./,
     exts: [".swift"],
-    ignoreLine: /CAPBridgedPlugin/,
   },
   {
     id: "CAPNotifications",
@@ -98,11 +97,7 @@ const CORDova_SPM_LINE =
   /\.product\s*\(\s*name\s*:\s*"Cordova"\s*,\s*package\s*:\s*"capacitor-swift-pm"\s*\)/;
 
 function readText(p) {
-  try {
-    return fs.readFileSync(p, "utf8");
-  } catch {
-    return "";
-  }
+  return fs.readFileSync(p, "utf8");
 }
 
 function exists(p) {
@@ -163,14 +158,16 @@ function walkFiles(rootDir, exts) {
 function collectScanRoots(pluginDir, cap) {
   const roots = [];
   if (cap.android) {
-    const androidMain = path.join(pluginDir, "android", "src", "main");
+    const androidSrc = typeof cap.android === "object" && cap.android.src ? cap.android.src : "android";
+    const androidMain = path.join(pluginDir, androidSrc, "src", "main");
     if (exists(androidMain)) roots.push(androidMain);
   }
   if (cap.ios) {
-    const iosSources = path.join(pluginDir, "ios", "Sources");
+    const iosSrc = typeof cap.ios === "object" && cap.ios.src ? cap.ios.src : "ios";
+    const iosSources = path.join(pluginDir, iosSrc, "Sources");
     if (exists(iosSources)) roots.push(iosSources);
     else {
-      const iosDir = path.join(pluginDir, "ios");
+      const iosDir = path.join(pluginDir, iosSrc);
       if (exists(iosDir)) roots.push(iosDir);
     }
   }

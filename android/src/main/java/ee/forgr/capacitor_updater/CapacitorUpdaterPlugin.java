@@ -5680,6 +5680,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
+            if (pendingAppUpdateCall != null) {
+                call.reject("An app update flow is already in progress");
+                return;
+            }
+
             call.setKeepAlive(true);
             pendingAppUpdateCall = call;
 
@@ -5753,6 +5758,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             manager.registerListener(installStateUpdatedListener);
 
+            if (pendingAppUpdateCall != null) {
+                call.reject("An app update flow is already in progress");
+                return;
+            }
+
             call.setKeepAlive(true);
             pendingAppUpdateCall = call;
 
@@ -5809,8 +5819,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
                 result.put("code", RESULT_FAILED);
             }
-            savedCall.resolve(result);
             savedCall.setKeepAlive(false);
+            savedCall.resolve(result);
         }
     }
 
