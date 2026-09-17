@@ -74,6 +74,10 @@ declare module '@capacitor/cli' {
        * - `"always"`: Check on every foreground transition and apply immediately whenever an update is available.
        * - `"onlyDownload"`: Check and download automatically, emit `updateAvailable`, and never set the next bundle or apply an update automatically.
        *
+       * Instant apply modes (`"atInstall"`, `"onLaunch"`, `"always"`) apply while the user is waiting.
+       * Upload with `npx @capgo/cli@latest bundle upload --delta` so only changed files download. A full zip upload slows the user experience.
+       * These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`.
+       *
        * Only available for Android and iOS.
        *
        * @default true
@@ -149,17 +153,17 @@ declare module '@capacitor/cli' {
 
       /**
        * Configure when the plugin should direct install updates. Only for autoUpdate mode.
-       *
-       * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
-       * Works well for apps less than 10MB and with uploads done using --delta flag.
-       * Zip or apps more than 10MB will be relatively slow for users to update.
+       * Instant apply (`atInstall`, `onLaunch`, `always`) should be uploaded with `--delta` so the update does not slow the user experience. A full zip, especially over 10MB, is relatively slow for users.
+       * These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`.
+       * This flag makes the CLI upload delta in CI and ask for confirmation in local uploads.
        * - false: Never do direct updates
        * - atInstall: Same as `"atInstall"` for {@link autoUpdate}
        * - onLaunch: Same as `"onLaunch"` for {@link autoUpdate}
        * - always: Same as `"always"` for {@link autoUpdate}
        * - true: (deprecated) Same as "always" for backward compatibility
        *
-       * Activate this flag will automatically make the CLI upload delta in CICD envs and will ask for confirmation in local uploads.
+       * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
+       *
        * Only available for Android and iOS.
        *
        * @default false
@@ -168,11 +172,10 @@ declare module '@capacitor/cli' {
       directUpdate?: boolean | 'atInstall' | 'always' | 'onLaunch';
 
       /**
-       * Automatically handle splashscreen hiding when using directUpdate. When enabled, the plugin will automatically hide the splashscreen after updates are applied or when no update is needed.
+       * Automatically hide the splashscreen after instant apply updates finish, or when no update is needed.
+       * Required when using instant apply modes (`"atInstall"`, `"onLaunch"`, `"always"`), including the deprecated `directUpdate` values `"atInstall"`, `"onLaunch"`, `"always"`, and `true`.
+       * `@capacitor/splash-screen` must be installed and configured with `launchAutoHide: false`.
        * This removes the need to manually listen for appReady events and call SplashScreen.hide().
-       * Only works when autoUpdate is set to "atInstall", "always", or "onLaunch", or when the deprecated directUpdate option is set to "atInstall", "always", "onLaunch", or true.
-       * Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false.
-       * Requires Auto Update and Direct Update behavior to be enabled.
        *
        * Only available for Android and iOS.
        *
