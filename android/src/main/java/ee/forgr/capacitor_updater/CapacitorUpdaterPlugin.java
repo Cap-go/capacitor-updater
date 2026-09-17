@@ -290,6 +290,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Play Store In-App Updates
     private AppUpdateManager appUpdateManager;
+    private PluginCall pendingAppUpdateCall;
     private AppUpdateInfo cachedAppUpdateInfo;
     private static final int APP_UPDATE_REQUEST_CODE = 9001;
     private InstallStateUpdatedListener installStateUpdatedListener;
@@ -5679,8 +5680,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
+            if (pendingAppUpdateCall != null) {
+                call.reject("An app update flow is already in progress");
+                return;
+            }
+
+            call.setKeepAlive(true);
+            pendingAppUpdateCall = call;
 
             AppUpdateManager manager = getAppUpdateManager();
             manager.startUpdateFlowForResult(
@@ -5752,8 +5758,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             manager.registerListener(installStateUpdatedListener);
 
-            // Save the call for later resolution
-            bridge.saveCall(call);
+            if (pendingAppUpdateCall != null) {
+                call.reject("An app update flow is already in progress");
+                return;
+            }
+
+            call.setKeepAlive(true);
+            pendingAppUpdateCall = call;
 
             manager.startUpdateFlowForResult(
                 cachedAppUpdateInfo,
@@ -5794,11 +5805,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         super.handleOnActivityResult(requestCode, resultCode, data);
 
         if (requestCode == APP_UPDATE_REQUEST_CODE) {
-            PluginCall savedCall = bridge.getSavedCall("com.getcapacitor.PluginCall");
+            PluginCall savedCall = pendingAppUpdateCall;
             if (savedCall == null) {
-                // Try to get any saved call (for backward compatibility)
                 return;
             }
+            pendingAppUpdateCall = null;
 
             JSObject result = new JSObject();
             if (resultCode == Activity.RESULT_OK) {
@@ -5808,8 +5819,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
                 result.put("code", RESULT_FAILED);
             }
+            savedCall.setKeepAlive(false);
             savedCall.resolve(result);
-            bridge.releaseCall(savedCall);
         }
     }
 

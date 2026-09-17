@@ -1194,6 +1194,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let resolve = {
             let savedCall = self.bridge?.savedCall(withID: call.callbackId)
             let targetCall = savedCall ?? call
+            targetCall.keepAlive = false
 
             if let data {
                 targetCall.resolve(data)
@@ -1219,6 +1220,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let reject = {
             let savedCall = self.bridge?.savedCall(withID: call.callbackId)
             let targetCall = savedCall ?? call
+            targetCall.keepAlive = false
 
             targetCall.reject(message, code, error, data)
 
@@ -1237,7 +1239,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func saveCallForAsyncHandling(_ call: CAPPluginCall) {
-        bridge?.saveCall(call)
+        call.keepAlive = true
     }
 
     private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
