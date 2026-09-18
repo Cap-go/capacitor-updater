@@ -1678,7 +1678,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
-                CapacitorUpdaterPlugin.this.ensureAppReadyBundleBindingInjected();
                 CapacitorUpdaterPlugin.this.markAppReadyWebViewLoaded();
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
@@ -3005,6 +3004,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.appReadyWebViewPageStartedToken != this.appReadyWebViewLoadToken) {
             return;
         }
+        this.ensureAppReadyBundleBindingInjected();
         this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
     }
 
