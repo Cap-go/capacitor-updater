@@ -3097,6 +3097,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
+        this.installWebViewStatsReporter();
         this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
@@ -4664,6 +4665,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
+        this.installWebViewStatsReporter();
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             final String reportedBundleId = call.getString("bundleId");
