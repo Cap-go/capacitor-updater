@@ -747,7 +747,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func shouldCommitNotifyAppReady(reportedBundleId: String?, currentBundleId: String) -> Bool {
         if let reported = reportedBundleId, !reported.isEmpty {
-            return reported == currentBundleId
+            return reported == currentBundleId &&
+                self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken
         }
         guard let awaiting = self.awaitingAppReadyBundleId, awaiting == currentBundleId else {
             return false

@@ -3057,6 +3057,8 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testShouldCommitNotifyAppReadyAcceptsMatchingBundleId() {
         let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
         XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-b", currentBundleId: "bundle-b"))
     }
 

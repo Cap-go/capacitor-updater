@@ -3067,7 +3067,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     boolean shouldCommitNotifyAppReady(final String reportedBundleId, final String currentBundleId) {
         if (reportedBundleId != null && !reportedBundleId.isEmpty()) {
-            return reportedBundleId.equals(currentBundleId);
+            return (reportedBundleId.equals(currentBundleId) && this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken);
         }
         final String awaiting = this.awaitingAppReadyBundleId;
         if (awaiting == null || !awaiting.equals(currentBundleId)) {
