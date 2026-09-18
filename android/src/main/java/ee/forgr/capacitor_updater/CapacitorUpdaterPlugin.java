@@ -3041,22 +3041,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             install.run();
             return;
         }
-        final Semaphore installed = new Semaphore(0);
-        this.bridge.executeOnMainThread(() -> {
-            try {
-                install.run();
-            } finally {
-                installed.release();
-            }
-        });
-        try {
-            if (!installed.tryAcquire(10, TimeUnit.SECONDS)) {
-                logger.warn("Timeout installing document-start app ready bundle binding");
-            }
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while installing document-start app ready bundle binding");
-        }
+        this.bridge.executeOnMainThread(install);
     }
 
     private void markAppReadyWebViewPageStarted() {
