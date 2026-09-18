@@ -573,7 +573,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if type == "webview_page_started" {
             self.markAppReadyWebViewPageStarted()
         } else if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
-            self.ensureAppReadyBundleBindingInjected()
             self.markAppReadyWebViewLoaded()
         }
         guard let webViewStatsReporter = webViewStatsReporter else {
@@ -690,6 +689,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
             return
         }
+        self.ensureAppReadyBundleBindingInjected()
         self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
     }
 
