@@ -575,6 +575,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let type = call.getString("type") ?? ""
         if type == "webview_page_started" {
             self.markAppReadyWebViewPageStarted()
+            self.ensureAppReadyBundleBindingInjected()
         } else if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
             self.markAppReadyWebViewLoaded()
         }
@@ -612,7 +613,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private static func jsQuotedString(_ value: String) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+        guard let data = try? JSONEncoder().encode(value),
               let encoded = String(data: data, encoding: .utf8) else {
             return "\"\""
         }
