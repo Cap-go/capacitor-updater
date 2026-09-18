@@ -2979,7 +2979,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}function schedulePageStartedReport(){setTimeout(function(){if(!isActiveBinding()){return;}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}},0);}schedulePageStartedReport();function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
             jsQuotedString(bundleId) +
             "," +
             loadToken +
@@ -3004,8 +3004,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
         }
-        final android.webkit.WebView webView = this.bridge.getWebView();
-        webView.post(() -> {
+        final Runnable install = () -> {
             try {
                 if (this.appReadyDocumentStartScriptHandler != null) {
                     this.appReadyDocumentStartScriptHandler.getClass().getMethod("remove").invoke(this.appReadyDocumentStartScriptHandler);
@@ -3027,6 +3026,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     .build()
                     .toString();
                 final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+                final android.webkit.WebView webView = this.bridge.getWebView();
                 final Object handler = webViewCompat
                     .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
                     .invoke(null, webView, script, java.util.Collections.singleton(allowedOrigin));
@@ -3034,7 +3034,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } catch (final Exception e) {
                 logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
             }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            install.run();
+            return;
+        }
+        final Semaphore installed = new Semaphore(0);
+        this.bridge.executeOnMainThread(() -> {
+            try {
+                install.run();
+            } finally {
+                installed.release();
+            }
         });
+        if (!installed.tryAcquire(10, TimeUnit.SECONDS)) {
+            logger.warn("Timeout installing document-start app ready bundle binding");
+        }
     }
 
     private void markAppReadyWebViewPageStarted() {

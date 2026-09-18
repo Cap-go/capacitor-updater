@@ -675,19 +675,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }catch(_){return false;}
             return true;
           }
-          function schedulePageStartedReport(){
-            setTimeout(function(){
-              if(!isActiveBinding()){return;}
-              if(!reportPageStarted()){
-                var pageAttempts=0;
-                var pageTimer=setInterval(function(){
-                  if(!isActiveBinding()){clearInterval(pageTimer);return;}
-                  if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
-                },25);
-              }
-            },0);
+          if(!reportPageStarted()){
+            var pageAttempts=0;
+            var pageTimer=setInterval(function(){
+              if(!isActiveBinding()){clearInterval(pageTimer);return;}
+              if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
+            },25);
           }
-          schedulePageStartedReport();
           function patch(){
             var cap=window.Capacitor;
             if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
