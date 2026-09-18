@@ -291,6 +291,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
+        if autoSplashscreen && autoSplashscreenTimeout < appReadyTimeout {
+            autoSplashscreenTimeout = appReadyTimeout
+        }
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
