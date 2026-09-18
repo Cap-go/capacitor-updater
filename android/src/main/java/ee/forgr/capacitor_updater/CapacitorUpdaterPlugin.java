@@ -1675,8 +1675,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
-                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
-                CapacitorUpdaterPlugin.this.ensureAppReadyBundleBindingInjected();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -1904,13 +1902,58 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void reportWebViewError(final PluginCall call) {
         final JSObject data = call.getData();
         final String type = data.optString("type", "javascript_error");
-        if ("webview_page_started".equals(type)) {
-            this.markAppReadyWebViewPageStarted();
-        } else if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
-            this.markAppReadyWebViewLoaded();
-        }
+        this.handleAppReadyBindingLifecycleReport(type, data);
         this.reportWebViewStats(statsActionForWebViewErrorType(type), buildWebViewErrorMetadata(data));
         call.resolve();
+    }
+
+    private void handleAppReadyBindingLifecycleReport(final String type, final JSObject data) {
+        if ("webview_page_started".equals(type)) {
+            if (
+                this.acceptAppReadyBindingLifecycleReport(
+                    data.optString("bundleId"),
+                    this.parseAppReadyLoadToken(data.optString("loadToken"))
+                )
+            ) {
+                this.markAppReadyWebViewPageStarted();
+            }
+            return;
+        }
+        if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
+            if (data.has("bundleId") && data.has("loadToken")) {
+                if (
+                    this.acceptAppReadyBindingLifecycleReport(
+                        data.optString("bundleId"),
+                        this.parseAppReadyLoadToken(data.optString("loadToken"))
+                    )
+                ) {
+                    this.markAppReadyWebViewLoaded();
+                }
+                return;
+            }
+            this.markAppReadyWebViewLoaded();
+        }
+    }
+
+    private int parseAppReadyLoadToken(final String rawValue) {
+        if (rawValue == null || rawValue.isEmpty()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(rawValue);
+        } catch (final NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private boolean acceptAppReadyBindingLifecycleReport(final String reportedBundleId, final int reportedLoadToken) {
+        final String awaiting = this.awaitingAppReadyBundleId;
+        return (
+            awaiting != null &&
+            !awaiting.isEmpty() &&
+            awaiting.equals(reportedBundleId) &&
+            reportedLoadToken == this.appReadyWebViewLoadToken
+        );
     }
 
     private void reportWebViewStats(final String action, final Map<String, String> metadata) {
@@ -1937,6 +1980,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return "webview_render_process_gone";
             case "web_content_process_terminated":
                 return "webview_content_process_terminated";
+            case "webview_page_started":
+                return "webview_page_started";
             case "webview_dom_content_loaded":
                 return "webview_dom_content_loaded";
             case "webview_page_loaded":
@@ -2931,10 +2976,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return JSONObject.quote(value);
     }
 
-    private String buildAppReadyBundleBindingScript(final String bundleId) {
+    private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id){window.__capgoAppReadyBundleId=id;function reportPageStarted(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return;}try{var result=plugin.reportWebViewError({type:'webview_page_started'});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){}}reportPageStarted();function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;function reportPageStarted(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){}}reportPageStarted();function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
             jsQuotedString(bundleId) +
+            "," +
+            loadToken +
             ");"
         );
     }
@@ -2948,7 +2995,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
         }
-        final String script = this.buildAppReadyBundleBindingScript(bundleId);
+        final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
         this.installDocumentStartAppReadyBundleBinding(script);
     }
 
@@ -2980,15 +3027,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void ensureAppReadyBundleBindingInjected() {
-        final String bundleId = this.awaitingAppReadyBundleId;
-        if (bundleId == null || bundleId.isEmpty() || this.bridge == null || this.bridge.getWebView() == null) {
-            return;
-        }
-        final String script = "window.__capgoAppReadyBundleId=" + jsQuotedString(bundleId) + ";";
-        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
-    }
-
     private void markAppReadyWebViewPageStarted() {
         this.appReadyWebViewPageStartedToken = this.appReadyWebViewLoadToken;
     }
@@ -2997,7 +3035,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.appReadyWebViewPageStartedToken != this.appReadyWebViewLoadToken) {
             return;
         }
-        this.ensureAppReadyBundleBindingInjected();
         this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
     }
 

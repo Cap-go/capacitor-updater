@@ -573,17 +573,53 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func reportWebViewError(_ call: CAPPluginCall) {
         let type = call.getString("type") ?? ""
-        if type == "webview_page_started" {
-            self.markAppReadyWebViewPageStarted()
-            self.ensureAppReadyBundleBindingInjected()
-        } else if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
-            self.markAppReadyWebViewLoaded()
-        }
+        self.handleAppReadyBindingLifecycleReport(type: type, call: call)
         guard let webViewStatsReporter = webViewStatsReporter else {
             call.resolve()
             return
         }
         webViewStatsReporter.reportError(call)
+    }
+
+    private func parseAppReadyLoadToken(_ rawValue: String?) -> Int {
+        guard let rawValue, let token = Int(rawValue) else {
+            return -1
+        }
+        return token
+    }
+
+    private func acceptAppReadyBindingLifecycleReport(reportedBundleId: String?, reportedLoadToken: Int) -> Bool {
+        guard let awaiting = self.awaitingAppReadyBundleId,
+              !awaiting.isEmpty,
+              let reportedBundleId,
+              !reportedBundleId.isEmpty else {
+            return false
+        }
+        return awaiting == reportedBundleId && reportedLoadToken == self.appReadyWebViewLoadToken
+    }
+
+    private func handleAppReadyBindingLifecycleReport(type: String, call: CAPPluginCall) {
+        if type == "webview_page_started" {
+            if self.acceptAppReadyBindingLifecycleReport(
+                reportedBundleId: call.getString("bundleId"),
+                reportedLoadToken: self.parseAppReadyLoadToken(call.getString("loadToken"))
+            ) {
+                self.markAppReadyWebViewPageStarted()
+            }
+            return
+        }
+        if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
+            if call.getString("bundleId") != nil, call.getString("loadToken") != nil {
+                if self.acceptAppReadyBindingLifecycleReport(
+                    reportedBundleId: call.getString("bundleId"),
+                    reportedLoadToken: self.parseAppReadyLoadToken(call.getString("loadToken"))
+                ) {
+                    self.markAppReadyWebViewLoaded()
+                }
+                return
+            }
+            self.markAppReadyWebViewLoaded()
+        }
     }
 
     private func initialLoad() -> Bool {
@@ -620,10 +656,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return encoded
     }
 
-    private func buildAppReadyBundleBindingScript(bundleId: String) -> String {
+    private func buildAppReadyBundleBindingScript(bundleId: String, loadToken: Int) -> String {
         let quotedId = Self.jsQuotedString(bundleId)
         return """
-        (function(id){
+        (function(id,token){
           window.__capgoAppReadyBundleId=id;
           function reportPageStarted(){
             var cap=window.Capacitor;
@@ -631,7 +667,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             var plugin=cap.Plugins.CapacitorUpdater;
             if(typeof plugin.reportWebViewError!=='function'){return;}
             try{
-              var result=plugin.reportWebViewError({type:'webview_page_started'});
+              var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});
               if(result&&typeof result.catch==='function'){result.catch(function(){});}
             }catch(_){}
           }
@@ -658,14 +694,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
               if(patch()||++attempts>200){clearInterval(timer);}
             },25);
           }
-        })(\(quotedId));
+        })(\(quotedId),\(loadToken));
         """
     }
 
     private func syncAppReadyBundleBinding(bundleId: String) {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
-        let script = self.buildAppReadyBundleBindingScript(bundleId: bundleId)
+        let script = self.buildAppReadyBundleBindingScript(bundleId: bundleId, loadToken: self.appReadyWebViewLoadToken)
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let webView = self.bridge?.webView else {
                 return
@@ -679,21 +715,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
     }
 
-    private func ensureAppReadyBundleBindingInjected() {
-        guard let bundleId = self.awaitingAppReadyBundleId, !bundleId.isEmpty else {
-            return
-        }
-        let script = "window.__capgoAppReadyBundleId=\(Self.jsQuotedString(bundleId));"
-        DispatchQueue.main.async { [weak self] in
-            self?.bridge?.webView?.evaluateJavaScript(script, completionHandler: nil)
-        }
-    }
-
     private func markAppReadyWebViewLoaded() {
         guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
             return
         }
-        self.ensureAppReadyBundleBindingInjected()
         self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
     }
 
