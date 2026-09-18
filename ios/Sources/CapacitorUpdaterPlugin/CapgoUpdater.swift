@@ -172,7 +172,15 @@ import UIKit
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
     }
 
-    private lazy var alamofireSession: Session = {
+    // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
+    private var _alamofireSession: Session?
+    private let alamofireSessionLock = NSLock()
+    private var alamofireSession: Session {
+        alamofireSessionLock.lock()
+        defer { alamofireSessionLock.unlock() }
+        if let session = _alamofireSession {
+            return session
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
         configuration.httpCookieStorage = nil
@@ -180,8 +188,10 @@ import UIKit
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
-        return Session(configuration: configuration)
-    }()
+        let session = Session(configuration: configuration)
+        _alamofireSession = session
+        return session
+    }
     private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
 
     public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
