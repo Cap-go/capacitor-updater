@@ -161,42 +161,43 @@ public struct CryptoCipher {
         let bufferSize = checksumBufferBytes()
         var sha256 = SHA256()
 
+        let fileHandle: FileHandle
         do {
-            let fileHandle: FileHandle
-            do {
-                fileHandle = try FileHandle(forReadingFrom: filePath)
-            } catch {
-                logger.error("Cannot open file for checksum calculation")
-                logger.debug("Path: \(filePath.path), Error: \(error)")
-                return ""
-            }
-
-            defer {
-                do {
-                    try fileHandle.close()
-                } catch {
-                    logger.error("Error closing file during checksum")
-                    logger.debug("Error: \(error)")
-                }
-            }
-
-            while autoreleasepool(invoking: {
-                let fileData = fileHandle.readData(ofLength: bufferSize)
-
-                if fileData.count > 0 {
-                    sha256.update(data: fileData)
-                    return true // Continue
-                } else {
-                    return false // End of file
-                }
-            }) {}
-
-            return hexString(from: sha256)
+            fileHandle = try FileHandle(forReadingFrom: filePath)
         } catch {
-            logger.error("Cannot calculate checksum")
+            logger.error("Cannot open file for checksum calculation")
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
+
+        defer {
+            do {
+                try fileHandle.close()
+            } catch {
+                logger.error("Error closing file during checksum")
+                logger.debug("Error: \(error)")
+            }
+        }
+
+        while autoreleasepool(invoking: {
+            let fileData: Data
+            do {
+                fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
+            } catch {
+                logger.error("Error reading file during checksum")
+                logger.debug("Error: \(error)")
+                return false
+            }
+
+            if fileData.count > 0 {
+                sha256.update(data: fileData)
+                return true // Continue
+            } else {
+                return false // End of file
+            }
+        }) {}
+
+        return hexString(from: sha256)
     }
 
     final class RunningChecksum {
@@ -215,8 +216,7 @@ public struct CryptoCipher {
     }
 
     static func hexString(from sha256: SHA256) -> String {
-        var copy = sha256
-        return copy.finalize().compactMap { String(format: "%02x", $0) }.joined()
+        return sha256.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
     static func shortPathKey(_ fileName: String) -> String {
