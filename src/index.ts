@@ -6,11 +6,21 @@
 import { registerPlugin } from '@capacitor/core';
 import './history';
 
-import type { CapacitorUpdaterPlugin } from './definitions';
+import { withInjectedAppReadyBundleId } from './app-ready';
+import type { AppReadyResult, CapacitorUpdaterPlugin, NotifyAppReadyOptions } from './definitions';
 
-const CapacitorUpdater: CapacitorUpdaterPlugin = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
+const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
 });
 
+export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
+  get(target, prop, receiver) {
+    if (prop === 'notifyAppReady') {
+      return (options?: NotifyAppReadyOptions): Promise<AppReadyResult> =>
+        target.notifyAppReady(withInjectedAppReadyBundleId(options));
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+});
+
 export * from './definitions';
-export { CapacitorUpdater };

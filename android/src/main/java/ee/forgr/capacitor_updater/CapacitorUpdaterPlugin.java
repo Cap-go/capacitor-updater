@@ -248,6 +248,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final long launchStartedAtMs = System.currentTimeMillis();
     private volatile long webViewPageStartedAtMs = 0;
+    private volatile String awaitingAppReadyBundleId = null;
+    private volatile int appReadyWebViewLoadToken = 0;
+    private volatile int appReadyWebViewLoadedToken = 0;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
     private volatile boolean launchTimeoutReported = false;
@@ -921,6 +924,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         this.implementation.downloadGate = this::waitForCleanupIfNeeded;
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
@@ -1672,6 +1676,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewLoaded();
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
@@ -1892,10 +1897,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void reportWebViewError(final PluginCall call) {
         final JSObject data = call.getData();
-        this.reportWebViewStats(
-            statsActionForWebViewErrorType(data.optString("type", "javascript_error")),
-            buildWebViewErrorMetadata(data)
-        );
+        final String type = data.optString("type", "javascript_error");
+        if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
+            this.markAppReadyWebViewLoaded();
+        }
+        this.reportWebViewStats(statsActionForWebViewErrorType(type), buildWebViewErrorMetadata(data));
         call.resolve();
     }
 
@@ -2913,9 +2919,79 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
+    private static String jsQuotedString(final String value) {
+        return JSONObject.quote(value);
+    }
+
+    private String buildAppReadyBundleBindingScript(final String bundleId) {
+        return (
+            "(function(id){window.__capgoAppReadyBundleId=id;function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
+            jsQuotedString(bundleId) +
+            ");"
+        );
+    }
+
+    private void syncAppReadyBundleBinding(final String bundleId) {
+        if (bundleId == null || bundleId.isEmpty()) {
+            return;
+        }
+        this.awaitingAppReadyBundleId = bundleId;
+        this.appReadyWebViewLoadToken += 1;
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final String script = this.buildAppReadyBundleBindingScript(bundleId);
+        this.installDocumentStartAppReadyBundleBinding(script);
+        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
+    }
+
+    private void installDocumentStartAppReadyBundleBinding(final String script) {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        try {
+            final Class<?> webViewFeature = Class.forName("androidx.webkit.WebViewFeature");
+            final String feature = (String) webViewFeature.getField("DOCUMENT_START_SCRIPT").get(null);
+            final Boolean supported = (Boolean) webViewFeature.getMethod("isFeatureSupported", String.class).invoke(null, feature);
+            if (!Boolean.TRUE.equals(supported)) {
+                return;
+            }
+
+            final String allowedOrigin = Uri.parse(this.bridge.getAppUrl())
+                .buildUpon()
+                .path(null)
+                .fragment(null)
+                .clearQuery()
+                .build()
+                .toString();
+            final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+            webViewCompat
+                .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
+                .invoke(null, this.bridge.getWebView(), script, java.util.Collections.singleton(allowedOrigin));
+        } catch (final Exception e) {
+            logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
+        }
+    }
+
+    private void markAppReadyWebViewLoaded() {
+        this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
+    }
+
+    boolean shouldCommitNotifyAppReady(final String reportedBundleId, final String currentBundleId) {
+        if (reportedBundleId != null && !reportedBundleId.isEmpty()) {
+            return reportedBundleId.equals(currentBundleId);
+        }
+        final String awaiting = this.awaitingAppReadyBundleId;
+        if (awaiting == null || !awaiting.equals(currentBundleId)) {
+            return false;
+        }
+        return this.appReadyWebViewLoadedToken >= this.appReadyWebViewLoadToken;
+    }
+
     private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
@@ -4484,6 +4560,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ensureBridgeSet();
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
+            final String reportedBundleId = call.getString("bundleId");
+            if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
+                logger.warn(
+                    "Ignoring stale notifyAppReady for bundle " +
+                        (reportedBundleId == null ? "unknown" : reportedBundleId) +
+                        ", current is " +
+                        bundle.getId()
+                );
+                final JSObject ret = new JSObject();
+                ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
+                call.resolve(ret);
+                return;
+            }
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
             this.reportAppLaunchReady(bundle);
             logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle);

@@ -3055,4 +3055,22 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
     }
 
+    func testShouldCommitNotifyAppReadyAcceptsMatchingBundleId() {
+        let plugin = CapacitorUpdaterPlugin()
+        XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-b", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsStaleBundleId() {
+        let plugin = CapacitorUpdaterPlugin()
+        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-a", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyWithoutBundleIdRequiresWebViewLoad() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 1)
+        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
+        plugin.markAppReadyWebViewLoadedForTesting()
+        XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
+    }
+
 }

@@ -221,6 +221,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pendingNotifyAppReady = false
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
+    private var awaitingAppReadyBundleId: String?
+    private var appReadyWebViewLoadToken = 0
+    private var appReadyWebViewLoadedToken = 0
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -565,6 +568,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reportWebViewError(_ call: CAPPluginCall) {
+        let type = call.getString("type") ?? ""
+        if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
+            self.markAppReadyWebViewLoaded()
+        }
         guard let webViewStatsReporter = webViewStatsReporter else {
             call.resolve()
             return
@@ -594,7 +601,75 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         logger.info("Initial load \(id)")
         // We don't use the viewcontroller here as it does not work during the initial load state
         bridge.setServerBasePath(dest.path)
+        self.syncAppReadyBundleBinding(bundleId: id)
         return true
+    }
+
+    private static func jsQuotedString(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+              let encoded = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        return encoded
+    }
+
+    private func buildAppReadyBundleBindingScript(bundleId: String) -> String {
+        let quotedId = Self.jsQuotedString(bundleId)
+        return """
+        (function(id){
+          window.__capgoAppReadyBundleId=id;
+          function patch(){
+            var cap=window.Capacitor;
+            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
+            var plugin=cap.Plugins.CapacitorUpdater;
+            if(plugin.__capgoNotifyAppReadyPatched){return true;}
+            var original=plugin.notifyAppReady.bind(plugin);
+            plugin.notifyAppReady=function(options){
+              options=options||{};
+              if(!options.bundleId&&window.__capgoAppReadyBundleId){
+                options.bundleId=window.__capgoAppReadyBundleId;
+              }
+              return original(options);
+            };
+            plugin.__capgoNotifyAppReadyPatched=true;
+            return true;
+          }
+          if(!patch()){
+            var attempts=0;
+            var timer=setInterval(function(){
+              if(patch()||++attempts>200){clearInterval(timer);}
+            },25);
+          }
+        })(\(quotedId));
+        """
+    }
+
+    private func syncAppReadyBundleBinding(bundleId: String) {
+        self.awaitingAppReadyBundleId = bundleId
+        self.appReadyWebViewLoadToken &+= 1
+        let script = self.buildAppReadyBundleBindingScript(bundleId: bundleId)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let webView = self.bridge?.webView else {
+                return
+            }
+            let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            webView.configuration.userContentController.addUserScript(userScript)
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+
+    private func markAppReadyWebViewLoaded() {
+        self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
+    }
+
+    func shouldCommitNotifyAppReady(reportedBundleId: String?, currentBundleId: String) -> Bool {
+        if let reported = reportedBundleId, !reported.isEmpty {
+            return reported == currentBundleId
+        }
+        guard let awaiting = self.awaitingAppReadyBundleId, awaiting == currentBundleId else {
+            return false
+        }
+        return self.appReadyWebViewLoadedToken >= self.appReadyWebViewLoadToken
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -1698,6 +1773,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
         let id = self.implementation.getCurrentBundleId()
+        self.syncAppReadyBundleBinding(bundleId: id)
         let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 
@@ -3303,8 +3379,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
+        let reportedBundleId = call.getString("bundleId")
+        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+            logger.warn(
+                "Ignoring stale notifyAppReady for bundle \(reportedBundleId ?? "unknown"), current is \(bundle.getId())"
+            )
+            call.resolve(["bundle": bundle.toJSON()])
+            return
+        }
+
+        self.semaphoreDown()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         self.reportAppLaunchReady(bundle)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
@@ -4108,6 +4193,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setAppReadyTimeoutForTesting(_ timeout: Int) {
         self.appReadyTimeout = timeout
+    }
+
+    func setAppReadyBindingForTesting(bundleId: String, loadToken: Int, loadedToken: Int) {
+        self.awaitingAppReadyBundleId = bundleId
+        self.appReadyWebViewLoadToken = loadToken
+        self.appReadyWebViewLoadedToken = loadedToken
+    }
+
+    func markAppReadyWebViewLoadedForTesting() {
+        self.markAppReadyWebViewLoaded()
     }
 
     func armPendingNotifyAppReadyForTesting() {

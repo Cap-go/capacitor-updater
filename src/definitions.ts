@@ -490,7 +490,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * @returns {Promise<AppReadyResult>} Always resolves successfully with current bundle info. This method never fails.
    */
-  notifyAppReady(): Promise<AppReadyResult>;
+  notifyAppReady(options?: NotifyAppReadyOptions): Promise<AppReadyResult>;
 
   /**
    * Set the update URL for the app dynamically at runtime.
@@ -2443,6 +2443,14 @@ export interface PreviewUpdateResult {
 
 export interface AppReadyResult {
   bundle: BundleInfo;
+}
+
+export interface NotifyAppReadyOptions {
+  /**
+   * Bundle identity for the WebView page that is calling notifyAppReady.
+   * Injected automatically by the native layer; callers should not set this manually.
+   */
+  bundleId?: string;
 }
 
 export interface UpdateUrl {

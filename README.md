@@ -466,7 +466,7 @@ export default config;
 <docgen-index>
 <!--Auto-generated, compact index-->
 
-* [`notifyAppReady()`](#notifyappready)
+* [`notifyAppReady(...)`](#notifyappready)
 * [`setUpdateUrl(...)`](#setupdateurl)
 * [`setStatsUrl(...)`](#setstatsurl)
 * [`setChannelUrl(...)`](#setchannelurl)
@@ -540,10 +540,10 @@ export default config;
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
-#### notifyAppReady()
+#### notifyAppReady(...)
 
 ```typescript
-notifyAppReady() => Promise<AppReadyResult>
+notifyAppReady(options?: NotifyAppReadyOptions | undefined) => Promise<AppReadyResult>
 ```
 
 Notify the native layer that JavaScript initialized successfully.
@@ -572,6 +572,10 @@ Best practices:
 - Don't put it after network calls or heavy initialization
 - Don't wrap it in try/catch with conditions
 - Adjust {@link PluginsConfig.CapacitorUpdater.appReadyTimeout} if you need more time
+
+| Param         | Type                                                                    |
+| ------------- | ----------------------------------------------------------------------- |
+| **`options`** | <code><a href="#notifyappreadyoptions">NotifyAppReadyOptions</a></code> |
 
 **Returns:** <code>Promise&lt;<a href="#appreadyresult">AppReadyResult</a>&gt;</code>
 
@@ -2322,6 +2326,13 @@ and restart the app.
 | **`downloaded`** | <code>string</code>                                   |
 | **`checksum`**   | <code>string</code>                                   |
 | **`status`**     | <code><a href="#bundlestatus">BundleStatus</a></code> |
+
+
+##### NotifyAppReadyOptions
+
+| Prop           | Type                | Description                                                                                                                                            |
+| -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`bundleId`** | <code>string</code> | Bundle identity for the WebView page that is calling notifyAppReady. Injected automatically by the native layer; callers should not set this manually. |
 
 
 ##### UpdateUrl

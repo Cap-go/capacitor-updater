@@ -136,7 +136,7 @@ CapacitorUpdater can be configured with these options:
 ### notifyAppReady
 
 ```typescript
-notifyAppReady() => Promise<AppReadyResult>
+notifyAppReady(options?: NotifyAppReadyOptions | undefined) => Promise<AppReadyResult>
 ```
 
 Notify the native layer that JavaScript initialized successfully.
@@ -165,6 +165,12 @@ Best practices:
 - Don't put it after network calls or heavy initialization
 - Don't wrap it in try/catch with conditions
 - Adjust {@link PluginsConfig.CapacitorUpdater.appReadyTimeout} if you need more time
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `options` | `NotifyAppReadyOptions \| undefined` |  |
 
 **Returns**
 
