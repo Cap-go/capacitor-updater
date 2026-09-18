@@ -886,6 +886,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
+        if (Boolean.TRUE.equals(this.autoSplashscreen) && this.autoSplashscreenTimeout < this.appReadyTimeout) {
+            this.autoSplashscreenTimeout = this.appReadyTimeout;
+        }
         int responseTimeoutSeconds = this.getConfig().getInt("responseTimeout", 20);
         long responseTimeoutMillis = responseTimeoutSeconds > 0 ? (long) responseTimeoutSeconds * 1000L : 20_000L;
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
@@ -1673,6 +1676,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
                 CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
+                CapacitorUpdaterPlugin.this.ensureAppReadyBundleBindingInjected();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
