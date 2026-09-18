@@ -225,6 +225,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var appReadyWebViewLoadToken = 0
     private var appReadyWebViewLoadedToken = 0
     private var appReadyWebViewPageStartedToken = 0
+    private var appReadyWebViewPageLoadPendingToken = 0
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -723,10 +724,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func markAppReadyWebViewPageStarted() {
         self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
+        self.flushAppReadyWebViewLoadedIfReady()
     }
 
     private func markAppReadyWebViewLoaded() {
         guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+            self.appReadyWebViewPageLoadPendingToken = self.appReadyWebViewLoadToken
+            return
+        }
+        self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
+    }
+
+    private func flushAppReadyWebViewLoadedIfReady() {
+        guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+            return
+        }
+        guard self.appReadyWebViewPageLoadPendingToken >= self.appReadyWebViewLoadToken else {
             return
         }
         self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken

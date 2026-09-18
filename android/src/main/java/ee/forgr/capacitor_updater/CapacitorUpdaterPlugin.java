@@ -252,6 +252,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile int appReadyWebViewLoadToken = 0;
     private volatile int appReadyWebViewLoadedToken = 0;
     private volatile int appReadyWebViewPageStartedToken = 0;
+    private volatile int appReadyWebViewPageLoadPendingToken = 0;
     private volatile Object appReadyDocumentStartScriptHandler = null;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
@@ -1676,6 +1677,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -3059,13 +3061,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void markAppReadyWebViewPageStarted() {
         this.appReadyWebViewPageStartedToken = this.appReadyWebViewLoadToken;
+        this.flushAppReadyWebViewLoadedIfReady();
     }
 
     private void markAppReadyWebViewLoaded() {
-        if (this.appReadyWebViewPageStartedToken != this.appReadyWebViewLoadToken) {
+        if (this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken) {
+            this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
             return;
         }
-        this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
+        this.appReadyWebViewPageLoadPendingToken = this.appReadyWebViewLoadToken;
+    }
+
+    private void flushAppReadyWebViewLoadedIfReady() {
+        if (
+            this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken &&
+            this.appReadyWebViewPageLoadPendingToken >= this.appReadyWebViewLoadToken
+        ) {
+            this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
+        }
     }
 
     boolean shouldCommitNotifyAppReady(final String reportedBundleId, final String currentBundleId) {
