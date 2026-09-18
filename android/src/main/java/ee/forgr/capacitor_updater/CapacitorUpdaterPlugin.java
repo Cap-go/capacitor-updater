@@ -251,6 +251,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile String awaitingAppReadyBundleId = null;
     private volatile int appReadyWebViewLoadToken = 0;
     private volatile int appReadyWebViewLoadedToken = 0;
+    private volatile int appReadyWebViewPageStartedToken = 0;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
     private volatile boolean launchTimeoutReported = false;
@@ -1671,6 +1672,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -1898,7 +1900,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void reportWebViewError(final PluginCall call) {
         final JSObject data = call.getData();
         final String type = data.optString("type", "javascript_error");
-        if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
+        if ("webview_page_started".equals(type)) {
+            this.markAppReadyWebViewPageStarted();
+        } else if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
             this.markAppReadyWebViewLoaded();
         }
         this.reportWebViewStats(statsActionForWebViewErrorType(type), buildWebViewErrorMetadata(data));
@@ -2925,7 +2929,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId) {
         return (
-            "(function(id){window.__capgoAppReadyBundleId=id;function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
+            "(function(id){window.__capgoAppReadyBundleId=id;function reportPageStarted(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return;}try{var result=plugin.reportWebViewError({type:'webview_page_started'});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){}}reportPageStarted();function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
             jsQuotedString(bundleId) +
             ");"
         );
@@ -2942,7 +2946,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         final String script = this.buildAppReadyBundleBindingScript(bundleId);
         this.installDocumentStartAppReadyBundleBinding(script);
-        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
     private void installDocumentStartAppReadyBundleBinding(final String script) {
@@ -2973,7 +2976,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private void markAppReadyWebViewPageStarted() {
+        this.appReadyWebViewPageStartedToken = this.appReadyWebViewLoadToken;
+    }
+
     private void markAppReadyWebViewLoaded() {
+        if (this.appReadyWebViewPageStartedToken != this.appReadyWebViewLoadToken) {
+            return;
+        }
         this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
     }
 

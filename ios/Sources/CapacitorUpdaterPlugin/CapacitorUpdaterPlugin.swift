@@ -224,6 +224,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var awaitingAppReadyBundleId: String?
     private var appReadyWebViewLoadToken = 0
     private var appReadyWebViewLoadedToken = 0
+    private var appReadyWebViewPageStartedToken = 0
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -569,7 +570,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func reportWebViewError(_ call: CAPPluginCall) {
         let type = call.getString("type") ?? ""
-        if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
+        if type == "webview_page_started" {
+            self.markAppReadyWebViewPageStarted()
+        } else if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
             self.markAppReadyWebViewLoaded()
         }
         guard let webViewStatsReporter = webViewStatsReporter else {
@@ -618,6 +621,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return """
         (function(id){
           window.__capgoAppReadyBundleId=id;
+          function reportPageStarted(){
+            var cap=window.Capacitor;
+            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return;}
+            var plugin=cap.Plugins.CapacitorUpdater;
+            if(typeof plugin.reportWebViewError!=='function'){return;}
+            try{
+              var result=plugin.reportWebViewError({type:'webview_page_started'});
+              if(result&&typeof result.catch==='function'){result.catch(function(){});}
+            }catch(_){}
+          }
+          reportPageStarted();
           function patch(){
             var cap=window.Capacitor;
             if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
@@ -654,11 +668,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
             webView.configuration.userContentController.addUserScript(userScript)
-            webView.evaluateJavaScript(script, completionHandler: nil)
         }
     }
 
+    private func markAppReadyWebViewPageStarted() {
+        self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
+    }
+
     private func markAppReadyWebViewLoaded() {
+        guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+            return
+        }
         self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
     }
 
@@ -4199,6 +4219,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken = loadToken
         self.appReadyWebViewLoadedToken = loadedToken
+        self.appReadyWebViewPageStartedToken = 0
+    }
+
+    func markAppReadyWebViewPageStartedForTesting() {
+        self.markAppReadyWebViewPageStarted()
     }
 
     func markAppReadyWebViewLoadedForTesting() {

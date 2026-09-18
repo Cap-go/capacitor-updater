@@ -16,10 +16,26 @@ export function readInjectedAppReadyBundleId(): string | undefined {
   return typeof bundleId === 'string' && bundleId.length > 0 ? bundleId : undefined;
 }
 
+export async function awaitInjectedAppReadyBundleId(timeoutMs = 5000): Promise<string | undefined> {
+  const existing = readInjectedAppReadyBundleId();
+  if (existing) {
+    return existing;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const bundleId = readInjectedAppReadyBundleId();
+    if (bundleId) {
+      return bundleId;
+    }
+  }
+  return readInjectedAppReadyBundleId();
+}
+
 export function withInjectedAppReadyBundleId<T extends { bundleId?: string } | undefined>(
   options?: T,
+  bundleId = readInjectedAppReadyBundleId(),
 ): (T & { bundleId?: string }) | undefined {
-  const bundleId = readInjectedAppReadyBundleId();
   if (!bundleId || options?.bundleId) {
     return options;
   }
