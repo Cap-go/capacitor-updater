@@ -16,7 +16,7 @@ export function readInjectedAppReadyBundleId(): string | undefined {
   return typeof bundleId === 'string' && bundleId.length > 0 ? bundleId : undefined;
 }
 
-export async function awaitInjectedAppReadyBundleId(timeoutMs = 5000): Promise<string | undefined> {
+export async function awaitInjectedAppReadyBundleId(timeoutMs = 10000): Promise<string | undefined> {
   const existing = readInjectedAppReadyBundleId();
   if (existing) {
     return existing;

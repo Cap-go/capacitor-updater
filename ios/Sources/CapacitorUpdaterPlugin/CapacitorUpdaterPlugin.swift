@@ -573,6 +573,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if type == "webview_page_started" {
             self.markAppReadyWebViewPageStarted()
         } else if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
+            self.ensureAppReadyBundleBindingInjected()
             self.markAppReadyWebViewLoaded()
         }
         guard let webViewStatsReporter = webViewStatsReporter else {
@@ -673,6 +674,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func markAppReadyWebViewPageStarted() {
         self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
+    }
+
+    private func ensureAppReadyBundleBindingInjected() {
+        guard let bundleId = self.awaitingAppReadyBundleId, !bundleId.isEmpty else {
+            return
+        }
+        let script = "window.__capgoAppReadyBundleId=\(Self.jsQuotedString(bundleId));"
+        DispatchQueue.main.async { [weak self] in
+            self?.bridge?.webView?.evaluateJavaScript(script, completionHandler: nil)
+        }
     }
 
     private func markAppReadyWebViewLoaded() {

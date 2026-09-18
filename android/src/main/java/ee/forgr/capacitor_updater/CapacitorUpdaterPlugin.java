@@ -1678,6 +1678,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.ensureAppReadyBundleBindingInjected();
                 CapacitorUpdaterPlugin.this.markAppReadyWebViewLoaded();
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
@@ -2974,6 +2975,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (final Exception e) {
             logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
         }
+    }
+
+    private void ensureAppReadyBundleBindingInjected() {
+        final String bundleId = this.awaitingAppReadyBundleId;
+        if (bundleId == null || bundleId.isEmpty() || this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final String script = "window.__capgoAppReadyBundleId=" + jsQuotedString(bundleId) + ";";
+        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
     private void markAppReadyWebViewPageStarted() {
