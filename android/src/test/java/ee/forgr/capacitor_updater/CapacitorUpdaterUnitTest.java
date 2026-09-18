@@ -2472,6 +2472,7 @@ public class CapacitorUpdaterUnitTest {
             setPrivateField(plugin, "awaitingAppReadyBundleId", "pending-bundle-id");
             setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
             setPrivateField(plugin, "appReadyWebViewLoadedToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
             when(updater.getCurrentBundle()).thenReturn(bundle);
             when(call.getString("bundleId")).thenReturn(null);
 

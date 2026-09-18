@@ -6,7 +6,7 @@
 import { registerPlugin } from '@capacitor/core';
 import './history';
 
-import { withInjectedAppReadyBundleId } from './app-ready';
+import { awaitInjectedAppReadyBundleId, withInjectedAppReadyBundleId } from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin, NotifyAppReadyOptions } from './definitions';
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
@@ -16,8 +16,10 @@ const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterPlugin>('Capacitor
 export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
   get(target, prop, receiver) {
     if (prop === 'notifyAppReady') {
-      return (options?: NotifyAppReadyOptions): Promise<AppReadyResult> =>
-        target.notifyAppReady(withInjectedAppReadyBundleId(options));
+      return async (options?: NotifyAppReadyOptions): Promise<AppReadyResult> => {
+        const bundleId = options?.bundleId ?? (await awaitInjectedAppReadyBundleId());
+        return target.notifyAppReady(withInjectedAppReadyBundleId(options, bundleId));
+      };
     }
     return Reflect.get(target, prop, receiver);
   },
