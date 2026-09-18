@@ -3,10 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
-import { awaitInjectedAppReadyBundleId, withInjectedAppReadyBundleId } from './app-ready';
+import { awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId, withInjectedAppReadyBundleId } from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin, NotifyAppReadyOptions } from './definitions';
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
@@ -17,7 +17,10 @@ export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdat
   get(target, prop, receiver) {
     if (prop === 'notifyAppReady') {
       return async (options?: NotifyAppReadyOptions): Promise<AppReadyResult> => {
-        const bundleId = options?.bundleId ?? (await awaitInjectedAppReadyBundleId());
+        const bundleId =
+          options?.bundleId ??
+          readInjectedAppReadyBundleId() ??
+          (Capacitor.isNativePlatform() ? await awaitInjectedAppReadyBundleId() : undefined);
         return target.notifyAppReady(withInjectedAppReadyBundleId(options, bundleId));
       };
     }

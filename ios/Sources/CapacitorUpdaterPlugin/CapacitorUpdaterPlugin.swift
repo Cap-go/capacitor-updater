@@ -226,6 +226,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var appReadyWebViewLoadedToken = 0
     private var appReadyWebViewPageStartedToken = 0
     private var appReadyWebViewPageLoadPendingToken = 0
+    private static let appReadyBindingStorageKey = "__capgoAppReadyBinding"
+    private static let appReadyBindingMessageHandlerName = "capgoAppReadyBinding"
+    private var appReadyBindingInfrastructureInstalled = false
+    private let appReadyBindingMessageHandler = AppReadyBindingMessageHandler()
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -241,6 +245,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let webViewStatsReporter = WebViewStatsReporter(implementation: implementation)
         self.webViewStatsReporter = webViewStatsReporter
         webViewStatsReporter.install(on: self.bridge?.webView)
+        self.appReadyBindingMessageHandler.plugin = self
         #if targetEnvironment(simulator)
         logger.info("::::: SIMULATOR :::::")
         logger.info("Application directory: \(NSHomeDirectory())")
@@ -657,10 +662,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return encoded
     }
 
-    private func buildAppReadyBundleBindingScript(bundleId: String, loadToken: Int) -> String {
-        let quotedId = Self.jsQuotedString(bundleId)
+    private func buildAppReadyBundleBindingScriptBody() -> String {
         return """
-        (function(id,token){
           window.__capgoAppReadyBundleId=id;
           window.__capgoAppReadyBindingToken=token;
           function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}
@@ -705,20 +708,94 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
               if(patch()||++attempts>200){clearInterval(timer);}
             },25);
           }
+        """
+    }
+
+    private func buildAppReadyBundleBindingScript(bundleId: String, loadToken: Int) -> String {
+        let quotedId = Self.jsQuotedString(bundleId)
+        return """
+        (function(id,token){
+        \(self.buildAppReadyBundleBindingScriptBody())
         })(\(quotedId),\(loadToken));
         """
+    }
+
+    private func buildAppReadyBindingStorageValue(bundleId: String, loadToken: Int) -> String {
+        return "{\"id\":\(Self.jsQuotedString(bundleId)),\"token\":\(loadToken)}"
+    }
+
+    private func buildAppReadyBindingDocumentStartScript(seedBundleId: String? = nil, seedLoadToken: Int? = nil) -> String {
+        var seedWrite = ""
+        if let seedBundleId, let seedLoadToken {
+            let storageValue = self.buildAppReadyBindingStorageValue(bundleId: seedBundleId, loadToken: seedLoadToken)
+            seedWrite =
+                "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
+        }
+        return """
+        (function(){
+        \(seedWrite)
+        var key='\(Self.appReadyBindingStorageKey)';
+        var binding=null;
+        try{binding=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}
+        if(!binding||!binding.id){return;}
+        try{
+          if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.\(Self.appReadyBindingMessageHandlerName)){
+            window.webkit.messageHandlers.\(Self.appReadyBindingMessageHandlerName).postMessage({type:'page_started',bundleId:binding.id,loadToken:String(binding.token)});
+          }
+        }catch(e){}
+        (function(id,token){
+        \(self.buildAppReadyBundleBindingScriptBody())
+        })(binding.id,binding.token);
+        })();
+        """
+    }
+
+    private func installAppReadyBindingInfrastructureIfNeeded(on webView: WKWebView, seedBundleId: String? = nil, seedLoadToken: Int? = nil) {
+        guard !self.appReadyBindingInfrastructureInstalled else {
+            return
+        }
+        self.appReadyBindingInfrastructureInstalled = true
+        self.appReadyBindingMessageHandler.plugin = self
+        let controller = webView.configuration.userContentController
+        controller.add(self.appReadyBindingMessageHandler, name: Self.appReadyBindingMessageHandlerName)
+        let script = self.buildAppReadyBindingDocumentStartScript(seedBundleId: seedBundleId, seedLoadToken: seedLoadToken)
+        let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        controller.addUserScript(userScript)
+    }
+
+    private func persistAppReadyBinding(on webView: WKWebView, bundleId: String, loadToken: Int) {
+        let storageValue = self.buildAppReadyBindingStorageValue(bundleId: bundleId, loadToken: loadToken)
+        let persistScript = "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
+        webView.evaluateJavaScript(persistScript, completionHandler: nil)
+    }
+
+    fileprivate func handleAppReadyBindingMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let type = body["type"] as? String,
+              type == "page_started" else {
+            return
+        }
+        let bundleId = body["bundleId"] as? String
+        let loadToken = self.parseAppReadyLoadToken(body["loadToken"] as? String)
+        if self.acceptAppReadyBindingLifecycleReport(reportedBundleId: bundleId, reportedLoadToken: loadToken) {
+            self.markAppReadyWebViewPageStarted()
+        }
     }
 
     private func syncAppReadyBundleBinding(bundleId: String) {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
-        let script = self.buildAppReadyBundleBindingScript(bundleId: bundleId, loadToken: self.appReadyWebViewLoadToken)
+        let loadToken = self.appReadyWebViewLoadToken
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let webView = self.bridge?.webView else {
                 return
             }
-            let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-            webView.configuration.userContentController.addUserScript(userScript)
+            self.installAppReadyBindingInfrastructureIfNeeded(
+                on: webView,
+                seedBundleId: bundleId,
+                seedLoadToken: loadToken
+            )
+            self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken)
         }
     }
 
@@ -5214,5 +5291,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // iOS doesn't support flexible in-app updates
         logger.warn("completeFlexibleUpdate is not supported on iOS.")
         call.reject("Flexible updates are not supported on iOS.", "NOT_SUPPORTED")
+    }
+}
+
+private final class AppReadyBindingMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var plugin: CapacitorUpdaterPlugin?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        self.plugin?.handleAppReadyBindingMessage(message)
     }
 }

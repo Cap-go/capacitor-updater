@@ -1677,6 +1677,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -3041,6 +3042,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         this.bridge.executeOnMainThread(install);
+    }
+
+    private void markAppReadyWebViewPageStartedFromNative() {
+        if (this.awaitingAppReadyBundleId == null || this.awaitingAppReadyBundleId.isEmpty()) {
+            return;
+        }
+        if (this.implementation == null) {
+            return;
+        }
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (current == null || !this.awaitingAppReadyBundleId.equals(current.getId())) {
+            return;
+        }
+        if (this.appReadyWebViewPageStartedToken >= this.appReadyWebViewLoadToken) {
+            return;
+        }
+        this.markAppReadyWebViewPageStarted();
     }
 
     private void markAppReadyWebViewPageStarted() {
