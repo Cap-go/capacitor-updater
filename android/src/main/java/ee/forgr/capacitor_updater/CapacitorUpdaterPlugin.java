@@ -3058,8 +3058,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 installed.release();
             }
         });
-        if (!installed.tryAcquire(10, TimeUnit.SECONDS)) {
-            logger.warn("Timeout installing document-start app ready bundle binding");
+        try {
+            if (!installed.tryAcquire(10, TimeUnit.SECONDS)) {
+                logger.warn("Timeout installing document-start app ready bundle binding");
+            }
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while installing document-start app ready bundle binding");
         }
     }
 
