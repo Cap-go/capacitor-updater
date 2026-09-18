@@ -663,15 +663,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
           window.__capgoAppReadyBundleId=id;
           function reportPageStarted(){
             var cap=window.Capacitor;
-            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return;}
+            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
             var plugin=cap.Plugins.CapacitorUpdater;
-            if(typeof plugin.reportWebViewError!=='function'){return;}
+            if(typeof plugin.reportWebViewError!=='function'){return false;}
             try{
               var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});
               if(result&&typeof result.catch==='function'){result.catch(function(){});}
-            }catch(_){}
+            }catch(_){return false;}
+            return true;
           }
-          reportPageStarted();
+          if(!reportPageStarted()){
+            var pageAttempts=0;
+            var pageTimer=setInterval(function(){
+              if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
+            },25);
+          }
           function patch(){
             var cap=window.Capacitor;
             if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
