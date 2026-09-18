@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "6.51.18"
+    private let pluginVersion: String = "8.51.19"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -3555,7 +3555,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func makeSplashscreenCall(callbackId: String, options: [String: Any], methodName: String) -> CAPPluginCall {
-        CAPPluginCall(callbackId: callbackId, options: options, success: { [weak self] (_, _) in
+        CAPPluginCall(callbackId: callbackId, methodName: methodName, options: options, success: { [weak self] (_, _) in
             guard let self = self else { return }
             self.logger.info(self.splashscreenCompletedMessage(methodName: methodName))
         }, error: { [weak self] (_) in
@@ -3846,7 +3846,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let scheduleTimeout = {
+        let scheduleTimeout = { [weak self] in
+            guard let self = self else { return }
             self.autoSplashscreenTimeoutWorkItem?.cancel()
 
             let workItem = DispatchWorkItem { [weak self] in
