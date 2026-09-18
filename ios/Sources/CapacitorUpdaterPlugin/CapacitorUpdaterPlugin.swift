@@ -661,7 +661,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return """
         (function(id,token){
           window.__capgoAppReadyBundleId=id;
+          window.__capgoAppReadyBindingToken=token;
+          function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}
           function reportPageStarted(){
+            if(!isActiveBinding()){return false;}
             var cap=window.Capacitor;
             if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
             var plugin=cap.Plugins.CapacitorUpdater;
@@ -672,12 +675,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }catch(_){return false;}
             return true;
           }
-          if(!reportPageStarted()){
-            var pageAttempts=0;
-            var pageTimer=setInterval(function(){
-              if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
-            },25);
+          function schedulePageStartedReport(){
+            setTimeout(function(){
+              if(!isActiveBinding()){return;}
+              if(!reportPageStarted()){
+                var pageAttempts=0;
+                var pageTimer=setInterval(function(){
+                  if(!isActiveBinding()){clearInterval(pageTimer);return;}
+                  if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
+                },25);
+              }
+            },0);
           }
+          schedulePageStartedReport();
           function patch(){
             var cap=window.Capacitor;
             if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
