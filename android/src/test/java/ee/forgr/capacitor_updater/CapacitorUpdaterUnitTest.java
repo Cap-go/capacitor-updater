@@ -2430,7 +2430,7 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(semaphore.isTerminated());
             assertEquals(0, semaphore.getRegisteredParties());
             verify(call).resolve(any(JSObject.class));
-            verify(updater).setSuccess(bundle, true);
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
         }
     }
 
