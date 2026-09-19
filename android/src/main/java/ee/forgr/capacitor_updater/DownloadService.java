@@ -1073,9 +1073,13 @@ public class DownloadService extends Worker {
         try (FileOutputStream fos = new FileOutputStream(dest, append)) {
             int n;
             long written = append ? existingBytes : 0;
-            while ((n = body.read(buffer)) != -1) {
+            while (true) {
                 if (shouldStop != null && shouldStop.getAsBoolean()) {
                     throw new IOException("download_stopped");
+                }
+                n = body.read(buffer);
+                if (n == -1) {
+                    break;
                 }
                 fos.write(buffer, 0, n);
                 written += n;

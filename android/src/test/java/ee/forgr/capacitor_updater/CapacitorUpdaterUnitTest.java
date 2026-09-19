@@ -4013,15 +4013,11 @@ public class CapacitorUpdaterUnitTest {
             }
         };
 
+        byte[] resumeData = new byte[CryptoCipher.ioBufferBytes() + 1024];
+        Arrays.fill(resumeData, (byte) 'x');
+
         try {
-            DownloadService.writeHttpBody(
-                dest,
-                new ByteArrayInputStream("more-data".getBytes(StandardCharsets.UTF_8)),
-                206,
-                first.length,
-                stopAfterFirstChunk,
-                null
-            );
+            DownloadService.writeHttpBody(dest, new ByteArrayInputStream(resumeData), 206, first.length, stopAfterFirstChunk, null);
             fail("expected stop to abort write");
         } catch (IOException e) {
             assertEquals("download_stopped", e.getMessage());
