@@ -2175,12 +2175,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             case "always":
                 return true;
             case "atInstall":
-                if (this.wasRecentlyInstalledOrUpdated) {
-                    // Reset the flag after first use to prevent subsequent foreground events from using direct update
-                    this.wasRecentlyInstalledOrUpdated = false;
-                    return true;
-                }
-                return false;
+                return this.wasRecentlyInstalledOrUpdated;
             case "onLaunch":
                 if (!this.onLaunchDirectUpdateUsed) {
                     return true;
@@ -2352,12 +2347,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return Math.max(600, valueSeconds);
     }
 
-    private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
-        if (!shouldConsumeOnLaunchDirectUpdate(this.directUpdateMode, plannedDirectUpdate)) {
-            return;
+    private void commitDirectUpdateOneShotOnSuccess() {
+        if ("onLaunch".equals(this.directUpdateMode)) {
+            this.onLaunchDirectUpdateUsed = true;
+            this.implementation.directUpdate = false;
+        } else if ("atInstall".equals(this.directUpdateMode)) {
+            this.wasRecentlyInstalledOrUpdated = false;
         }
-
-        this.onLaunchDirectUpdateUsed = true;
     }
 
     void configureDirectUpdateModeForTesting(final String directUpdateMode, final boolean onLaunchDirectUpdateUsed) {
@@ -2438,11 +2434,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.clearBackgroundDownloadState();
             return;
         }
-        if ("onLaunch".equals(this.directUpdateMode)) {
-            this.onLaunchDirectUpdateUsed = true;
-            this.implementation.directUpdate = false;
-        }
         if (this.applyDownloadedBundleForDirectUpdate(latest)) {
+            this.commitDirectUpdateOneShotOnSuccess();
             this.implementation.setNextBundle(null);
             this.notifyBundleSet(latest);
             sendReadyToJs(latest, "update installed", true);
@@ -3230,8 +3223,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
-        this.performCurrentBundleNavigation(path, usingBuiltin);
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () ->
+            this.performCurrentBundleNavigation(path, usingBuiltin)
+        );
     }
 
     private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
@@ -5059,7 +5053,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         boolean shouldSendStats,
         boolean shouldNotifyNoNeedUpdate
     ) {
-        this.consumeOnLaunchDirectUpdateAttempt(Boolean.TRUE.equals(plannedDirectUpdate));
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -5381,7 +5374,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 latest != null &&
                                 BundleStatus.DOWNLOADING == latest.getStatus() &&
                                 CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
-                            CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
                                 ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
                                   initialDirectUpdateAllowed ||

@@ -146,6 +146,12 @@ dump_ui_hierarchy() {
   return 0
 }
 
+dump_logcat_snapshot() {
+  echo "=== logcat snapshot (CapgoUpdater / Capacitor / AndroidRuntime) ===" >&2
+  run_adb_command 30 logcat -d -v threadtime CapgoUpdater:D Capacitor:D CapacitorUpdater:D AndroidRuntime:E chromium:I *:S 2>&1 | tail -n 250 >&2 || true
+  return 0
+}
+
 tap_android_anr_wait_button_if_present() {
   local hierarchy="$1"
   local wait_button_pattern='text="Wait".*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
@@ -317,6 +323,7 @@ wait_for_ui_state_with_timeout() {
 
   echo "Timed out waiting for UI state: ${description}" >&2
   dump_ui_hierarchy >&2 || true
+  dump_logcat_snapshot || true
   return 1
 }
 
@@ -339,8 +346,11 @@ wait_for_direct_update_ui_state() {
   echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
   relaunch_android_app
-  wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"
-  return 0
+  if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
+    return 0
+  fi
+
+  return 1
 }
 
 wait_for_at_install_direct_update_ui_state() {
@@ -604,7 +614,7 @@ run_scenario() {
       control_server reset at-install
       prepare_scenario at-install
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_at_install_direct_update_ui_state \
         "atInstall applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -635,7 +645,7 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_at_install_direct_update_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: on-launch' \
@@ -743,11 +753,32 @@ wait_for_android_boot() {
 }
 
 unlock_android_device() {
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm dismiss-keyguard >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent 82 >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings put global stay_on_while_plugged_in 3 >/dev/null 2>&1 || true
-  return 0
+  local attempt=1
+  local max_attempts=3
+  local unlock_output=""
+
+  while [[ $attempt -le $max_attempts ]]; do
+    unlock_output="$(
+      {
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_WAKEUP 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm dismiss-keyguard 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent 82 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings put global stay_on_while_plugged_in 3 2>&1 || true
+      } | tr -d '\r'
+    )"
+
+    if [[ "$unlock_output" != *"DeadSystemException"* && "$unlock_output" != *"DeadSystemRuntimeException"* ]]; then
+      return 0
+    fi
+
+    echo "Android unlock hit DeadSystemException; waiting for package manager before retry ${attempt}/${max_attempts}." >&2
+    wait_for_package_manager || true
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  echo "Android unlock still failing after ${max_attempts} attempts." >&2
+  return 1
 }
 
 restart_adb_server() {

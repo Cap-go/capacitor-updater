@@ -2837,7 +2837,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testOnLaunchCompletionConsumesWindowWithoutClearingInFlightDirectUpdate() {
+    public void testOnLaunchCompletionDoesNotConsumeWindowBeforeDirectUpdateSuccess() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -2857,14 +2857,14 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.completeBackgroundTaskForTesting(current, true);
 
-            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
-            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
         }
     }
 
     @Test
-    public void testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() throws Exception {
+    public void testOnLaunchFreshDownloadDoesNotConsumeWindowBeforeDirectUpdateSuccess() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -2886,10 +2886,10 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
 
             assertTrue(updater.downloadBackgroundCalled);
-            assertTrue(updater.consumedWhenDownloadStarted);
+            assertFalse(updater.consumedWhenDownloadStarted);
             assertTrue(updater.directUpdateWhenDownloadStarted);
-            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
-            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
         }
     }
@@ -3261,12 +3261,15 @@ public class CapacitorUpdaterUnitTest {
             final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
 
             plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
             plugin.setLoggerForTesting(mock(Logger.class));
 
             plugin.scheduleDirectUpdateFinish(latest);
 
             assertTrue(plugin.startNewThreadCalled);
             assertTrue(plugin.reloadCalled);
+            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertEquals(0, updater.setCalls);
             assertEquals(1, updater.stagePendingReloadCalls);
             assertEquals(1, updater.finalizePendingReloadCalls);
