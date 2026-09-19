@@ -799,6 +799,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func markAppReadyWebViewPageStartedFromNative() {
+        guard let awaiting = self.awaitingAppReadyBundleId, !awaiting.isEmpty else {
+            return
+        }
+        if awaiting != self.implementation.getCurrentBundleId() {
+            return
+        }
+        if self.appReadyWebViewPageStartedToken >= self.appReadyWebViewLoadToken {
+            return
+        }
+        self.markAppReadyWebViewPageStarted()
+    }
+
     private func markAppReadyWebViewPageStarted() {
         self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
         self.flushAppReadyWebViewLoadedIfReady()
@@ -3542,6 +3555,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func notifyAppReady(_ call: CAPPluginCall) {
         let bundle = self.implementation.getCurrentBundle()
         let reportedBundleId = call.getString("bundleId")
+        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+            if let reportedBundleId,
+               reportedBundleId == bundle.getId(),
+               self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
+                self.markAppReadyWebViewPageStartedFromNative()
+            }
+        }
         if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
             logger.warn(
                 "Ignoring stale notifyAppReady for bundle \(reportedBundleId ?? "unknown"), current is \(bundle.getId())"

@@ -4670,6 +4670,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             final String reportedBundleId = call.getString("bundleId");
             if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
+                if (
+                    reportedBundleId != null &&
+                    reportedBundleId.equals(bundle.getId()) &&
+                    this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken
+                ) {
+                    this.markAppReadyWebViewPageStartedFromNative();
+                }
+            }
+            if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
                 logger.warn(
                     "Ignoring stale notifyAppReady for bundle " +
                         (reportedBundleId == null ? "unknown" : reportedBundleId) +
