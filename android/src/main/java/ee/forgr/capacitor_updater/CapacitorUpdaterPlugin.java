@@ -3010,10 +3010,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-        this.installDocumentStartAppReadyBundleBinding(script);
+        this.installDocumentStartAppReadyBundleBinding(script, true);
     }
 
     private void installDocumentStartAppReadyBundleBinding(final String script) {
+        this.installDocumentStartAppReadyBundleBinding(script, false);
+    }
+
+    private void installDocumentStartAppReadyBundleBinding(final String script, final boolean blockUntilInstalled) {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
         }
@@ -3050,6 +3054,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             install.run();
+            return;
+        }
+        if (blockUntilInstalled) {
+            final Semaphore installSemaphore = new Semaphore(0);
+            this.bridge.executeOnMainThread(() -> {
+                try {
+                    install.run();
+                } finally {
+                    installSemaphore.release();
+                }
+            });
+            try {
+                if (!installSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                    logger.warn("Timeout waiting for app-ready binding install before reload");
+                }
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             return;
         }
         this.bridge.executeOnMainThread(install);

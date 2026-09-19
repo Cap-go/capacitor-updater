@@ -766,7 +766,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
         let loadToken = self.appReadyWebViewLoadToken
-        DispatchQueue.main.async { [weak self] in
+        let install = { [weak self] in
             guard let self = self, let webView = self.bridge?.webView else {
                 return
             }
@@ -776,6 +776,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 seedLoadToken: loadToken
             )
             self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken)
+        }
+        if Thread.isMainThread {
+            install()
+        } else {
+            DispatchQueue.main.sync(execute: install)
         }
     }
 
