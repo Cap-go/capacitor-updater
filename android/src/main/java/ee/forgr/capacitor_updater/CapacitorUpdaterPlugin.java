@@ -3006,10 +3006,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.installDocumentStartAppReadyBundleBinding(script, blockUntilInstalled);
     }
 
-    private void installDocumentStartAppReadyBundleBinding(final String script) {
-        this.installDocumentStartAppReadyBundleBinding(script, false);
-    }
-
     private void installDocumentStartAppReadyBundleBinding(final String script, final boolean blockUntilInstalled) {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
