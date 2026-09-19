@@ -2439,29 +2439,41 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testShouldCommitNotifyAppReadyRejectsZeroTokens() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
     }
 
     @Test
     public void testShouldCommitNotifyAppReadyAcceptsAfterSyncAndPageStart() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
-        setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
 
-        assertTrue(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+
+            assertTrue(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
     }
 
     @Test
     public void testShouldCommitNotifyAppReadyRejectsMismatchedTokens() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
-        setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
 
-        assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+
+            assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
     }
 
     @Test
@@ -2557,6 +2569,8 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             setPrivateField(plugin, "appReadyTimeout", 5000);
             setPrivateField(plugin, "autoSplashscreen", false);
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
             when(updater.getCurrentBundle()).thenReturn(bundle);
             when(call.getString("bundleId")).thenReturn("id");
 
@@ -2656,6 +2670,8 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             setPrivateField(plugin, "appReadyTimeout", 5000);
             setPrivateField(plugin, "autoSplashscreen", false);
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
             when(updater.getCurrentBundle()).thenReturn(bundle);
             when(call.getString("bundleId")).thenReturn("id");
 
