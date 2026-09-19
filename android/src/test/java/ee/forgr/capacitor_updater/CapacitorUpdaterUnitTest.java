@@ -2722,29 +2722,37 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testDirectUpdateAllowedAfterSplashTimeoutWhenDownloadIsInFlight() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        setPrivateField(plugin, "autoSplashscreenTimedOut", true);
-        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
 
-        assertTrue(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
 
-        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
-        assertFalse(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+            assertTrue(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+            assertFalse(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+        }
     }
 
     @Test
     public void testShouldUseDirectUpdateHonorsInFlightDownloadAfterSplashTimeout() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        plugin.configureDirectUpdateModeForTesting("always", false);
-        setPrivateField(plugin, "autoSplashscreenTimedOut", true);
-        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
 
-        assertTrue(plugin.shouldUseDirectUpdateForTesting());
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
 
-        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
-        assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+        }
     }
 
     @Test
