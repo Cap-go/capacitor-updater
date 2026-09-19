@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { registerPlugin } from '@capacitor/core';
 import './history';
 
 import { readInjectedAppReadyBundleId } from './app-ready';
@@ -14,7 +14,6 @@ type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
 };
 
 const NOTIFY_APP_READY_WAIT_MS = 55000;
-const NOTIFY_APP_READY_BINDING_WAIT_MS = 3000;
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
@@ -24,16 +23,10 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeBridge): Promise<AppReadyResult> {
   const deadline = Date.now() + NOTIFY_APP_READY_WAIT_MS;
-  const bindingDeadline = Date.now() + NOTIFY_APP_READY_BINDING_WAIT_MS;
   let lastResult: AppReadyResult | undefined;
 
   while (Date.now() < deadline) {
     const bundleId = readInjectedAppReadyBundleId();
-    const waitForBinding = Capacitor.getPlatform() !== 'web' && !bundleId && Date.now() < bindingDeadline;
-    if (waitForBinding) {
-      await sleep(25);
-      continue;
-    }
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
     const { bundle } = await target.current();
     if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
