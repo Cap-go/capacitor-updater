@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
 import { readInjectedAppReadyBundleId } from './app-ready';
@@ -25,6 +25,10 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
 
   while (Date.now() < deadline) {
     const bundleId = readInjectedAppReadyBundleId();
+    if (Capacitor.getPlatform() !== 'web' && !bundleId) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      continue;
+    }
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
     const { bundle } = await target.current();
     if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
