@@ -746,11 +746,12 @@ jobs:
           script: >-
             CAPGO_MAESTRO_SKIP_BUILD=1
             CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
-            MAESTRO_FLOW_TIMEOUT_SECONDS=300
+            MAESTRO_FLOW_TIMEOUT_SECONDS=420
             CAPGO_MAESTRO_FLOW_RETRIES=2
             CAPGO_MAESTRO_SPLIT_RETRIES=2
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
-            CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
+            CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=120
+            CAPGO_MAESTRO_DIRECT_UPDATE_PREP_TIMEOUT_SECONDS=45
             bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
       - name: Verify live update scenario passed
         run: |

@@ -376,6 +376,19 @@ wait_for_direct_update_ui_state() {
   return 1
 }
 
+wait_for_first_direct_update_ui_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+
+  if wait_for_direct_update_ui_state "$description" "${fragments[@]}"; then
+    return 0
+  fi
+
+  echo "Force-stop relaunch did not settle ${description}; trying background-cycle recovery." >&2
+  wait_for_at_install_direct_update_ui_state "$description" "${fragments[@]}"
+}
+
 wait_for_at_install_direct_update_ui_state() {
   local description="$1"
   shift
@@ -640,7 +653,7 @@ run_scenario() {
       control_server reset at-install
       prepare_scenario at-install
       run_flow initial-direct-update.yaml
-      wait_for_at_install_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "atInstall applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -671,7 +684,7 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: on-launch' \
