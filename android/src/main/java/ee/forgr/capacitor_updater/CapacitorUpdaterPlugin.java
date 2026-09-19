@@ -3033,20 +3033,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final Runnable syncWork = () -> {
             this.installAppReadyBindingJavascriptInterfaceIfNeeded();
             final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-            this.installDocumentStartAppReadyBundleBinding(script, () -> {
-                final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
-                if (webView == null) {
-                    if (completion != null) {
-                        completion.run();
-                    }
-                    return;
-                }
-                webView.evaluateJavascript(script, (_value) -> {
-                    if (completion != null) {
-                        completion.run();
-                    }
-                });
-            });
+            this.installDocumentStartAppReadyBundleBinding(script, completion);
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             syncWork.run();
