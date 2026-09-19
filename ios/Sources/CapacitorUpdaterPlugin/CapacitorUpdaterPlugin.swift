@@ -763,6 +763,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func syncAppReadyBundleBinding(bundleId: String) {
+        self.syncAppReadyBundleBinding(bundleId: bundleId, blockUntilInstalled: false)
+    }
+
+    private func syncAppReadyBundleBinding(bundleId: String, blockUntilInstalled: Bool) {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
         let loadToken = self.appReadyWebViewLoadToken
@@ -779,8 +783,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         if Thread.isMainThread {
             install()
-        } else {
+        } else if blockUntilInstalled {
             DispatchQueue.main.sync(execute: install)
+        } else {
+            DispatchQueue.main.async(execute: install)
         }
     }
 
@@ -1950,7 +1956,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
         let id = self.implementation.getCurrentBundleId()
-        self.syncAppReadyBundleBinding(bundleId: id)
+        self.syncAppReadyBundleBinding(bundleId: id, blockUntilInstalled: true)
         let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 
