@@ -6,7 +6,11 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
-import { awaitAppReadyPageStartedToken, awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId } from './app-ready';
+import {
+  awaitAppReadyPageStartedToken,
+  awaitInjectedAppReadyBundleId,
+  readInjectedAppReadyBundleId,
+} from './app-ready';
 import type { AppReadyResult, BundleInfo, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
@@ -14,7 +18,8 @@ type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
   getCurrentBundle(): Promise<BundleInfo>;
 };
 
-const NOTIFY_APP_READY_RETRY_MS = 60000;
+const NOTIFY_APP_READY_RETRY_MS = 20000;
+const NOTIFY_APP_READY_BINDING_WAIT_MS = 20000;
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
@@ -49,9 +54,11 @@ export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdat
       return async (): Promise<AppReadyResult> => {
         const bundleId =
           readInjectedAppReadyBundleId() ??
-          (Capacitor.isNativePlatform() ? await awaitInjectedAppReadyBundleId() : undefined);
+          (Capacitor.isNativePlatform()
+            ? await awaitInjectedAppReadyBundleId(NOTIFY_APP_READY_BINDING_WAIT_MS)
+            : undefined);
         if (Capacitor.isNativePlatform() && bundleId) {
-          await awaitAppReadyPageStartedToken();
+          await awaitAppReadyPageStartedToken(NOTIFY_APP_READY_BINDING_WAIT_MS);
         }
         return notifyAppReadyWithInternalBinding(target, bundleId);
       };
