@@ -4695,11 +4695,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     if (this.appReadyWebViewLoadToken == 0) {
                         this.syncAppReadyBundleBinding(bundle.getId());
                     }
-                    if (this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken) {
+                    final boolean advancedPageStart = this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken;
+                    if (advancedPageStart) {
                         this.markAppReadyWebViewPageStartedFromNative();
                     }
                     if (
                         awaitingMatch &&
+                        advancedPageStart &&
                         this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken &&
                         this.appReadyWebViewLoadedToken < this.appReadyWebViewLoadToken
                     ) {
