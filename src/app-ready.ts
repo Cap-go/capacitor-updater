@@ -46,7 +46,7 @@ function appReadyPageStartedMatchesBinding(): boolean {
   return readAppReadyPageStartedToken() === bindingToken;
 }
 
-export async function awaitInjectedAppReadyBundleId(timeoutMs = 10000): Promise<string | undefined> {
+export async function awaitInjectedAppReadyBundleId(timeoutMs = 60000): Promise<string | undefined> {
   const existing = readInjectedAppReadyBundleId();
   if (existing) {
     return existing;
@@ -62,7 +62,7 @@ export async function awaitInjectedAppReadyBundleId(timeoutMs = 10000): Promise<
   return readInjectedAppReadyBundleId();
 }
 
-export async function awaitAppReadyPageStartedToken(timeoutMs = 10000): Promise<boolean> {
+export async function awaitAppReadyPageStartedToken(timeoutMs = 60000): Promise<boolean> {
   if (appReadyPageStartedMatchesBinding()) {
     return true;
   }

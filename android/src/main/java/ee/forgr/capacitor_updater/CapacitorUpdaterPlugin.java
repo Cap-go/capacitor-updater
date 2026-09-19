@@ -2992,7 +2992,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function markPageStarted(){window.__capgoAppReadyPageStartedToken=token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.then==='function'){result.then(markPageStarted).catch(function(){});return true;}if(result&&typeof result.catch==='function'){result.catch(function(){});}markPageStarted();return true;}catch(_){return false;}}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}})(" +
             jsQuotedString(bundleId) +
             "," +
             loadToken +
@@ -3075,6 +3075,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void markAppReadyWebViewPageStarted() {
         this.appReadyWebViewPageStartedToken = this.appReadyWebViewLoadToken;
         this.flushAppReadyWebViewLoadedIfReady();
+        this.publishAppReadyPageStartedTokenToJs();
+    }
+
+    private void publishAppReadyPageStartedTokenToJs() {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final int token = this.appReadyWebViewLoadToken;
+        final String script = "window.__capgoAppReadyPageStartedToken=" + token + ";";
+        final android.webkit.WebView webView = this.bridge.getWebView();
+        this.mainHandler.post(() -> {
+            try {
+                webView.evaluateJavascript(script, null);
+            } catch (final Exception e) {
+                logger.debug("Unable to publish app-ready page-started token: " + e.getMessage());
+            }
+        });
     }
 
     private void markAppReadyWebViewLoaded() {
