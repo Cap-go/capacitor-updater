@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.RenderProcessGoneDetail;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
@@ -254,6 +255,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile int appReadyWebViewPageStartedToken = 0;
     private volatile int appReadyWebViewPageLoadPendingToken = 0;
     private volatile Object appReadyDocumentStartScriptHandler = null;
+    private volatile boolean appReadyBindingJavascriptInterfaceInstalled = false;
+    private AppReadyBindingJavascriptInterface appReadyBindingJavascriptInterface;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
     private volatile boolean launchTimeoutReported = false;
@@ -2991,7 +2994,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()){clearInterval(pageTimer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}if(window.CapgoAppReadyBinding&&typeof window.CapgoAppReadyBinding.reportPageStarted==='function'){try{window.CapgoAppReadyBinding.reportPageStarted(id,String(token));return true;}catch(_){}}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()){clearInterval(pageTimer);}},25);}})(" +
             jsQuotedString(bundleId) +
             "," +
             loadToken +
@@ -3008,6 +3011,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
         }
+        this.installAppReadyBindingJavascriptInterfaceIfNeeded();
         final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
         this.installDocumentStartAppReadyBundleBinding(script);
     }
@@ -3046,6 +3050,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } catch (final Exception e) {
                 logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
             }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            install.run();
+            return;
+        }
+        this.bridge.executeOnMainThread(install);
+    }
+
+    private void installAppReadyBindingJavascriptInterfaceIfNeeded() {
+        if (this.appReadyBindingJavascriptInterfaceInstalled || this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final Runnable install = () -> {
+            if (this.appReadyBindingJavascriptInterfaceInstalled || this.bridge == null || this.bridge.getWebView() == null) {
+                return;
+            }
+            if (this.appReadyBindingJavascriptInterface == null) {
+                this.appReadyBindingJavascriptInterface = new AppReadyBindingJavascriptInterface();
+            }
+            this.bridge.getWebView().addJavascriptInterface(this.appReadyBindingJavascriptInterface, "CapgoAppReadyBinding");
+            this.appReadyBindingJavascriptInterfaceInstalled = true;
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             install.run();
@@ -6123,6 +6148,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnDestroy: " + e.getMessage());
+        }
+    }
+
+    private final class AppReadyBindingJavascriptInterface {
+
+        @JavascriptInterface
+        public void reportPageStarted(final String bundleId, final String loadTokenStr) {
+            CapacitorUpdaterPlugin.this.mainHandler.post(() -> {
+                if (
+                    CapacitorUpdaterPlugin.this.acceptAppReadyBindingLifecycleReport(
+                        bundleId,
+                        CapacitorUpdaterPlugin.this.parseAppReadyLoadToken(loadTokenStr)
+                    )
+                ) {
+                    CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
+                }
+            });
         }
     }
 }
