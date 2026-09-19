@@ -4674,12 +4674,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             final String reportedBundleId = call.getString("bundleId");
             if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
-                if (reportedBundleId != null && reportedBundleId.equals(bundle.getId())) {
+                final boolean explicitMatch =
+                    reportedBundleId != null && !reportedBundleId.isEmpty() && reportedBundleId.equals(bundle.getId());
+                final boolean awaitingMatch =
+                    (reportedBundleId == null || reportedBundleId.isEmpty()) &&
+                    this.awaitingAppReadyBundleId != null &&
+                    this.awaitingAppReadyBundleId.equals(bundle.getId());
+                if (explicitMatch || awaitingMatch) {
                     if (this.appReadyWebViewLoadToken == 0) {
                         this.syncAppReadyBundleBinding(bundle.getId());
                     }
                     if (this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken) {
                         this.markAppReadyWebViewPageStartedFromNative();
+                    }
+                    if (
+                        awaitingMatch &&
+                        this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken &&
+                        this.appReadyWebViewLoadedToken < this.appReadyWebViewLoadToken
+                    ) {
+                        this.markAppReadyWebViewLoaded();
                     }
                 }
             }
