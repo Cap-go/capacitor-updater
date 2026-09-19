@@ -4038,9 +4038,37 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(200, restartOn200.statusCode);
         assertEquals(0, restartOn200.writeOffset);
 
-        DownloadService.ZipWritePlan restartOnBadRange = DownloadService.planZipResumeWrite(206, 1024, "bytes 0-1023/4096");
-        assertEquals(200, restartOnBadRange.statusCode);
-        assertEquals(0, restartOnBadRange.writeOffset);
+        try {
+            DownloadService.planZipResumeWrite(206, 1024, "bytes 512-1023/4096");
+            fail("expected invalid content range to retry");
+        } catch (DownloadService.DownloadRetryException e) {
+            assertEquals("invalid_content_range", e.getMessage());
+        }
+    }
+
+    @Test
+    public void writeHttpBodyStopsBeforeTruncatingOn200() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-stop-before-truncate");
+        File dest = dir.resolve("partial.bin").toFile();
+        byte[] existing = "keep-this-partial".getBytes(StandardCharsets.UTF_8);
+        Files.write(dest.toPath(), existing);
+
+        try {
+            DownloadService.writeHttpBody(
+                dest,
+                new ByteArrayInputStream("replacement".getBytes(StandardCharsets.UTF_8)),
+                200,
+                dest.length(),
+                () -> true,
+                null
+            );
+            fail("expected stop before truncate");
+        } catch (IOException e) {
+            assertEquals("download_stopped", e.getMessage());
+        }
+
+        assertArrayEquals(existing, Files.readAllBytes(dest.toPath()));
     }
 
     @Test

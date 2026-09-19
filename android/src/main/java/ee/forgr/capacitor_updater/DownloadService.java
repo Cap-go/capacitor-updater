@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters;
 import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
@@ -807,6 +808,9 @@ public class DownloadService extends Worker {
         } catch (SecurityException e) {
             logger.error("Security error during download: " + e.getMessage());
             throw new RuntimeException("security_error: " + e.getMessage());
+        } catch (MalformedURLException e) {
+            logger.error("Invalid download URL: " + e.getMessage());
+            throw new RuntimeException("invalid_url: " + e.getMessage());
         } catch (IOException e) {
             logger.error("Download error: " + e.getMessage());
             throw new DownloadRetryException(e.getMessage(), e);
@@ -847,12 +851,15 @@ public class DownloadService extends Worker {
     }
 
     static ZipWritePlan planZipResumeWrite(int responseCode, long downloadedBytes, String contentRange) {
-        if (responseCode == HttpURLConnection.HTTP_PARTIAL && downloadedBytes > 0) {
+        if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
             long rangeStart = parseContentRangeStart(contentRange);
             if (rangeStart == downloadedBytes) {
                 return new ZipWritePlan(HttpURLConnection.HTTP_PARTIAL, downloadedBytes);
             }
-            return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
+            if (rangeStart == 0) {
+                return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
+            }
+            throw new DownloadRetryException("invalid_content_range");
         }
         if (responseCode == HttpURLConnection.HTTP_OK && downloadedBytes > 0) {
             return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
@@ -1068,6 +1075,9 @@ public class DownloadService extends Worker {
         BooleanSupplier shouldStop,
         LongConsumer onProgress
     ) throws IOException {
+        if (shouldStop != null && shouldStop.getAsBoolean()) {
+            throw new IOException("download_stopped");
+        }
         boolean append = shouldAppendHttpBody(statusCode, existingBytes);
         byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
         try (FileOutputStream fos = new FileOutputStream(dest, append)) {
