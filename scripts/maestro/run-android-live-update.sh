@@ -360,12 +360,15 @@ wait_for_at_install_direct_update_ui_state() {
   local attempt=1
   local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
   local target_version=""
+  local direct_update_mode_fragment=""
   local fragment=""
+  local prep_timeout_seconds="${CAPGO_MAESTRO_DIRECT_UPDATE_PREP_TIMEOUT_SECONDS:-60}"
 
   for fragment in "${fragments[@]}"; do
     if [[ "$fragment" == Current\ bundle\ version:\ * ]]; then
       target_version="${fragment#Current bundle version: }"
-      break
+    elif [[ "$fragment" == Direct\ update\ mode:\ * ]]; then
+      direct_update_mode_fragment="$fragment"
     fi
   done
 
@@ -375,19 +378,19 @@ wait_for_at_install_direct_update_ui_state() {
     fi
 
     if [[ $attempt -lt $max_attempts ]]; then
-      if [[ -n "$target_version" ]]; then
+      if [[ -n "$target_version" && -n "$direct_update_mode_fragment" ]]; then
         if ! wait_for_ui_state_with_timeout \
-          "atInstall finished preparing ${target_version} before the extra background cycle" \
-          "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" \
-          'Direct update mode: atInstall' \
+          "direct update finished preparing ${target_version} before the extra background cycle" \
+          "$prep_timeout_seconds" \
+          "$direct_update_mode_fragment" \
           'Current bundle source: downloaded' \
           "Next bundle version: ${target_version}" \
           "Last completed download: ${target_version}"; then
-          echo "atInstall never exposed ${target_version} as the pending next bundle before the extra background cycle." >&2
+          echo "Direct update never exposed ${target_version} as the pending next bundle before the extra background cycle." >&2
         fi
       fi
 
-      echo "atInstall UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
+      echo "Direct update UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
       background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
     fi
 
@@ -645,7 +648,7 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_at_install_direct_update_ui_state \
+      wait_for_direct_update_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: on-launch' \
