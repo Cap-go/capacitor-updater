@@ -1683,6 +1683,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
                 CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
