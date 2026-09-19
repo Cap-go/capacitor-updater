@@ -3575,10 +3575,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if self.appReadyWebViewLoadToken == 0 {
                     self.syncAppReadyBundleBinding(bundleId: bundle.getId())
                 }
-                if self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
+                let advancedPageStart = self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken
+                if advancedPageStart {
                     self.markAppReadyWebViewPageStartedFromNative()
                 }
                 if awaitingMatch,
+                   advancedPageStart,
                    self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken,
                    self.appReadyWebViewLoadedToken < self.appReadyWebViewLoadToken {
                     self.markAppReadyWebViewLoaded()
