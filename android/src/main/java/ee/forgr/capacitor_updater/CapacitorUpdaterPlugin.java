@@ -1677,7 +1677,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
-                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -2981,7 +2980,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()){clearInterval(pageTimer);}},25);}})(" +
             jsQuotedString(bundleId) +
             "," +
             loadToken +
@@ -2990,10 +2989,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void syncAppReadyBundleBinding(final String bundleId) {
-        this.syncAppReadyBundleBinding(bundleId, false);
-    }
-
-    private void syncAppReadyBundleBinding(final String bundleId, final boolean blockUntilInstalled) {
         if (bundleId == null || bundleId.isEmpty()) {
             return;
         }
@@ -3003,10 +2998,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-        this.installDocumentStartAppReadyBundleBinding(script, blockUntilInstalled);
+        this.installDocumentStartAppReadyBundleBinding(script);
     }
 
-    private void installDocumentStartAppReadyBundleBinding(final String script, final boolean blockUntilInstalled) {
+    private void installDocumentStartAppReadyBundleBinding(final String script) {
         if (this.bridge == null || this.bridge.getWebView() == null) {
             return;
         }
@@ -3043,24 +3038,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             install.run();
-            return;
-        }
-        if (blockUntilInstalled) {
-            final Semaphore installSemaphore = new Semaphore(0);
-            this.bridge.executeOnMainThread(() -> {
-                try {
-                    install.run();
-                } finally {
-                    installSemaphore.release();
-                }
-            });
-            try {
-                if (!installSemaphore.tryAcquire(250, TimeUnit.MILLISECONDS)) {
-                    logger.warn("Timeout waiting for app-ready binding install before reload");
-                }
-            } catch (final InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
             return;
         }
         this.bridge.executeOnMainThread(install);
@@ -3141,7 +3118,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), true);
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
