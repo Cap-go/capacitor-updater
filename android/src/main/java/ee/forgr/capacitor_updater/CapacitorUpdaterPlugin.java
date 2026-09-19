@@ -3222,10 +3222,39 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
-        this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () ->
-            this.performCurrentBundleNavigation(path, usingBuiltin)
-        );
+        final Runnable apply = () -> {
+            this.installWebViewStatsReporter();
+            this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () ->
+                this.performCurrentBundleNavigation(path, usingBuiltin)
+            );
+        };
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            apply.run();
+            return;
+        }
+
+        if (this.bridge == null) {
+            apply.run();
+            return;
+        }
+
+        final Semaphore applied = new Semaphore(0);
+        this.bridge.executeOnMainThread(() -> {
+            try {
+                apply.run();
+            } finally {
+                applied.release();
+            }
+        });
+        try {
+            if (!applied.tryAcquire(2, TimeUnit.SECONDS)) {
+                logger.warn("Timed out waiting for main thread bundle apply");
+            }
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for main thread bundle apply");
+        }
     }
 
     private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
