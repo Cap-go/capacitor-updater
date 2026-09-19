@@ -62,6 +62,10 @@ function appReadyPageStartedMatchesBinding(): boolean {
   return readAppReadyPageStartedToken() === bindingToken;
 }
 
+export function isAppReadyPageStartedMatched(): boolean {
+  return appReadyPageStartedMatchesBinding();
+}
+
 export async function awaitAppReadyPageStartedToken(timeoutMs = 60000): Promise<boolean> {
   if (appReadyPageStartedMatchesBinding()) {
     return true;
