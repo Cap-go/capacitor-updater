@@ -4001,15 +4001,12 @@ public class CapacitorUpdaterUnitTest {
         Files.write(dest.toPath(), first);
 
         BooleanSupplier stopAfterFirstChunk = new BooleanSupplier() {
-            private boolean seen;
+            private int calls;
 
             @Override
             public boolean getAsBoolean() {
-                if (seen) {
-                    return true;
-                }
-                seen = true;
-                return false;
+                // writeHttpBody checks shouldStop before opening the stream and again before each read.
+                return ++calls > 2;
             }
         };
 
