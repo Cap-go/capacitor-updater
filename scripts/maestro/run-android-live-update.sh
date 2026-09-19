@@ -611,7 +611,7 @@ run_scenario() {
       control_server reset always
       prepare_scenario always
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "always direct update applies on first launch" \
         "Build label: $first_release" \
         'Scenario: always' \
