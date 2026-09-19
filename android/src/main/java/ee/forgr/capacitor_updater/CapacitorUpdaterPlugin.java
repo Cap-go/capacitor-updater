@@ -5287,8 +5287,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
                                 ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
-                                    initialDirectUpdateAllowed ||
-                                    CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate
+                                  initialDirectUpdateAllowed ||
+                                  CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate
                                 : initialDirectUpdateAllowed || CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate;
                             startNewThread(() -> {
                                 try {
