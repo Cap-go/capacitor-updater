@@ -6,7 +6,7 @@
 import { registerPlugin } from '@capacitor/core';
 import './history';
 
-import { awaitAppReadyPageStartedToken, readInjectedAppReadyBundleId } from './app-ready';
+import { readInjectedAppReadyBundleId } from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
@@ -25,9 +25,6 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
 
   while (Date.now() < deadline) {
     const bundleId = readInjectedAppReadyBundleId();
-    if (bundleId) {
-      await awaitAppReadyPageStartedToken(Math.max(0, deadline - Date.now()));
-    }
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
     const { bundle } = await target.current();
     if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
@@ -37,9 +34,6 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
   }
 
   const bundleId = readInjectedAppReadyBundleId();
-  if (bundleId) {
-    await awaitAppReadyPageStartedToken(Math.max(0, deadline - Date.now()));
-  }
   const { bundle } = await target.current();
   if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
     return { bundle };
