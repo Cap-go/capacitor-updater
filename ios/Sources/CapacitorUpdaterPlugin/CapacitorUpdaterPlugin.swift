@@ -221,6 +221,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pendingNotifyAppReady = false
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
+    private var awaitingAppReadyBundleId: String?
+    private var appReadyWebViewLoadToken = 0
+    private var appReadyWebViewLoadedToken = 0
+    private var appReadyWebViewPageStartedToken = 0
+    private var appReadyWebViewPageLoadPendingToken = 0
+    private static let appReadyBindingStorageKey = "__capgoAppReadyBinding"
+    private static let appReadyBindingMessageHandlerName = "capgoAppReadyBinding"
+    private var appReadyBindingInfrastructureInstalled = false
+    private let appReadyBindingMessageHandler = AppReadyBindingMessageHandler()
 
     private var delayUpdateUtils: DelayUpdateUtils!
 
@@ -236,6 +245,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let webViewStatsReporter = WebViewStatsReporter(implementation: implementation)
         self.webViewStatsReporter = webViewStatsReporter
         webViewStatsReporter.install(on: self.bridge?.webView)
+        self.appReadyBindingMessageHandler.plugin = self
         #if targetEnvironment(simulator)
         logger.info("::::: SIMULATOR :::::")
         logger.info("Application directory: \(NSHomeDirectory())")
@@ -287,6 +297,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
+        if autoSplashscreen && autoSplashscreenTimeout < appReadyTimeout {
+            autoSplashscreenTimeout = appReadyTimeout
+        }
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
@@ -565,11 +578,54 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func reportWebViewError(_ call: CAPPluginCall) {
+        let type = call.getString("type") ?? ""
+        self.handleAppReadyBindingLifecycleReport(type: type, call: call)
         guard let webViewStatsReporter = webViewStatsReporter else {
             call.resolve()
             return
         }
         webViewStatsReporter.reportError(call)
+    }
+
+    private func parseAppReadyLoadToken(_ rawValue: String?) -> Int {
+        guard let rawValue, let token = Int(rawValue) else {
+            return -1
+        }
+        return token
+    }
+
+    private func acceptAppReadyBindingLifecycleReport(reportedBundleId: String?, reportedLoadToken: Int) -> Bool {
+        guard let awaiting = self.awaitingAppReadyBundleId,
+              !awaiting.isEmpty,
+              let reportedBundleId,
+              !reportedBundleId.isEmpty else {
+            return false
+        }
+        return awaiting == reportedBundleId && reportedLoadToken == self.appReadyWebViewLoadToken
+    }
+
+    private func handleAppReadyBindingLifecycleReport(type: String, call: CAPPluginCall) {
+        if type == "webview_page_started" {
+            if self.acceptAppReadyBindingLifecycleReport(
+                reportedBundleId: call.getString("bundleId"),
+                reportedLoadToken: self.parseAppReadyLoadToken(call.getString("loadToken"))
+            ) {
+                self.markAppReadyWebViewPageStarted()
+            }
+            return
+        }
+        if type == "webview_page_loaded" || type == "webview_dom_content_loaded" {
+            if call.getString("bundleId") != nil, call.getString("loadToken") != nil {
+                if self.acceptAppReadyBindingLifecycleReport(
+                    reportedBundleId: call.getString("bundleId"),
+                    reportedLoadToken: self.parseAppReadyLoadToken(call.getString("loadToken"))
+                ) {
+                    self.markAppReadyWebViewLoaded()
+                }
+                return
+            }
+            self.markAppReadyWebViewLoaded()
+        }
     }
 
     private func initialLoad() -> Bool {
@@ -592,9 +648,228 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Initial load \(id)")
-        // We don't use the viewcontroller here as it does not work during the initial load state
-        bridge.setServerBasePath(dest.path)
+        // Persist app-ready binding before navigation so document-start reads the current bundle.
+        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+            guard let self = self, let bridge = self.bridge else {
+                return
+            }
+            // We don't use the viewcontroller here as it does not work during the initial load state
+            bridge.setServerBasePath(dest.path)
+        }
         return true
+    }
+
+    private static func jsQuotedString(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let encoded = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        return encoded
+    }
+
+    private func buildAppReadyBundleBindingScriptBody() -> String {
+        return """
+          window.__capgoAppReadyBundleId=id;
+          window.__capgoAppReadyBindingToken=token;
+          function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}
+          function reportPageStarted(){
+            if(!isActiveBinding()){return false;}
+            var cap=window.Capacitor;
+            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
+            var plugin=cap.Plugins.CapacitorUpdater;
+            if(typeof plugin.reportWebViewError!=='function'){return false;}
+            try{
+              var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});
+              if(result&&typeof result.catch==='function'){result.catch(function(){});}
+            }catch(_){return false;}
+            return true;
+          }
+          if(!reportPageStarted()){
+            var pageTimer=setInterval(function(){
+              if(!isActiveBinding()){clearInterval(pageTimer);return;}
+              if(reportPageStarted()){clearInterval(pageTimer);}
+            },25);
+          }
+        """
+    }
+
+    private func buildAppReadyBundleBindingScript(bundleId: String, loadToken: Int) -> String {
+        let quotedId = Self.jsQuotedString(bundleId)
+        return """
+        (function(id,token){
+        \(self.buildAppReadyBundleBindingScriptBody())
+        })(\(quotedId),\(loadToken));
+        """
+    }
+
+    private func buildAppReadyBindingStorageValue(bundleId: String, loadToken: Int) -> String {
+        return "{\"id\":\(Self.jsQuotedString(bundleId)),\"token\":\(loadToken)}"
+    }
+
+    private func buildAppReadyBindingDocumentStartScript(seedBundleId: String? = nil, seedLoadToken: Int? = nil) -> String {
+        var seedWrite = ""
+        if let seedBundleId, let seedLoadToken {
+            let storageValue = self.buildAppReadyBindingStorageValue(bundleId: seedBundleId, loadToken: seedLoadToken)
+            seedWrite =
+                "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
+        }
+        return """
+        (function(){
+        \(seedWrite)
+        var key='\(Self.appReadyBindingStorageKey)';
+        var binding=null;
+        try{binding=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}
+        if(!binding||!binding.id){return;}
+        try{
+          if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.\(Self.appReadyBindingMessageHandlerName)){
+            window.webkit.messageHandlers.\(Self.appReadyBindingMessageHandlerName).postMessage({type:'page_started',bundleId:binding.id,loadToken:String(binding.token)});
+          }
+        }catch(e){}
+        (function(id,token){
+        \(self.buildAppReadyBundleBindingScriptBody())
+        })(binding.id,binding.token);
+        })();
+        """
+    }
+
+    private func installAppReadyBindingInfrastructureIfNeeded(on webView: WKWebView, seedBundleId: String? = nil, seedLoadToken: Int? = nil) {
+        guard !self.appReadyBindingInfrastructureInstalled else {
+            return
+        }
+        self.appReadyBindingInfrastructureInstalled = true
+        self.appReadyBindingMessageHandler.plugin = self
+        let controller = webView.configuration.userContentController
+        controller.add(self.appReadyBindingMessageHandler, name: Self.appReadyBindingMessageHandlerName)
+        let script = self.buildAppReadyBindingDocumentStartScript(seedBundleId: seedBundleId, seedLoadToken: seedLoadToken)
+        let userScript = WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        controller.addUserScript(userScript)
+    }
+
+    private func persistAppReadyBinding(
+        on webView: WKWebView,
+        bundleId: String,
+        loadToken: Int,
+        completion: (() -> Void)? = nil
+    ) {
+        let storageValue = self.buildAppReadyBindingStorageValue(bundleId: bundleId, loadToken: loadToken)
+        let persistScript = "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
+        webView.evaluateJavaScript(persistScript) { _, _ in
+            completion?()
+        }
+    }
+
+    fileprivate func handleAppReadyBindingMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let type = body["type"] as? String,
+              type == "page_started" else {
+            return
+        }
+        let bundleId = body["bundleId"] as? String
+        let loadToken = self.parseAppReadyLoadToken(body["loadToken"] as? String)
+        if self.acceptAppReadyBindingLifecycleReport(reportedBundleId: bundleId, reportedLoadToken: loadToken) {
+            self.markAppReadyWebViewPageStarted()
+        }
+    }
+
+    private func syncAppReadyBundleBinding(bundleId: String, completion: (() -> Void)? = nil) {
+        self.awaitingAppReadyBundleId = bundleId
+        self.appReadyWebViewLoadToken &+= 1
+        let loadToken = self.appReadyWebViewLoadToken
+        let finish: () -> Void = {
+            guard let completion else {
+                return
+            }
+            if Thread.isMainThread {
+                completion()
+            } else {
+                DispatchQueue.main.async {
+                    completion()
+                }
+            }
+        }
+        let work: () -> Void = { [weak self] in
+            guard let self = self else {
+                finish()
+                return
+            }
+            guard let webView = self.bridge?.webView else {
+                finish()
+                return
+            }
+            self.installAppReadyBindingInfrastructureIfNeeded(
+                on: webView,
+                seedBundleId: bundleId,
+                seedLoadToken: loadToken
+            )
+            self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken, completion: finish)
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async {
+                work()
+            }
+        }
+    }
+
+    private func markAppReadyWebViewPageStartedFromNative() {
+        guard let awaiting = self.awaitingAppReadyBundleId, !awaiting.isEmpty else {
+            return
+        }
+        if awaiting != self.implementation.getCurrentBundleId() {
+            return
+        }
+        if self.appReadyWebViewPageStartedToken >= self.appReadyWebViewLoadToken {
+            return
+        }
+        self.markAppReadyWebViewPageStarted()
+    }
+
+    private func markAppReadyWebViewPageStarted() {
+        self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
+        self.flushAppReadyWebViewLoadedIfReady()
+        self.publishAppReadyPageStartedTokenToJs()
+    }
+
+    private func publishAppReadyPageStartedTokenToJs() {
+        let token = self.appReadyWebViewLoadToken
+        let script = "window.__capgoAppReadyPageStartedToken=\(token);"
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let webView = self.bridge?.webView else {
+                return
+            }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+
+    private func markAppReadyWebViewLoaded() {
+        guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+            self.appReadyWebViewPageLoadPendingToken = self.appReadyWebViewLoadToken
+            return
+        }
+        self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
+    }
+
+    private func flushAppReadyWebViewLoadedIfReady() {
+        guard self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+            return
+        }
+        guard self.appReadyWebViewPageLoadPendingToken >= self.appReadyWebViewLoadToken else {
+            return
+        }
+        self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
+    }
+
+    func shouldCommitNotifyAppReady(reportedBundleId: String?, currentBundleId: String) -> Bool {
+        if let reported = reportedBundleId, !reported.isEmpty {
+            return reported == currentBundleId &&
+                self.appReadyWebViewLoadToken > 0 &&
+                self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken
+        }
+        guard let awaiting = self.awaitingAppReadyBundleId, awaiting == currentBundleId else {
+            return false
+        }
+        return self.appReadyWebViewLoadedToken >= self.appReadyWebViewLoadToken
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -1697,37 +1972,46 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
-        let id = self.implementation.getCurrentBundleId()
-        let dest = self.currentReloadDestination()
-        logger.info("Reloading \(id)")
-
-        guard let vc = bridge.viewController as? CAPBridgeViewController else {
+        guard bridge.viewController is CAPBridgeViewController else {
             self.logger.error("Cannot get viewController")
             return false
         }
-        guard let capBridge = vc.bridge else {
-            self.logger.error("Cannot get capBridge")
-            return false
-        }
-        if self.keepUrlPathAfterReload {
-            if let currentURL = vc.webView?.url {
-                capBridge.setServerBasePath(dest.path)
-                var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                urlComponents.path = currentURL.path
-                urlComponents.query = currentURL.query
-                urlComponents.fragment = currentURL.fragment
-                if let finalUrl = urlComponents.url {
-                    _ = vc.webView?.load(URLRequest(url: finalUrl))
+        let id = self.implementation.getCurrentBundleId()
+        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+            guard let self = self else {
+                return
+            }
+            let dest = self.currentReloadDestination()
+            self.logger.info("Reloading \(id)")
+
+            guard let vc = bridge.viewController as? CAPBridgeViewController else {
+                self.logger.error("Cannot get viewController")
+                return
+            }
+            guard let capBridge = vc.bridge else {
+                self.logger.error("Cannot get capBridge")
+                return
+            }
+            if self.keepUrlPathAfterReload {
+                if let currentURL = vc.webView?.url {
+                    capBridge.setServerBasePath(dest.path)
+                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                    urlComponents.path = currentURL.path
+                    urlComponents.query = currentURL.query
+                    urlComponents.fragment = currentURL.fragment
+                    if let finalUrl = urlComponents.url {
+                        _ = vc.webView?.load(URLRequest(url: finalUrl))
+                    } else {
+                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
+                        vc.setServerBasePath(path: dest.path)
+                    }
                 } else {
-                    self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
+                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                     vc.setServerBasePath(path: dest.path)
                 }
             } else {
-                self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                 vc.setServerBasePath(path: dest.path)
             }
-        } else {
-            vc.setServerBasePath(path: dest.path)
         }
         return true
     }
@@ -3303,8 +3587,40 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
+        let reportedBundleId = call.getString("bundleId")
+        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+            let explicitMatch = {
+                guard let reportedBundleId, !reportedBundleId.isEmpty else {
+                    return false
+                }
+                return reportedBundleId == bundle.getId()
+            }()
+            let awaitingMatch = {
+                guard reportedBundleId == nil || reportedBundleId?.isEmpty == true,
+                      let awaiting = self.awaitingAppReadyBundleId,
+                      !awaiting.isEmpty else {
+                    return false
+                }
+                return awaiting == bundle.getId()
+            }()
+            if (explicitMatch || awaitingMatch) && self.appReadyWebViewLoadToken == 0 {
+                self.syncAppReadyBundleBinding(bundleId: bundle.getId())
+            }
+            if (explicitMatch || awaitingMatch) &&
+                self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
+                self.markAppReadyWebViewPageStartedFromNative()
+            }
+        }
+        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+            logger.warn(
+                "Ignoring stale notifyAppReady for bundle \(reportedBundleId ?? "unknown"), current is \(bundle.getId())"
+            )
+            call.resolve(["bundle": bundle.toJSON()])
+            return
+        }
+
+        self.semaphoreDown()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
         self.reportAppLaunchReady(bundle)
         logger.info("Current bundle loaded successfully. [notifyAppReady was called] \(bundle.toString())")
@@ -4108,6 +4424,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setAppReadyTimeoutForTesting(_ timeout: Int) {
         self.appReadyTimeout = timeout
+    }
+
+    func setAppReadyBindingForTesting(bundleId: String, loadToken: Int, loadedToken: Int) {
+        self.awaitingAppReadyBundleId = bundleId
+        self.appReadyWebViewLoadToken = loadToken
+        self.appReadyWebViewLoadedToken = loadedToken
+        self.appReadyWebViewPageStartedToken = 0
+    }
+
+    func markAppReadyWebViewPageStartedForTesting() {
+        self.markAppReadyWebViewPageStarted()
+    }
+
+    func markAppReadyWebViewLoadedForTesting() {
+        self.markAppReadyWebViewLoaded()
     }
 
     func armPendingNotifyAppReadyForTesting() {
@@ -5030,5 +5361,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // iOS doesn't support flexible in-app updates
         logger.warn("completeFlexibleUpdate is not supported on iOS.")
         call.reject("Flexible updates are not supported on iOS.", "NOT_SUPPORTED")
+    }
+}
+
+private final class AppReadyBindingMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var plugin: CapacitorUpdaterPlugin?
+
+    deinit {}
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        self.plugin?.handleAppReadyBindingMessage(message)
     }
 }

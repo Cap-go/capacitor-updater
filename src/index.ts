@@ -3,14 +3,60 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
-import type { CapacitorUpdaterPlugin } from './definitions';
+import { readInjectedAppReadyBundleId } from './app-ready';
+import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
-const CapacitorUpdater: CapacitorUpdaterPlugin = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
+type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
+  notifyAppReady(options?: { bundleId?: string }): Promise<AppReadyResult>;
+};
+
+const NOTIFY_APP_READY_WAIT_MS = 55000;
+const NOTIFY_APP_READY_BINDING_WAIT_MS = 3000;
+
+const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
 });
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeBridge): Promise<AppReadyResult> {
+  const deadline = Date.now() + NOTIFY_APP_READY_WAIT_MS;
+  const bindingDeadline = Date.now() + NOTIFY_APP_READY_BINDING_WAIT_MS;
+  let lastResult: AppReadyResult | undefined;
+
+  while (Date.now() < deadline) {
+    const bundleId = readInjectedAppReadyBundleId();
+    const waitForBinding = Capacitor.getPlatform() !== 'web' && !bundleId && Date.now() < bindingDeadline;
+    if (waitForBinding) {
+      await sleep(25);
+      continue;
+    }
+    lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
+    const { bundle } = await target.current();
+    if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+      return { bundle };
+    }
+    await sleep(50);
+  }
+
+  const bundleId = readInjectedAppReadyBundleId();
+  const { bundle } = await target.current();
+  if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+    return { bundle };
+  }
+  return lastResult ?? (await target.notifyAppReady(bundleId ? { bundleId } : undefined));
+}
+
+export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
+  get(target, prop, receiver) {
+    if (prop === 'notifyAppReady') {
+      return async (): Promise<AppReadyResult> => notifyAppReadyWithInternalBinding(target);
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+});
+
 export * from './definitions';
-export { CapacitorUpdater };

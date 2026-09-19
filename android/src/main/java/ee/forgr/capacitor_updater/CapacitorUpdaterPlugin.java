@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.RenderProcessGoneDetail;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
@@ -224,6 +225,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean pendingNotifyAppReadyWait = false;
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
+    private volatile boolean activeDownloadPlannedDirectUpdate = false;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
     private final Phaser semaphoreReady = new Phaser(0) {
@@ -248,6 +250,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final long launchStartedAtMs = System.currentTimeMillis();
     private volatile long webViewPageStartedAtMs = 0;
+    private volatile String awaitingAppReadyBundleId = null;
+    private volatile int appReadyWebViewLoadToken = 0;
+    private volatile int appReadyWebViewLoadedToken = 0;
+    private volatile int appReadyWebViewPageStartedToken = 0;
+    private volatile int appReadyWebViewPageLoadPendingToken = 0;
+    private volatile Object appReadyDocumentStartScriptHandler = null;
+    private volatile boolean appReadyBindingJavascriptInterfaceInstalled = false;
+    private AppReadyBindingJavascriptInterface appReadyBindingJavascriptInterface;
     private volatile boolean launchStartReported = false;
     private volatile boolean launchReadyReported = false;
     private volatile boolean launchTimeoutReported = false;
@@ -882,6 +892,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
+        if (Boolean.TRUE.equals(this.autoSplashscreen) && this.autoSplashscreenTimeout < this.appReadyTimeout) {
+            this.autoSplashscreenTimeout = this.appReadyTimeout;
+        }
         int responseTimeoutSeconds = this.getConfig().getInt("responseTimeout", 20);
         long responseTimeoutMillis = responseTimeoutSeconds > 0 ? (long) responseTimeoutSeconds * 1000L : 20_000L;
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
@@ -921,6 +934,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         this.implementation.downloadGate = this::waitForCleanupIfNeeded;
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
@@ -1383,7 +1397,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.splashscreenTimeoutRunnable = () -> {
             logger.info("autoSplashscreen timeout reached, hiding splashscreen");
             this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
+            if (!this.activeDownloadPlannedDirectUpdate) {
+                this.implementation.directUpdate = false;
+            }
             hideSplashscreen();
         };
 
@@ -1667,11 +1683,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view);
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
             @Override
             public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewLoaded();
                 CapacitorUpdaterPlugin.this.reportWebViewPageLoaded(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
@@ -1892,11 +1911,59 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void reportWebViewError(final PluginCall call) {
         final JSObject data = call.getData();
-        this.reportWebViewStats(
-            statsActionForWebViewErrorType(data.optString("type", "javascript_error")),
-            buildWebViewErrorMetadata(data)
-        );
+        final String type = data.optString("type", "javascript_error");
+        this.handleAppReadyBindingLifecycleReport(type, data);
+        this.reportWebViewStats(statsActionForWebViewErrorType(type), buildWebViewErrorMetadata(data));
         call.resolve();
+    }
+
+    private void handleAppReadyBindingLifecycleReport(final String type, final JSObject data) {
+        if ("webview_page_started".equals(type)) {
+            if (
+                this.acceptAppReadyBindingLifecycleReport(
+                    data.optString("bundleId"),
+                    this.parseAppReadyLoadToken(data.optString("loadToken"))
+                )
+            ) {
+                this.markAppReadyWebViewPageStarted();
+            }
+            return;
+        }
+        if ("webview_page_loaded".equals(type) || "webview_dom_content_loaded".equals(type)) {
+            if (data.has("bundleId") && data.has("loadToken")) {
+                if (
+                    this.acceptAppReadyBindingLifecycleReport(
+                        data.optString("bundleId"),
+                        this.parseAppReadyLoadToken(data.optString("loadToken"))
+                    )
+                ) {
+                    this.markAppReadyWebViewLoaded();
+                }
+                return;
+            }
+            this.markAppReadyWebViewLoaded();
+        }
+    }
+
+    private int parseAppReadyLoadToken(final String rawValue) {
+        if (rawValue == null || rawValue.isEmpty()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(rawValue);
+        } catch (final NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private boolean acceptAppReadyBindingLifecycleReport(final String reportedBundleId, final int reportedLoadToken) {
+        final String awaiting = this.awaitingAppReadyBundleId;
+        return (
+            awaiting != null &&
+            !awaiting.isEmpty() &&
+            awaiting.equals(reportedBundleId) &&
+            reportedLoadToken == this.appReadyWebViewLoadToken
+        );
     }
 
     private void reportWebViewStats(final String action, final Map<String, String> metadata) {
@@ -1923,6 +1990,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return "webview_render_process_gone";
             case "web_content_process_terminated":
                 return "webview_content_process_terminated";
+            case "webview_page_started":
+                return "webview_page_started";
             case "webview_dom_content_loaded":
                 return "webview_dom_content_loaded";
             case "webview_page_loaded":
@@ -2097,7 +2166,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (!Boolean.TRUE.equals(this.autoUpdate) || AUTO_UPDATE_MODE_ONLY_DOWNLOAD.equals(this.autoUpdateMode)) {
             return false;
         }
-        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut) && !this.activeDownloadPlannedDirectUpdate) {
             return false;
         }
         switch (this.directUpdateMode) {
@@ -2260,7 +2329,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+        return (plannedDirectUpdate && (!Boolean.TRUE.equals(this.autoSplashscreenTimedOut) || this.activeDownloadPlannedDirectUpdate));
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
@@ -2312,6 +2381,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     boolean shouldUseDirectUpdateForTesting() {
         return this.shouldUseDirectUpdate();
+    }
+
+    boolean isDirectUpdateCurrentlyAllowedForTesting(final boolean plannedDirectUpdate) {
+        return this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
     }
 
     boolean hasConsumedOnLaunchDirectUpdateForTesting() {
@@ -2913,9 +2986,245 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
     }
 
+    private static String jsQuotedString(final String value) {
+        return JSONObject.quote(value);
+    }
+
+    private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
+        return (
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}if(window.CapgoAppReadyBinding&&typeof window.CapgoAppReadyBinding.reportPageStarted==='function'){try{window.CapgoAppReadyBinding.reportPageStarted(id,String(token));return true;}catch(_){}}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()){clearInterval(pageTimer);}},25);}})(" +
+            jsQuotedString(bundleId) +
+            "," +
+            loadToken +
+            ");"
+        );
+    }
+
+    private void syncAppReadyBundleBinding(final String bundleId) {
+        this.syncAppReadyBundleBinding(bundleId, null);
+    }
+
+    private void syncAppReadyBundleBinding(final String bundleId, final Runnable completion) {
+        if (bundleId == null || bundleId.isEmpty()) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        this.awaitingAppReadyBundleId = bundleId;
+        this.appReadyWebViewLoadToken += 1;
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        final Runnable syncWork = () -> {
+            this.installAppReadyBindingJavascriptInterfaceIfNeeded();
+            final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
+            this.installDocumentStartAppReadyBundleBinding(script, completion);
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            syncWork.run();
+            return;
+        }
+        this.bridge.executeOnMainThread(syncWork);
+    }
+
+    private void installDocumentStartAppReadyBundleBinding(final String script) {
+        this.installDocumentStartAppReadyBundleBinding(script, null);
+    }
+
+    private void installDocumentStartAppReadyBundleBinding(final String script, final Runnable completion) {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        final Runnable install = () -> {
+            try {
+                if (this.appReadyDocumentStartScriptHandler != null) {
+                    this.appReadyDocumentStartScriptHandler.getClass().getMethod("remove").invoke(this.appReadyDocumentStartScriptHandler);
+                    this.appReadyDocumentStartScriptHandler = null;
+                }
+
+                final Class<?> webViewFeature = Class.forName("androidx.webkit.WebViewFeature");
+                final String feature = (String) webViewFeature.getField("DOCUMENT_START_SCRIPT").get(null);
+                final Boolean supported = (Boolean) webViewFeature.getMethod("isFeatureSupported", String.class).invoke(null, feature);
+                if (!Boolean.TRUE.equals(supported)) {
+                    return;
+                }
+
+                final String allowedOrigin = Uri.parse(this.bridge.getAppUrl())
+                    .buildUpon()
+                    .path(null)
+                    .fragment(null)
+                    .clearQuery()
+                    .build()
+                    .toString();
+                final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+                final android.webkit.WebView webView = this.bridge.getWebView();
+                final Object handler = webViewCompat
+                    .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
+                    .invoke(null, webView, script, java.util.Collections.singleton(allowedOrigin));
+                this.appReadyDocumentStartScriptHandler = handler;
+            } catch (final Exception e) {
+                logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
+            } finally {
+                if (completion != null) {
+                    completion.run();
+                }
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            install.run();
+            return;
+        }
+        this.bridge.executeOnMainThread(install);
+    }
+
+    private void installAppReadyBindingJavascriptInterfaceIfNeeded() {
+        if (this.appReadyBindingJavascriptInterfaceInstalled || this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final Runnable install = () -> {
+            if (this.appReadyBindingJavascriptInterfaceInstalled || this.bridge == null || this.bridge.getWebView() == null) {
+                return;
+            }
+            if (this.appReadyBindingJavascriptInterface == null) {
+                this.appReadyBindingJavascriptInterface = new AppReadyBindingJavascriptInterface();
+            }
+            this.bridge.getWebView().addJavascriptInterface(this.appReadyBindingJavascriptInterface, "CapgoAppReadyBinding");
+            this.appReadyBindingJavascriptInterfaceInstalled = true;
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            install.run();
+            return;
+        }
+        this.bridge.executeOnMainThread(install);
+    }
+
+    private void markAppReadyWebViewPageStartedFromNative() {
+        if (this.awaitingAppReadyBundleId == null || this.awaitingAppReadyBundleId.isEmpty()) {
+            return;
+        }
+        if (this.implementation == null) {
+            return;
+        }
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (current == null || !this.awaitingAppReadyBundleId.equals(current.getId())) {
+            return;
+        }
+        if (this.appReadyWebViewPageStartedToken >= this.appReadyWebViewLoadToken) {
+            return;
+        }
+        this.markAppReadyWebViewPageStarted();
+    }
+
+    private void markAppReadyWebViewPageStarted() {
+        this.appReadyWebViewPageStartedToken = this.appReadyWebViewLoadToken;
+        this.flushAppReadyWebViewLoadedIfReady();
+        this.publishAppReadyPageStartedTokenToJs();
+    }
+
+    private void publishAppReadyPageStartedTokenToJs() {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        final int token = this.appReadyWebViewLoadToken;
+        final String script = "window.__capgoAppReadyPageStartedToken=" + token + ";";
+        final android.webkit.WebView webView = this.bridge.getWebView();
+        this.mainHandler.post(() -> {
+            try {
+                webView.evaluateJavascript(script, null);
+            } catch (final Exception e) {
+                logger.debug("Unable to publish app-ready page-started token: " + e.getMessage());
+            }
+        });
+    }
+
+    private void evaluateAppReadyBundleBindingOnPageStarted(final android.webkit.WebView view) {
+        this.evaluateAppReadyBundleBindingOnPageStarted(view, null);
+    }
+
+    private void evaluateAppReadyBundleBindingOnPageStarted(final android.webkit.WebView view, final Runnable completion) {
+        if (view == null || this.implementation == null) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        final String awaiting = this.awaitingAppReadyBundleId;
+        if (awaiting == null || awaiting.isEmpty()) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (current == null || !awaiting.equals(current.getId())) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        if (this.appReadyWebViewLoadToken <= 0 || this.appReadyWebViewPageStartedToken >= this.appReadyWebViewLoadToken) {
+            if (completion != null) {
+                completion.run();
+            }
+            return;
+        }
+        this.installAppReadyBindingJavascriptInterfaceIfNeeded();
+        view.evaluateJavascript(this.buildAppReadyBundleBindingScript(awaiting, this.appReadyWebViewLoadToken), (_value) -> {
+            if (completion != null) {
+                completion.run();
+            }
+        });
+    }
+
+    private void markAppReadyWebViewLoaded() {
+        if (this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken) {
+            this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
+            return;
+        }
+        this.appReadyWebViewPageLoadPendingToken = this.appReadyWebViewLoadToken;
+    }
+
+    private void flushAppReadyWebViewLoadedIfReady() {
+        if (
+            this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken &&
+            this.appReadyWebViewPageLoadPendingToken >= this.appReadyWebViewLoadToken
+        ) {
+            this.appReadyWebViewLoadedToken = this.appReadyWebViewLoadToken;
+        }
+    }
+
+    boolean shouldCommitNotifyAppReady(final String reportedBundleId, final String currentBundleId) {
+        if (reportedBundleId != null && !reportedBundleId.isEmpty()) {
+            return (
+                reportedBundleId.equals(currentBundleId) &&
+                this.appReadyWebViewLoadToken > 0 &&
+                this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken
+            );
+        }
+        final String awaiting = this.awaitingAppReadyBundleId;
+        if (awaiting == null || !awaiting.equals(currentBundleId)) {
+            return false;
+        }
+        return this.appReadyWebViewLoadedToken >= this.appReadyWebViewLoadToken;
+    }
+
     private void applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
+        this.installWebViewStatsReporter();
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () -> {
+            this.performCurrentBundleNavigation(path, usingBuiltin);
+        });
+    }
+
+    private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
@@ -4482,8 +4791,36 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
+        this.installWebViewStatsReporter();
         try {
             final BundleInfo bundle = this.implementation.getCurrentBundle();
+            final String reportedBundleId = call.getString("bundleId");
+            if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
+                final boolean explicitMatch =
+                    reportedBundleId != null && !reportedBundleId.isEmpty() && reportedBundleId.equals(bundle.getId());
+                final boolean awaitingMatch =
+                    (reportedBundleId == null || reportedBundleId.isEmpty()) &&
+                    this.awaitingAppReadyBundleId != null &&
+                    this.awaitingAppReadyBundleId.equals(bundle.getId());
+                if ((explicitMatch || awaitingMatch) && this.appReadyWebViewLoadToken == 0) {
+                    this.syncAppReadyBundleBinding(bundle.getId());
+                }
+                if ((explicitMatch || awaitingMatch) && this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken) {
+                    this.markAppReadyWebViewPageStartedFromNative();
+                }
+            }
+            if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
+                logger.warn(
+                    "Ignoring stale notifyAppReady for bundle " +
+                        (reportedBundleId == null ? "unknown" : reportedBundleId) +
+                        ", current is " +
+                        bundle.getId()
+                );
+                final JSObject ret = new JSObject();
+                ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
+                call.resolve(ret);
+                return;
+            }
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
             this.reportAppLaunchReady(bundle);
             logger.info("Current bundle loaded successfully. ['notifyAppReady()' was called] " + bundle);
@@ -4737,12 +5074,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.sendReadyToJs(current, msg, plannedDirectUpdate);
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
+        this.activeDownloadPlannedDirectUpdate = false;
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 
     private void clearBackgroundDownloadState() {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
+        this.activeDownloadPlannedDirectUpdate = false;
     }
 
     private boolean isDownloadStuckOrTimedOut() {
@@ -4779,6 +5118,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
+        this.activeDownloadPlannedDirectUpdate = plannedDirectUpdate;
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
@@ -5027,8 +5367,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
-                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
-                                : initialDirectUpdateAllowed;
+                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
+                                  initialDirectUpdateAllowed ||
+                                  CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate
+                                : initialDirectUpdateAllowed || CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate;
                             startNewThread(() -> {
                                 try {
                                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
@@ -5878,6 +6220,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnDestroy: " + e.getMessage());
+        }
+    }
+
+    private final class AppReadyBindingJavascriptInterface {
+
+        @JavascriptInterface
+        public void reportPageStarted(final String bundleId, final String loadTokenStr) {
+            CapacitorUpdaterPlugin.this.mainHandler.post(() -> {
+                if (
+                    CapacitorUpdaterPlugin.this.acceptAppReadyBindingLifecycleReport(
+                        bundleId,
+                        CapacitorUpdaterPlugin.this.parseAppReadyLoadToken(loadTokenStr)
+                    )
+                ) {
+                    CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStarted();
+                }
+            });
         }
     }
 }

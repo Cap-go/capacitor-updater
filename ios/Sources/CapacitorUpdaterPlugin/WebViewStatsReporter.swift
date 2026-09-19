@@ -209,6 +209,8 @@ final class WebViewStatsReporter {
             return "webview_render_process_gone"
         case "web_content_process_terminated":
             return "webview_content_process_terminated"
+        case "webview_page_started":
+            return "webview_page_started"
         case "webview_dom_content_loaded":
             return "webview_dom_content_loaded"
         case "webview_page_loaded":
