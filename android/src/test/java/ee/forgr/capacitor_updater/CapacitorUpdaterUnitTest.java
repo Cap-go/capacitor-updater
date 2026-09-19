@@ -3993,6 +3993,77 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void writeHttpBodyHonorsStopSignalAndKeepsPartial() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-stop-partial");
+        File dest = dir.resolve("partial.bin").toFile();
+        byte[] first = "partial-body".getBytes(StandardCharsets.UTF_8);
+        Files.write(dest.toPath(), first);
+
+        BooleanSupplier stopAfterFirstChunk = new BooleanSupplier() {
+            private boolean seen;
+
+            @Override
+            public boolean getAsBoolean() {
+                if (seen) {
+                    return true;
+                }
+                seen = true;
+                return false;
+            }
+        };
+
+        try {
+            DownloadService.writeHttpBody(
+                dest,
+                new ByteArrayInputStream("more-data".getBytes(StandardCharsets.UTF_8)),
+                206,
+                first.length,
+                stopAfterFirstChunk,
+                null
+            );
+            fail("expected stop to abort write");
+        } catch (IOException e) {
+            assertEquals("download_stopped", e.getMessage());
+        }
+
+        byte[] kept = Files.readAllBytes(dest.toPath());
+        assertTrue(kept.length > first.length);
+        assertArrayEquals(first, Arrays.copyOf(kept, first.length));
+    }
+
+    @Test
+    public void planZipResumeWriteAppendsOnlyOnMatching206() {
+        DownloadService.ZipWritePlan append = DownloadService.planZipResumeWrite(206, 1024, "bytes 1024-2047/4096");
+        assertEquals(206, append.statusCode);
+        assertEquals(1024, append.writeOffset);
+
+        DownloadService.ZipWritePlan restartOn200 = DownloadService.planZipResumeWrite(200, 1024, null);
+        assertEquals(200, restartOn200.statusCode);
+        assertEquals(0, restartOn200.writeOffset);
+
+        DownloadService.ZipWritePlan restartOnBadRange = DownloadService.planZipResumeWrite(206, 1024, "bytes 0-1023/4096");
+        assertEquals(200, restartOnBadRange.statusCode);
+        assertEquals(0, restartOnBadRange.writeOffset);
+    }
+
+    @Test
+    public void parseContentRangeStartReadsByteOffset() {
+        assertEquals(1024, DownloadService.parseContentRangeStart("bytes 1024-2047/4096"));
+        assertEquals(0, DownloadService.parseContentRangeStart("bytes 0-1023/*"));
+        assertEquals(-1, DownloadService.parseContentRangeStart("invalid"));
+    }
+
+    @Test
+    public void isRetryableHttpStatusMarksTransientCodes() {
+        assertTrue(DownloadService.isRetryableHttpStatus(500));
+        assertTrue(DownloadService.isRetryableHttpStatus(408));
+        assertTrue(DownloadService.isRetryableHttpStatus(429));
+        assertFalse(DownloadService.isRetryableHttpStatus(404));
+        assertFalse(DownloadService.isRetryableHttpStatus(416));
+    }
+
+    @Test
     public void manifestPartialFileUsesStableHashAndPath() throws Exception {
         final Path dir = Files.createTempDirectory("capgo-partial-name");
         String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
