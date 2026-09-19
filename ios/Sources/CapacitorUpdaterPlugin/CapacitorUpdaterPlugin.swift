@@ -648,9 +648,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         logger.info("Initial load \(id)")
-        // We don't use the viewcontroller here as it does not work during the initial load state
-        bridge.setServerBasePath(dest.path)
-        self.syncAppReadyBundleBinding(bundleId: id)
+        // Persist app-ready binding before navigation so document-start reads the current bundle.
+        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+            guard let self = self, let bridge = self.bridge else {
+                return
+            }
+            // We don't use the viewcontroller here as it does not work during the initial load state
+            bridge.setServerBasePath(dest.path)
+        }
         return true
     }
 
@@ -740,10 +745,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         controller.addUserScript(userScript)
     }
 
-    private func persistAppReadyBinding(on webView: WKWebView, bundleId: String, loadToken: Int) {
+    private func persistAppReadyBinding(
+        on webView: WKWebView,
+        bundleId: String,
+        loadToken: Int,
+        completion: (() -> Void)? = nil
+    ) {
         let storageValue = self.buildAppReadyBindingStorageValue(bundleId: bundleId, loadToken: loadToken)
         let persistScript = "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
-        webView.evaluateJavaScript(persistScript, completionHandler: nil)
+        webView.evaluateJavaScript(persistScript) { _, _ in
+            completion?()
+        }
     }
 
     fileprivate func handleAppReadyBindingMessage(_ message: WKScriptMessage) {
@@ -759,12 +771,29 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func syncAppReadyBundleBinding(bundleId: String) {
+    private func syncAppReadyBundleBinding(bundleId: String, completion: (() -> Void)? = nil) {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
         let loadToken = self.appReadyWebViewLoadToken
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let webView = self.bridge?.webView else {
+        let finish: () -> Void = {
+            guard let completion else {
+                return
+            }
+            if Thread.isMainThread {
+                completion()
+            } else {
+                DispatchQueue.main.async {
+                    completion()
+                }
+            }
+        }
+        let work: () -> Void = { [weak self] in
+            guard let self = self else {
+                finish()
+                return
+            }
+            guard let webView = self.bridge?.webView else {
+                finish()
                 return
             }
             self.installAppReadyBindingInfrastructureIfNeeded(
@@ -772,7 +801,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 seedBundleId: bundleId,
                 seedLoadToken: loadToken
             )
-            self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken)
+            self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken, completion: finish)
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async {
+                work()
+            }
         }
     }
 
@@ -1936,38 +1972,46 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
-        let id = self.implementation.getCurrentBundleId()
-        self.syncAppReadyBundleBinding(bundleId: id)
-        let dest = self.currentReloadDestination()
-        logger.info("Reloading \(id)")
-
-        guard let vc = bridge.viewController as? CAPBridgeViewController else {
+        guard bridge.viewController is CAPBridgeViewController else {
             self.logger.error("Cannot get viewController")
             return false
         }
-        guard let capBridge = vc.bridge else {
-            self.logger.error("Cannot get capBridge")
-            return false
-        }
-        if self.keepUrlPathAfterReload {
-            if let currentURL = vc.webView?.url {
-                capBridge.setServerBasePath(dest.path)
-                var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
-                urlComponents.path = currentURL.path
-                urlComponents.query = currentURL.query
-                urlComponents.fragment = currentURL.fragment
-                if let finalUrl = urlComponents.url {
-                    _ = vc.webView?.load(URLRequest(url: finalUrl))
+        let id = self.implementation.getCurrentBundleId()
+        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+            guard let self = self else {
+                return
+            }
+            let dest = self.currentReloadDestination()
+            self.logger.info("Reloading \(id)")
+
+            guard let vc = bridge.viewController as? CAPBridgeViewController else {
+                self.logger.error("Cannot get viewController")
+                return
+            }
+            guard let capBridge = vc.bridge else {
+                self.logger.error("Cannot get capBridge")
+                return
+            }
+            if self.keepUrlPathAfterReload {
+                if let currentURL = vc.webView?.url {
+                    capBridge.setServerBasePath(dest.path)
+                    var urlComponents = URLComponents(url: capBridge.config.serverURL, resolvingAgainstBaseURL: false)!
+                    urlComponents.path = currentURL.path
+                    urlComponents.query = currentURL.query
+                    urlComponents.fragment = currentURL.fragment
+                    if let finalUrl = urlComponents.url {
+                        _ = vc.webView?.load(URLRequest(url: finalUrl))
+                    } else {
+                        self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
+                        vc.setServerBasePath(path: dest.path)
+                    }
                 } else {
-                    self.logger.error("Unable to build final URL when keeping path after reload; falling back to base path")
+                    self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                     vc.setServerBasePath(path: dest.path)
                 }
             } else {
-                self.logger.error("vc.webView?.url is null? Falling back to base path reload.")
                 vc.setServerBasePath(path: dest.path)
             }
-        } else {
-            vc.setServerBasePath(path: dest.path)
         }
         return true
     }
