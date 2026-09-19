@@ -11,11 +11,10 @@ import {
   awaitInjectedAppReadyBundleId,
   readInjectedAppReadyBundleId,
 } from './app-ready';
-import type { AppReadyResult, BundleInfo, CapacitorUpdaterPlugin } from './definitions';
+import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
   notifyAppReady(options?: { bundleId?: string }): Promise<AppReadyResult>;
-  getCurrentBundle(): Promise<BundleInfo>;
 };
 
 const NOTIFY_APP_READY_RETRY_MS = 20000;
@@ -24,6 +23,11 @@ const NOTIFY_APP_READY_BINDING_WAIT_MS = 20000;
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
 });
+
+async function readCommittedCurrentBundle(target: CapacitorUpdaterPlugin) {
+  const { bundle } = await target.current();
+  return bundle;
+}
 
 async function notifyAppReadyWithInternalBinding(
   target: CapacitorUpdaterNativeBridge,
@@ -34,16 +38,16 @@ async function notifyAppReadyWithInternalBinding(
 
   while (Date.now() < deadline) {
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
-    const current = await target.getCurrentBundle();
-    if (current?.status === 'success' && (!bundleId || current.id === bundleId)) {
-      return { bundle: current };
+    const bundle = await readCommittedCurrentBundle(target);
+    if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+      return { bundle };
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  const current = await target.getCurrentBundle();
-  if (current?.status === 'success' && (!bundleId || current.id === bundleId)) {
-    return { bundle: current };
+  const bundle = await readCommittedCurrentBundle(target);
+  if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+    return { bundle };
   }
   return lastResult ?? (await target.notifyAppReady(bundleId ? { bundleId } : undefined));
 }
