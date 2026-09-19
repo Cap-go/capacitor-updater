@@ -1683,6 +1683,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
+                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view);
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -2164,7 +2165,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (!Boolean.TRUE.equals(this.autoUpdate) || AUTO_UPDATE_MODE_ONLY_DOWNLOAD.equals(this.autoUpdateMode)) {
             return false;
         }
-        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut) && !this.activeDownloadPlannedDirectUpdate) {
             return false;
         }
         switch (this.directUpdateMode) {
@@ -2327,7 +2328,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+        return (plannedDirectUpdate && (!Boolean.TRUE.equals(this.autoSplashscreenTimedOut) || this.activeDownloadPlannedDirectUpdate));
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
@@ -2379,6 +2380,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     boolean shouldUseDirectUpdateForTesting() {
         return this.shouldUseDirectUpdate();
+    }
+
+    boolean isDirectUpdateCurrentlyAllowedForTesting(final boolean plannedDirectUpdate) {
+        return this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
     }
 
     boolean hasConsumedOnLaunchDirectUpdateForTesting() {
@@ -3108,6 +3113,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Unable to publish app-ready page-started token: " + e.getMessage());
             }
         });
+    }
+
+    private void evaluateAppReadyBundleBindingOnPageStarted(final android.webkit.WebView view) {
+        if (view == null || this.implementation == null) {
+            return;
+        }
+        final String awaiting = this.awaitingAppReadyBundleId;
+        if (awaiting == null || awaiting.isEmpty()) {
+            return;
+        }
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (current == null || !awaiting.equals(current.getId())) {
+            return;
+        }
+        if (this.appReadyWebViewLoadToken <= 0 || this.appReadyWebViewPageStartedToken >= this.appReadyWebViewLoadToken) {
+            return;
+        }
+        this.installAppReadyBindingJavascriptInterfaceIfNeeded();
+        view.evaluateJavascript(this.buildAppReadyBundleBindingScript(awaiting, this.appReadyWebViewLoadToken), null);
     }
 
     private void markAppReadyWebViewLoaded() {

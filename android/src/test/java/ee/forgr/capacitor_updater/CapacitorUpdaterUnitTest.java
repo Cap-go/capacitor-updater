@@ -314,6 +314,11 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        public Boolean set(final BundleInfo bundle) {
+            return true;
+        }
+
+        @Override
         public boolean setNextBundle(final String next) {
             this.setNextBundleCalled = true;
             this.lastSetNextBundleId = next;
@@ -2712,6 +2717,66 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.reloadCalled);
             assertEquals(1, updater.setCalls);
             assertNull(updater.lastSetNextBundleId);
+        }
+    }
+
+    @Test
+    public void testDirectUpdateAllowedAfterSplashTimeoutWhenDownloadIsInFlight() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+        setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+
+        assertTrue(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+
+        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+        assertFalse(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+    }
+
+    @Test
+    public void testShouldUseDirectUpdateHonorsInFlightDownloadAfterSplashTimeout() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+        plugin.configureDirectUpdateModeForTesting("always", false);
+        setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+
+        assertTrue(plugin.shouldUseDirectUpdateForTesting());
+
+        setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+        assertFalse(plugin.shouldUseDirectUpdateForTesting());
+    }
+
+    @Test
+    public void testExistingDownloadedBundleAppliesDirectUpdateAfterSplashTimeoutWhenDownloadInFlight() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
+
+            updater.existingLatestBundle = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "updateUrl", "https://example.com/updates");
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
+
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.reloadCalled);
+            assertFalse(updater.setNextBundleCalled);
         }
     }
 
