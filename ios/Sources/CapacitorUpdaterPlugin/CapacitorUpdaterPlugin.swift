@@ -667,7 +667,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
           window.__capgoAppReadyBundleId=id;
           window.__capgoAppReadyBindingToken=token;
           function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}
-          function markPageStarted(){window.__capgoAppReadyPageStartedToken=token;}
           function reportPageStarted(){
             if(!isActiveBinding()){return false;}
             var cap=window.Capacitor;
@@ -676,14 +675,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if(typeof plugin.reportWebViewError!=='function'){return false;}
             try{
               var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});
-              if(result&&typeof result.then==='function'){
-                result.then(markPageStarted).catch(function(){});
-                return true;
-              }
               if(result&&typeof result.catch==='function'){result.catch(function(){});}
-              markPageStarted();
-              return true;
             }catch(_){return false;}
+            return true;
           }
           if(!reportPageStarted()){
             var pageAttempts=0;
@@ -799,6 +793,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func markAppReadyWebViewPageStarted() {
         self.appReadyWebViewPageStartedToken = self.appReadyWebViewLoadToken
         self.flushAppReadyWebViewLoadedIfReady()
+        self.publishAppReadyPageStartedTokenToJs()
+    }
+
+    private func publishAppReadyPageStartedTokenToJs() {
+        let token = self.appReadyWebViewLoadToken
+        let script = "window.__capgoAppReadyPageStartedToken=\(token);"
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let webView = self.bridge?.webView else {
+                return
+            }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
     }
 
     private func markAppReadyWebViewLoaded() {
