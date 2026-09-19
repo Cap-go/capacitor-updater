@@ -6,22 +6,32 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
-import { awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId, withInjectedAppReadyBundleId } from './app-ready';
-import type { AppReadyResult, CapacitorUpdaterPlugin, NotifyAppReadyOptions } from './definitions';
+import {
+  awaitAppReadyPageStartedToken,
+  awaitInjectedAppReadyBundleId,
+  readInjectedAppReadyBundleId,
+} from './app-ready';
+import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
-const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterPlugin>('CapacitorUpdater', {
+type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
+  notifyAppReady(options?: { bundleId?: string }): Promise<AppReadyResult>;
+};
+
+const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
 });
 
 export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
   get(target, prop, receiver) {
     if (prop === 'notifyAppReady') {
-      return async (options?: NotifyAppReadyOptions): Promise<AppReadyResult> => {
+      return async (): Promise<AppReadyResult> => {
         const bundleId =
-          options?.bundleId ??
           readInjectedAppReadyBundleId() ??
           (Capacitor.isNativePlatform() ? await awaitInjectedAppReadyBundleId() : undefined);
-        return target.notifyAppReady(withInjectedAppReadyBundleId(options, bundleId));
+        if (Capacitor.isNativePlatform() && bundleId) {
+          await awaitAppReadyPageStartedToken();
+        }
+        return target.notifyAppReady(bundleId ? { bundleId } : undefined);
       };
     }
     return Reflect.get(target, prop, receiver);
