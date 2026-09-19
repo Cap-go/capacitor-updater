@@ -6,7 +6,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
-import { awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId } from './app-ready';
+import { awaitAppReadyPageStartedToken, awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId } from './app-ready';
 import type { AppReadyResult, BundleInfo, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
@@ -50,6 +50,9 @@ export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdat
         const bundleId =
           readInjectedAppReadyBundleId() ??
           (Capacitor.isNativePlatform() ? await awaitInjectedAppReadyBundleId() : undefined);
+        if (Capacitor.isNativePlatform() && bundleId) {
+          await awaitAppReadyPageStartedToken();
+        }
         return notifyAppReadyWithInternalBinding(target, bundleId);
       };
     }

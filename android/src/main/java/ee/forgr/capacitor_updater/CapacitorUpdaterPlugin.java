@@ -3014,7 +3014,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-        this.installDocumentStartAppReadyBundleBinding(script, true);
+        this.installDocumentStartAppReadyBundleBinding(script, blockUntilInstalled);
     }
 
     private void installDocumentStartAppReadyBundleBinding(final String script) {
@@ -3070,7 +3070,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             });
             try {
-                if (!installSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                if (!installSemaphore.tryAcquire(250, TimeUnit.MILLISECONDS)) {
                     logger.warn("Timeout waiting for app-ready binding install before reload");
                 }
             } catch (final InterruptedException e) {
