@@ -2417,9 +2417,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 Activity currentActivity = this.getActivity();
                 if (currentActivity != null) {
                     this.implementation.activity = currentActivity;
-                } else {
-                    logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
+                    currentActivity.runOnUiThread(() -> {
+                        try {
+                            this.directUpdateFinish(latest);
+                        } catch (final Exception e) {
+                            logger.error("directUpdateFinish failed: " + e.getMessage());
+                        }
+                    });
+                    return;
                 }
+                logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 this.directUpdateFinish(latest);
             } catch (final Exception e) {
                 logger.error("directUpdateFinish failed: " + e.getMessage());

@@ -106,6 +106,15 @@ public class CapacitorUpdaterUnitTest {
         private boolean startNewThreadCalled = false;
         private boolean reloadCalled = false;
 
+        {
+            doAnswer((invocation) -> {
+                invocation.getArgument(0, Runnable.class).run();
+                return null;
+            })
+                .when(this.activity)
+                .runOnUiThread(any(Runnable.class));
+        }
+
         @Override
         public AppCompatActivity getActivity() {
             return this.activity;

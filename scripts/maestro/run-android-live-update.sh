@@ -632,7 +632,7 @@ run_scenario() {
       control_server reset legacy-true
       prepare_scenario legacy-true
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "legacy true direct update applies on first launch" \
         "Build label: $first_release" \
         'Scenario: legacy-true' \
