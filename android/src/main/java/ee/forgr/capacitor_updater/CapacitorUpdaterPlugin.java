@@ -1683,8 +1683,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
-                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view);
-                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
+                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view, () ->
+                    CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative()
+                );
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -3012,21 +3013,45 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void syncAppReadyBundleBinding(final String bundleId) {
+        this.syncAppReadyBundleBinding(bundleId, null);
+    }
+
+    private void syncAppReadyBundleBinding(final String bundleId, final Runnable completion) {
         if (bundleId == null || bundleId.isEmpty()) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         this.awaitingAppReadyBundleId = bundleId;
         this.appReadyWebViewLoadToken += 1;
         if (this.bridge == null || this.bridge.getWebView() == null) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
-        this.installAppReadyBindingJavascriptInterfaceIfNeeded();
-        final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-        this.installDocumentStartAppReadyBundleBinding(script);
+        final Runnable syncWork = () -> {
+            this.installAppReadyBindingJavascriptInterfaceIfNeeded();
+            final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
+            this.installDocumentStartAppReadyBundleBinding(script, completion);
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            syncWork.run();
+            return;
+        }
+        this.bridge.executeOnMainThread(syncWork);
     }
 
     private void installDocumentStartAppReadyBundleBinding(final String script) {
+        this.installDocumentStartAppReadyBundleBinding(script, null);
+    }
+
+    private void installDocumentStartAppReadyBundleBinding(final String script, final Runnable completion) {
         if (this.bridge == null || this.bridge.getWebView() == null) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         final Runnable install = () -> {
@@ -3058,6 +3083,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.appReadyDocumentStartScriptHandler = handler;
             } catch (final Exception e) {
                 logger.debug("Unable to install document-start app ready bundle binding: " + e.getMessage());
+            } finally {
+                if (completion != null) {
+                    completion.run();
+                }
             }
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -3128,22 +3157,42 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void evaluateAppReadyBundleBindingOnPageStarted(final android.webkit.WebView view) {
+        this.evaluateAppReadyBundleBindingOnPageStarted(view, null);
+    }
+
+    private void evaluateAppReadyBundleBindingOnPageStarted(final android.webkit.WebView view, final Runnable completion) {
         if (view == null || this.implementation == null) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         final String awaiting = this.awaitingAppReadyBundleId;
         if (awaiting == null || awaiting.isEmpty()) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         final BundleInfo current = this.implementation.getCurrentBundle();
         if (current == null || !awaiting.equals(current.getId())) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         if (this.appReadyWebViewLoadToken <= 0 || this.appReadyWebViewPageStartedToken >= this.appReadyWebViewLoadToken) {
+            if (completion != null) {
+                completion.run();
+            }
             return;
         }
         this.installAppReadyBindingJavascriptInterfaceIfNeeded();
-        view.evaluateJavascript(this.buildAppReadyBundleBindingScript(awaiting, this.appReadyWebViewLoadToken), null);
+        view.evaluateJavascript(this.buildAppReadyBundleBindingScript(awaiting, this.appReadyWebViewLoadToken), (_value) -> {
+            if (completion != null) {
+                completion.run();
+            }
+        });
     }
 
     private void markAppReadyWebViewLoaded() {
@@ -3182,7 +3231,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
+        final CountDownLatch bindingLatch = new CountDownLatch(1);
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), bindingLatch::countDown);
+        try {
+            if (!bindingLatch.await(10, TimeUnit.SECONDS)) {
+                logger.warn("Timed out waiting for app-ready bundle binding before reload navigation");
+            }
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted waiting for app-ready bundle binding before reload navigation");
+        }
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }

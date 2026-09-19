@@ -14,19 +14,24 @@ type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
 };
 
 const NOTIFY_APP_READY_WAIT_MS = 55000;
+const NOTIFY_APP_READY_BINDING_WAIT_MS = 3000;
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
 });
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeBridge): Promise<AppReadyResult> {
   const deadline = Date.now() + NOTIFY_APP_READY_WAIT_MS;
+  const bindingDeadline = Date.now() + NOTIFY_APP_READY_BINDING_WAIT_MS;
   let lastResult: AppReadyResult | undefined;
 
   while (Date.now() < deadline) {
     const bundleId = readInjectedAppReadyBundleId();
-    if (Capacitor.getPlatform() !== 'web' && !bundleId) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+    const waitForBinding = Capacitor.getPlatform() !== 'web' && !bundleId && Date.now() < bindingDeadline;
+    if (waitForBinding) {
+      await sleep(25);
       continue;
     }
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
@@ -34,7 +39,7 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
     if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
       return { bundle };
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await sleep(50);
   }
 
   const bundleId = readInjectedAppReadyBundleId();
