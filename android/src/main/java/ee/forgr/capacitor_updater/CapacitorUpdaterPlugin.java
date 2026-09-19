@@ -1396,6 +1396,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.splashscreenTimeoutRunnable = () -> {
             logger.info("autoSplashscreen timeout reached, hiding splashscreen");
             this.autoSplashscreenTimedOut = true;
+            final Thread task = this.backgroundDownloadTask;
+            if (task == null || !task.isAlive()) {
+                this.implementation.directUpdate = false;
+            }
             hideSplashscreen();
         };
 
