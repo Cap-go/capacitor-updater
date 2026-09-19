@@ -2505,6 +2505,31 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testNotifyAppReadyWithExplicitBundleIdAdvancesPageStartBeforeCommit() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "download-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("download-id");
+
+            plugin.notifyAppReady(call);
+
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
+            verify(call).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
     public void testNotifyAppReadyWithoutBundleIdRequiresWebViewLoad() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
