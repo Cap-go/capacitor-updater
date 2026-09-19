@@ -7,10 +7,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
 import { awaitInjectedAppReadyBundleId, readInjectedAppReadyBundleId } from './app-ready';
-import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
+import type { AppReadyResult, BundleInfo, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
   notifyAppReady(options?: { bundleId?: string }): Promise<AppReadyResult>;
+  getCurrentBundle(): Promise<BundleInfo>;
 };
 
 const NOTIFY_APP_READY_RETRY_MS = 60000;
@@ -28,12 +29,17 @@ async function notifyAppReadyWithInternalBinding(
 
   while (Date.now() < deadline) {
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
-    if (lastResult?.bundle?.status === 'success') {
-      return lastResult;
+    const current = await target.getCurrentBundle();
+    if (current?.status === 'success') {
+      return { bundle: current };
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
+  const current = await target.getCurrentBundle();
+  if (current?.status === 'success') {
+    return { bundle: current };
+  }
   return lastResult ?? (await target.notifyAppReady(bundleId ? { bundleId } : undefined));
 }
 
