@@ -682,10 +682,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return true;
           }
           if(!reportPageStarted()){
-            var pageAttempts=0;
             var pageTimer=setInterval(function(){
               if(!isActiveBinding()){clearInterval(pageTimer);return;}
-              if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
+              if(reportPageStarted()){clearInterval(pageTimer);}
             },25);
           }
         """
@@ -763,14 +762,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func syncAppReadyBundleBinding(bundleId: String) {
-        self.syncAppReadyBundleBinding(bundleId: bundleId, blockUntilInstalled: false)
-    }
-
-    private func syncAppReadyBundleBinding(bundleId: String, blockUntilInstalled: Bool) {
         self.awaitingAppReadyBundleId = bundleId
         self.appReadyWebViewLoadToken &+= 1
         let loadToken = self.appReadyWebViewLoadToken
-        let install = { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self = self, let webView = self.bridge?.webView else {
                 return
             }
@@ -780,13 +775,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 seedLoadToken: loadToken
             )
             self.persistAppReadyBinding(on: webView, bundleId: bundleId, loadToken: loadToken)
-        }
-        if Thread.isMainThread {
-            install()
-        } else if blockUntilInstalled {
-            DispatchQueue.main.sync(execute: install)
-        } else {
-            DispatchQueue.main.async(execute: install)
         }
     }
 
@@ -1956,7 +1944,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
         let id = self.implementation.getCurrentBundleId()
-        self.syncAppReadyBundleBinding(bundleId: id, blockUntilInstalled: true)
+        self.syncAppReadyBundleBinding(bundleId: id)
         let dest = self.currentReloadDestination()
         logger.info("Reloading \(id)")
 

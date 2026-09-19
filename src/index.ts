@@ -3,10 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { registerPlugin } from '@capacitor/core';
 import './history';
 
-import { isAppReadyPageStartedMatched, readInjectedAppReadyBundleId } from './app-ready';
+import { readInjectedAppReadyBundleId } from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
@@ -25,11 +25,6 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
 
   while (Date.now() < deadline) {
     const bundleId = readInjectedAppReadyBundleId();
-    if (Capacitor.isNativePlatform() && bundleId && !isAppReadyPageStartedMatched()) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      continue;
-    }
-
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
     const { bundle } = await target.current();
     if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
