@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
@@ -1063,6 +1064,24 @@ public class CapacitorUpdaterUnitTest {
             }
         }
         throw new NoSuchFieldException(fieldName);
+    }
+
+    private static void stubReloadBridgeThreading(final Bridge bridge, final WebView webView) {
+        doAnswer((invocation) -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
+        })
+            .when(bridge)
+            .executeOnMainThread(any(Runnable.class));
+        doAnswer((invocation) -> {
+            final ValueCallback<String> callback = invocation.getArgument(1);
+            if (callback != null) {
+                callback.onReceiveValue(null);
+            }
+            return null;
+        })
+            .when(webView)
+            .evaluateJavascript(anyString(), any());
     }
 
     private static Object getPrivateField(final Object target, final String fieldName) throws Exception {
@@ -2343,6 +2362,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -2374,6 +2394,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -2405,6 +2426,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             assertFalse(plugin._reload());
 
@@ -2673,6 +2695,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));

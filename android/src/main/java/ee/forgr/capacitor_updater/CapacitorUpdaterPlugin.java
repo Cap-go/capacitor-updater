@@ -1683,9 +1683,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             @Override
             public void onPageStarted(final android.webkit.WebView view) {
                 CapacitorUpdaterPlugin.this.webViewPageStartedAtMs = System.currentTimeMillis();
-                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view, () ->
-                    CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative()
-                );
+                CapacitorUpdaterPlugin.this.evaluateAppReadyBundleBindingOnPageStarted(view);
+                CapacitorUpdaterPlugin.this.markAppReadyWebViewPageStartedFromNative();
                 CapacitorUpdaterPlugin.this.evaluateWebViewStatsReporterScript(view, script);
             }
 
@@ -3023,7 +3022,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final Runnable syncWork = () -> {
             this.installAppReadyBindingJavascriptInterfaceIfNeeded();
             final String script = this.buildAppReadyBundleBindingScript(bundleId, this.appReadyWebViewLoadToken);
-            this.installDocumentStartAppReadyBundleBinding(script, completion);
+            this.installDocumentStartAppReadyBundleBinding(script, () -> {
+                final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
+                if (webView == null) {
+                    if (completion != null) {
+                        completion.run();
+                    }
+                    return;
+                }
+                webView.evaluateJavascript(script, (_value) -> {
+                    if (completion != null) {
+                        completion.run();
+                    }
+                });
+            });
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             syncWork.run();
@@ -3220,16 +3232,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        final CountDownLatch bindingLatch = new CountDownLatch(1);
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), bindingLatch::countDown);
-        try {
-            if (!bindingLatch.await(10, TimeUnit.SECONDS)) {
-                logger.warn("Timed out waiting for app-ready bundle binding before reload navigation");
-            }
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted waiting for app-ready bundle binding before reload navigation");
-        }
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () -> {
+            this.performCurrentBundleNavigation(path, usingBuiltin);
+        });
+    }
+
+    private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
