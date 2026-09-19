@@ -334,6 +334,29 @@ wait_for_ui_state() {
   wait_for_ui_state_with_timeout "$description" "$UI_STATE_TIMEOUT_SECONDS" "$@"
 }
 
+wait_for_ui_state_with_background_retry() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+  local attempt=1
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
+
+  while [[ $attempt -le $max_attempts ]]; do
+    if wait_for_ui_state "$description" "${fragments[@]}"; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "UI state did not settle for ${description}; driving one extra background cycle." >&2
+      background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
 wait_for_direct_update_ui_state() {
   local description="$1"
   shift
@@ -626,7 +649,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance at-install
       background_and_resume_app
-      wait_for_ui_state \
+      wait_for_ui_state_with_background_retry \
         "atInstall downloads the next release on resume before applying it" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -657,7 +680,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance on-launch
       run_flow kill-then-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_at_install_direct_update_ui_state \
         "onLaunch applies the next release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: on-launch' \
