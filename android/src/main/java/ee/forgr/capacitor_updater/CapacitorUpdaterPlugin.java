@@ -2990,6 +2990,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void syncAppReadyBundleBinding(final String bundleId) {
+        this.syncAppReadyBundleBinding(bundleId, false);
+    }
+
+    private void syncAppReadyBundleBinding(final String bundleId, final boolean blockUntilInstalled) {
         if (bundleId == null || bundleId.isEmpty()) {
             return;
         }
@@ -3141,7 +3145,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), true);
         if (this.keepUrlPathAfterReload) {
             this.syncKeepUrlPathFlag(true);
         }
