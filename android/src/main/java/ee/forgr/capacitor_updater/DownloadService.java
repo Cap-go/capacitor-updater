@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters;
 import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
@@ -30,6 +31,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
+import java.util.function.LongConsumer;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.Dispatcher;
@@ -46,6 +49,41 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class DownloadService extends Worker {
+
+    static final class DownloadRetryException extends RuntimeException {
+
+        DownloadRetryException(String message) {
+            super(message);
+        }
+
+        DownloadRetryException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    static final class ZipWritePlan {
+
+        final int statusCode;
+        final long writeOffset;
+
+        ZipWritePlan(int statusCode, long writeOffset) {
+            this.statusCode = statusCode;
+            this.writeOffset = writeOffset;
+        }
+    }
+
+    static final class ContentRangeInfo {
+
+        final long start;
+        final long end;
+        final long total;
+
+        ContentRangeInfo(long start, long end, long total) {
+            this.start = start;
+            this.end = end;
+            this.total = total;
+        }
+    }
 
     private static Logger logger;
 
@@ -389,6 +427,11 @@ public class DownloadService extends Worker {
                 handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum);
                 return createSuccessResult(dest, version, sessionKey, checksum, false);
             }
+        } catch (DownloadRetryException e) {
+            if (logger != null) {
+                logger.debug("Download will retry: " + e.getMessage());
+            }
+            return Result.retry();
         } catch (Exception e) {
             return createFailureResult(e.getMessage());
         }
@@ -652,7 +695,6 @@ public class DownloadService extends Worker {
 
         HttpURLConnection httpConn = null;
         InputStream inputStream = null;
-        FileOutputStream outputStream = null;
         BufferedReader reader = null;
         BufferedWriter writer = null;
 
@@ -689,6 +731,10 @@ public class DownloadService extends Worker {
                 clearDownloadData(documentsDir, id);
             }
 
+            if (isStopped()) {
+                throw new DownloadRetryException("download_stopped");
+            }
+
             if (downloadedBytes > 0) {
                 httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
             }
@@ -696,7 +742,11 @@ public class DownloadService extends Worker {
             int responseCode = httpConn.getResponseCode();
 
             if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
-                long contentLength = httpConn.getContentLength() + downloadedBytes;
+                ZipWritePlan writePlan = planZipResumeWrite(responseCode, downloadedBytes, httpConn.getHeaderField("Content-Range"));
+                long responseBodyLength = httpConn.getContentLength();
+                long contentLength = shouldAppendHttpBody(writePlan.statusCode, writePlan.writeOffset)
+                    ? (responseBodyLength >= 0 ? responseBodyLength + writePlan.writeOffset : -1)
+                    : responseBodyLength;
 
                 // Check if we have enough space for the actual file
                 if (contentLength > 0 && availableSpace < contentLength * 2) {
@@ -705,43 +755,35 @@ public class DownloadService extends Worker {
 
                 try {
                     inputStream = httpConn.getInputStream();
-                    outputStream = new FileOutputStream(tempFile, downloadedBytes > 0);
 
-                    if (downloadedBytes == 0) {
+                    if (writePlan.writeOffset == 0 && downloadedBytes == 0) {
                         writer = new BufferedWriter(new FileWriter(infoFile));
                         writer.write(String.valueOf(version));
                         writer.close();
                         writer = null;
                     }
 
-                    byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
-                    int lastNotifiedPercent = 0;
-                    int bytesRead;
-
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, bytesRead);
-                        downloadedBytes += bytesRead;
-
-                        // Flush every 1MB to ensure progress is saved
-                        if (downloadedBytes % (1024 * 1024) == 0) {
-                            outputStream.flush();
+                    final int[] lastNotifiedPercent = { 0 };
+                    final long totalContentLength = contentLength;
+                    String contentRangeHeader = httpConn.getHeaderField("Content-Range");
+                    writeHttpBody(tempFile, inputStream, writePlan.statusCode, writePlan.writeOffset, this::isStopped, (written) -> {
+                        int percent = calcTotalPercent(written, totalContentLength);
+                        if (percent >= lastNotifiedPercent[0] + 10) {
+                            lastNotifiedPercent[0] = (percent / 10) * 10;
+                            setProgress(lastNotifiedPercent[0]);
                         }
-
-                        // Computing percentage
-                        int percent = calcTotalPercent(downloadedBytes, contentLength);
-                        if (percent >= lastNotifiedPercent + 10) {
-                            lastNotifiedPercent = (percent / 10) * 10;
-                            setProgress(lastNotifiedPercent);
-                        }
-                    }
-
-                    // Final flush
-                    outputStream.flush();
-                    outputStream.close();
-                    outputStream = null;
+                    });
 
                     inputStream.close();
                     inputStream = null;
+
+                    validateZipDownloadComplete(
+                        tempFile,
+                        writePlan.statusCode,
+                        contentRangeHeader,
+                        writePlan.writeOffset,
+                        responseBodyLength
+                    );
 
                     // Rename the temp file with the final name (dest)
                     if (!tempFile.renameTo(new File(documentsDir, dest))) {
@@ -756,13 +798,12 @@ public class DownloadService extends Worker {
                     // Try to free some memory
                     System.gc();
                     throw new RuntimeException("low_mem_fail");
-                } finally {
-                    // Ensure all resources are closed
-                    if (outputStream != null) {
-                        try {
-                            outputStream.close();
-                        } catch (Exception ignored) {}
+                } catch (IOException e) {
+                    if ("download_stopped".equals(e.getMessage())) {
+                        throw new DownloadRetryException("download_stopped", e);
                     }
+                    throw new DownloadRetryException(e.getMessage(), e);
+                } finally {
                     if (inputStream != null) {
                         try {
                             inputStream.close();
@@ -774,10 +815,14 @@ public class DownloadService extends Worker {
                         } catch (Exception ignored) {}
                     }
                 }
+            } else if (isRetryableHttpStatus(responseCode)) {
+                throw new DownloadRetryException("HTTP error: " + responseCode);
             } else {
                 infoFile.delete();
                 throw new RuntimeException("HTTP error: " + responseCode);
             }
+        } catch (DownloadRetryException e) {
+            throw e;
         } catch (OutOfMemoryError e) {
             logger.error("Critical memory error: " + e.getMessage());
             System.gc(); // Suggest garbage collection
@@ -785,6 +830,12 @@ public class DownloadService extends Worker {
         } catch (SecurityException e) {
             logger.error("Security error during download: " + e.getMessage());
             throw new RuntimeException("security_error: " + e.getMessage());
+        } catch (MalformedURLException e) {
+            logger.error("Invalid download URL: " + e.getMessage());
+            throw new RuntimeException("invalid_url: " + e.getMessage());
+        } catch (IOException e) {
+            logger.error("Download error: " + e.getMessage());
+            throw new DownloadRetryException(e.getMessage(), e);
         } catch (Exception e) {
             logger.error("Download error: " + e.getMessage());
             throw new RuntimeException(e.getMessage());
@@ -796,6 +847,93 @@ public class DownloadService extends Worker {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    static boolean isRetryableHttpStatus(int responseCode) {
+        return responseCode >= 500 || responseCode == 408 || responseCode == 429;
+    }
+
+    static long parseContentRangeStart(String contentRange) {
+        ContentRangeInfo range = parseContentRange(contentRange);
+        return range == null ? -1 : range.start;
+    }
+
+    static ContentRangeInfo parseContentRange(String contentRange) {
+        if (contentRange == null || contentRange.isEmpty()) {
+            return null;
+        }
+        String trimmed = contentRange.trim();
+        if (!trimmed.startsWith("bytes ")) {
+            return null;
+        }
+        int slash = trimmed.indexOf('/');
+        if (slash < 0) {
+            return null;
+        }
+        int dash = trimmed.indexOf('-', 6);
+        if (dash < 0 || dash >= slash) {
+            return null;
+        }
+        try {
+            long start = Long.parseLong(trimmed.substring(6, dash).trim());
+            long end = Long.parseLong(trimmed.substring(dash + 1, slash).trim());
+            String totalPart = trimmed.substring(slash + 1).trim();
+            long total = "*".equals(totalPart) ? -1 : Long.parseLong(totalPart);
+            if (end < start) {
+                return null;
+            }
+            return new ContentRangeInfo(start, end, total);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    static void validateZipDownloadComplete(
+        File tempFile,
+        int responseCode,
+        String contentRangeHeader,
+        long writeOffset,
+        long responseBodyLength
+    ) {
+        long fileLen = tempFile.length();
+        if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+            ContentRangeInfo range = parseContentRange(contentRangeHeader);
+            if (range == null || range.total < 0) {
+                throw new DownloadRetryException("unknown_content_range_total");
+            }
+            if (range.start != writeOffset) {
+                throw new DownloadRetryException("content_range_mismatch");
+            }
+            long advertisedSpan = range.end - range.start + 1;
+            long receivedSpan = fileLen - writeOffset;
+            if (receivedSpan != advertisedSpan) {
+                throw new DownloadRetryException("incomplete_content_range");
+            }
+            if (fileLen != range.total) {
+                throw new DownloadRetryException("incomplete_download");
+            }
+            return;
+        }
+        if (responseBodyLength >= 0 && fileLen != responseBodyLength) {
+            throw new DownloadRetryException("incomplete_download");
+        }
+    }
+
+    static ZipWritePlan planZipResumeWrite(int responseCode, long downloadedBytes, String contentRange) {
+        if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+            long rangeStart = parseContentRangeStart(contentRange);
+            if (rangeStart == downloadedBytes) {
+                return new ZipWritePlan(HttpURLConnection.HTTP_PARTIAL, downloadedBytes);
+            }
+            if (rangeStart == 0) {
+                return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
+            }
+            throw new DownloadRetryException("invalid_content_range");
+        }
+        if (responseCode == HttpURLConnection.HTTP_OK && downloadedBytes > 0) {
+            return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
+        }
+        return new ZipWritePlan(responseCode, downloadedBytes);
     }
 
     private void clearDownloadData(String docDir, String id) {
@@ -995,16 +1133,43 @@ public class DownloadService extends Worker {
     }
 
     static void writeHttpBody(File dest, InputStream body, int statusCode, long existingBytes) throws IOException {
+        writeHttpBody(dest, body, statusCode, existingBytes, null, null);
+    }
+
+    static void writeHttpBody(
+        File dest,
+        InputStream body,
+        int statusCode,
+        long existingBytes,
+        BooleanSupplier shouldStop,
+        LongConsumer onProgress
+    ) throws IOException {
+        if (shouldStop != null && shouldStop.getAsBoolean()) {
+            throw new IOException("download_stopped");
+        }
         boolean append = shouldAppendHttpBody(statusCode, existingBytes);
         byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
         try (FileOutputStream fos = new FileOutputStream(dest, append)) {
             int n;
             long written = append ? existingBytes : 0;
-            while ((n = body.read(buffer)) != -1) {
+            while (true) {
+                if (shouldStop != null && shouldStop.getAsBoolean()) {
+                    throw new IOException("download_stopped");
+                }
+                n = body.read(buffer);
+                if (shouldStop != null && shouldStop.getAsBoolean()) {
+                    throw new IOException("download_stopped");
+                }
+                if (n == -1) {
+                    break;
+                }
                 fos.write(buffer, 0, n);
                 written += n;
                 if (written % (1024 * 1024) == 0) {
                     fos.flush();
+                }
+                if (onProgress != null) {
+                    onProgress.accept(written);
                 }
             }
             fos.flush();
