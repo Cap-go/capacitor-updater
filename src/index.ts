@@ -30,14 +30,14 @@ async function notifyAppReadyWithInternalBinding(
   while (Date.now() < deadline) {
     lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
     const current = await target.getCurrentBundle();
-    if (current?.status === 'success') {
+    if (current?.status === 'success' && (!bundleId || current.id === bundleId)) {
       return { bundle: current };
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   const current = await target.getCurrentBundle();
-  if (current?.status === 'success') {
+  if (current?.status === 'success' && (!bundleId || current.id === bundleId)) {
     return { bundle: current };
   }
   return lastResult ?? (await target.notifyAppReady(bundleId ? { bundleId } : undefined));
