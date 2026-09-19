@@ -5250,8 +5250,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
-                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || plannedDirectUpdate
-                                : plannedDirectUpdate;
+                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
+                                : initialDirectUpdateAllowed;
                             startNewThread(() -> {
                                 try {
                                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {

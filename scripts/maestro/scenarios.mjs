@@ -56,9 +56,6 @@ export const scenarios = {
     autoUpdate: true,
     directUpdate: 'always',
     builtinLabel: 'always-builtin',
-    env: {
-      ...sharedMutableConfig,
-    },
     releases: [
       { version: 'always-v1', label: 'always-v1' },
       { version: 'always-v2', label: 'always-v2' },
@@ -71,9 +68,6 @@ export const scenarios = {
     autoUpdate: true,
     directUpdate: 'true',
     builtinLabel: 'legacy-true-builtin',
-    env: {
-      ...sharedMutableConfig,
-    },
     releases: [
       { version: 'legacy-true-v1', label: 'legacy-true-v1' },
       { version: 'legacy-true-v2', label: 'legacy-true-v2' },
@@ -86,9 +80,6 @@ export const scenarios = {
     autoUpdate: true,
     directUpdate: 'atInstall',
     builtinLabel: 'at-install-builtin',
-    env: {
-      ...sharedMutableConfig,
-    },
     releases: [
       { version: 'at-install-v1', label: 'at-install-v1' },
       { version: 'at-install-v2', label: 'at-install-v2' },
@@ -101,9 +92,6 @@ export const scenarios = {
     autoUpdate: true,
     directUpdate: 'onLaunch',
     builtinLabel: 'on-launch-builtin',
-    env: {
-      ...sharedMutableConfig,
-    },
     releases: [
       { version: 'on-launch-v1', label: 'on-launch-v1' },
       { version: 'on-launch-v2', label: 'on-launch-v2' },
