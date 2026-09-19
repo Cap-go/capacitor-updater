@@ -3586,6 +3586,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if (explicitMatch || awaitingMatch) && self.appReadyWebViewLoadToken == 0 {
                 self.syncAppReadyBundleBinding(bundleId: bundle.getId())
             }
+            if (explicitMatch || awaitingMatch) &&
+                self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
+                self.markAppReadyWebViewPageStartedFromNative()
+            }
         }
         if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
             logger.warn(
