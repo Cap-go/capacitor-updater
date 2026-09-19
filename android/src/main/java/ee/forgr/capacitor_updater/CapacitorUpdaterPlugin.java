@@ -225,6 +225,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean pendingNotifyAppReadyWait = false;
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
+    private volatile boolean activeDownloadPlannedDirectUpdate = false;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
     private final Phaser semaphoreReady = new Phaser(0) {
@@ -1396,8 +1397,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.splashscreenTimeoutRunnable = () -> {
             logger.info("autoSplashscreen timeout reached, hiding splashscreen");
             this.autoSplashscreenTimedOut = true;
-            final Thread task = this.backgroundDownloadTask;
-            if (this.downloadStartTimeMs <= 0 && (task == null || !task.isAlive())) {
+            if (!this.activeDownloadPlannedDirectUpdate) {
                 this.implementation.directUpdate = false;
             }
             hideSplashscreen();
@@ -5004,12 +5004,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.sendReadyToJs(current, msg, plannedDirectUpdate);
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
+        this.activeDownloadPlannedDirectUpdate = false;
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 
     private void clearBackgroundDownloadState() {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
+        this.activeDownloadPlannedDirectUpdate = false;
     }
 
     private boolean isDownloadStuckOrTimedOut() {
@@ -5046,6 +5048,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
+        this.activeDownloadPlannedDirectUpdate = plannedDirectUpdate;
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
