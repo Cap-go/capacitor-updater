@@ -3230,9 +3230,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         this.installWebViewStatsReporter();
-        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId(), () -> {
-            this.performCurrentBundleNavigation(path, usingBuiltin);
-        });
+        this.syncAppReadyBundleBinding(this.implementation.getCurrentBundle().getId());
+        this.performCurrentBundleNavigation(path, usingBuiltin);
     }
 
     private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
