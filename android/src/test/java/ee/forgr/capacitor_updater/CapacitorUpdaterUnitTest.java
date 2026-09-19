@@ -4005,8 +4005,8 @@ public class CapacitorUpdaterUnitTest {
 
             @Override
             public boolean getAsBoolean() {
-                // writeHttpBody checks shouldStop before opening the stream and again before each read.
-                return ++calls > 2;
+                // Pre-open, before read, after read, then stop before the next read.
+                return ++calls > 3;
             }
         };
 
@@ -4073,6 +4073,71 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(1024, DownloadService.parseContentRangeStart("bytes 1024-2047/4096"));
         assertEquals(0, DownloadService.parseContentRangeStart("bytes 0-1023/*"));
         assertEquals(-1, DownloadService.parseContentRangeStart("invalid"));
+    }
+
+    @Test
+    public void parseContentRangeReadsStartEndAndTotal() {
+        DownloadService.ContentRangeInfo range = DownloadService.parseContentRange("bytes 1024-2047/4096");
+        assertNotNull(range);
+        assertEquals(1024, range.start);
+        assertEquals(2047, range.end);
+        assertEquals(4096, range.total);
+
+        DownloadService.ContentRangeInfo unknown = DownloadService.parseContentRange("bytes 0-1023/*");
+        assertNotNull(unknown);
+        assertEquals(-1, unknown.total);
+    }
+
+    @Test
+    public void validateZipDownloadCompleteAcceptsMatching206() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-zip-complete");
+        File dest = dir.resolve("bundle.zip").toFile();
+        byte[] payload = new byte[4096];
+        Files.write(dest.toPath(), payload);
+        DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-4095/4096", 0, payload.length);
+    }
+
+    @Test
+    public void validateZipDownloadCompleteRetriesIncomplete206() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-zip-incomplete");
+        File dest = dir.resolve("bundle.zip").toFile();
+        Files.write(dest.toPath(), new byte[2048]);
+        try {
+            DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-2047/4096", 0, 2048);
+            fail("expected incomplete download retry");
+        } catch (DownloadService.DownloadRetryException e) {
+            assertEquals("incomplete_download", e.getMessage());
+        }
+    }
+
+    @Test
+    public void validateZipDownloadCompleteRetriesUnknownTotal() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-zip-unknown-total");
+        File dest = dir.resolve("bundle.zip").toFile();
+        Files.write(dest.toPath(), new byte[1024]);
+        try {
+            DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-1023/*", 0, 1024);
+            fail("expected unknown total retry");
+        } catch (DownloadService.DownloadRetryException e) {
+            assertEquals("unknown_content_range_total", e.getMessage());
+        }
+    }
+
+    @Test
+    public void writeHttpBodyStopsAfterEofReadBeforeSuccess() throws Exception {
+        DownloadService.setLogger(mock(Logger.class));
+        final Path dir = Files.createTempDirectory("capgo-stop-after-eof");
+        File dest = dir.resolve("partial.bin").toFile();
+        final int[] calls = { 0 };
+
+        try {
+            DownloadService.writeHttpBody(dest, new ByteArrayInputStream(new byte[] { 1 }), 200, 0, () -> ++calls[0] > 4, null);
+            fail("expected stop after eof read");
+        } catch (IOException e) {
+            assertEquals("download_stopped", e.getMessage());
+        }
+
+        assertEquals(1, dest.length());
     }
 
     @Test

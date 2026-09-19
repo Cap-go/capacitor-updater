@@ -72,6 +72,19 @@ public class DownloadService extends Worker {
         }
     }
 
+    static final class ContentRangeInfo {
+
+        final long start;
+        final long end;
+        final long total;
+
+        ContentRangeInfo(long start, long end, long total) {
+            this.start = start;
+            this.end = end;
+            this.total = total;
+        }
+    }
+
     private static Logger logger;
 
     public static void setLogger(Logger loggerInstance) {
@@ -752,6 +765,7 @@ public class DownloadService extends Worker {
 
                     final int[] lastNotifiedPercent = { 0 };
                     final long totalContentLength = contentLength;
+                    String contentRangeHeader = httpConn.getHeaderField("Content-Range");
                     writeHttpBody(tempFile, inputStream, writePlan.statusCode, writePlan.writeOffset, this::isStopped, (written) -> {
                         int percent = calcTotalPercent(written, totalContentLength);
                         if (percent >= lastNotifiedPercent[0] + 10) {
@@ -762,6 +776,14 @@ public class DownloadService extends Worker {
 
                     inputStream.close();
                     inputStream = null;
+
+                    validateZipDownloadComplete(
+                        tempFile,
+                        writePlan.statusCode,
+                        contentRangeHeader,
+                        writePlan.writeOffset,
+                        responseBodyLength
+                    );
 
                     // Rename the temp file with the final name (dest)
                     if (!tempFile.renameTo(new File(documentsDir, dest))) {
@@ -832,21 +854,68 @@ public class DownloadService extends Worker {
     }
 
     static long parseContentRangeStart(String contentRange) {
+        ContentRangeInfo range = parseContentRange(contentRange);
+        return range == null ? -1 : range.start;
+    }
+
+    static ContentRangeInfo parseContentRange(String contentRange) {
         if (contentRange == null || contentRange.isEmpty()) {
-            return -1;
+            return null;
         }
         String trimmed = contentRange.trim();
         if (!trimmed.startsWith("bytes ")) {
-            return -1;
+            return null;
+        }
+        int slash = trimmed.indexOf('/');
+        if (slash < 0) {
+            return null;
         }
         int dash = trimmed.indexOf('-', 6);
-        if (dash < 0) {
-            return -1;
+        if (dash < 0 || dash >= slash) {
+            return null;
         }
         try {
-            return Long.parseLong(trimmed.substring(6, dash).trim());
+            long start = Long.parseLong(trimmed.substring(6, dash).trim());
+            long end = Long.parseLong(trimmed.substring(dash + 1, slash).trim());
+            String totalPart = trimmed.substring(slash + 1).trim();
+            long total = "*".equals(totalPart) ? -1 : Long.parseLong(totalPart);
+            if (end < start) {
+                return null;
+            }
+            return new ContentRangeInfo(start, end, total);
         } catch (NumberFormatException e) {
-            return -1;
+            return null;
+        }
+    }
+
+    static void validateZipDownloadComplete(
+        File tempFile,
+        int responseCode,
+        String contentRangeHeader,
+        long writeOffset,
+        long responseBodyLength
+    ) {
+        long fileLen = tempFile.length();
+        if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+            ContentRangeInfo range = parseContentRange(contentRangeHeader);
+            if (range == null || range.total < 0) {
+                throw new DownloadRetryException("unknown_content_range_total");
+            }
+            if (range.start != writeOffset) {
+                throw new DownloadRetryException("content_range_mismatch");
+            }
+            long advertisedSpan = range.end - range.start + 1;
+            long receivedSpan = fileLen - writeOffset;
+            if (receivedSpan != advertisedSpan) {
+                throw new DownloadRetryException("incomplete_content_range");
+            }
+            if (fileLen != range.total) {
+                throw new DownloadRetryException("incomplete_download");
+            }
+            return;
+        }
+        if (responseBodyLength >= 0 && fileLen != responseBodyLength) {
+            throw new DownloadRetryException("incomplete_download");
         }
     }
 
@@ -1088,6 +1157,9 @@ public class DownloadService extends Worker {
                     throw new IOException("download_stopped");
                 }
                 n = body.read(buffer);
+                if (shouldStop != null && shouldStop.getAsBoolean()) {
+                    throw new IOException("download_stopped");
+                }
                 if (n == -1) {
                     break;
                 }
