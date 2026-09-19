@@ -669,6 +669,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
           window.__capgoAppReadyBundleId=id;
           window.__capgoAppReadyBindingToken=token;
           function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}
+          function markPageStarted(){window.__capgoAppReadyPageStartedToken=token;}
           function reportPageStarted(){
             if(!isActiveBinding()){return false;}
             var cap=window.Capacitor;
@@ -677,37 +678,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if(typeof plugin.reportWebViewError!=='function'){return false;}
             try{
               var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});
+              if(result&&typeof result.then==='function'){
+                result.then(markPageStarted).catch(function(){});
+                return true;
+              }
               if(result&&typeof result.catch==='function'){result.catch(function(){});}
+              markPageStarted();
+              return true;
             }catch(_){return false;}
-            return true;
           }
           if(!reportPageStarted()){
             var pageAttempts=0;
             var pageTimer=setInterval(function(){
               if(!isActiveBinding()){clearInterval(pageTimer);return;}
               if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}
-            },25);
-          }
-          function patch(){
-            var cap=window.Capacitor;
-            if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}
-            var plugin=cap.Plugins.CapacitorUpdater;
-            if(plugin.__capgoNotifyAppReadyPatched){return true;}
-            var original=plugin.notifyAppReady.bind(plugin);
-            plugin.notifyAppReady=function(options){
-              options=options||{};
-              if(!options.bundleId&&window.__capgoAppReadyBundleId){
-                options.bundleId=window.__capgoAppReadyBundleId;
-              }
-              return original(options);
-            };
-            plugin.__capgoNotifyAppReadyPatched=true;
-            return true;
-          }
-          if(!patch()){
-            var attempts=0;
-            var timer=setInterval(function(){
-              if(patch()||++attempts>200){clearInterval(timer);}
             },25);
           }
         """
@@ -3594,20 +3578,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 return awaiting == bundle.getId()
             }()
-            if explicitMatch || awaitingMatch {
-                if self.appReadyWebViewLoadToken == 0 {
-                    self.syncAppReadyBundleBinding(bundleId: bundle.getId())
-                }
-                let advancedPageStart = self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken
-                if advancedPageStart {
-                    self.markAppReadyWebViewPageStartedFromNative()
-                }
-                if awaitingMatch,
-                   advancedPageStart,
-                   self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken,
-                   self.appReadyWebViewLoadedToken < self.appReadyWebViewLoadToken {
-                    self.markAppReadyWebViewLoaded()
-                }
+            if (explicitMatch || awaitingMatch) && self.appReadyWebViewLoadToken == 0 {
+                self.syncAppReadyBundleBinding(bundleId: bundle.getId())
             }
         }
         if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
@@ -5481,6 +5453,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
 private final class AppReadyBindingMessageHandler: NSObject, WKScriptMessageHandler {
     weak var plugin: CapacitorUpdaterPlugin?
+
+    deinit {}
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         self.plugin?.handleAppReadyBindingMessage(message)

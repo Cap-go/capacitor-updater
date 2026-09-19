@@ -2992,7 +2992,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private String buildAppReadyBundleBindingScript(final String bundleId, final int loadToken) {
         return (
-            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.catch==='function'){result.catch(function(){});}}catch(_){return false;}return true;}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}function patch(){var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(plugin.__capgoNotifyAppReadyPatched){return true;}var original=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(options){options=options||{};if(!options.bundleId&&window.__capgoAppReadyBundleId){options.bundleId=window.__capgoAppReadyBundleId;}return original(options);};plugin.__capgoNotifyAppReadyPatched=true;return true;}if(!patch()){var attempts=0;var timer=setInterval(function(){if(patch()||++attempts>200){clearInterval(timer);}},25);}})(" +
+            "(function(id,token){window.__capgoAppReadyBundleId=id;window.__capgoAppReadyBindingToken=token;function isActiveBinding(){return window.__capgoAppReadyBindingToken===token;}function markPageStarted(){window.__capgoAppReadyPageStartedToken=token;}function reportPageStarted(){if(!isActiveBinding()){return false;}var cap=window.Capacitor;if(!cap||!cap.Plugins||!cap.Plugins.CapacitorUpdater){return false;}var plugin=cap.Plugins.CapacitorUpdater;if(typeof plugin.reportWebViewError!=='function'){return false;}try{var result=plugin.reportWebViewError({type:'webview_page_started',bundleId:id,loadToken:String(token)});if(result&&typeof result.then==='function'){result.then(markPageStarted).catch(function(){});return true;}if(result&&typeof result.catch==='function'){result.catch(function(){});}markPageStarted();return true;}catch(_){return false;}}if(!reportPageStarted()){var pageAttempts=0;var pageTimer=setInterval(function(){if(!isActiveBinding()){clearInterval(pageTimer);return;}if(reportPageStarted()||++pageAttempts>200){clearInterval(pageTimer);}},25);}})(" +
             jsQuotedString(bundleId) +
             "," +
             loadToken +
@@ -4691,22 +4691,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     (reportedBundleId == null || reportedBundleId.isEmpty()) &&
                     this.awaitingAppReadyBundleId != null &&
                     this.awaitingAppReadyBundleId.equals(bundle.getId());
-                if (explicitMatch || awaitingMatch) {
-                    if (this.appReadyWebViewLoadToken == 0) {
-                        this.syncAppReadyBundleBinding(bundle.getId());
-                    }
-                    final boolean advancedPageStart = this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken;
-                    if (advancedPageStart) {
-                        this.markAppReadyWebViewPageStartedFromNative();
-                    }
-                    if (
-                        awaitingMatch &&
-                        advancedPageStart &&
-                        this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken &&
-                        this.appReadyWebViewLoadedToken < this.appReadyWebViewLoadToken
-                    ) {
-                        this.markAppReadyWebViewLoaded();
-                    }
+                if ((explicitMatch || awaitingMatch) && this.appReadyWebViewLoadToken == 0) {
+                    this.syncAppReadyBundleBinding(bundle.getId());
                 }
             }
             if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
