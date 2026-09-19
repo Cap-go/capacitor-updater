@@ -2420,6 +2420,9 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "current-bundle-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
 
             when(updater.getCurrentBundle()).thenReturn(bundle);
             when(call.getString("bundleId")).thenReturn("current-bundle-id");
@@ -2432,6 +2435,33 @@ public class CapacitorUpdaterUnitTest {
             verify(call).resolve(any(JSObject.class));
             verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
         }
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyRejectsZeroTokens() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+        assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyAcceptsAfterSyncAndPageStart() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+        setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+        setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+
+        assertTrue(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyRejectsMismatchedTokens() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+        setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+        setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+
+        assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
     }
 
     @Test
