@@ -2634,6 +2634,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         }
         this.implementation.statsUrl = url;
+        this.implementation.discardPendingStats();
         call.resolve();
     }
 

@@ -3553,6 +3553,14 @@ import UIKit
         statsQueueLock.unlock()
     }
 
+    func discardPendingStats() {
+        statsQueueLock.lock()
+        statsQueue.removeAll()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
+        persistStatsQueue(force: true)
+    }
+
     public func getBundleInfo(id: String?) -> BundleInfo {
         var trueId = BundleInfo.VERSION_UNKNOWN
         if id != nil {

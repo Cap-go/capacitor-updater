@@ -1597,6 +1597,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.set(url, forKey: statsUrlDefaultsKey)
             UserDefaults.standard.synchronize()
         }
+        self.implementation.discardPendingStats()
         call.resolve()
     }
 

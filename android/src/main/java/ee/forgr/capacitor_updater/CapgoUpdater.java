@@ -3032,6 +3032,21 @@ public class CapgoUpdater {
         return statsQueue.size();
     }
 
+    public void discardPendingStats() {
+        synchronized (statsQueue) {
+            statsQueue.clear();
+            statsInFlight.clear();
+        }
+        persistStatsQueue(true);
+        final File file = pendingStatsFile();
+        if (file != null) {
+            final File backup = new File(file.getAbsolutePath() + ".bak");
+            if (backup.exists()) {
+                backup.delete();
+            }
+        }
+    }
+
     public void persistPendingStats() {
         persistStatsQueue();
     }
