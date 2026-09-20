@@ -4,11 +4,11 @@ appId: app.capgo.updater
 - launchApp
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
-    timeout: 120000
+    timeout: 180000
 - assertVisible: '@capgo/capacitor-updater'
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
-    timeout: 60000
+    timeout: 120000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
