@@ -513,7 +513,7 @@ jobs:
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
           CAPGO_MAESTRO_TEST_RETRIES=1
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=390
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=420
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts

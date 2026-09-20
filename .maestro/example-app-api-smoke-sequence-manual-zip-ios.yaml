@@ -32,4 +32,14 @@ appId: app.capgo.updater
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
-    timeout: 300000
+    timeout: 240000
+- runFlow: helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 90000
+- extendedWaitUntil:
+    visible: '.*Harness: ready.*'
+    timeout: 90000
+- extendedWaitUntil:
+    visible: '.*(Marker: persisted:success|M:persisted:success).*'
+    timeout: 120000
