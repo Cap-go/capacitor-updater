@@ -2175,7 +2175,6 @@ const actions = [
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
         probeLatest:
-          platform !== 'ios' &&
           scenarioId !== 'manual-zip' &&
           scenarioId !== 'manual-zip-config-guards' &&
           scenarioId !== 'manual-zip-no-persist',
