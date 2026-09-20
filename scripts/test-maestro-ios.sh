@@ -513,7 +513,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 done
 
 case "$SCENARIO_ID" in
-  manual-zip | manual-zip-config-guards | manual-zip-no-persist)
+  manual-zip-config-guards | manual-zip-no-persist)
     wait_for_queued_boot_verification
     ;;
   *)

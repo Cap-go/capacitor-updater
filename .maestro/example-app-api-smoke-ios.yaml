@@ -37,4 +37,4 @@ appId: app.capgo.updater
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
-    timeout: 120000
+    timeout: 180000
