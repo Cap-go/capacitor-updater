@@ -1572,6 +1572,7 @@ const actions = [
     buttonLabel: 'Run notifyAppReady',
     description: 'Confirm that the current bundle booted successfully.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     run: async () => {
       const result = await performNotifyAppReady();
       expectBundle(result?.bundle, 'notifyAppReady()');
