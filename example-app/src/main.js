@@ -225,7 +225,6 @@ const manualZipSmokeActionIds =
         'queue-boot-verify-persisted-config',
       ]
     : [
-        'notify-app-ready',
         'current-bundle',
         'list-bundles',
         'get-plugin-version',
@@ -239,6 +238,7 @@ const manualZipSmokeActionIds =
         'set-update-url',
         'set-stats-url',
         'set-channel-url',
+        'notify-app-ready',
         'get-latest',
         ...manualZipChannelSmokeActionIds,
         'get-next-bundle',
