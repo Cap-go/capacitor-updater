@@ -1498,9 +1498,19 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
   );
   if (shouldVerifyStatsUrl) {
+    let resolvedStatsUrl = observedStatsUrl;
+    if (resolvedStatsUrl !== expectedStatsUrl) {
+      const statsDeadline = Date.now() + 15000;
+      while (Date.now() < statsDeadline && resolvedStatsUrl !== expectedStatsUrl) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        await refreshServerState();
+        const refreshedDebug = state.serverDebug?.debug ?? {};
+        resolvedStatsUrl = formatObservedRequestUrl(refreshedDebug.lastStatsRequest?.url);
+      }
+    }
     invariant(
-      observedStatsUrl === expectedStatsUrl,
-      `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
+      resolvedStatsUrl === expectedStatsUrl,
+      `verify persisted config expected stats URL ${expectedStatsUrl}, received ${resolvedStatsUrl}`,
     );
   }
   invariant(
