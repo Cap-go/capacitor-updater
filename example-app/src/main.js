@@ -3159,6 +3159,10 @@ async function bootstrap() {
   }
   const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
+  if (!state.harnessReady) {
+    state.harnessReady = true;
+    renderState();
+  }
   if (bootActionIds.length) {
     await pause(platform === 'ios' ? 500 : 100);
   }
@@ -3169,10 +3173,6 @@ async function bootstrap() {
       console.error(`Boot action ${bootActionId} failed`, error);
       break;
     }
-  }
-  if (!state.harnessReady) {
-    state.harnessReady = true;
-    renderState();
   }
 }
 
