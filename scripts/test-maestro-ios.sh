@@ -225,7 +225,7 @@ wait_for_queued_boot_verification() {
   xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 40); do
     server_state="$(read_smoke_server_state)"
     if bun --eval "
 const state = JSON.parse(process.argv[1]);
