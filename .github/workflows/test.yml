@@ -734,7 +734,7 @@ jobs:
       # open). Bound the step below the job cap and let the success marker decide the result,
       # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
-        timeout-minutes: 8
+        timeout-minutes: 9
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # tag=v2.38.0 NOSONAR hash pin required by zizmor
         with:
