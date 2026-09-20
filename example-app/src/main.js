@@ -3136,6 +3136,25 @@ async function bootstrap() {
   renderState();
   await attachListeners();
 
+  const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
+  startStateRefreshWatchers();
+
+  if (bootActionIds.length) {
+    if (!state.harnessReady) {
+      state.harnessReady = true;
+      renderState();
+    }
+    await pause(platform === 'ios' ? 500 : 100);
+    for (const bootActionId of bootActionIds) {
+      try {
+        await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
+      } catch (error) {
+        console.error(`Boot action ${bootActionId} failed`, error);
+        break;
+      }
+    }
+  }
+
   if (!skipNotifyAppReady) {
     try {
       await performNotifyAppReady();
@@ -3165,22 +3184,9 @@ async function bootstrap() {
     }
     renderState();
   }
-  const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
-  startStateRefreshWatchers();
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();
-  }
-  if (bootActionIds.length) {
-    await pause(platform === 'ios' ? 500 : 100);
-  }
-  for (const bootActionId of bootActionIds) {
-    try {
-      await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
-    } catch (error) {
-      console.error(`Boot action ${bootActionId} failed`, error);
-      break;
-    }
   }
 }
 
