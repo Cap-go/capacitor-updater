@@ -620,7 +620,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance always
       background_and_resume_app
-      wait_for_first_direct_update_ui_state \
+      wait_for_direct_update_ui_state \
         "always direct update applies a newer release after resume" \
         "Build label: $second_release" \
         'Scenario: always' \
