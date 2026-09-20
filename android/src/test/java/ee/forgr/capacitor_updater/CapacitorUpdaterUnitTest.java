@@ -2513,6 +2513,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testShouldCommitNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "current-bundle-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+            setPrivateField(plugin, "appReadyWebViewLoadedToken", 1);
+
+            assertTrue(plugin.shouldCommitNotifyAppReady(null, "current-bundle-id"));
+        }
+    }
+
+    @Test
     public void testNotifyAppReadyRejectsStaleBundleId() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
@@ -2561,7 +2577,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testNotifyAppReadyWithoutBundleIdRequiresWebViewLoad() throws Exception {
+    public void testNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
@@ -2581,7 +2597,7 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.notifyAppReady(call);
 
-            verify(updater, never()).setSuccess(any(BundleInfo.class), anyBoolean());
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
             verify(call).resolve(any(JSObject.class));
         }
     }

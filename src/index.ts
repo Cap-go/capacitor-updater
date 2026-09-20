@@ -6,7 +6,12 @@
 import { registerPlugin } from '@capacitor/core';
 import './history';
 
-import { readInjectedAppReadyBundleId } from './app-ready';
+import {
+  awaitAppReadyPageStartedToken,
+  awaitInjectedAppReadyBundleId,
+  isAppReadyPageStartedMatched,
+  readInjectedAppReadyBundleId,
+} from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
@@ -26,10 +31,27 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
   let lastResult: AppReadyResult | undefined;
 
   while (Date.now() < deadline) {
-    const bundleId = readInjectedAppReadyBundleId();
-    lastResult = await target.notifyAppReady(bundleId ? { bundleId } : undefined);
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      break;
+    }
+
+    let bundleId = readInjectedAppReadyBundleId();
+    if (!bundleId) {
+      bundleId = await awaitInjectedAppReadyBundleId(Math.min(remainingMs, 250));
+      if (!bundleId) {
+        await sleep(25);
+        continue;
+      }
+    }
+
+    if (!isAppReadyPageStartedMatched()) {
+      await awaitAppReadyPageStartedToken(Math.min(remainingMs, 250));
+    }
+
+    lastResult = await target.notifyAppReady({ bundleId });
     const { bundle } = await target.current();
-    if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+    if (bundle.status === 'success' && bundle.id === bundleId) {
       return { bundle };
     }
     await sleep(50);
@@ -40,7 +62,10 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
   if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
     return { bundle };
   }
-  return lastResult ?? (await target.notifyAppReady(bundleId ? { bundleId } : undefined));
+  if (bundleId) {
+    return lastResult ?? (await target.notifyAppReady({ bundleId }));
+  }
+  return lastResult ?? (await target.notifyAppReady());
 }
 
 export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {

@@ -871,7 +871,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let awaiting = self.awaitingAppReadyBundleId, awaiting == currentBundleId else {
             return false
         }
-        return self.appReadyWebViewLoadedToken >= self.appReadyWebViewLoadToken
+        return self.appReadyWebViewLoadToken > 0 &&
+            self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken
     }
 
     private func semaphoreWait(waitTime: Int) {

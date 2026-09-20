@@ -3271,12 +3271,10 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-a", currentBundleId: "bundle-b"))
     }
 
-    func testShouldCommitNotifyAppReadyWithoutBundleIdRequiresWebViewLoad() {
+    func testShouldCommitNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() {
         let plugin = CapacitorUpdaterPlugin()
         plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 1)
         plugin.markAppReadyWebViewPageStartedForTesting()
-        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
-        plugin.markAppReadyWebViewLoadedForTesting()
         XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
     }
 

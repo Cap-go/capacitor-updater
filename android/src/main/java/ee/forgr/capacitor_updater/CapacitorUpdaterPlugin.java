@@ -3217,7 +3217,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (awaiting == null || !awaiting.equals(currentBundleId)) {
             return false;
         }
-        return this.appReadyWebViewLoadedToken >= this.appReadyWebViewLoadToken;
+        return (this.appReadyWebViewLoadToken > 0 && this.appReadyWebViewPageStartedToken == this.appReadyWebViewLoadToken);
     }
 
     private void applyCurrentBundleToBridge() {
