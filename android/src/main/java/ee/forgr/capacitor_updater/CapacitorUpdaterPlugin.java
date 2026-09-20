@@ -75,6 +75,7 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 // Removed OkHttpClient and Protocol imports - using shared client in DownloadService instead
 import org.json.JSONArray;
@@ -2417,16 +2418,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 Activity currentActivity = this.getActivity();
                 if (currentActivity != null) {
                     this.implementation.activity = currentActivity;
-                    currentActivity.runOnUiThread(() -> {
-                        try {
-                            this.directUpdateFinish(latest);
-                        } catch (final Exception e) {
-                            logger.error("directUpdateFinish failed: " + e.getMessage());
-                        }
-                    });
-                    return;
+                } else {
+                    logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 }
-                logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 this.directUpdateFinish(latest);
             } catch (final Exception e) {
                 logger.error("directUpdateFinish failed: " + e.getMessage());
@@ -3255,7 +3249,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         });
         try {
-            if (!applied.tryAcquire(2, TimeUnit.SECONDS)) {
+            if (!applied.tryAcquire(10, TimeUnit.SECONDS)) {
                 logger.warn("Timed out waiting for main thread bundle apply");
             }
         } catch (final InterruptedException e) {
@@ -3374,6 +3368,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
         this.notifyListeners("appReloaded", new JSObject());
+
+        // Never block the UI thread waiting for notifyAppReady (JS needs it).
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            final AtomicBoolean reloaded = new AtomicBoolean(false);
+            final CountDownLatch done = new CountDownLatch(1);
+            startNewThread(() -> {
+                reloaded.set(this.semaphoreWait(phase, waitTimeMs));
+                done.countDown();
+            });
+            try {
+                if (!done.await(waitTimeMs + 5000L, TimeUnit.MILLISECONDS)) {
+                    logger.error("Timed out waiting for reload notifyAppReady on background thread");
+                    this.cleanupTimedOutSemaphoreWait(phase);
+                    return false;
+                }
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                this.cleanupTimedOutSemaphoreWait(phase);
+                return false;
+            }
+            return reloaded.get();
+        }
 
         // Wait for the reload to complete (until notifyAppReady is called)
         return this.semaphoreWait(phase, waitTimeMs);
