@@ -3249,13 +3249,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         });
         try {
-            if (!applied.tryAcquire(10, TimeUnit.SECONDS)) {
+            if (!applied.tryAcquire(Math.min(this.resolveAppReadyCheckTimeoutMs(), 30000L), TimeUnit.MILLISECONDS)) {
                 logger.warn("Timed out waiting for main thread bundle apply");
             }
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.warn("Interrupted while waiting for main thread bundle apply");
         }
+    }
+
+    private void loadWebViewUrlOnMainThread(final Runnable loadAction) {
+        if (this.bridge == null || this.bridge.getWebView() == null) {
+            return;
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            loadAction.run();
+            return;
+        }
+        this.bridge.getWebView().post(loadAction);
     }
 
     private void performCurrentBundleNavigation(final String path, final boolean usingBuiltin) {
@@ -3317,7 +3328,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 finalUrl = new URL(this.bridge.getAppUrl());
                 finalUrl = new URL(finalUrl.getProtocol(), finalUrl.getHost(), finalUrl.getPort(), url.get().getPath());
                 URL finalUrl1 = finalUrl;
-                this.bridge.getWebView().post(() -> {
+                this.loadWebViewUrlOnMainThread(() -> {
                     this.bridge.getWebView().loadUrl(finalUrl1.toString());
                     if (!this.keepUrlPathAfterReload) {
                         this.bridge.getWebView().clearHistory();
@@ -3339,7 +3350,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.bridge.setServerBasePath(path);
             }
             if (this.bridge != null && this.bridge.getWebView() != null) {
-                this.bridge.getWebView().post(() -> {
+                this.loadWebViewUrlOnMainThread(() -> {
                     if (this.bridge.getWebView() != null) {
                         this.bridge.getWebView().loadUrl(this.bridge.getAppUrl());
                         if (!this.keepUrlPathAfterReload) {
