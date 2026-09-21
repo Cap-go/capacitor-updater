@@ -63,7 +63,7 @@
     "test:maestro:ios:smoke": "./scripts/test-maestro-ios.sh",
     "lint": "bun run eslint && bun run prettier -- --check && bun run swiftlint -- lint",
     "fmt": "bun run eslint -- --fix && bun run prettier -- --write && bun run swiftlint -- --fix --format",
-    "eslint": "eslint . --ext .ts",
+    "eslint": "eslint .",
     "prettier": "prettier-pretty-check \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
     "swiftlint": "node-swiftlint",
     "docgen": "node scripts/generate-docs.js",
@@ -88,11 +88,12 @@
     "@capacitor/docgen": "^0.3.0",
     "@capacitor/ios": "^8.5.0",
     "@ionic/eslint-config": "^0.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
     "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^2.0.0",
     "@types/node": "^26.0.0",
-    "eslint": "^8.57.0",
-    "eslint-plugin-import": "^2.32.0",
+    "eslint": "^10.0.0",
     "husky": "^9.1.7",
     "prettier": "^3.6.2",
     "prettier-plugin-java": "^2.7.4",
@@ -107,9 +108,6 @@
   },
   "prettier": "@ionic/prettier-config",
   "swiftlint": "@ionic/swiftlint-config",
-  "eslintConfig": {
-    "extends": "@ionic/eslint-config/recommended"
-  },
   "capacitor": {
     "ios": {
       "src": "ios"
