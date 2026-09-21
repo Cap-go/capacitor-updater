@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 2,
+  "lockfileVersion": 1,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -19,8 +19,8 @@
         "@typescript/typescript6": "^6.0.2",
         "eslint": "^10.0.0",
         "husky": "^9.1.7",
-        "prettier": "^3.6.2",
-        "prettier-plugin-java": "^2.7.4",
+        "prettier": "3.8.4",
+        "prettier-plugin-java": "2.9.7",
         "prettier-pretty-check": "^0.2.0",
         "rimraf": "^6.0.1",
         "rollup": "^4.50.0",
@@ -511,9 +511,9 @@
 
     "prelude-ls": ["prelude-ls@1.2.1", "", {}, "sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g=="],
 
-    "prettier": ["prettier@3.9.8", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A=="],
+    "prettier": ["prettier@3.8.4", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-N2MylSdi48+5N/6S5j+maeHbUSIzzZ5uOcX5Hm4QpV8Dkb1HFjfAKTKX6yNPJQD9AhcT3ifHNB66tWTTJDi11Q=="],
 
-    "prettier-plugin-java": ["prettier-plugin-java@2.10.4", "", { "dependencies": { "web-tree-sitter": "0.27.0" }, "peerDependencies": { "prettier": "^3.0.0" } }, "sha512-Hinkucn49lx848MnWEktfGozLPp9dMYtdKPG+Z3pridBv71PJIVibe4jp0Lzb+rcA3eMZfU5+oWtJoI2oQ2XTg=="],
+    "prettier-plugin-java": ["prettier-plugin-java@2.9.7", "", { "dependencies": { "web-tree-sitter": "0.26.9" }, "peerDependencies": { "prettier": "^3.0.0" } }, "sha512-5ifIseGcpuBizlGw9bUZPoyRPj8c9TV2g2jfO+70Dt92ZH5XG39iXZ4qyGTXN7OTdEprqJjHYQ8UWZcfDc4P9Q=="],
 
     "prettier-pretty-check": ["prettier-pretty-check@0.2.0", "", { "dependencies": { "diff": "^5.2.0" }, "bin": { "prettier-pretty-check": "index.js" } }, "sha512-gVmwxYvm1Qii1H6eULNcNchlruyXyKkluP1LBhUaqdSvvACc8FZ99zTWzqQHJrBu9qUrYmNRysPmnYSm9c7G6Q=="],
 
@@ -595,7 +595,7 @@
 
     "uuid": ["uuid@7.0.3", "", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-DPSke0pXhTZgoF/d+WSt2QaKMCFSfx7QegxEWT+JOuHF5aWrKEn0G+ztjuJg/gG8/ItK+rbPCD/yNv8yyih6Cg=="],
 
-    "web-tree-sitter": ["web-tree-sitter@0.27.0", "", {}, "sha512-XK08gj6RwTMQatAG7uVRP8MunqotL/XC19vHgkSPKmELgbGPBj4ECvB8haHOUnyj6ls2B8t42UTro14zxGgAHg=="],
+    "web-tree-sitter": ["web-tree-sitter@0.26.9", "", {}, "sha512-YJwSHANl6XFgeEjB8nitgj0qZYt5gkIesJ4w2srS2wcLB4GUa4xcOkM0YaMsU6WNR53YVIkDSY7Ej4pf3IXtCA=="],
 
     "which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "./bin/node-which" } }, "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA=="],
 
