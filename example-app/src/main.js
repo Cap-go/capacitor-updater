@@ -2207,6 +2207,20 @@ const actions = [
     },
   },
   {
+    id: 'verify-persisted-config-after-get-latest-boot',
+    label: 'Boot getLatest then verify persisted runtime config',
+    showWhen: () => false,
+    markerId: 'persisted',
+    skipRefresh: true,
+    run: async () => {
+      await runGetLatestCheck();
+      return verifyPersistedRuntimeConfig({
+        includePluginAppId: false,
+        probeLatest: false,
+      });
+    },
+  },
+  {
     id: 'verify-persisted-config',
     label: 'Verify persisted runtime config',
     buttonLabel: 'Verify persisted runtime config',
@@ -3167,6 +3181,7 @@ async function bootstrap() {
 
   await refreshState();
   const skipAndroidBootProbeForBootAction =
+    bootActionFromStorage === 'verify-persisted-config-after-get-latest-boot' ||
     bootActionFromStorage === 'verify-persisted-runtime-traffic-boot';
   const shouldRunAndroidBootProbe =
     platform === 'android' &&
