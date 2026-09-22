@@ -3659,8 +3659,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 script,
                 arguments: [:],
                 in: nil,
-                contentWorld: .page
-            ) { [weak self] result in
+                in: .page
+            ) { [weak self] (result: Result<Any, Error>) in
                 guard let self = self, requestToken == self.splashscreenInvocationToken else {
                     return
                 }
