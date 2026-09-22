@@ -651,14 +651,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("Initial load \(id)")
         // Persist app-ready binding before navigation so document-start reads the current bundle.
-        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+        return self.syncAppReadyBundleBindingAndWait(bundleId: id) { [weak self] in
             guard let self = self, let bridge = self.bridge else {
-                return
+                return false
             }
             // We don't use the viewcontroller here as it does not work during the initial load state
             bridge.setServerBasePath(dest.path)
+            return true
         }
-        return true
     }
 
     private static func jsQuotedString(_ value: String) -> String {
@@ -1980,26 +1980,48 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    private func waitForAsyncBinding(_ completed: inout Bool, timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !completed && Date() < deadline {
+            if Thread.isMainThread {
+                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            } else {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+    }
+
+    private func syncAppReadyBundleBindingAndWait(bundleId: String, work: @escaping () -> Bool) -> Bool {
+        var result = false
+        var completed = false
+        self.syncAppReadyBundleBinding(bundleId: bundleId) {
+            result = work()
+            completed = true
+        }
+        self.waitForAsyncBinding(&completed)
+        return completed ? result : false
+    }
+
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
         guard bridge.viewController is CAPBridgeViewController else {
             self.logger.error("Cannot get viewController")
             return false
         }
         let id = self.implementation.getCurrentBundleId()
-        self.syncAppReadyBundleBinding(bundleId: id) { [weak self] in
+        return self.syncAppReadyBundleBindingAndWait(bundleId: id) { [weak self] in
             guard let self = self else {
-                return
+                return false
             }
             let dest = self.currentReloadDestination()
             self.logger.info("Reloading \(id)")
 
             guard let vc = bridge.viewController as? CAPBridgeViewController else {
                 self.logger.error("Cannot get viewController")
-                return
+                return false
             }
             guard let capBridge = vc.bridge else {
                 self.logger.error("Cannot get capBridge")
-                return
+                return false
             }
             if self.keepUrlPathAfterReload {
                 if let currentURL = vc.webView?.url {
@@ -2021,8 +2043,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 vc.setServerBasePath(path: dest.path)
             }
+            return true
         }
-        return true
     }
 
     func restoreLiveBundleStateAfterFailedReload() {

@@ -1467,6 +1467,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     'source',
   ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
+  let resolvedStatsUrl = observedStatsUrl;
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const shouldVerifyStatsUrl =
@@ -1498,7 +1499,6 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
   );
   if (shouldVerifyStatsUrl) {
-    let resolvedStatsUrl = observedStatsUrl;
     if (resolvedStatsUrl !== expectedStatsUrl) {
       const statsDeadline = Date.now() + 15000;
       while (Date.now() < statsDeadline && resolvedStatsUrl !== expectedStatsUrl) {
@@ -1552,7 +1552,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     channels: channels.channels,
     customId: expectedCustomId,
     channelUrl: observedChannelUrl,
-    statsUrl: observedStatsUrl,
+    statsUrl: resolvedStatsUrl,
     updateUrl: observedUpdateUrl,
     version: latest?.version ?? state.serverDebug?.activeRelease ?? 'not-probed',
   };

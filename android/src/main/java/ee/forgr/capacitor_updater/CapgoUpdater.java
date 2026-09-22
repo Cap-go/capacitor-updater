@@ -53,6 +53,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import okhttp3.*;
@@ -134,6 +135,7 @@ public class CapgoUpdater {
     private ScheduledFuture<?> statsFlushTask = null;
     private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
     private final AtomicBoolean statsStopped = new AtomicBoolean(false);
+    private final AtomicLong statsFlushGeneration = new AtomicLong(0);
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
@@ -3033,10 +3035,12 @@ public class CapgoUpdater {
     }
 
     public void discardPendingStats() {
+        invalidateStatsFlushCallbacks();
         synchronized (statsQueue) {
             statsQueue.clear();
             statsInFlight.clear();
         }
+        statsFlushInFlight.set(false);
         persistStatsQueue(true);
         final File file = pendingStatsFile();
         if (file != null) {
@@ -3189,10 +3193,12 @@ public class CapgoUpdater {
 
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
+            invalidateStatsFlushCallbacks();
             synchronized (statsQueue) {
                 statsQueue.clear();
                 statsInFlight.clear();
             }
+            statsFlushInFlight.set(false);
             persistStatsQueue();
             return;
         }
@@ -3201,6 +3207,7 @@ public class CapgoUpdater {
             return;
         }
 
+        final long flushGeneration = statsFlushGeneration.get();
         final List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
             if (statsQueue.isEmpty()) {
@@ -3229,10 +3236,10 @@ public class CapgoUpdater {
             new okhttp3.Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    if (abandonStoppedStatsFlush()) {
+                    if (abandonStoppedStatsFlush(flushGeneration)) {
                         return;
                     }
-                    requeueStatsEvents(eventsToSend);
+                    requeueStatsEvents(eventsToSend, flushGeneration);
                     if (logger != null) {
                         logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
@@ -3243,16 +3250,19 @@ public class CapgoUpdater {
                 @Override
                 public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                     try (ResponseBody responseBody = response.body()) {
-                        if (abandonStoppedStatsFlush()) {
+                        if (abandonStoppedStatsFlush(flushGeneration)) {
                             return;
                         }
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(eventsToSend, flushGeneration);
                             return;
                         }
 
                         if (response.isSuccessful()) {
+                            if (isStaleStatsFlush(flushGeneration)) {
+                                return;
+                            }
                             synchronized (statsQueue) {
                                 statsInFlight.clear();
                             }
@@ -3261,9 +3271,9 @@ public class CapgoUpdater {
                                 logger.info("Stats batch sent successfully");
                                 logger.debug("Sent " + eventCount + " events");
                             }
-                            runStatsCallbacks(eventsToSend);
+                            runStatsCallbacks(eventsToSend, flushGeneration);
                         } else if (isTransientStatsFailure(response.code())) {
-                            requeueStatsEvents(eventsToSend);
+                            requeueStatsEvents(eventsToSend, flushGeneration);
                             if (logger != null) {
                                 logger.error("Error sending stats batch");
                                 logger.debug("Retrying later, response code: " + response.code());
@@ -3286,8 +3296,16 @@ public class CapgoUpdater {
         );
     }
 
-    private boolean abandonStoppedStatsFlush() {
-        if (!statsStopped.get()) {
+    private void invalidateStatsFlushCallbacks() {
+        statsFlushGeneration.incrementAndGet();
+    }
+
+    private boolean isStaleStatsFlush(final long flushGeneration) {
+        return statsFlushGeneration.get() != flushGeneration;
+    }
+
+    private boolean abandonStoppedStatsFlush(final long flushGeneration) {
+        if (!statsStopped.get() && !isStaleStatsFlush(flushGeneration)) {
             return false;
         }
         statsFlushInFlight.set(false);
@@ -3301,8 +3319,8 @@ public class CapgoUpdater {
         return statusCode == 429 || statusCode == 408 || statusCode >= 500;
     }
 
-    private void requeueStatsEvents(final List<QueuedStatsEvent> events) {
-        if (statsStopped.get() || events == null || events.isEmpty()) {
+    private void requeueStatsEvents(final List<QueuedStatsEvent> events, final long flushGeneration) {
+        if (statsStopped.get() || isStaleStatsFlush(flushGeneration) || events == null || events.isEmpty()) {
             return;
         }
         synchronized (statsQueue) {
@@ -3316,7 +3334,10 @@ public class CapgoUpdater {
         ensureStatsTimerStarted();
     }
 
-    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
+    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents, final long flushGeneration) {
+        if (isStaleStatsFlush(flushGeneration)) {
+            return;
+        }
         for (final QueuedStatsEvent sentEvent : sentEvents) {
             if (sentEvent.onSent == null) {
                 continue;

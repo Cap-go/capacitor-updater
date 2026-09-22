@@ -148,7 +148,7 @@ dump_ui_hierarchy() {
 
 dump_logcat_snapshot() {
   echo "=== logcat snapshot (CapgoUpdater / Capacitor / AndroidRuntime) ===" >&2
-  run_adb_command 30 logcat -d -v threadtime CapgoUpdater:D Capacitor:D CapacitorUpdater:D AndroidRuntime:E chromium:I *:S 2>&1 | tail -n 250 >&2 || true
+  run_adb_command 30 logcat -d -v threadtime CapgoUpdater:D Capacitor:D CapacitorUpdater:D AndroidRuntime:E chromium:I '*:S' 2>&1 | tail -n 250 >&2 || true
   return 0
 }
 

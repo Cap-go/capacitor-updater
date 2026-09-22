@@ -26,6 +26,22 @@ const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('Cap
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function awaitBindingState(remainingMs: number): Promise<string | undefined> {
+  let bundleId = readInjectedAppReadyBundleId();
+  if (!bundleId) {
+    bundleId = await awaitInjectedAppReadyBundleId(Math.min(remainingMs, 250));
+    if (!bundleId) {
+      return undefined;
+    }
+  }
+
+  if (!isAppReadyPageStartedMatched()) {
+    await awaitAppReadyPageStartedToken(Math.min(remainingMs, 250));
+  }
+
+  return bundleId;
+}
+
 async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeBridge): Promise<AppReadyResult> {
   const deadline = Date.now() + NOTIFY_APP_READY_WAIT_MS;
   let lastResult: AppReadyResult | undefined;
@@ -36,17 +52,10 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
       break;
     }
 
-    let bundleId = readInjectedAppReadyBundleId();
+    const bundleId = await awaitBindingState(remainingMs);
     if (!bundleId) {
-      bundleId = await awaitInjectedAppReadyBundleId(Math.min(remainingMs, 250));
-      if (!bundleId) {
-        await sleep(25);
-        continue;
-      }
-    }
-
-    if (!isAppReadyPageStartedMatched()) {
-      await awaitAppReadyPageStartedToken(Math.min(remainingMs, 250));
+      await sleep(25);
+      continue;
     }
 
     lastResult = await target.notifyAppReady({ bundleId });
