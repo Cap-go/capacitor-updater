@@ -456,7 +456,7 @@ public class DownloadService extends Worker {
                     return createFailureResult("Manifest is null");
                 }
             } else {
-                handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum);
+                handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum, publicKey);
                 return createSuccessResult(dest, version, sessionKey, checksum, false);
             }
         } catch (DownloadRetryException e) {
@@ -547,8 +547,8 @@ public class DownloadService extends Worker {
         try {
             logger.debug("handleManifestDownload");
 
-            if (publicKey != null && !publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
-                logger.error("Public key present but no session key provided");
+            if (publicKey != null && !publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+                logger.error("Public key present but no valid session key provided");
                 sendStatsAsync("session_key_required", version);
                 throw new IOException("Session key required when public key is present");
             }
@@ -588,7 +588,13 @@ public class DownloadService extends Worker {
                     continue;
                 }
 
-                if (publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+                if (publicKey != null && !publicKey.isEmpty()) {
+                    if (!CryptoCipher.isValidSessionKey(sessionKey)) {
+                        logger.error("Public key present but no valid session key provided");
+                        sendStatsAsync("session_key_required", version);
+                        hasError.set(true);
+                        continue;
+                    }
                     try {
                         fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
@@ -733,8 +739,15 @@ public class DownloadService extends Worker {
         String dest,
         String version,
         String sessionKey,
-        String checksum
+        String checksum,
+        String publicKey
     ) {
+        if (publicKey != null && !publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
+            sendStatsAsync("session_key_required", version);
+            throw new RuntimeException("Session key required when public key is present");
+        }
+
         // Send stats for zip download start
         sendStatsAsync("download_zip_start", version);
 
@@ -1116,7 +1129,7 @@ public class DownloadService extends Worker {
                 }
             }
 
-            boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty();
+            boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && CryptoCipher.isValidSessionKey(sessionKey);
             File source = partial;
             if (needDecrypt) {
                 workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");

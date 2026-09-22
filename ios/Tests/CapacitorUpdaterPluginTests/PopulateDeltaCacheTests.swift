@@ -147,7 +147,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "index.html", file_hash: checksumHex, download_url: nil)
         ]
 
-        let lookup = implementation.manifestHashLookup(manifest: manifest, sessionKey: "session-key")
+        let lookup = implementation.manifestHashLookup(manifest: manifest, sessionKey: "a:b")
 
         XCTAssertEqual(lookup["index.html"]?.hash, decryptedHex)
     }
@@ -351,7 +351,7 @@ extension PopulateDeltaCacheTests {
         )]
 
         // Only checksum recovery is needed when builtin matches; no file/session decryption occurs.
-        let result = try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "signed-manifest")
+        let result = try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "a:b")
         defer {
             _ = implementation.delete(id: result.getId(), removeInfo: true)
             implementation.shutdown()

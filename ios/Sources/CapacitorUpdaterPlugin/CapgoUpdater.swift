@@ -457,8 +457,8 @@ import UIKit
     }
 
     private func requireSessionKeyForEncryptedUpdate(sessionKey: String, versionName: String? = nil) throws {
-        if !self.publicKey.isEmpty && sessionKey.isEmpty {
-            logger.error("Public key present but no session key provided")
+        if !self.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+            logger.error("Public key present but no valid session key provided")
             self.sendStats(action: "session_key_required", versionName: versionName)
             throw NSError(
                 domain: "CapgoUpdater",
@@ -1259,7 +1259,10 @@ import UIKit
         guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
             return nil
         }
-        if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+        if !self.publicKey.isEmpty {
+            if !CryptoCipher.isValidSessionKey(sessionKey) {
+                return nil
+            }
             do {
                 fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
             } catch {
@@ -1495,7 +1498,23 @@ import UIKit
             var fileHash = entryFileHash
 
             // Decrypt checksum if needed (done before creating operation)
-            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+            if !self.publicKey.isEmpty {
+                if !CryptoCipher.isValidSessionKey(sessionKey) {
+                    let error = NSError(
+                        domain: "CapgoUpdater",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
+                    )
+                    self.sendStats(action: "session_key_required", versionName: version)
+                    errorLock.lock()
+                    if downloadError == nil {
+                        downloadError = error
+                    }
+                    errorLock.unlock()
+                    hasError.value = true
+                    logger.error("Public key present but no valid session key provided")
+                    continue
+                }
                 do {
                     fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
@@ -1775,7 +1794,7 @@ import UIKit
 
         do {
             var source = partialURL
-            if !self.publicKey.isEmpty && !sessionKey.isEmpty {
+            if !self.publicKey.isEmpty && CryptoCipher.isValidSessionKey(sessionKey) {
                 let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
                 try FileManager.default.copyItem(at: partialURL, to: work)
                 workURL = work

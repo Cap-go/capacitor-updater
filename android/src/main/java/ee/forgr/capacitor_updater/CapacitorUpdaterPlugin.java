@@ -2842,8 +2842,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
-        if (!this.implementation.publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
-            logger.error("Public key present but no session key provided");
+        if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
             this.implementation.sendStats("session_key_required");
             throw new IOException("Session key required when public key is present");
         }

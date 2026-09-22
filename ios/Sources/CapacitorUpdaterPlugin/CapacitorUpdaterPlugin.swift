@@ -1609,8 +1609,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             throw makePreviewError("Invalid download URL")
         }
 
-        if !self.implementation.publicKey.isEmpty && sessionKey.isEmpty {
-            self.logger.error("Public key present but no session key provided")
+        if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+            self.logger.error("Public key present but no valid session key provided")
             self.implementation.sendStats(action: "session_key_required", versionName: version)
             throw makePreviewError("Session key required when public key is present")
         }

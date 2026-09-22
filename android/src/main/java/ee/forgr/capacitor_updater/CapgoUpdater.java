@@ -286,8 +286,8 @@ public class CapgoUpdater {
     }
 
     private void requireSessionKeyForEncryptedUpdate(final String sessionKey) throws IOException {
-        if (!this.publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
-            logger.error("Public key present but no session key provided");
+        if (!this.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
             this.sendStats("session_key_required");
             throw new IOException("Session key required when public key is present");
         }
@@ -518,7 +518,10 @@ public class CapgoUpdater {
         if (fileHash.isEmpty()) {
             return "";
         }
-        if (this.publicKey != null && !this.publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+        if (this.publicKey != null && !this.publicKey.isEmpty()) {
+            if (!CryptoCipher.isValidSessionKey(sessionKey)) {
+                return "";
+            }
             try {
                 fileHash = CryptoCipher.decryptChecksum(fileHash, this.publicKey);
             } catch (Exception e) {

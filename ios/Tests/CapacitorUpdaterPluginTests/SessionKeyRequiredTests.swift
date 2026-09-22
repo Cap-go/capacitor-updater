@@ -42,6 +42,25 @@ final class SessionKeyRequiredTests: XCTestCase {
         }
     }
 
+    private final class AutoUpdateSessionKeyCapgoUpdater: StatsTrackingCapgoUpdater {
+        override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
+            let latest = AppVersion()
+            latest.version = "2.0.0"
+            latest.url = "https://example.com/update.zip"
+            return latest
+        }
+
+        override func getCurrentBundle() -> BundleInfo {
+            BundleInfo(id: "current-id", version: "1.0.0", status: .SUCCESS, downloaded: Date(), checksum: "abc")
+        }
+    }
+
+    private final class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
+        override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
+            work()
+        }
+    }
+
     private var implementation: StatsTrackingCapgoUpdater!
 
     override func setUp() {
@@ -73,6 +92,31 @@ final class SessionKeyRequiredTests: XCTestCase {
             XCTAssertEqual((error as NSError).localizedDescription, "Session key required when public key is present")
         }
         XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
+    }
+
+    func testDownloadRejectsWhenSessionKeyFormatInvalid() {
+        let url = URL(string: "https://example.com/update.zip")!
+
+        XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "invalid-format")) { error in
+            XCTAssertEqual((error as NSError).localizedDescription, "Session key required when public key is present")
+        }
+        XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
+    }
+
+    func testAutoUpdateBackgroundDownloadRejectsWhenSessionKeyMissing() {
+        let updater = AutoUpdateSessionKeyCapgoUpdater()
+        updater.setLogger(Logger(withTag: "SessionKeyRequiredTests", options: Logger.Options(level: .silent)))
+        updater.setPublicKey(Fixture.publicKeyPem)
+
+        let plugin = TestableCapacitorUpdaterPlugin()
+        plugin.implementation = updater
+        plugin.setAutoUpdateModeForTesting("onlyDownload")
+        plugin.setUpdateUrlForTesting("https://example.com/channel")
+
+        plugin.backgroundDownload()
+
+        XCTAssertTrue(updater.sentStatsActions.contains("session_key_required"))
+        updater.shutdown()
     }
 
     func testAllowsUpdateWhenNoPublicKeyConfigured() throws {

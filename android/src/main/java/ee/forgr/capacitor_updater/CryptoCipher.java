@@ -135,8 +135,12 @@ public class CryptoCipher {
         return buf;
     }
 
+    public static boolean isValidSessionKey(final String sessionKey) {
+        return sessionKey != null && !sessionKey.isEmpty() && sessionKey.split(":", -1).length == 2;
+    }
+
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
-        if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
+        if (publicKey.isEmpty() || !isValidSessionKey(ivSessionKey)) {
             if (logger != null) {
                 logger.info("Encryption not set, no public key or session, ignored");
             }
