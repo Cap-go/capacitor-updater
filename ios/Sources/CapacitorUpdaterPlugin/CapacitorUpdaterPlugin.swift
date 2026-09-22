@@ -3496,7 +3496,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func performHideSplashscreen() {
-        self.cancelSplashscreenTimeout()
         self.removeSplashscreenLoader()
         self.splashscreenInvocationToken += 1
         self.invokeSplashscreenAction(
@@ -3531,7 +3530,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func splashscreenOptions(methodName: String) -> [String: Any] {
-        methodName == "show" ? ["autoHide": false] : [:]
+        methodName == "show" ? ["autoHide": false, "fadeInDuration": 0] : [:]
     }
 
     private func splashscreenCompletedMessage(methodName: String) -> String {
@@ -3673,6 +3672,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     )
                     return
                 }
+                if action == .hide {
+                    self.cancelSplashscreenTimeout()
+                }
                 self.logger.info("Called SplashScreen \(action.methodName) method")
                 self.logger.info(self.splashscreenCompletedMessage(methodName: action.methodName))
             }
@@ -3694,8 +3696,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard retriesRemaining > 0 else {
             if action == .show {
                 self.logger.warn(message)
-            } else {
-                self.logger.error(message)
+                return
+            }
+
+            self.logger.error("\(message). Scheduling another hide retry.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.splashscreenRetryDelayMilliseconds)) { [weak self] in
+                guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                    return
+                }
+                self.invokeSplashscreenAction(
+                    action,
+                    retriesRemaining: self.splashscreenMaxRetries,
+                    requestToken: requestToken
+                )
             }
             return
         }
