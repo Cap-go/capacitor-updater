@@ -2611,6 +2611,7 @@ class CapacitorUpdaterTests: XCTestCase {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
 
         XCTAssertEqual(options["autoHide"] as? Bool, false)
+        XCTAssertEqual(options["fadeInDuration"] as? Int, 0)
     }
 
     func testHideSplashscreenOptionsStayEmpty() {
