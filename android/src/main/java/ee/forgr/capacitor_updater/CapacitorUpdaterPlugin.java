@@ -4950,10 +4950,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 if (
                                     latest.isDownloaded() &&
                                     BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                    (
-                                        CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
-                                        CryptoCipher.isValidSessionKey(latestSessionKey)
-                                    )
+                                    (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                        CryptoCipher.isValidSessionKey(latestSessionKey))
                                 ) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
