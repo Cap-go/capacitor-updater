@@ -233,8 +233,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     isShowing = false;
                 });
             }
-        })
-            .start();
+        }).start();
     }
 
     private void setPreviewMenuButtonsEnabled(List<Button> buttons, boolean enabled) {
@@ -383,8 +382,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             } finally {
                 isShowing = false;
             }
-        })
-            .start();
+        }).start();
     }
 
     private void showConfiguredDefaultMenu() {
@@ -571,8 +569,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                             presentChannelPicker(channels);
                         });
                     });
-                })
-                    .start();
+                }).start();
             } catch (Exception e) {
                 logger.error("Error showing channel selector: " + e.getMessage());
                 isShowing = false;
@@ -765,11 +762,12 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                 String latestKind = getString(latestRes, "kind");
                                 String latestMessage = getString(latestRes, "message");
 
-                                String detail = latestMessage != null && !latestMessage.isEmpty()
-                                    ? latestMessage
-                                    : latestError != null && !latestError.isEmpty()
-                                        ? latestError
-                                        : latestKind != null && !latestKind.isEmpty()
+                                String detail =
+                                    latestMessage != null && !latestMessage.isEmpty()
+                                        ? latestMessage
+                                        : latestError != null && !latestError.isEmpty()
+                                          ? latestError
+                                          : latestKind != null && !latestKind.isEmpty()
                                             ? latestKind
                                             : "server did not provide a message";
 
@@ -837,9 +835,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 // A manifest-only response has no zip URL; downloadManifest
                                 // tolerates the placeholder URL the plugin already uses.
-                                final String downloadUrl = latestUrl == null || latestUrl.isEmpty()
-                                    ? "https://404.capgo.app/no.zip"
-                                    : latestUrl;
+                                final String downloadUrl =
+                                    latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
 
                                 // Download the update
                                 try {
@@ -896,8 +893,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                             });
                         }
                     );
-                })
-                    .start();
+                }).start();
             } catch (Exception e) {
                 logger.error("Error selecting channel: " + e.getMessage());
                 isShowing = false;
