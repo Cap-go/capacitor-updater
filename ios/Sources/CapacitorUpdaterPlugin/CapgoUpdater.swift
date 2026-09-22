@@ -3451,17 +3451,15 @@ import UIKit
             return
         }
 
+        statsQueueLock.lock()
         guard !statsUrl.isEmpty else {
-            invalidateStatsFlushCallbacks()
-            statsQueueLock.lock()
+            statsFlushGeneration &+= 1
             statsQueue.removeAll()
             statsInFlight.removeAll()
             statsQueueLock.unlock()
             persistStatsQueue()
             return
         }
-
-        statsQueueLock.lock()
         guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
             statsQueueLock.unlock()
             return
@@ -3469,11 +3467,11 @@ import UIKit
         let queuedEvents = statsQueue
         statsQueue.removeAll()
         statsInFlight = queuedEvents
+        let flushGeneration = statsFlushGeneration
         statsQueueLock.unlock()
         persistStatsQueue()
 
         let eventsToSend = queuedEvents.map(\.event)
-        let flushGeneration = statsFlushGeneration
 
         operationQueue.maxConcurrentOperationCount = 1
 
@@ -3535,12 +3533,11 @@ import UIKit
         operationQueue.addOperation(operation)
     }
 
-    private func invalidateStatsFlushCallbacks() {
-        statsFlushGeneration &+= 1
-    }
-
     private func isStaleStatsFlush(_ flushGeneration: UInt64) -> Bool {
-        flushGeneration != statsFlushGeneration
+        statsQueueLock.lock()
+        let stale = flushGeneration != statsFlushGeneration
+        statsQueueLock.unlock()
+        return stale
     }
 
     private func abandonStoppedStatsFlush(_ flushGeneration: UInt64) -> Bool {
@@ -3563,8 +3560,12 @@ import UIKit
     }
 
     private func requeueStatsEvents(_ events: [QueuedStatsEvent], flushGeneration: UInt64) {
-        guard !statsStopped, !isStaleStatsFlush(flushGeneration), !events.isEmpty else { return }
+        guard !statsStopped, !events.isEmpty else { return }
         statsQueueLock.lock()
+        guard flushGeneration == statsFlushGeneration else {
+            statsQueueLock.unlock()
+            return
+        }
         statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
         if statsQueue.count > CapgoUpdater.maxPendingStats {
@@ -3582,8 +3583,8 @@ import UIKit
     }
 
     func discardPendingStats() {
-        invalidateStatsFlushCallbacks()
         statsQueueLock.lock()
+        statsFlushGeneration &+= 1
         statsQueue.removeAll()
         statsInFlight.removeAll()
         statsQueueLock.unlock()

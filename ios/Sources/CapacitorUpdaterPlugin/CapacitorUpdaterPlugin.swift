@@ -1980,26 +1980,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func waitForAsyncBinding(_ completed: inout Bool, timeout: TimeInterval = 10) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !completed && Date() < deadline {
+    private func syncAppReadyBundleBindingAndWait(bundleId: String, work: @escaping () -> Bool) -> Bool {
+        let state = BindingWaitState()
+        self.syncAppReadyBundleBinding(bundleId: bundleId) {
+            guard !state.isCancelled else {
+                return
+            }
+            state.markCompleted(result: work())
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let poll = state.poll()
+            if poll.completed {
+                return poll.result
+            }
             if Thread.isMainThread {
                 RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
             } else {
                 Thread.sleep(forTimeInterval: 0.01)
             }
         }
-    }
-
-    private func syncAppReadyBundleBindingAndWait(bundleId: String, work: @escaping () -> Bool) -> Bool {
-        var result = false
-        var completed = false
-        self.syncAppReadyBundleBinding(bundleId: bundleId) {
-            result = work()
-            completed = true
-        }
-        self.waitForAsyncBinding(&completed)
-        return completed ? result : false
+        state.cancel()
+        return false
     }
 
     private func applyCurrentBundleToBridge(_ bridge: CAPBridgeProtocol) -> Bool {
@@ -5528,9 +5530,42 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+private final class BindingWaitState {
+    private let lock = NSLock()
+    private var completed = false
+    private var cancelled = false
+    private var result = false
+
+    var isCancelled: Bool {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.cancelled
+    }
+
+    func markCompleted(result: Bool) {
+        self.lock.lock()
+        self.result = result
+        self.completed = true
+        self.lock.unlock()
+    }
+
+    func cancel() {
+        self.lock.lock()
+        self.cancelled = true
+        self.lock.unlock()
+    }
+
+    func poll() -> (completed: Bool, result: Bool) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return (self.completed, self.result)
+    }
+}
+
 private final class AppReadyBindingMessageHandler: NSObject, WKScriptMessageHandler {
     weak var plugin: CapacitorUpdaterPlugin?
 
+    // Required empty deinit for SwiftLint required_deinit rule.
     deinit {}
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {

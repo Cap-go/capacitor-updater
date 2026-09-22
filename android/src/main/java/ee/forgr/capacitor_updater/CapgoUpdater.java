@@ -3035,8 +3035,8 @@ public class CapgoUpdater {
     }
 
     public void discardPendingStats() {
-        invalidateStatsFlushCallbacks();
         synchronized (statsQueue) {
+            statsFlushGeneration.incrementAndGet();
             statsQueue.clear();
             statsInFlight.clear();
         }
@@ -3193,8 +3193,8 @@ public class CapgoUpdater {
 
         String statsUrl = this.statsUrl;
         if (statsUrl == null || statsUrl.isEmpty()) {
-            invalidateStatsFlushCallbacks();
             synchronized (statsQueue) {
+                statsFlushGeneration.incrementAndGet();
                 statsQueue.clear();
                 statsInFlight.clear();
             }
@@ -3207,11 +3207,12 @@ public class CapgoUpdater {
             return;
         }
 
-        final long flushGeneration = statsFlushGeneration.get();
+        final long flushGeneration;
         final List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
+            flushGeneration = statsFlushGeneration.get();
             if (statsQueue.isEmpty()) {
-                statsFlushInFlight.set(false);
+                releaseStatsFlushInFlight(flushGeneration);
                 return;
             }
             eventsToSend = new ArrayList<>(statsQueue);
@@ -3244,7 +3245,7 @@ public class CapgoUpdater {
                         logger.error("Failed to send stats batch");
                         logger.debug("Error: " + e.getMessage());
                     }
-                    statsFlushInFlight.set(false);
+                    releaseStatsFlushInFlight(flushGeneration);
                 }
 
                 @Override
@@ -3289,26 +3290,28 @@ public class CapgoUpdater {
                             }
                         }
                     } finally {
-                        statsFlushInFlight.set(false);
+                        releaseStatsFlushInFlight(flushGeneration);
                     }
                 }
             }
         );
     }
 
-    private void invalidateStatsFlushCallbacks() {
-        statsFlushGeneration.incrementAndGet();
-    }
-
     private boolean isStaleStatsFlush(final long flushGeneration) {
         return statsFlushGeneration.get() != flushGeneration;
+    }
+
+    private void releaseStatsFlushInFlight(final long flushGeneration) {
+        if (!isStaleStatsFlush(flushGeneration)) {
+            statsFlushInFlight.set(false);
+        }
     }
 
     private boolean abandonStoppedStatsFlush(final long flushGeneration) {
         if (!statsStopped.get() && !isStaleStatsFlush(flushGeneration)) {
             return false;
         }
-        statsFlushInFlight.set(false);
+        releaseStatsFlushInFlight(flushGeneration);
         return true;
     }
 
@@ -3320,10 +3323,13 @@ public class CapgoUpdater {
     }
 
     private void requeueStatsEvents(final List<QueuedStatsEvent> events, final long flushGeneration) {
-        if (statsStopped.get() || isStaleStatsFlush(flushGeneration) || events == null || events.isEmpty()) {
+        if (statsStopped.get() || events == null || events.isEmpty()) {
             return;
         }
         synchronized (statsQueue) {
+            if (isStaleStatsFlush(flushGeneration)) {
+                return;
+            }
             statsInFlight.clear();
             statsQueue.addAll(0, events);
             while (statsQueue.size() > MAX_PENDING_STATS) {
