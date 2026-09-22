@@ -3496,13 +3496,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func performHideSplashscreen() {
-        self.cancelSplashscreenTimeout()
         self.removeSplashscreenLoader()
         self.splashscreenInvocationToken += 1
-        self.invokeSplashscreenMethod(
-            methodName: "hide",
-            callbackId: "autoHideSplashscreen",
-            options: self.splashscreenOptions(methodName: "hide"),
+        self.invokeSplashscreenAction(
+            .hide,
             retriesRemaining: self.splashscreenMaxRetries,
             requestToken: self.splashscreenInvocationToken
         )
@@ -3522,10 +3519,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.cancelSplashscreenTimeout()
         self.autoSplashscreenTimedOut = false
         self.splashscreenInvocationToken += 1
-        self.invokeSplashscreenMethod(
-            methodName: "show",
-            callbackId: "autoShowSplashscreen",
-            options: self.splashscreenOptions(methodName: "show"),
+        self.invokeSplashscreenAction(
+            .show,
             retriesRemaining: self.splashscreenMaxRetries,
             requestToken: self.splashscreenInvocationToken
         )
@@ -3535,7 +3530,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func splashscreenOptions(methodName: String) -> [String: Any] {
-        methodName == "show" ? ["autoHide": false] : [:]
+        methodName == "show" ? ["autoHide": false, "fadeInDuration": 0] : [:]
     }
 
     private func splashscreenCompletedMessage(methodName: String) -> String {
@@ -3554,20 +3549,59 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.splashscreenInvocationToken += 1
     }
 
-    private func makeSplashscreenCall(callbackId: String, options: [String: Any], methodName: String) -> CAPPluginCall {
-        CAPPluginCall(callbackId: callbackId, methodName: methodName, options: options, success: { [weak self] (_, _) in
-            guard let self = self else { return }
-            self.logger.info(self.splashscreenCompletedMessage(methodName: methodName))
-        }, error: { [weak self] (_) in
-            guard let self = self else { return }
-            self.logger.error("Failed to auto-\(methodName) splashscreen")
-        })
+    private enum SplashscreenAction {
+        case show
+        case hide
+
+        var methodName: String {
+            switch self {
+            case .show:
+                return "show"
+            case .hide:
+                return "hide"
+            }
+        }
+
+        var unavailableMessageVerb: String {
+            switch self {
+            case .show:
+                return "showing"
+            case .hide:
+                return "hiding"
+            }
+        }
     }
 
-    private func invokeSplashscreenMethod(
-        methodName: String,
-        callbackId: String,
-        options: [String: Any],
+    private func splashscreenOptionsJSON(methodName: String) -> String {
+        let options = self.splashscreenOptions(methodName: methodName)
+        guard !options.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: options),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    private func splashscreenPluginExposesMethod(_ methodName: String, on plugin: CAPPlugin) -> Bool {
+        guard let bridgedPlugin = plugin as? CAPBridgedPlugin else {
+            return false
+        }
+        return bridgedPlugin.pluginMethods.contains { $0.name == methodName }
+    }
+
+    private func splashscreenBridgeScript(for action: SplashscreenAction) -> String {
+        let optionsJSON = self.splashscreenOptionsJSON(methodName: action.methodName)
+        return """
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') {
+          throw new Error('Capacitor bridge not ready');
+        }
+        return await cap.nativePromise('\(self.splashscreenPluginName)', '\(action.methodName)', \(optionsJSON));
+        """
+    }
+
+    private func invokeSplashscreenAction(
+        _ action: SplashscreenAction,
         retriesRemaining: Int,
         requestToken: Int
     ) {
@@ -3576,22 +3610,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         guard let bridge = self.bridge else {
-            self.retrySplashscreenMethod(
-                methodName: methodName,
-                callbackId: callbackId,
-                options: options,
+            self.retrySplashscreenAction(
+                action,
                 retriesRemaining: retriesRemaining,
                 requestToken: requestToken,
-                message: "Bridge not available for \(methodName == "show" ? "showing" : "hiding") splashscreen with autoSplashscreen"
+                message: "Bridge not available for \(action.unavailableMessageVerb) splashscreen with autoSplashscreen"
             )
             return
         }
 
         guard let splashScreenPlugin = bridge.plugin(withName: self.splashscreenPluginName) else {
-            self.retrySplashscreenMethod(
-                methodName: methodName,
-                callbackId: callbackId,
-                options: options,
+            self.retrySplashscreenAction(
+                action,
                 retriesRemaining: retriesRemaining,
                 requestToken: requestToken,
                 message: "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
@@ -3599,37 +3629,86 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let selector = NSSelectorFromString("\(methodName):")
-        guard splashScreenPlugin.responds(to: selector) else {
-            self.retrySplashscreenMethod(
-                methodName: methodName,
-                callbackId: callbackId,
-                options: options,
+        guard self.splashscreenPluginExposesMethod(action.methodName, on: splashScreenPlugin) else {
+            self.retrySplashscreenAction(
+                action,
                 retriesRemaining: retriesRemaining,
                 requestToken: requestToken,
-                message: "autoSplashscreen: SplashScreen plugin does not respond to \(methodName): method. Make sure @capacitor/splash-screen plugin is properly installed."
+                message: "autoSplashscreen: SplashScreen plugin does not expose \(action.methodName)(). Make sure @capacitor/splash-screen plugin is properly installed."
             )
             return
         }
 
-        let call = self.makeSplashscreenCall(callbackId: callbackId, options: options, methodName: methodName)
-        _ = splashScreenPlugin.perform(selector, with: call)
-        self.logger.info("Called SplashScreen \(methodName) method")
+        guard let webView = bridge.webView else {
+            self.retrySplashscreenAction(
+                action,
+                retriesRemaining: retriesRemaining,
+                requestToken: requestToken,
+                message: "WebView not available for \(action.unavailableMessageVerb) splashscreen with autoSplashscreen"
+            )
+            return
+        }
+
+        let script = self.splashscreenBridgeScript(for: action)
+        let runInvocation = { [weak self] in
+            guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                return
+            }
+            webView.callAsyncJavaScript(
+                script,
+                arguments: [:],
+                in: nil,
+                in: .page
+            ) { [weak self] (result: Result<Any, Error>) in
+                guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                    return
+                }
+                if case .failure(let error) = result {
+                    self.retrySplashscreenAction(
+                        action,
+                        retriesRemaining: retriesRemaining,
+                        requestToken: requestToken,
+                        message: "Failed to invoke SplashScreen \(action.methodName) via Capacitor bridge: \(error.localizedDescription)"
+                    )
+                    return
+                }
+                if action == .hide {
+                    self.cancelSplashscreenTimeout()
+                }
+                self.logger.info("Called SplashScreen \(action.methodName) method")
+                self.logger.info(self.splashscreenCompletedMessage(methodName: action.methodName))
+            }
+        }
+
+        if Thread.isMainThread {
+            runInvocation()
+        } else {
+            DispatchQueue.main.async(execute: runInvocation)
+        }
     }
 
-    private func retrySplashscreenMethod(
-        methodName: String,
-        callbackId: String,
-        options: [String: Any],
+    private func retrySplashscreenAction(
+        _ action: SplashscreenAction,
         retriesRemaining: Int,
         requestToken: Int,
         message: String
     ) {
         guard retriesRemaining > 0 else {
-            if methodName == "show" {
+            if action == .show {
                 self.logger.warn(message)
-            } else {
-                self.logger.error(message)
+                return
+            }
+
+            self.logger.error("\(message). Scheduling another hide retry.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(self.splashscreenRetryDelayMilliseconds)) { [weak self] in
+                guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                    return
+                }
+                self.invokeSplashscreenAction(
+                    action,
+                    retriesRemaining: self.splashscreenMaxRetries,
+                    requestToken: requestToken
+                )
             }
             return
         }
@@ -3639,10 +3718,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self, requestToken == self.splashscreenInvocationToken else {
                 return
             }
-            self.invokeSplashscreenMethod(
-                methodName: methodName,
-                callbackId: callbackId,
-                options: options,
+            self.invokeSplashscreenAction(
+                action,
                 retriesRemaining: retriesRemaining - 1,
                 requestToken: requestToken
             )

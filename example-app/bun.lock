@@ -5,14 +5,14 @@
     "": {
       "name": "capacitor-app",
       "dependencies": {
-        "@capacitor/android": "^6.0.0",
-        "@capacitor/core": "^6.0.0",
-        "@capacitor/ios": "^6.0.0",
-        "@capacitor/splash-screen": "^6.0.0",
+        "@capacitor/android": "^8.5.2",
+        "@capacitor/core": "^8.5.2",
+        "@capacitor/ios": "^8.5.2",
+        "@capacitor/splash-screen": "^8.0.0",
         "@capgo/capacitor-updater": "file:..",
       },
       "devDependencies": {
-        "@capacitor/cli": "^6.0.0",
+        "@capacitor/cli": "^8.5.2",
         "typescript": "^5.9.2",
         "vite": "^7.3.1",
       },
@@ -23,15 +23,15 @@
 
     "@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.29.7", "", {}, "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg=="],
 
-    "@capacitor/android": ["@capacitor/android@6.2.2", "", { "peerDependencies": { "@capacitor/core": "^6.2.0" } }, "sha512-JjIu1ryNE16PQTp51rb4NEygxP7cSCDMmUqx4f5f12xscKdGKTjO9bkEP3TroLnTa/J6p2QopIhRbrd3E/7DrA=="],
+    "@capacitor/android": ["@capacitor/android@8.5.2", "", { "peerDependencies": { "@capacitor/core": "^8.5.0" } }, "sha512-rtiaz78egCcS+vs29wkWCL3C+RhazKMSygXcjutwWP8NmO6r5UBxOvGf3Wjz5+ahobyQ723tn9gCePwRwcNDZQ=="],
 
-    "@capacitor/cli": ["@capacitor/cli@6.2.2", "", { "dependencies": { "@ionic/cli-framework-output": "^2.2.5", "@ionic/utils-fs": "^3.1.6", "@ionic/utils-subprocess": "2.1.11", "@ionic/utils-terminal": "^2.3.3", "commander": "^9.3.0", "debug": "^4.3.4", "env-paths": "^2.2.0", "kleur": "^4.1.4", "native-run": "^2.0.0", "open": "^8.4.0", "plist": "^3.0.5", "prompts": "^2.4.2", "rimraf": "^4.4.1", "semver": "^7.3.7", "tar": "^6.1.11", "tslib": "^2.4.0", "xml2js": "^0.5.0" }, "bin": { "cap": "bin/capacitor", "capacitor": "bin/capacitor" } }, "sha512-5wEYSHBzRKJKZnhD2sVJAP0t0kUT7o2/vlgEGzFE3t2w+inL9qMDN7zxg6pvqveJiPNZT2k93ZvJDdRKIn/w1w=="],
+    "@capacitor/cli": ["@capacitor/cli@8.5.2", "", { "dependencies": { "@ionic/cli-framework-output": "^2.2.8", "@ionic/utils-subprocess": "^3.0.1", "@ionic/utils-terminal": "^2.3.5", "commander": "^12.1.0", "debug": "^4.4.0", "env-paths": "^2.2.0", "fs-extra": "^11.2.0", "kleur": "^4.1.5", "native-run": "^2.0.3", "open": "^8.4.0", "plist": "^3.1.0", "prompts": "^2.4.2", "rimraf": "^6.0.1", "semver": "^7.6.3", "tar": "^7.5.3", "tslib": "^2.8.1", "xcode": "^3.0.1", "xml2js": "^0.6.2" }, "bin": { "cap": "bin/capacitor", "capacitor": "bin/capacitor" } }, "sha512-O2kpA5ZPJUAmliDCcmpMf8xnJwMezxlFPUrlyOAjbL3U9MFNY3l4ZpPI/UXwvyPmR8ETcVF9pFr+VdWq61rqTQ=="],
 
-    "@capacitor/core": ["@capacitor/core@6.2.2", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-qEI3DcwJEPzhW+hVGKH8m4jbujtkdUiGkpMLHmpR8epACU7wEsV6NF8pCHzpsMYjc80oK7Cmpcw+MIienv/YRw=="],
+    "@capacitor/core": ["@capacitor/core@8.5.2", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-agnQbGdhGw/KZFuLf7H9SY2o+oE7upkr/WPQsYaokXP6f9chaE8iVmbKkfN6SVl4w3pmz7oZ3Ur1hbkmy1hx+w=="],
 
     "@capacitor/docgen": ["@capacitor/docgen@0.3.1", "", { "dependencies": { "colorette": "^2.0.20", "github-slugger": "^1.5.0", "minimist": "^1.2.8", "typescript": "~4.2.4" }, "bin": { "docgen": "bin/docgen" } }, "sha512-WBdAUquQC4hiZOVk1YbY5Rs3vlDrNdCGt3KGnMa2dc2UBa91Q7PQ/jLW/oZyfVIfiXWu7t1KUhhM3MyiZepUrQ=="],
 
-    "@capacitor/ios": ["@capacitor/ios@6.2.2", "", { "peerDependencies": { "@capacitor/core": "^6.2.0" } }, "sha512-dc9upo3L5wSUVJBJnd7oRGGsiwB2rMe7ZF2bti8hvDVCAZeYMzzw8iqxuUc6cvGBhH2/LsORMBO51/vEQhdmHg=="],
+    "@capacitor/ios": ["@capacitor/ios@8.5.2", "", { "peerDependencies": { "@capacitor/core": "^8.5.0" } }, "sha512-eOT2S67AfTFG7KN0T3oxwAajrJz4rSye+ODfvChiwrk0F/+kWufFM1qU6cDjGJUOfwdAoeuEpZyWHSwZlu4GFg=="],
 
     "@capacitor/splash-screen": ["@capacitor/splash-screen@6.0.4", "", { "peerDependencies": { "@capacitor/core": "^6.0.0" } }, "sha512-uJXR+28cdaie7zIIUBvgkWgHim6Gr1itJym9voIMTmrjXkOaPtejwxYJsdQWPJz9zgGnSbXuC1mNNibLgv3OpQ=="],
 
