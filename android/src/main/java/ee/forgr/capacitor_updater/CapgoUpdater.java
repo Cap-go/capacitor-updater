@@ -285,6 +285,14 @@ public class CapgoUpdater {
         this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
+    private void requireSessionKeyForEncryptedUpdate(final String sessionKey) throws IOException {
+        if (!this.publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
+            logger.error("Public key present but no session key provided");
+            this.sendStats("session_key_required");
+            throw new IOException("Session key required when public key is present");
+        }
+    }
+
     static boolean containsPathTraversalSegment(final String relativePath) {
         for (final String segment : relativePath.split("/")) {
             if ("..".equals(segment)) {
@@ -846,6 +854,7 @@ public class CapgoUpdater {
         String checksum = "";
 
         try {
+            this.requireSessionKeyForEncryptedUpdate(sessionKey);
             this.notifyDownload(id, 71);
             downloaded = new File(this.documentsDir, dest);
 
@@ -1408,6 +1417,12 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
+        try {
+            this.requireSessionKeyForEncryptedUpdate(sessionKey);
+        } catch (final IOException e) {
+            logger.error("Download blocked: " + e.getMessage());
+            return;
+        }
         if (!this.runDownloadGateQuiet()) {
             return;
         }
@@ -1438,6 +1453,7 @@ public class CapgoUpdater {
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
+        this.requireSessionKeyForEncryptedUpdate(sessionKey);
         this.runDownloadGate();
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
@@ -1489,6 +1505,7 @@ public class CapgoUpdater {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        this.requireSessionKeyForEncryptedUpdate(sessionKey);
         this.runDownloadGate();
         if (manifest == null) {
             return download(url, version, sessionKey, checksum);

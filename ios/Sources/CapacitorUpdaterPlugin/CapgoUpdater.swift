@@ -456,6 +456,18 @@ import UIKit
         return String((0..<length).map { _ in letters.randomElement()! })
     }
 
+    private func requireSessionKeyForEncryptedUpdate(sessionKey: String, versionName: String? = nil) throws {
+        if !self.publicKey.isEmpty && sessionKey.isEmpty {
+            logger.error("Public key present but no session key provided")
+            self.sendStats(action: "session_key_required", versionName: versionName)
+            throw NSError(
+                domain: "CapgoUpdater",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
+            )
+        }
+    }
+
     public func setPublicKey(_ publicKey: String) {
         // Empty string means no encryption - proceed normally
         if publicKey.isEmpty {
@@ -1408,6 +1420,7 @@ import UIKit
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
@@ -2064,6 +2077,7 @@ import UIKit
     }
 
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
         try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions

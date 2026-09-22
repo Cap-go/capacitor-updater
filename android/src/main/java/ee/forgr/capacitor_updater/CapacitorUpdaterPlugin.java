@@ -2842,6 +2842,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        if (!this.implementation.publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
+            logger.error("Public key present but no session key provided");
+            this.implementation.sendStats("session_key_required");
+            throw new IOException("Session key required when public key is present");
+        }
         // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
         waitForCleanupIfNeeded();
         if (manifest != null) {

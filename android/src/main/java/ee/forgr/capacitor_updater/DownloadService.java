@@ -547,6 +547,12 @@ public class DownloadService extends Worker {
         try {
             logger.debug("handleManifestDownload");
 
+            if (publicKey != null && !publicKey.isEmpty() && (sessionKey == null || sessionKey.isEmpty())) {
+                logger.error("Public key present but no session key provided");
+                sendStatsAsync("session_key_required", version);
+                throw new IOException("Session key required when public key is present");
+            }
+
             // Send stats for manifest download start
             sendStatsAsync("download_manifest_start", version);
 

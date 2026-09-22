@@ -1609,6 +1609,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             throw makePreviewError("Invalid download URL")
         }
 
+        if !self.implementation.publicKey.isEmpty && sessionKey.isEmpty {
+            self.logger.error("Public key present but no session key provided")
+            self.implementation.sendStats(action: "session_key_required", versionName: version)
+            throw makePreviewError("Session key required when public key is present")
+        }
+
         var checksum = rawChecksum
         let next: BundleInfo
         if let manifestEntries = manifestEntries {
