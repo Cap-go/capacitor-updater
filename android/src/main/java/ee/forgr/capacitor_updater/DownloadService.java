@@ -202,15 +202,13 @@ public class DownloadService extends Worker {
         }
 
         StringBuilder sanitized = new StringBuilder();
-        value
-            .codePoints()
-            .forEach((cp) -> {
-                boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
-                boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
-                if (isVisibleAscii || isIso88591) {
-                    sanitized.appendCodePoint(cp);
-                }
-            });
+        value.codePoints().forEach((cp) -> {
+            boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
+            boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
+            if (isVisibleAscii || isIso88591) {
+                sanitized.appendCodePoint(cp);
+            }
+        });
 
         String result = sanitized.toString().trim();
         return result.isEmpty() ? "unknown" : result;
@@ -478,27 +476,26 @@ public class DownloadService extends Worker {
                 .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
                 .build();
 
-            sharedClient
-                .newCall(request)
-                .enqueue(
-                    new Callback() {
-                        @Override
-                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                            if (logger != null) {
-                                logger.error("Failed to send stats: " + e.getMessage());
-                            }
-                        }
-
-                        @Override
-                        public void onResponse(@NonNull Call call, @NonNull Response response) {
-                            try (ResponseBody body = response.body()) {
-                                // nothing else to do, just closing body
-                            } catch (Exception ignored) {} finally {
-                                response.close();
-                            }
+            sharedClient.newCall(request).enqueue(
+                new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        if (logger != null) {
+                            logger.error("Failed to send stats: " + e.getMessage());
                         }
                     }
-                );
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) {
+                        try (ResponseBody body = response.body()) {
+                            // nothing else to do, just closing body
+                        } catch (Exception ignored) {
+                        } finally {
+                            response.close();
+                        }
+                    }
+                }
+            );
         } catch (Exception e) {
             if (logger != null) {
                 logger.error("sendStatsAsync error: " + e.getMessage());
@@ -592,9 +589,8 @@ public class DownloadService extends Worker {
                 final File cacheFile = CapgoUpdater.isSafeCacheHash(finalFileHash)
                     ? new File(cacheFolder, finalFileHash + "_" + cacheBaseName)
                     : null;
-                final File legacyCacheFile = isBrotli && cacheFile != null
-                    ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName())
-                    : null;
+                final File legacyCacheFile =
+                    isBrotli && cacheFile != null ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
 
                 // Ensure parent directories of the target file exist
                 if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
@@ -749,7 +745,9 @@ public class DownloadService extends Worker {
                 ZipWritePlan writePlan = planZipResumeWrite(responseCode, downloadedBytes, httpConn.getHeaderField("Content-Range"));
                 long responseBodyLength = httpConn.getContentLength();
                 long contentLength = shouldAppendHttpBody(writePlan.statusCode, writePlan.writeOffset)
-                    ? (responseBodyLength >= 0 ? responseBodyLength + writePlan.writeOffset : -1)
+                    ? responseBodyLength >= 0
+                        ? responseBodyLength + writePlan.writeOffset
+                        : -1
                     : responseBodyLength;
 
                 // Check if we have enough space for the actual file

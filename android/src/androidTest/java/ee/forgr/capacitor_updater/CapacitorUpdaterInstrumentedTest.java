@@ -213,8 +213,7 @@ public class CapacitorUpdaterInstrumentedTest {
                 );
                 dataManager.saveBundle(bundle);
                 latch.countDown();
-            })
-                .start();
+            }).start();
         }
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
@@ -241,8 +240,7 @@ public class CapacitorUpdaterInstrumentedTest {
                 dataManager.setActiveBundle("bundle-" + i);
                 writeLatch.countDown();
             }
-        })
-            .start();
+        }).start();
 
         // Reader thread
         new Thread(() -> {
@@ -251,8 +249,7 @@ public class CapacitorUpdaterInstrumentedTest {
                 assertNotNull(activeBundle);
                 readLatch.countDown();
             }
-        })
-            .start();
+        }).start();
 
         assertTrue(writeLatch.await(5, TimeUnit.SECONDS));
         assertTrue(readLatch.await(5, TimeUnit.SECONDS));

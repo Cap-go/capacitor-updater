@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.51.21";
+    private final String pluginVersion = "5.51.21";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -2139,9 +2139,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
         } else {
-            final boolean enabled = configuredMode != null
-                ? "true".equals(configuredMode)
-                : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
+            final boolean enabled =
+                configuredMode != null
+                    ? "true".equals(configuredMode)
+                    : Boolean.TRUE.equals(this.getConfig().getBoolean("autoUpdate", true));
             this.autoUpdateMode = enabled
                 ? autoUpdateModeForLegacyDirectUpdateMode(this.resolveLegacyDirectUpdateModeFromConfig())
                 : AUTO_UPDATE_MODE_OFF;
@@ -4013,33 +4014,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, false);
         this.editor.apply();
 
-        new Handler(Looper.getMainLooper()).postDelayed(
-            () -> {
-                try {
-                    if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
-                        return;
-                    }
-                    if (getActivity() == null || getActivity().isFinishing()) {
-                        this.previewSessionAlertPending = true;
-                        this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
-                        this.editor.apply();
-                        return;
-                    }
-
-                    new AlertDialog.Builder(getActivity())
-                        .setTitle("Preview started")
-                        .setMessage("shake".equals(this.shakeMenuGesture) ? "Shake to open menu." : "Three-finger pinch to open menu.")
-                        .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
-                        .show();
-                } catch (final Exception e) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                if (!Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    return;
+                }
+                if (getActivity() == null || getActivity().isFinishing()) {
                     this.previewSessionAlertPending = true;
                     this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
                     this.editor.apply();
-                    logger.warn("Could not show preview session notice: " + e.getMessage());
+                    return;
                 }
-            },
-            600
-        );
+
+                new AlertDialog.Builder(getActivity())
+                    .setTitle("Preview started")
+                    .setMessage("shake".equals(this.shakeMenuGesture) ? "Shake to open menu." : "Three-finger pinch to open menu.")
+                    .setPositiveButton("Got it", (dialog, which) -> dialog.dismiss())
+                    .show();
+            } catch (final Exception e) {
+                this.previewSessionAlertPending = true;
+                this.editor.putBoolean(PREVIEW_SESSION_ALERT_PENDING_PREF_KEY, true);
+                this.editor.apply();
+                logger.warn("Could not show preview session notice: " + e.getMessage());
+            }
+        }, 600);
     }
 
     @PluginMethod
@@ -4785,8 +4783,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
