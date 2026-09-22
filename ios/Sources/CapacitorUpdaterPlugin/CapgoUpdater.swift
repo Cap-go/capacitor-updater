@@ -158,7 +158,8 @@ import UIKit
         let canonicalTarget = canonicalBase.appendingPathComponent(relativePath).standardizedFileURL
         let canonicalTargetPath = canonicalTarget.path
 
-        if canonicalTargetPath != canonicalBasePath && !canonicalTargetPath.hasPrefix(normalizedBasePath) {
+        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
+        if !canonicalTargetPath.hasPrefix(normalizedBasePath) {
             throw SecurePathError.pathTraversal
         }
 

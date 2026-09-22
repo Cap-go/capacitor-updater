@@ -3338,6 +3338,14 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testResolvePathInsideDirectoryRejectsDotAsBaseDirectory() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-dot-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "."));
+    }
+
+    @Test
     public void testResolvePathInsideDirectoryAllowsNestedRelativePath() throws Exception {
         final Path base = Files.createTempDirectory("capgo-nested-path");
         base.toFile().deleteOnExit();

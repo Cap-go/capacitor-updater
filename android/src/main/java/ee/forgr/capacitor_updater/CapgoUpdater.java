@@ -314,7 +314,8 @@ public class CapgoUpdater {
         final String targetPath = canonicalTarget.getPath();
         final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
 
-        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
+        if (!targetPath.startsWith(normalizedBasePath)) {
             throw new IOException("Path escapes base directory: " + relativePath);
         }
 

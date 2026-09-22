@@ -640,15 +640,17 @@ public class DownloadService extends Worker {
                 throw new IOException("Manifest contains invalid or duplicate file paths");
             }
 
-            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
-            List<Future<?>> futures = new ArrayList<>();
-
             for (final ManifestDownloadTask task : tasks) {
                 if (!Objects.requireNonNull(task.targetFile.getParentFile()).exists() && !task.targetFile.getParentFile().mkdirs()) {
                     logger.error("Failed to create parent directory for: " + task.targetFile.getAbsolutePath());
                     throw new IOException("Failed to create parent directory for: " + task.targetFile.getAbsolutePath());
                 }
+            }
 
+            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
+            List<Future<?>> futures = new ArrayList<>();
+
+            for (final ManifestDownloadTask task : tasks) {
                 Future<?> future = executor.submit(() -> {
                     try {
                         if (tryCopyBuiltinAsset(assets, task.fileName, task.targetFile, task.finalFileHash)) {

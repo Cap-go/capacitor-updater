@@ -2920,6 +2920,19 @@ class CapacitorUpdaterTests: XCTestCase {
         }
     }
 
+    func testResolvePathInsideDirectoryRejectsDotAsBaseDirectory() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let base = root.appendingPathComponent("bundle")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: ".")
+        ) { error in
+            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .pathTraversal)
+        }
+    }
+
     func testRememberManifestTargetRejectsDuplicateCanonicalPaths() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let base = root.appendingPathComponent("bundle")
