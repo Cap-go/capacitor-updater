@@ -114,7 +114,8 @@ final class SessionKeyRequiredTests: XCTestCase {
         let manifest = [ManifestEntry(file_name: "index.html", file_hash: "abc", download_url: "https://example.com/index.html")]
 
         XCTAssertThrowsError(try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "")) { error in
-            XCTAssertEqual((error as NSError).localizedDescription, "Session key required when public key is present")
+            XCTAssertEqual((error as NSError).domain, "CapgoUpdater")
+            XCTAssertEqual((error as NSError).code, 1)
         }
         XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
     }
@@ -123,7 +124,8 @@ final class SessionKeyRequiredTests: XCTestCase {
         let url = URL(string: "https://example.com/update.zip")!
 
         XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "")) { error in
-            XCTAssertEqual((error as NSError).localizedDescription, "Session key required when public key is present")
+            XCTAssertEqual((error as NSError).domain, "CapgoUpdater")
+            XCTAssertEqual((error as NSError).code, 1)
         }
         XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
     }
@@ -132,7 +134,8 @@ final class SessionKeyRequiredTests: XCTestCase {
         let url = URL(string: "https://example.com/update.zip")!
 
         XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "invalid-format")) { error in
-            XCTAssertEqual((error as NSError).localizedDescription, "Session key required when public key is present")
+            XCTAssertEqual((error as NSError).domain, "CapgoUpdater")
+            XCTAssertEqual((error as NSError).code, 1)
         }
         XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
     }
