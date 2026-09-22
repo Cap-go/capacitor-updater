@@ -77,17 +77,19 @@ final class PopulateDeltaCacheTests: XCTestCase {
         }
     }
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         CryptoCipher.setLogger(Logger(withTag: "PopulateDeltaCacheTests", options: Logger.Options(level: .silent)))
         implementation = TestableCapgoUpdater()
         bundleId = "delta-cache-\(UUID().uuidString)"
-        bundleDir = try! implementation.getBundleDirectory(id: bundleId)
-        try? FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+        bundleDir = try implementation.getBundleDirectory(id: bundleId)
+        try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
-        try? FileManager.default.removeItem(at: bundleDir)
+        if implementation != nil {
+            try? FileManager.default.removeItem(at: bundleDir)
+        }
         try? FileManager.default.removeItem(at: builtinFolder)
         for file in registeredCacheFiles {
             try? FileManager.default.removeItem(at: file)

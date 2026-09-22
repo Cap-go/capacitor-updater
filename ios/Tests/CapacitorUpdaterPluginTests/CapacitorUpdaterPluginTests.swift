@@ -2983,12 +2983,29 @@ class CapacitorUpdaterTests: XCTestCase {
         let bundleDir = try updater.getBundleDirectory(id: bundleId)
         try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
         try "<html></html>".write(to: bundleDir.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: bundleDir.deletingLastPathComponent().deletingLastPathComponent()) }
+        defer { try? FileManager.default.removeItem(at: bundleDir) }
 
         let deleted = updater.delete(id: bundleId, removeInfo: true)
 
         XCTAssertTrue(deleted)
         XCTAssertFalse(FileManager.default.fileExists(atPath: bundleDir.path))
+    }
+
+    func testResolveBundleDirectoryRejectsDotAsBundleRoot() throws {
+        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: libraryDir) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: ".")
+        )
+    }
+
+    func testDeleteRejectsDotBundleId() throws {
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+
+        XCTAssertFalse(updater.delete(id: ".", removeInfo: true))
     }
 
     // MARK: - Performance Tests

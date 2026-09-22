@@ -3653,6 +3653,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void resolveBundleDirectoryRejectsDotAsBundleRoot() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-dot");
+        assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "."));
+    }
+
+    @Test
+    public void deleteRejectsDotBundleId() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-dot-id");
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+
+        assertFalse(Boolean.TRUE.equals(updater.delete(".", true)));
+    }
+
+    @Test
     public void resolveBundleDirectoryRejectsWindowsSeparators() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-delete-windows");
         assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "..\\outside-target"));
