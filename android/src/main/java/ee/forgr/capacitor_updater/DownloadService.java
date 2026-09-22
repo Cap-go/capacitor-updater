@@ -747,6 +747,11 @@ public class DownloadService extends Worker {
             sendStatsAsync("session_key_required", version);
             throw new RuntimeException("Session key required when public key is present");
         }
+        if (checksum == null || checksum.isEmpty()) {
+            logger.error("No checksum provided");
+            sendStatsAsync("checksum_required", version);
+            throw new RuntimeException("Checksum required");
+        }
 
         // Send stats for zip download start
         sendStatsAsync("download_zip_start", version);
