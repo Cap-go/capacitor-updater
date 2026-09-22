@@ -46,7 +46,7 @@ Perfect for fixing bugs immediately, A/B testing features, and maintaining contr
 - 🔄 Auto Update: Automatically download and set the latest bundle for the app.
 - 🛟 Rollback: Reset the app to last working bundle if an incompatible bundle has been set.
 - 🔁 **Delta Updates**: Make instant updates by only downloading changed files.
-- 🔒 **Security**: Encrypt and sign each updates with best in class security standards.
+- 🔒 Security: checksum on every update; encryption optional for high-security apps.
 - ⚔️ **Battle-Tested**: Used in more than 3000 projects.
 - 📊 View your deployment statistics
 - 🔋 Supports Android and iOS
