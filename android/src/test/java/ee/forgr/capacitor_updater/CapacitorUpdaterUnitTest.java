@@ -4201,6 +4201,64 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void decryptAesFileRejectsNullKeyWithoutNpe() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes-null-key");
+        File file = dir.resolve("cipher.bin").toFile();
+        byte[] iv = new byte[16];
+        Files.write(file.toPath(), new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+        try {
+            CryptoCipher.decryptAesFile(file, null, iv);
+            fail("expected null session key to be rejected");
+        } catch (NullPointerException e) {
+            fail("null session key must not cause NPE");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("missing session key"));
+        }
+    }
+
+    @Test
+    public void decryptAesFileRejectsBadKeyWithoutNpe() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes-bad-key");
+        File file = dir.resolve("cipher.bin").toFile();
+        byte[] iv = new byte[16];
+        byte[] keyBytes = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            iv[i] = (byte) i;
+            keyBytes[i] = (byte) (31 - i);
+        }
+        javax.crypto.SecretKey encryptKey = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+        javax.crypto.SecretKey decryptKey = new javax.crypto.spec.SecretKeySpec(new byte[16], "AES");
+        byte[] plain = "capgo-aes-failure".getBytes(StandardCharsets.UTF_8);
+        javax.crypto.Cipher enc = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding");
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, encryptKey, new javax.crypto.spec.IvParameterSpec(iv));
+        byte[] cipherBytes = enc.doFinal(plain);
+        Files.write(file.toPath(), cipherBytes);
+        byte[] originalCipher = Files.readAllBytes(file.toPath());
+        try {
+            CryptoCipher.decryptAesFile(file, decryptKey, iv);
+            fail("expected AES decrypt failure");
+        } catch (NullPointerException e) {
+            fail("AES decrypt failure must not cause NPE");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("AES file decryption failed"));
+            assertArrayEquals(originalCipher, Files.readAllBytes(file.toPath()));
+        }
+    }
+
+    @Test
+    public void decryptAESRejectsFailureWithoutNull() throws Exception {
+        byte[] iv = new byte[16];
+        byte[] keyBytes = new byte[16];
+        javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+        try {
+            CryptoCipher.decryptAES(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, key, iv);
+            fail("expected AES decrypt failure");
+        } catch (java.security.GeneralSecurityException e) {
+            assertNotNull(e.getMessage());
+        }
+    }
+
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length() / 2];
         for (int i = 0; i < out.length; i++) {
