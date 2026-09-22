@@ -201,7 +201,6 @@ public class SessionKeyRequiredTest {
     }
 
     @Test
-    @Test
     public void isValidSessionKeyRejectsEmptyComponents() {
         assertFalse(CryptoCipher.isValidSessionKey(null));
         assertFalse(CryptoCipher.isValidSessionKey(""));
