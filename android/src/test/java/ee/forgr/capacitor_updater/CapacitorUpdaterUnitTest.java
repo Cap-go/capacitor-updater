@@ -3305,6 +3305,57 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testResolvePathInsideDirectoryRejectsAbsolutePaths() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-abs-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "/etc/passwd"));
+    }
+
+    @Test
+    public void testResolvePathInsideDirectoryRejectsBackslashes() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-backslash-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "assets\\app.js"));
+    }
+
+    @Test
+    public void testResolvePathInsideDirectoryRejectsNullBytes() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-null-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "assets\0app.js"));
+    }
+
+    @Test
+    public void testResolvePathInsideDirectoryRejectsDotDotSegments() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-dotdot-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "assets/../../secret.js"));
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "../secret.js"));
+    }
+
+    @Test
+    public void testResolvePathInsideDirectoryRejectsDotAsBaseDirectory() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-dot-path");
+        base.toFile().deleteOnExit();
+
+        assertThrows(IOException.class, () -> CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "."));
+    }
+
+    @Test
+    public void testResolvePathInsideDirectoryAllowsNestedRelativePath() throws Exception {
+        final Path base = Files.createTempDirectory("capgo-nested-path");
+        base.toFile().deleteOnExit();
+
+        final File resolved = CapgoUpdater.resolvePathInsideDirectory(base.toFile(), "assets/app.js");
+
+        assertEquals(base.resolve("assets").resolve("app.js").toFile().getCanonicalFile(), resolved);
+    }
+
+    @Test
     public void buildUserAgentStripsNonIsoCharacters() {
         String ua = DownloadService.buildUserAgent("com.example.тест", "1.2.3🔥", "Android 14 😊");
         assertEquals("CapacitorUpdater/1.2.3 (com.example.) android/Android 14", ua);

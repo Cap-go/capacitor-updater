@@ -285,12 +285,24 @@ public class CapgoUpdater {
         this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
+    static boolean containsPathTraversalSegment(final String relativePath) {
+        for (final String segment : relativePath.split("/")) {
+            if ("..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static File resolvePathInsideDirectory(final File baseDirectory, final String relativePath) throws IOException {
         if (relativePath == null || relativePath.isEmpty()) {
             throw new IOException("Invalid empty path");
         }
         if (relativePath.contains("\\") || relativePath.indexOf('\0') >= 0) {
             throw new IOException("Invalid path separator");
+        }
+        if (containsPathTraversalSegment(relativePath)) {
+            throw new IOException("Path traversal segments are not allowed");
         }
         if (new File(relativePath).isAbsolute()) {
             throw new IOException("Absolute paths are not allowed");
@@ -302,7 +314,8 @@ public class CapgoUpdater {
         final String targetPath = canonicalTarget.getPath();
         final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
 
-        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
+        if (!targetPath.startsWith(normalizedBasePath)) {
             throw new IOException("Path escapes base directory: " + relativePath);
         }
 
