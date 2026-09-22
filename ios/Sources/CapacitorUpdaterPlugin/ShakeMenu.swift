@@ -792,9 +792,9 @@ extension UIWindow {
                                         message: "Update downloaded! Reload to apply version \(latest.version)?",
                                         plugin: plugin,
                                         bridge: bridge,
-                                        onReload: { [weak plugin] in
+                                        onReload: {
                                             _ = updater.set(bundle: bundle)
-                                            _ = plugin?._reload()
+                                            _ = plugin._reload()
                                         }
                                     )
                                 }
