@@ -39,7 +39,7 @@ import org.robolectric.annotation.Config;
 @Config(manifest = Config.NONE)
 public class ChecksumRequiredTest {
 
-    private static final class StatsTrackingCapgoUpdater extends CapgoUpdater {
+    private static class StatsTrackingCapgoUpdater extends CapgoUpdater {
 
         private final List<String> sentStatsActions = new ArrayList<>();
 
