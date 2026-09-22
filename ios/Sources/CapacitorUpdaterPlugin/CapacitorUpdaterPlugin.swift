@@ -582,8 +582,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var dest: URL
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else if let bundleDir = try? self.implementation.getBundleDirectory(id: id) {
+            dest = bundleDir
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         }
 
         if !FileManager.default.fileExists(atPath: dest.path) {
@@ -1691,8 +1693,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let id = self.implementation.getCurrentBundleId()
         if BundleInfo.ID_BUILTIN == id {
             return Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else if let bundleDir = try? self.implementation.getBundleDirectory(id: id) {
+            return bundleDir
         } else {
-            return self.implementation.getBundleDirectory(id: id)
+            return Bundle.main.resourceURL!.appendingPathComponent("public")
         }
     }
 

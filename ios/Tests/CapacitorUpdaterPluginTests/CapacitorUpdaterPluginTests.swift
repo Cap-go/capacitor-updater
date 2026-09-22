@@ -2947,6 +2947,48 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(CapgoUpdater.rememberManifestTarget(&seen, targetFile: brotli))
     }
 
+    func testResolveBundleDirectoryRejectsAbsolutePath() throws {
+        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: libraryDir) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: "/tmp/evil")
+        )
+    }
+
+    func testResolveBundleDirectoryRejectsPathTraversal() throws {
+        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: libraryDir) }
+
+        XCTAssertThrowsError(
+            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: "../outside-target")
+        )
+    }
+
+    func testDeleteRejectsPathTraversalOutsideBundleRoot() throws {
+        let updater = CapgoUpdater()
+
+        let deleted = updater.delete(id: "../outside-target", removeInfo: true)
+
+        XCTAssertFalse(deleted)
+    }
+
+    func testDeleteRemovesLegitimateInSandboxBundle() throws {
+        let updater = CapgoUpdater()
+        let bundleId = "sandbox-\(UUID().uuidString)"
+        let bundleDir = try updater.getBundleDirectory(id: bundleId)
+        try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+        try "<html></html>".write(to: bundleDir.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: bundleDir.deletingLastPathComponent().deletingLastPathComponent()) }
+
+        let deleted = updater.delete(id: bundleId, removeInfo: true)
+
+        XCTAssertTrue(deleted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bundleDir.path))
+    }
+
     // MARK: - Performance Tests
 
     func testPerformanceStringTrim() {

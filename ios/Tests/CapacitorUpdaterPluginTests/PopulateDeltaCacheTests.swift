@@ -82,7 +82,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         CryptoCipher.setLogger(Logger(withTag: "PopulateDeltaCacheTests", options: Logger.Options(level: .silent)))
         implementation = TestableCapgoUpdater()
         bundleId = "delta-cache-\(UUID().uuidString)"
-        bundleDir = implementation.getBundleDirectory(id: bundleId)
+        bundleDir = try! implementation.getBundleDirectory(id: bundleId)
         try? FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
     }
 
@@ -356,7 +356,7 @@ extension PopulateDeltaCacheTests {
             _ = implementation.delete(id: result.getId(), removeInfo: true)
             implementation.shutdown()
         }
-        let destination = implementation.getBundleDirectory(id: result.getId())
+        let destination = try implementation.getBundleDirectory(id: result.getId())
         XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("assets/\(name)")), Data())
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("assets/\(name).br").path))
     }

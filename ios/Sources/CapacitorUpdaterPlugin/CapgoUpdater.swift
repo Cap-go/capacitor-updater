@@ -166,6 +166,11 @@ import UIKit
         return canonicalTarget
     }
 
+    static func resolveBundleDirectory(libraryDir: URL, bundleId: String) throws -> URL {
+        let bundleRoot = libraryDir.appendingPathComponent("NoCloud/ionic_built_snapshots")
+        return try resolvePathInsideDirectory(baseDirectory: bundleRoot, relativePath: bundleId)
+    }
+
     static func resolveManifestTargetPath(baseDirectory: URL, fileName: String) throws -> URL {
         let isBrotli = fileName.hasSuffix(".br")
         let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
@@ -987,7 +992,13 @@ import UIKit
     /// `manifest` must only contain entries the caller already checksum-verified
     /// (as `downloadManifest` does) — the hashes are trusted as-is, not re-checked.
     func populateDeltaCache(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
-        let bundleDir = self.getBundleDirectory(id: id)
+        let bundleDir: URL
+        do {
+            bundleDir = try self.getBundleDirectory(id: id)
+        } catch {
+            logger.debug("Skip delta cache population: invalid bundle id")
+            return
+        }
         let fileManager = FileManager.default
 
         guard fileManager.fileExists(atPath: bundleDir.path) else {
@@ -1411,7 +1422,7 @@ import UIKit
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
-        let destFolder = self.getBundleDirectory(id: id)
+        let destFolder = try self.getBundleDirectory(id: id)
         let builtinFolder = self.builtinFolderURL()
 
         // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
@@ -2344,6 +2355,15 @@ import UIKit
         self.deleteLock.lock()
         defer { self.deleteLock.unlock() }
 
+        let destPersist: URL
+        do {
+            destPersist = try self.getBundleDirectory(id: id)
+        } catch {
+            logger.error("Cannot delete bundle with invalid id")
+            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
+            return false
+        }
+
         let deleted: BundleInfo = self.getBundleInfo(id: id)
         if deleted.isBuiltin() || self.getCurrentBundleId() == id {
             logger.info("Cannot delete current or builtin bundle")
@@ -2372,7 +2392,6 @@ import UIKit
             return false
         }
 
-        let destPersist: URL = libraryDir.appendingPathComponent(bundleDirectory).appendingPathComponent(id)
         let hadRegistry = self.hasStoredBundleInfo(id: id)
         let hadFolder = FileManager.default.fileExists(atPath: destPersist.path)
         if !hadRegistry && !hadFolder {
@@ -2676,8 +2695,8 @@ import UIKit
         }
     }
 
-    public func getBundleDirectory(id: String) -> URL {
-        return libraryDir.appendingPathComponent(self.bundleDirectory).appendingPathComponent(id)
+    public func getBundleDirectory(id: String) throws -> URL {
+        return try Self.resolveBundleDirectory(libraryDir: libraryDir, bundleId: id)
     }
 
     struct ResetState {
@@ -2731,7 +2750,12 @@ import UIKit
     }
 
     private func bundleExists(id: String) -> Bool {
-        let destPersist: URL = self.getBundleDirectory(id: id)
+        let destPersist: URL
+        do {
+            destPersist = try self.getBundleDirectory(id: id)
+        } catch {
+            return false
+        }
         let indexPersist: URL = destPersist.appendingPathComponent("index.html")
         let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
         if
@@ -2754,7 +2778,12 @@ import UIKit
         }
         if bundleExists(id: id) {
             let currentBundleName = self.getCurrentBundle().getVersionName()
-            self.setCurrentBundle(bundle: self.getBundleDirectory(id: id).path)
+            guard let bundleDir = try? self.getBundleDirectory(id: id) else {
+                self.setBundleStatus(id: id, status: BundleStatus.ERROR)
+                self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
+                return false
+            }
+            self.setCurrentBundle(bundle: bundleDir.path)
             self.setBundleStatus(id: id, status: BundleStatus.PENDING)
             self.sendStats(action: "set", versionName: newBundle.getVersionName(), oldVersionName: currentBundleName)
             return true
@@ -2768,7 +2797,10 @@ import UIKit
         guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
             return false
         }
-        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: bundleDir.path)
         return true
     }
 
@@ -2783,7 +2815,10 @@ import UIKit
         guard bundleExists(id: bundle.getId()) else {
             return false
         }
-        self.setCurrentBundle(bundle: self.getBundleDirectory(id: bundle.getId()).path)
+        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
+            return false
+        }
+        self.setCurrentBundle(bundle: bundleDir.path)
         return true
     }
 
