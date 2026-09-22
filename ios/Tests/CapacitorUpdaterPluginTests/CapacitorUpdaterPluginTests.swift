@@ -2041,6 +2041,7 @@ class CapacitorUpdaterTests: XCTestCase {
         let latest = AppVersion()
         latest.version = "2.0.0"
         latest.url = "https://example.com/update.zip"
+        latest.checksum = "abc123"
 
         let freshDownloadImplementation = FreshDownloadCapgoUpdater()
         freshDownloadImplementation.currentBundleValue = current

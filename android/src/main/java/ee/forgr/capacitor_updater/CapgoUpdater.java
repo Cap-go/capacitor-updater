@@ -285,6 +285,22 @@ public class CapgoUpdater {
         this.cachedKeyId = CryptoCipher.calcKeyId(publicKey);
     }
 
+    private void requireSessionKeyForEncryptedUpdate(final String sessionKey) throws IOException {
+        if (!this.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
+            this.sendStats("session_key_required");
+            throw new IOException("Session key required when public key is present");
+        }
+    }
+
+    private void requireBundleChecksum(final String checksum) throws IOException {
+        if (checksum == null || checksum.isEmpty()) {
+            logger.error("No checksum provided");
+            this.sendStats("checksum_required");
+            throw new IOException("Checksum required");
+        }
+    }
+
     static boolean containsPathTraversalSegment(final String relativePath) {
         for (final String segment : relativePath.split("/")) {
             if ("..".equals(segment)) {
@@ -520,7 +536,10 @@ public class CapgoUpdater {
         if (fileHash.isEmpty()) {
             return "";
         }
-        if (this.publicKey != null && !this.publicKey.isEmpty() && sessionKey != null && !sessionKey.isEmpty()) {
+        if (this.publicKey != null && !this.publicKey.isEmpty()) {
+            if (!CryptoCipher.isValidSessionKey(sessionKey)) {
+                return "";
+            }
             try {
                 fileHash = CryptoCipher.decryptChecksum(fileHash, this.publicKey);
             } catch (Exception e) {
@@ -856,31 +875,24 @@ public class CapgoUpdater {
         String checksum = "";
 
         try {
+            this.requireSessionKeyForEncryptedUpdate(sessionKey);
             this.notifyDownload(id, 71);
             downloaded = new File(this.documentsDir, dest);
 
             if (!isManifest) {
-                String checksumDecrypted = Objects.requireNonNullElse(checksumRes, "");
+                String expectedChecksum = Objects.requireNonNullElse(checksumRes, "");
+                this.requireBundleChecksum(expectedChecksum);
 
-                // If public key is present but no checksum provided, refuse installation
-                if (!this.publicKey.isEmpty() && checksumDecrypted.isEmpty()) {
-                    logger.error("Public key present but no checksum provided");
-                    this.sendStats("checksum_required");
-                    throw new IOException("Checksum required when public key is present: " + id);
-                }
-
-                if (!sessionKey.isEmpty()) {
+                if (CryptoCipher.isValidSessionKey(sessionKey)) {
                     CryptoCipher.decryptFile(downloaded, publicKey, sessionKey);
-                    checksumDecrypted = CryptoCipher.decryptChecksum(checksumRes, publicKey);
-                    checksum = CryptoCipher.calcChecksum(downloaded);
-                } else {
-                    checksum = CryptoCipher.calcChecksum(downloaded);
+                    expectedChecksum = CryptoCipher.decryptChecksum(checksumRes, publicKey);
                 }
+                checksum = CryptoCipher.calcChecksum(downloaded);
                 CryptoCipher.logChecksumInfo("Calculated checksum", checksum);
-                CryptoCipher.logChecksumInfo("Expected checksum", checksumDecrypted);
-                if ((!checksumDecrypted.isEmpty() || !this.publicKey.isEmpty()) && !checksumDecrypted.equals(checksum)) {
+                CryptoCipher.logChecksumInfo("Expected checksum", expectedChecksum);
+                if (!expectedChecksum.equals(checksum)) {
                     logger.error("Checksum mismatch");
-                    logger.debug("Expected: " + checksumDecrypted + ", Got: " + checksum);
+                    logger.debug("Expected: " + expectedChecksum + ", Got: " + checksum);
                     this.sendStats("checksum_fail");
                     throw new IOException("Checksum failed: " + id);
                 }
@@ -1442,6 +1454,15 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
+        try {
+            this.requireSessionKeyForEncryptedUpdate(sessionKey);
+            if (manifest == null) {
+                this.requireBundleChecksum(checksum);
+            }
+        } catch (final IOException e) {
+            logger.error("Download blocked: " + e.getMessage());
+            return;
+        }
         if (!this.runDownloadGateQuiet()) {
             return;
         }
@@ -1472,6 +1493,8 @@ public class CapgoUpdater {
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
+        this.requireSessionKeyForEncryptedUpdate(sessionKey);
+        this.requireBundleChecksum(checksum);
         this.runDownloadGate();
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
@@ -1523,6 +1546,7 @@ public class CapgoUpdater {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        this.requireSessionKeyForEncryptedUpdate(sessionKey);
         this.runDownloadGate();
         if (manifest == null) {
             return download(url, version, sessionKey, checksum);
