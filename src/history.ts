@@ -22,12 +22,12 @@ if (isBrowser) {
         if (win.__capgoKeepUrlPathAfterReload) {
           return true;
         }
-      } catch (err) {
+      } catch {
         // ignore access issues
       }
       try {
         return window.localStorage.getItem(KEEP_FLAG_KEY) === '1';
-      } catch (err) {
+      } catch {
         return false;
       }
     };
@@ -45,7 +45,7 @@ if (isBrowser) {
           return { stack: [], index: -1 };
         }
         return parsed;
-      } catch (err) {
+      } catch {
         return { stack: [], index: -1 };
       }
     };
@@ -53,7 +53,7 @@ if (isBrowser) {
     const writeStored = (stack: string[], index: number): void => {
       try {
         window.sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({ stack, index }));
-      } catch (err) {
+      } catch {
         // Storage might be unavailable; fail silently.
       }
     };
@@ -61,7 +61,7 @@ if (isBrowser) {
     const clearStored = (): void => {
       try {
         window.sessionStorage.removeItem(HISTORY_STORAGE_KEY);
-      } catch (err) {
+      } catch {
         // ignore
       }
     };
@@ -71,7 +71,7 @@ if (isBrowser) {
         const base = url ?? window.location.href;
         const parsed = new URL(base instanceof URL ? base.toString() : base, window.location.href);
         return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-      } catch (err) {
+      } catch {
         return null;
       }
     };
@@ -178,7 +178,7 @@ if (isBrowser) {
         for (let i = 1; i < stored.stack.length; i += 1) {
           history.pushState(history.state, document.title, stored.stack[i]);
         }
-      } catch (err) {
+      } catch {
         isRestoring = false;
         return;
       }
