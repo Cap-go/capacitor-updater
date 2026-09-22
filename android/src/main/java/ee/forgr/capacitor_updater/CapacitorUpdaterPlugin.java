@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "5.51.22";
+    private final String pluginVersion = "8.51.23";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -2842,6 +2842,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
+            this.implementation.sendStats("session_key_required");
+            throw new IOException("Session key required when public key is present");
+        }
+        if (manifest == null && (checksum == null || checksum.isEmpty())) {
+            logger.error("No checksum provided");
+            this.implementation.sendStats("checksum_required");
+            throw new IOException("Checksum required");
+        }
         // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
         waitForCleanupIfNeeded();
         if (manifest != null) {
@@ -4936,7 +4946,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
-                                if (latest.isDownloaded() && BundleStatus.DOWNLOADING != latest.getStatus()) {
+                                final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                if (
+                                    latest.isDownloaded() &&
+                                    BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                    (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                        CryptoCipher.isValidSessionKey(latestSessionKey))
+                                ) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                         plannedDirectUpdate

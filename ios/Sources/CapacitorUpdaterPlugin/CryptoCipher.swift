@@ -225,8 +225,16 @@ public struct CryptoCipher {
         return String(hexString(from: sha256).prefix(16))
     }
 
+    public static func isValidSessionKey(_ sessionKey: String) -> Bool {
+        if sessionKey.isEmpty {
+            return false
+        }
+        let sessionKeyParts = sessionKey.components(separatedBy: ":")
+        return sessionKeyParts.count == 2 && !sessionKeyParts[0].isEmpty && !sessionKeyParts[1].isEmpty
+    }
+
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
-        if publicKey.isEmpty || sessionKey.isEmpty || sessionKey.components(separatedBy: ":").count != 2 {
+        if publicKey.isEmpty || !isValidSessionKey(sessionKey) {
             logger.info("Encryption not set, no public key or session, ignored")
             return
         }

@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "5.51.22"
+    private let pluginVersion: String = "8.51.23"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -582,8 +582,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var dest: URL
         if BundleInfo.ID_BUILTIN == id {
             dest = Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else if let bundleDir = try? self.implementation.getBundleDirectory(id: id) {
+            dest = bundleDir
         } else {
-            dest = self.implementation.getBundleDirectory(id: id)
+            dest = Bundle.main.resourceURL!.appendingPathComponent("public")
         }
 
         if !FileManager.default.fileExists(atPath: dest.path) {
@@ -1609,7 +1611,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             throw makePreviewError("Invalid download URL")
         }
 
+        if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+            self.logger.error("Public key present but no valid session key provided")
+            self.implementation.sendStats(action: "session_key_required", versionName: version)
+            throw makePreviewError("Session key required when public key is present")
+        }
+
         var checksum = rawChecksum
+        if manifestEntries == nil && checksum.isEmpty {
+            self.logger.error("No checksum provided")
+            self.implementation.sendStats(action: "checksum_required", versionName: version)
+            throw makePreviewError("Checksum required")
+        }
+
         let next: BundleInfo
         if let manifestEntries = manifestEntries {
             next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
@@ -1617,29 +1631,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
         }
 
-        if self.implementation.publicKey != "" && checksum == "" {
-            self.logger.error("Public key present but no checksum provided")
-            self.implementation.sendStats(action: "checksum_required", versionName: next.getVersionName())
-            let id = next.getId()
-            let resDel = self.implementation.delete(id: id)
-            if !resDel {
-                self.logger.error("Delete failed, id \(id) doesn't exist")
+        if manifestEntries == nil {
+            checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+            CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+            CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
+            if next.getChecksum() != checksum {
+                self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
+                self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+                let id = next.getId()
+                let resDel = self.implementation.delete(id: id)
+                if !resDel {
+                    self.logger.error("Delete failed, id \(id) doesn't exist")
+                }
+                throw ObjectSavableError.checksum
             }
-            throw ObjectSavableError.checksum
-        }
-
-        checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
-        CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
-        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
-        if (checksum != "" || self.implementation.publicKey != "") && next.getChecksum() != checksum {
-            self.logger.error("Error checksum \(next.getChecksum()) \(checksum)")
-            self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-            let id = next.getId()
-            let resDel = self.implementation.delete(id: id)
-            if !resDel {
-                self.logger.error("Delete failed, id \(id) doesn't exist")
-            }
-            throw ObjectSavableError.checksum
         }
 
         self.logger.info("Good checksum \(next.getChecksum()) \(checksum)")
@@ -1691,8 +1696,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let id = self.implementation.getCurrentBundleId()
         if BundleInfo.ID_BUILTIN == id {
             return Bundle.main.resourceURL!.appendingPathComponent("public")
+        } else if let bundleDir = try? self.implementation.getBundleDirectory(id: id) {
+            return bundleDir
         } else {
-            return self.implementation.getBundleDirectory(id: id)
+            return Bundle.main.resourceURL!.appendingPathComponent("public")
         }
     }
 
@@ -4197,6 +4204,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.updateUrl = updateUrl
     }
 
+    func downloadBundleForTesting(
+        urlString: String,
+        version: String,
+        sessionKey: String,
+        checksum: String,
+        manifestEntries: [ManifestEntry]?
+    ) throws -> BundleInfo {
+        try downloadBundle(
+            urlString: urlString,
+            version: version,
+            sessionKey: sessionKey,
+            checksum: checksum,
+            manifestEntries: manifestEntries
+        )
+    }
+
     func setAutoUpdateModeForTesting(_ autoUpdateMode: String) {
         self.autoUpdateMode = Self.normalizedAutoUpdateMode(autoUpdateMode)
         self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
@@ -4532,6 +4555,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
+                    if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+                        self.logger.error("Public key present but no valid session key provided")
+                        self.implementation.sendStats(action: "session_key_required", versionName: latestVersionName)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Session key required when public key is present",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
+                    }
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
                     if needsDownload {
@@ -4549,6 +4583,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
+                            if res.checksum.isEmpty {
+                                self.logger.error("No checksum provided")
+                                self.implementation.sendStats(action: "checksum_required", versionName: latestVersionName)
+                                self.endBackGroundTaskWithNotif(
+                                    msg: "Checksum required",
+                                    latestVersionName: latestVersionName,
+                                    current: current,
+                                    plannedDirectUpdate: plannedDirectUpdate
+                                )
+                                return
+                            }
                             nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         }
                     }
@@ -4577,24 +4622,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTask()
                         return
                     }
-                    res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
-                    CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
-                    CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
-                    if res.checksum != "" && next.getChecksum() != res.checksum && res.manifest == nil {
-                        self.logger.error("Error checksum \(next.getChecksum()) \(res.checksum)")
-                        self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
-                        let id = next.getId()
-                        let resDel = self.implementation.delete(id: id)
-                        if !resDel {
-                            self.logger.error("Delete failed, id \(id) doesn't exist")
+                    if res.manifest == nil {
+                        res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
+                        CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
+                        CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
+                        if next.getChecksum() != res.checksum {
+                            self.logger.error("Error checksum \(next.getChecksum()) \(res.checksum)")
+                            self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+                            let id = next.getId()
+                            let resDel = self.implementation.delete(id: id)
+                            if !resDel {
+                                self.logger.error("Delete failed, id \(id) doesn't exist")
+                            }
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Error checksum",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                            return
                         }
-                        self.endBackGroundTaskWithNotif(
-                            msg: "Error checksum",
-                            latestVersionName: latestVersionName,
-                            current: current,
-                            plannedDirectUpdate: plannedDirectUpdate
-                        )
-                        return
                     }
                     if self.shouldBlockAutoUpdateForPreviewSession() {
                         self.clearDownloadInProgressState()

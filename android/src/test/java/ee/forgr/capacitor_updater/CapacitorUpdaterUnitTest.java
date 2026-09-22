@@ -3640,6 +3640,71 @@ public class CapacitorUpdaterUnitTest {
         assertFalse("DELETING registry entry must be cleared after drain", store.containsKey(id + "_info"));
     }
 
+    @Test
+    public void resolveBundleDirectoryRejectsAbsolutePath() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-abs");
+        assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "/tmp/evil"));
+    }
+
+    @Test
+    public void resolveBundleDirectoryRejectsPathTraversal() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-traversal");
+        assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "../outside-target"));
+    }
+
+    @Test
+    public void resolveBundleDirectoryRejectsDotAsBundleRoot() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-dot");
+        assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "."));
+    }
+
+    @Test
+    public void deleteRejectsDotBundleId() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-dot-id");
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+
+        assertFalse(Boolean.TRUE.equals(updater.delete(".", true)));
+    }
+
+    @Test
+    public void resolveBundleDirectoryRejectsWindowsSeparators() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-windows");
+        assertThrows(IOException.class, () -> CapgoUpdater.resolveBundleDirectory(tempDir.toFile(), "..\\outside-target"));
+    }
+
+    @Test
+    public void deleteRejectsPathTraversalOutsideBundleRoot() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-escape");
+        final Path outsideTarget = tempDir.resolve("outside-target");
+        Files.createDirectories(outsideTarget);
+        Files.write(outsideTarget.resolve("marker.txt"), "keep".getBytes(StandardCharsets.UTF_8));
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = mock(SharedPreferences.class);
+        updater.editor = mock(SharedPreferences.Editor.class);
+        updater.statsUrl = "";
+
+        when(updater.prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+        when(updater.prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+        when(updater.prefs.getString(eq("nextVersion"), isNull())).thenReturn(null);
+        when(updater.prefs.getString(eq("previewFallbackVersion"), isNull())).thenReturn(null);
+
+        assertFalse(Boolean.TRUE.equals(updater.delete("../outside-target", true)));
+        assertTrue("Path outside bundle root must remain untouched", Files.exists(outsideTarget.resolve("marker.txt")));
+    }
+
+    @Test
+    public void deleteRejectsAbsolutePathId() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-delete-abs-id");
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+
+        assertFalse(Boolean.TRUE.equals(updater.delete("/tmp/evil", true)));
+    }
+
     private CapgoUpdater newDeltaCacheUpdater(final Path docsDir, final File filesDir, final File cacheDir) {
         final AppCompatActivity activity = mock(AppCompatActivity.class);
         when(activity.getFilesDir()).thenReturn(filesDir);

@@ -8,6 +8,7 @@ import {
   findScenario,
   getManifestDirectoryPath,
   getManifestMetadataPath,
+  getBundleChecksumPath,
   getBundleZipPath,
   manifestArtifactDir,
   repoRoot,
@@ -39,9 +40,15 @@ async function buildBundle({ scenarioId, directUpdate, release }) {
     env,
   });
 
-  await runCommand('zip', ['-0', '-q', '-r', getBundleZipPath(release.version), '.'], {
+  const zipPath = getBundleZipPath(release.version);
+
+  await runCommand('zip', ['-0', '-q', '-r', zipPath, '.'], {
     cwd: path.join(exampleAppDir, 'dist'),
   });
+
+  const zipContents = await readFile(zipPath);
+  const checksum = createHash('sha256').update(zipContents).digest('hex');
+  await writeFile(getBundleChecksumPath(release.version), checksum);
 
   await buildManifestArtifacts(release.version);
 }
