@@ -4526,6 +4526,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if latestVersionName != "" && current.getVersionName() != latestVersionName {
                 do {
                     self.logger.info("New bundle: \(latestVersionName) found. Current is: \(current.getVersionName()). \(messageUpdate)")
+                    if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+                        self.logger.error("Public key present but no valid session key provided")
+                        self.implementation.sendStats(action: "session_key_required", versionName: latestVersionName)
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Session key required when public key is present",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
+                    }
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
                     if needsDownload {
@@ -4540,17 +4551,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             }
                         }
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
-                        if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
-                            self.logger.error("Public key present but no valid session key provided")
-                            self.implementation.sendStats(action: "session_key_required", versionName: latestVersionName)
-                            self.endBackGroundTaskWithNotif(
-                                msg: "Session key required when public key is present",
-                                latestVersionName: latestVersionName,
-                                current: current,
-                                plannedDirectUpdate: plannedDirectUpdate
-                            )
-                            return
-                        }
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {

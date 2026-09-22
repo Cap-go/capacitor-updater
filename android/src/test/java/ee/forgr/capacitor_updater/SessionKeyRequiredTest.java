@@ -90,6 +90,31 @@ public class SessionKeyRequiredTest {
         }
     }
 
+    private static final class PendingBundleAutoUpdateCapgoUpdater extends StatsTrackingCapgoUpdater {
+
+        @Override
+        public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "2.0.0");
+            response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "abc123");
+            callback.callback(response);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc");
+        }
+
+        @Override
+        public BundleInfo getBundleInfoByName(final String versionName) {
+            if ("2.0.0".equals(versionName)) {
+                return new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+            }
+            return null;
+        }
+    }
+
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
         @Override
@@ -176,6 +201,32 @@ public class SessionKeyRequiredTest {
     }
 
     @Test
+    @Test
+    public void isValidSessionKeyRejectsEmptyComponents() {
+        assertFalse(CryptoCipher.isValidSessionKey(null));
+        assertFalse(CryptoCipher.isValidSessionKey(""));
+        assertFalse(CryptoCipher.isValidSessionKey(":"));
+        assertFalse(CryptoCipher.isValidSessionKey("abc:"));
+        assertFalse(CryptoCipher.isValidSessionKey(":xyz"));
+        assertFalse(CryptoCipher.isValidSessionKey("invalid-format"));
+        assertTrue(CryptoCipher.isValidSessionKey("abc:def"));
+    }
+
+    @Test
+    public void downloadRejectsWhenSessionKeyHasEmptyComponents() {
+        final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
+        updater.setPublicKey(fixturePublicKey);
+
+        try {
+            updater.download("https://example.com/update.zip", "1.0.0", "abc:", "checksum");
+            fail("Expected IOException when session key has empty components");
+        } catch (IOException e) {
+            assertEquals("Session key required when public key is present", e.getMessage());
+        }
+
+        assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+    }
+
     public void downloadRejectsWhenSessionKeyFormatInvalid() {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         updater.setPublicKey(fixturePublicKey);
@@ -233,6 +284,28 @@ public class SessionKeyRequiredTest {
         }
 
         assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+    }
+
+    @Test
+    public void autoUpdateRejectsMissingSessionKeyWhenPendingBundleExists() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final PendingBundleAutoUpdateCapgoUpdater updater = new PendingBundleAutoUpdateCapgoUpdater();
+            updater.setPublicKey(fixturePublicKey);
+
+            plugin.implementation = updater;
+            plugin.setAutoUpdateModeForTesting("onlyDownload");
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+        }
     }
 
     @Test

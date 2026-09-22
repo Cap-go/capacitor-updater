@@ -226,7 +226,11 @@ public struct CryptoCipher {
     }
 
     public static func isValidSessionKey(_ sessionKey: String) -> Bool {
-        return !sessionKey.isEmpty && sessionKey.components(separatedBy: ":").count == 2
+        if sessionKey.isEmpty {
+            return false
+        }
+        let sessionKeyParts = sessionKey.components(separatedBy: ":")
+        return sessionKeyParts.count == 2 && !sessionKeyParts[0].isEmpty && !sessionKeyParts[1].isEmpty
     }
 
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {

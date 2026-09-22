@@ -4946,7 +4946,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
-                                if (latest.isDownloaded() && BundleStatus.DOWNLOADING != latest.getStatus()) {
+                                final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                if (
+                                    latest.isDownloaded() &&
+                                    BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                    (
+                                        CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                        CryptoCipher.isValidSessionKey(latestSessionKey)
+                                    )
+                                ) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                         plannedDirectUpdate

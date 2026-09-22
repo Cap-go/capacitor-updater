@@ -136,7 +136,11 @@ public class CryptoCipher {
     }
 
     public static boolean isValidSessionKey(final String sessionKey) {
-        return sessionKey != null && !sessionKey.isEmpty() && sessionKey.split(":", -1).length == 2;
+        if (sessionKey == null || sessionKey.isEmpty()) {
+            return false;
+        }
+        String[] sessionKeyParts = sessionKey.split(":", -1);
+        return sessionKeyParts.length == 2 && !sessionKeyParts[0].isEmpty() && !sessionKeyParts[1].isEmpty();
     }
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
