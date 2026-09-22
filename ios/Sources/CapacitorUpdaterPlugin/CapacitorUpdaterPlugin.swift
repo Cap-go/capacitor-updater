@@ -4540,6 +4540,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             }
                         }
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
+                        if !self.implementation.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
+                            self.logger.error("Public key present but no valid session key provided")
+                            self.implementation.sendStats(action: "session_key_required", versionName: latestVersionName)
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Session key required when public key is present",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                            return
+                        }
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {

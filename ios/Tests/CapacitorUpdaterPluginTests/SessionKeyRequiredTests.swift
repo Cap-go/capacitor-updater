@@ -19,18 +19,25 @@ final class SessionKeyRequiredTests: XCTestCase {
         }
 
         private static func locateContractFile() throws -> URL {
-            var current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            while true {
-                let candidate = current.appendingPathComponent("native-contract-tests/crypto-rsa.json")
-                if FileManager.default.fileExists(atPath: candidate.path) {
-                    return candidate
+            let fileManager = FileManager.default
+            let roots = [
+                URL(fileURLWithPath: fileManager.currentDirectoryPath),
+                URL(fileURLWithPath: #filePath)
+            ]
+
+            for root in roots {
+                var current = root
+                while current.path != "/" {
+                    let candidate = current
+                        .appendingPathComponent("native-contract-tests")
+                        .appendingPathComponent("crypto-rsa.json")
+                    if fileManager.fileExists(atPath: candidate.path) {
+                        return candidate
+                    }
+                    current.deleteLastPathComponent()
                 }
-                let parent = current.deletingLastPathComponent()
-                if parent.path == current.path {
-                    throw NSError(domain: "SessionKeyRequiredTests", code: 1)
-                }
-                current = parent
             }
+            throw NSError(domain: "SessionKeyRequiredTests", code: 1)
         }
     }
 
