@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
@@ -55,7 +56,7 @@ public class SessionKeyRequiredTest {
         throw new IOException("native-contract-tests/crypto-rsa.json not found");
     }
 
-    private static final class StatsTrackingCapgoUpdater extends CapgoUpdater {
+    private static class StatsTrackingCapgoUpdater extends CapgoUpdater {
 
         private final List<String> sentStatsActions = new ArrayList<>();
 
