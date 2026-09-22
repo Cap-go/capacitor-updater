@@ -322,6 +322,10 @@ public class CapgoUpdater {
         return canonicalTarget;
     }
 
+    static File resolveBundleDirectory(final File documentsDir, final String bundleId) throws IOException {
+        return resolvePathInsideDirectory(new File(documentsDir, bundleDirectory), bundleId);
+    }
+
     public String getKeyId() {
         return this.cachedKeyId;
     }
@@ -389,11 +393,11 @@ public class CapgoUpdater {
         }
     }
 
-    private void flattenAssets(final File sourceFile, final String dest) throws IOException {
+    private void flattenAssets(final File sourceFile, final File destinationFile) throws IOException {
         if (!sourceFile.exists()) {
             throw new FileNotFoundException("Source file not found: " + sourceFile.getPath());
         }
-        final File destinationFile = new File(this.documentsDir, dest);
+        assertPathInsideBundleRoot(destinationFile);
         Objects.requireNonNull(destinationFile.getParentFile()).mkdirs();
         final String[] entries = sourceFile.list(this.filter);
         if (entries == null || entries.length == 0) {
@@ -422,7 +426,13 @@ public class CapgoUpdater {
             return;
         }
 
-        final File bundleDir = this.getBundleDirectory(id);
+        final File bundleDir;
+        try {
+            bundleDir = this.getBundleDirectory(id);
+        } catch (IOException e) {
+            logger.debug("Skip delta cache population: invalid bundle id");
+            return;
+        }
         if (!bundleDir.exists()) {
             logger.debug("Skip delta cache population: bundle dir missing");
             return;
@@ -898,13 +908,11 @@ public class CapgoUpdater {
             if (!isManifest) {
                 extractedDir = this.unzip(id, downloaded, TEMP_UNZIP_PREFIX + this.randomString());
                 this.notifyDownload(id, 91);
-                final String idName = bundleDirectory + "/" + id;
-                this.flattenAssets(extractedDir, idName);
+                this.flattenAssets(extractedDir, this.getBundleDirectory(id));
                 this.cacheBundleFilesAsync(id);
             } else {
                 this.notifyDownload(id, 91);
-                final String idName = bundleDirectory + "/" + id;
-                this.flattenAssets(downloaded, idName);
+                this.flattenAssets(downloaded, this.getBundleDirectory(id));
                 downloaded.delete();
             }
             // Remove old bundle info and set new one
@@ -1123,18 +1131,44 @@ public class CapgoUpdater {
         }
     }
 
+    private void assertPathInsideDocumentsDir(final File target) throws IOException {
+        if (this.documentsDir == null) {
+            throw new IOException("Documents directory unavailable");
+        }
+        final File canonicalBase = this.documentsDir.getCanonicalFile();
+        final File canonicalTarget = target.getCanonicalFile();
+        final String basePath = canonicalBase.getPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        final String targetPath = canonicalTarget.getPath();
+        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Path escapes updater storage: " + target.getPath());
+        }
+    }
+
+    private void assertPathInsideBundleRoot(final File target) throws IOException {
+        final File bundleRoot = new File(this.documentsDir, bundleDirectory).getCanonicalFile();
+        final File canonicalTarget = target.getCanonicalFile();
+        final String basePath = bundleRoot.getPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        final String targetPath = canonicalTarget.getPath();
+        if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+            throw new IOException("Path escapes bundle storage: " + target.getPath());
+        }
+    }
+
     private void safeDelete(final File target) {
         if (target == null || !target.exists()) {
             return;
         }
         try {
+            this.assertPathInsideDocumentsDir(target);
             if (target.isDirectory()) {
                 this.deleteDirectory(target);
             } else if (!target.delete()) {
                 logger.warn("Failed to delete file: " + target.getAbsolutePath());
             }
         } catch (IOException cleanupError) {
-            logger.warn("Cleanup failed for " + target.getAbsolutePath() + ": " + cleanupError.getMessage());
+            logger.warn("Refusing unsafe delete for " + target.getAbsolutePath() + ": " + cleanupError.getMessage());
         }
     }
 
@@ -1570,6 +1604,14 @@ public class CapgoUpdater {
 
     public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
         synchronized (this.deleteLock) {
+            final File bundle;
+            try {
+                bundle = this.getBundleDirectory(id);
+            } catch (IOException e) {
+                logger.error("Cannot delete bundle with invalid id");
+                logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+                return false;
+            }
             final BundleInfo deleted = this.getBundleInfo(id);
             if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
                 logger.error("Cannot delete current or builtin bundle");
@@ -1595,7 +1637,6 @@ public class CapgoUpdater {
                 return false;
             }
 
-            final File bundle = this.getBundleDirectory(id);
             final boolean hadRegistry = this.hasStoredBundleInfo(id);
             final boolean hadFolder = bundle.exists();
             if (!hadRegistry && !hadFolder) {
@@ -1743,12 +1784,17 @@ public class CapgoUpdater {
         this.editor.commit();
     }
 
-    private File getBundleDirectory(final String id) {
-        return new File(this.documentsDir, bundleDirectory + "/" + id);
+    private File getBundleDirectory(final String id) throws IOException {
+        return resolveBundleDirectory(this.documentsDir, id);
     }
 
     private boolean bundleExists(final String id) {
-        final File bundle = this.getBundleDirectory(id);
+        final File bundle;
+        try {
+            bundle = this.getBundleDirectory(id);
+        } catch (IOException e) {
+            return false;
+        }
         final BundleInfo bundleInfo = this.getBundleInfo(id);
         return (
             bundle.isDirectory() &&
@@ -1825,7 +1871,16 @@ public class CapgoUpdater {
             this.reset();
             return true;
         }
-        final File bundle = this.getBundleDirectory(id);
+        final File bundle;
+        try {
+            bundle = this.getBundleDirectory(id);
+        } catch (IOException e) {
+            logger.error("Invalid bundle id");
+            logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+            this.setBundleStatus(id, BundleStatus.ERROR);
+            this.sendStats("set_fail", newBundle.getVersionName());
+            return false;
+        }
         logger.info("Setting next active bundle: " + id);
         if (this.bundleExists(id)) {
             var currentBundleName = this.getCurrentBundle().getVersionName();
@@ -1843,8 +1898,12 @@ public class CapgoUpdater {
         if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
             return false;
         }
-        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-        return true;
+        try {
+            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     boolean stagePreviewFallbackReload(final BundleInfo bundle) {
@@ -1858,8 +1917,12 @@ public class CapgoUpdater {
         if (!this.bundleExists(bundle.getId())) {
             return false;
         }
-        this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-        return true;
+        try {
+            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
