@@ -3593,13 +3593,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func splashscreenBridgeScript(for action: SplashscreenAction) -> String {
         let optionsJSON = self.splashscreenOptionsJSON(methodName: action.methodName)
         return """
-        (function(){
-          var cap = window.Capacitor;
-          if (!cap || typeof cap.nativePromise !== 'function') {
-            throw new Error('Capacitor bridge not ready');
-          }
-          return cap.nativePromise('\(self.splashscreenPluginName)', '\(action.methodName)', \(optionsJSON));
-        })();
+        var cap = window.Capacitor;
+        if (!cap || typeof cap.nativePromise !== 'function') {
+          throw new Error('Capacitor bridge not ready');
+        }
+        return await cap.nativePromise('\(self.splashscreenPluginName)', '\(action.methodName)', \(optionsJSON));
         """
     }
 
@@ -3657,11 +3655,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self, requestToken == self.splashscreenInvocationToken else {
                 return
             }
-            webView.evaluateJavaScript(script) { [weak self] _, error in
+            webView.callAsyncJavaScript(
+                script,
+                arguments: [:],
+                in: nil,
+                contentWorld: .page
+            ) { [weak self] result in
                 guard let self = self, requestToken == self.splashscreenInvocationToken else {
                     return
                 }
-                if let error = error {
+                if case .failure(let error) = result {
                     self.retrySplashscreenAction(
                         action,
                         retriesRemaining: retriesRemaining,
