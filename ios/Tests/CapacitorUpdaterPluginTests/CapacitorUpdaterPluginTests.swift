@@ -2969,6 +2969,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testDeleteRejectsPathTraversalOutsideBundleRoot() throws {
         let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
 
         let deleted = updater.delete(id: "../outside-target", removeInfo: true)
 
@@ -2977,6 +2978,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testDeleteRemovesLegitimateInSandboxBundle() throws {
         let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
         let bundleId = "sandbox-\(UUID().uuidString)"
         let bundleDir = try updater.getBundleDirectory(id: bundleId)
         try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
