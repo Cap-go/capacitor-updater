@@ -3654,22 +3654,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self, requestToken == self.splashscreenInvocationToken else {
                 return
             }
-            webView.callAsyncJavaScript(
-                script,
-                arguments: [:],
-                in: nil,
-                in: .page
-            ) { [weak self] (result: Result<Any, Error>) in
+            let handleSplashSuccess = { [weak self] in
                 guard let self = self, requestToken == self.splashscreenInvocationToken else {
-                    return
-                }
-                if case .failure(let error) = result {
-                    self.retrySplashscreenAction(
-                        action,
-                        retriesRemaining: retriesRemaining,
-                        requestToken: requestToken,
-                        message: "Failed to invoke SplashScreen \(action.methodName) via Capacitor bridge: \(error.localizedDescription)"
-                    )
                     return
                 }
                 if action == .hide {
@@ -3677,6 +3663,45 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 self.logger.info("Called SplashScreen \(action.methodName) method")
                 self.logger.info(self.splashscreenCompletedMessage(methodName: action.methodName))
+            }
+            let handleSplashFailure = { [weak self] (message: String) in
+                guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                    return
+                }
+                self.retrySplashscreenAction(
+                    action,
+                    retriesRemaining: retriesRemaining,
+                    requestToken: requestToken,
+                    message: message
+                )
+            }
+            // callAsyncJavaScript(_:arguments:in:in:completionHandler:) requires iOS 14+;
+            // Cap 5/6 LTS still declare iOS 13.4 so keep an evaluateJavaScript fallback.
+            if #available(iOS 14.0, *) {
+                webView.callAsyncJavaScript(
+                    script,
+                    arguments: [:],
+                    in: nil,
+                    in: .page
+                ) { (result: Result<Any, Error>) in
+                    if case .failure(let error) = result {
+                        handleSplashFailure(
+                            "Failed to invoke SplashScreen \(action.methodName) via Capacitor bridge: \(error.localizedDescription)"
+                        )
+                        return
+                    }
+                    handleSplashSuccess()
+                }
+            } else {
+                webView.evaluateJavaScript(script) { _, error in
+                    if let error = error {
+                        handleSplashFailure(
+                            "Failed to invoke SplashScreen \(action.methodName) via Capacitor bridge: \(error.localizedDescription)"
+                        )
+                        return
+                    }
+                    handleSplashSuccess()
+                }
             }
         }
 
