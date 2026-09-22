@@ -50,17 +50,15 @@ public class CryptoCipher {
         return decryptedBytes;
     }
 
-    public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) {
-        try {
-            IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
-            return cipher.doFinal(cipherText);
-        } catch (Exception e) {
-            e.printStackTrace();
+    public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) throws GeneralSecurityException {
+        if (key == null || iv == null) {
+            throw new IllegalArgumentException("AES key and IV must not be null");
         }
-        return null;
+        IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
+        return cipher.doFinal(cipherText);
     }
 
     public static SecretKey byteToSessionKey(byte[] sessionKey) {
@@ -139,11 +137,15 @@ public class CryptoCipher {
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
         if (publicKey.isEmpty() || ivSessionKey == null || ivSessionKey.isEmpty() || ivSessionKey.split(":").length != 2) {
-            logger.info("Encryption not set, no public key or session, ignored");
+            if (logger != null) {
+                logger.info("Encryption not set, no public key or session, ignored");
+            }
             return;
         }
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-            logger.error("The public key is not a valid RSA Public key");
+            if (logger != null) {
+                logger.error("The public key is not a valid RSA Public key");
+            }
             return;
         }
 
@@ -152,29 +154,50 @@ public class CryptoCipher {
             String sessionKeyB64 = ivSessionKey.split(":")[1];
             byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
             byte[] sessionKey = Base64.decode(sessionKeyB64.getBytes(), Base64.DEFAULT);
+            if (iv.length != 16) {
+                throw new IOException("AES file decryption failed: IV must be 16 bytes");
+            }
             PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
             byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
+            if (decryptedSessionKey == null || decryptedSessionKey.length != 16) {
+                throw new IOException("AES file decryption failed: decrypted session key must be 16 bytes");
+            }
 
             SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
             decryptAesFile(file, sKey, iv);
         } catch (GeneralSecurityException e) {
-            logger.info("decryptFile fail");
-            throw new IOException("GeneralSecurityException", e);
+            if (logger != null) {
+                logger.info("decryptFile fail");
+            }
+            throw new IOException("AES file decryption failed: " + e.getMessage(), e);
         }
     }
 
-    static void decryptAesFile(File file, SecretKey key, byte[] iv) throws IOException, GeneralSecurityException {
+    static void decryptAesFile(File file, SecretKey key, byte[] iv) throws IOException {
+        if (key == null) {
+            throw new IOException("AES file decryption failed: missing session key");
+        }
+        if (iv == null) {
+            throw new IOException("AES file decryption failed: missing IV");
+        }
+        if (iv.length != 16) {
+            throw new IOException("AES file decryption failed: IV must be 16 bytes");
+        }
+        byte[] keyBytes = key.getEncoded();
+        if (keyBytes == null || keyBytes.length != 16) {
+            throw new IOException("AES file decryption failed: session key must be 16 bytes");
+        }
         if (file.length() == 0) {
             throw new IOException("Empty encrypted data");
         }
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getEncoded(), "AES"), new IvParameterSpec(iv));
         File parent = file.getAbsoluteFile().getParentFile();
         if (parent == null) {
             throw new IOException("Cannot create temp file for " + file.getAbsolutePath());
         }
         File tempFile = File.createTempFile("capgo-aes-", ".tmp", parent);
         try {
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(iv));
             byte[] inBuf = new byte[ioBufferBytes()];
             // Reuse one output buffer. cipher.update(in) allocates a new byte[] per chunk.
             byte[] outBuf = new byte[inBuf.length + 16];
@@ -196,6 +219,8 @@ public class CryptoCipher {
             }
             replaceFile(tempFile, file);
             tempFile = null;
+        } catch (GeneralSecurityException e) {
+            throw new IOException("AES file decryption failed: " + e.getMessage(), e);
         } finally {
             if (tempFile != null && tempFile.exists()) {
                 tempFile.delete();
