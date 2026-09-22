@@ -3306,7 +3306,7 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void buildUserAgentStripsNonIsoCharacters() {
-        String ua = DownloadService.buildUserAgent("com.example.тест", "1.2.3🔥", "Android 14 😊");
+        String ua = DownloadService.buildUserAgent("com.example.\u0442\u0435\u0441\u0442", "1.2.3\uD83D\uDD25", "Android 14 \uD83D\uDE0A");
         assertEquals("CapacitorUpdater/1.2.3 (com.example.) android/Android 14", ua);
     }
 
