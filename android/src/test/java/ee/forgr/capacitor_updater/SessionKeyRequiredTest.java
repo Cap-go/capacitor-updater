@@ -4,7 +4,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import android.content.SharedPreferences;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -46,7 +50,7 @@ public class SessionKeyRequiredTest {
         private final List<String> sentStatsActions = new ArrayList<>();
 
         StatsTrackingCapgoUpdater() {
-            super(null);
+            super(mock(Logger.class));
         }
 
         @Override
@@ -59,9 +63,16 @@ public class SessionKeyRequiredTest {
         }
     }
 
+    private static void configureFinishDownloadTestState(final StatsTrackingCapgoUpdater updater) {
+        updater.prefs = mock(SharedPreferences.class);
+        updater.editor = mock(SharedPreferences.Editor.class);
+        when(updater.prefs.getString(anyString(), anyString())).thenReturn("");
+    }
+
     @Test
     public void finishDownloadRejectsManifestWhenSessionKeyMissing() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
+        configureFinishDownloadTestState(updater);
         updater.setPublicKey(fixturePublicKey);
         updater.documentsDir = Files.createTempDirectory("capgo-session-key-manifest").toFile();
 
@@ -74,6 +85,7 @@ public class SessionKeyRequiredTest {
     @Test
     public void finishDownloadRejectsZipWhenSessionKeyMissing() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
+        configureFinishDownloadTestState(updater);
         updater.setPublicKey(fixturePublicKey);
         final Path tempDir = Files.createTempDirectory("capgo-session-key-zip");
         updater.documentsDir = tempDir.toFile();
