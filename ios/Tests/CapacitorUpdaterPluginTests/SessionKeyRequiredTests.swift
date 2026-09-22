@@ -34,7 +34,7 @@ final class SessionKeyRequiredTests: XCTestCase {
         }
     }
 
-    private final class StatsTrackingCapgoUpdater: CapgoUpdater {
+    private class StatsTrackingCapgoUpdater: CapgoUpdater {
         var sentStatsActions: [String] = []
 
         override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {

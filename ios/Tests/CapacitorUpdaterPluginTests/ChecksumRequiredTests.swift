@@ -2,11 +2,24 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 
 final class ChecksumRequiredTests: XCTestCase {
-    private final class StatsTrackingCapgoUpdater: CapgoUpdater {
+    private class StatsTrackingCapgoUpdater: CapgoUpdater {
         var sentStatsActions: [String] = []
 
         override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
             sentStatsActions.append(action)
+        }
+    }
+
+    private final class DownloadStubCapgoUpdater: StatsTrackingCapgoUpdater {
+        private let downloadedBundle: BundleInfo
+
+        init(downloadedBundle: BundleInfo) {
+            self.downloadedBundle = downloadedBundle
+            super.init()
+        }
+
+        override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+            downloadedBundle
         }
     }
 
@@ -127,18 +140,5 @@ final class ChecksumRequiredTests: XCTestCase {
 
         XCTAssertTrue(updater.sentStatsActions.contains("checksum_required"))
         updater.shutdown()
-    }
-}
-
-private final class DownloadStubCapgoUpdater: ChecksumRequiredTests.StatsTrackingCapgoUpdater {
-    private let downloadedBundle: BundleInfo
-
-    init(downloadedBundle: BundleInfo) {
-        self.downloadedBundle = downloadedBundle
-        super.init()
-    }
-
-    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        downloadedBundle
     }
 }
