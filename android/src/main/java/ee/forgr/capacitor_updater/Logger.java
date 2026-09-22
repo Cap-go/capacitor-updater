@@ -98,7 +98,18 @@ public class Logger {
         this.level = options.level;
         this.useSystemLog = options.useSystemLog;
         this.labels.putAll(
-            Map.of(LogLevel.silent, "", LogLevel.error, "🔴", LogLevel.warn, "🟠", LogLevel.info, "🟢", LogLevel.debug, "\uD83D\uDD0E")
+            Map.of(
+                LogLevel.silent,
+                "",
+                LogLevel.error,
+                "\uD83D\uDD34",
+                LogLevel.warn,
+                "\uD83D\uDFE0",
+                LogLevel.info,
+                "\uD83D\uDFE2",
+                LogLevel.debug,
+                "\uD83D\uDD0E"
+            )
         );
 
         if (options.labels != null) {
