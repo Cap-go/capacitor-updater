@@ -78,7 +78,7 @@ public class SessionKeyRequiredTest {
         final Path tempDir = Files.createTempDirectory("capgo-session-key-zip");
         updater.documentsDir = tempDir.toFile();
         final String dest = "bundle.zip";
-        Files.writeString(tempDir.resolve(dest), "plaintext");
+        Files.write(tempDir.resolve(dest), "plaintext".getBytes(StandardCharsets.UTF_8));
 
         final boolean success = updater.finishDownload("bundle-id", dest, "1.0.0", "", "checksum", false, false);
 
