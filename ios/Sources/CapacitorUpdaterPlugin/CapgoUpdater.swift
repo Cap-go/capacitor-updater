@@ -3468,6 +3468,7 @@ import UIKit
         statsQueue.removeAll()
         statsInFlight = queuedEvents
         let flushGeneration = statsFlushGeneration
+        let flushStatsUrl = statsUrl
         statsQueueLock.unlock()
         persistStatsQueue()
 
@@ -3478,7 +3479,7 @@ import UIKit
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
             self.alamofireSession.request(
-                self.statsUrl,
+                flushStatsUrl,
                 method: .post,
                 parameters: eventsToSend,
                 encoder: JSONParameterEncoder.default,
@@ -3580,6 +3581,16 @@ import UIKit
         statsQueueLock.lock()
         statsInFlight.removeAll()
         statsQueueLock.unlock()
+    }
+
+    func setStatsUrlAndDiscardPending(_ url: String) {
+        statsQueueLock.lock()
+        statsUrl = url
+        statsFlushGeneration &+= 1
+        statsQueue.removeAll()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
+        persistStatsQueue(force: true)
     }
 
     func discardPendingStats() {

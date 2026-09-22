@@ -3034,6 +3034,24 @@ public class CapgoUpdater {
         return statsQueue.size();
     }
 
+    public void setStatsUrlAndDiscardPending(final String url) {
+        synchronized (statsQueue) {
+            this.statsUrl = url;
+            statsFlushGeneration.incrementAndGet();
+            statsQueue.clear();
+            statsInFlight.clear();
+        }
+        statsFlushInFlight.set(false);
+        persistStatsQueue(true);
+        final File file = pendingStatsFile();
+        if (file != null) {
+            final File backup = new File(file.getAbsolutePath() + ".bak");
+            if (backup.exists()) {
+                backup.delete();
+            }
+        }
+    }
+
     public void discardPendingStats() {
         synchronized (statsQueue) {
             statsFlushGeneration.incrementAndGet();
@@ -3191,25 +3209,23 @@ public class CapgoUpdater {
             return;
         }
 
-        String statsUrl = this.statsUrl;
-        if (statsUrl == null || statsUrl.isEmpty()) {
-            synchronized (statsQueue) {
-                statsFlushGeneration.incrementAndGet();
-                statsQueue.clear();
-                statsInFlight.clear();
-            }
-            statsFlushInFlight.set(false);
-            persistStatsQueue();
-            return;
-        }
-
         if (!statsFlushInFlight.compareAndSet(false, true)) {
             return;
         }
 
         final long flushGeneration;
+        final String flushStatsUrl;
         final List<QueuedStatsEvent> eventsToSend;
         synchronized (statsQueue) {
+            flushStatsUrl = this.statsUrl;
+            if (flushStatsUrl == null || flushStatsUrl.isEmpty()) {
+                statsFlushGeneration.incrementAndGet();
+                statsQueue.clear();
+                statsInFlight.clear();
+                statsFlushInFlight.set(false);
+                persistStatsQueue();
+                return;
+            }
             flushGeneration = statsFlushGeneration.get();
             if (statsQueue.isEmpty()) {
                 releaseStatsFlushInFlight(flushGeneration);
@@ -3228,7 +3244,7 @@ public class CapgoUpdater {
         }
 
         Request request = new Request.Builder()
-            .url(statsUrl)
+            .url(flushStatsUrl)
             .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
             .build();
 

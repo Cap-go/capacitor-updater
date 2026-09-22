@@ -1592,12 +1592,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setStatsUrl called without url")
             return
         }
-        self.implementation.statsUrl = url
         if persistModifyUrl {
             UserDefaults.standard.set(url, forKey: statsUrlDefaultsKey)
             UserDefaults.standard.synchronize()
         }
-        self.implementation.discardPendingStats()
+        self.implementation.setStatsUrlAndDiscardPending(url)
         call.resolve()
     }
 
@@ -5560,6 +5559,9 @@ private final class BindingWaitState {
         defer { self.lock.unlock() }
         return (self.completed, self.result)
     }
+
+    // Required by SwiftLint required_deinit.
+    deinit {}
 }
 
 private final class AppReadyBindingMessageHandler: NSObject, WKScriptMessageHandler {

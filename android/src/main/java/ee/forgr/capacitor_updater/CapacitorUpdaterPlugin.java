@@ -2633,8 +2633,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
         }
-        this.implementation.statsUrl = url;
-        this.implementation.discardPendingStats();
+        this.implementation.setStatsUrlAndDiscardPending(url);
         call.resolve();
     }
 
