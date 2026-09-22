@@ -745,7 +745,9 @@ public class DownloadService extends Worker {
                 ZipWritePlan writePlan = planZipResumeWrite(responseCode, downloadedBytes, httpConn.getHeaderField("Content-Range"));
                 long responseBodyLength = httpConn.getContentLength();
                 long contentLength = shouldAppendHttpBody(writePlan.statusCode, writePlan.writeOffset)
-                    ? (responseBodyLength >= 0 ? responseBodyLength + writePlan.writeOffset : -1)
+                    ? responseBodyLength >= 0
+                        ? responseBodyLength + writePlan.writeOffset
+                        : -1
                     : responseBodyLength;
 
                 // Check if we have enough space for the actual file

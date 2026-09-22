@@ -146,7 +146,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final int APPLICATION_EXIT_REASON_USER_REQUESTED = 10;
     static final int APPLICATION_EXIT_REASON_DEPENDENCY_DIED = 12;
 
-    private final String pluginVersion = "8.51.21";
+    private final String pluginVersion = "7.51.21";
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
     private SharedPreferences.Editor editor;
@@ -4783,8 +4783,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
