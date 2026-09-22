@@ -363,6 +363,38 @@ public class DownloadService extends Worker {
         return seenTargets.add(targetFile.getCanonicalPath());
     }
 
+    private static final class ManifestDownloadTask {
+
+        final String fileName;
+        final String finalFileHash;
+        final String downloadUrl;
+        final boolean isBrotli;
+        final File targetFile;
+        final File builtinFile;
+        final File cacheFile;
+        final File legacyCacheFile;
+
+        ManifestDownloadTask(
+            final String fileName,
+            final String finalFileHash,
+            final String downloadUrl,
+            final boolean isBrotli,
+            final File targetFile,
+            final File builtinFile,
+            final File cacheFile,
+            final File legacyCacheFile
+        ) {
+            this.fileName = fileName;
+            this.finalFileHash = finalFileHash;
+            this.downloadUrl = downloadUrl;
+            this.isBrotli = isBrotli;
+            this.targetFile = targetFile;
+            this.builtinFile = builtinFile;
+            this.cacheFile = cacheFile;
+            this.legacyCacheFile = legacyCacheFile;
+        }
+    }
+
     static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
         if (assets == null || fileName == null || dest == null) {
             return false;
@@ -535,9 +567,7 @@ public class DownloadService extends Worker {
             int totalFiles = manifest.length();
             final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
-
-            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
-            List<Future<?>> futures = new ArrayList<>();
+            final List<ManifestDownloadTask> tasks = new ArrayList<>();
             final Set<String> seenTargets = new HashSet<>();
 
             for (int i = 0; i < totalFiles; i++) {
@@ -592,35 +622,54 @@ public class DownloadService extends Worker {
                 final File legacyCacheFile =
                     isBrotli && cacheFile != null ? new File(cacheFolder, finalFileHash + "_" + new File(fileName).getName()) : null;
 
-                // Ensure parent directories of the target file exist
-                if (!Objects.requireNonNull(targetFile.getParentFile()).exists() && !targetFile.getParentFile().mkdirs()) {
-                    logger.error("Failed to create parent directory for: " + targetFile.getAbsolutePath());
-                    hasError.set(true);
-                    continue;
+                tasks.add(
+                    new ManifestDownloadTask(
+                        fileName,
+                        finalFileHash,
+                        downloadUrl,
+                        isBrotli,
+                        targetFile,
+                        builtinFile,
+                        cacheFile,
+                        legacyCacheFile
+                    )
+                );
+            }
+
+            if (hasError.get()) {
+                throw new IOException("Manifest contains invalid or duplicate file paths");
+            }
+
+            ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
+            List<Future<?>> futures = new ArrayList<>();
+
+            for (final ManifestDownloadTask task : tasks) {
+                if (!Objects.requireNonNull(task.targetFile.getParentFile()).exists() && !task.targetFile.getParentFile().mkdirs()) {
+                    logger.error("Failed to create parent directory for: " + task.targetFile.getAbsolutePath());
+                    throw new IOException("Failed to create parent directory for: " + task.targetFile.getAbsolutePath());
                 }
 
-                final boolean finalIsBrotli = isBrotli;
                 Future<?> future = executor.submit(() -> {
                     try {
-                        if (tryCopyBuiltinAsset(assets, fileName, targetFile, finalFileHash)) {
-                            logger.debug("using builtin asset " + fileName);
-                        } else if (tryCopyBuiltinFile(builtinFile, targetFile, finalFileHash)) {
-                            logger.debug("using builtin file " + fileName);
+                        if (tryCopyBuiltinAsset(assets, task.fileName, task.targetFile, task.finalFileHash)) {
+                            logger.debug("using builtin asset " + task.fileName);
+                        } else if (tryCopyBuiltinFile(task.builtinFile, task.targetFile, task.finalFileHash)) {
+                            logger.debug("using builtin file " + task.fileName);
                         } else if (
-                            tryCopyFromCache(cacheFile, targetFile, finalFileHash) ||
-                            (legacyCacheFile != null && tryCopyFromCache(legacyCacheFile, targetFile, finalFileHash))
+                            tryCopyFromCache(task.cacheFile, task.targetFile, task.finalFileHash) ||
+                            (task.legacyCacheFile != null && tryCopyFromCache(task.legacyCacheFile, task.targetFile, task.finalFileHash))
                         ) {
-                            logger.debug("already cached " + fileName);
+                            logger.debug("already cached " + task.fileName);
                         } else {
                             downloadAndVerify(
-                                downloadUrl,
-                                targetFile,
-                                cacheFile,
-                                finalFileHash,
+                                task.downloadUrl,
+                                task.targetFile,
+                                task.cacheFile,
+                                task.finalFileHash,
                                 sessionKey,
                                 publicKey,
-                                finalIsBrotli,
-                                fileName
+                                task.isBrotli,
+                                task.fileName
                             );
                         }
 
@@ -628,8 +677,8 @@ public class DownloadService extends Worker {
                         int percent = calcTotalPercent(completed, totalFiles);
                         setProgress(percent);
                     } catch (Exception e) {
-                        logger.error("Error processing file: " + fileName + " " + e.getMessage());
-                        sendStatsAsync("download_manifest_file_fail", version + ":" + fileName);
+                        logger.error("Error processing file: " + task.fileName + " " + e.getMessage());
+                        sendStatsAsync("download_manifest_file_fail", version + ":" + task.fileName);
                         hasError.set(true);
                     }
                 });

@@ -134,12 +134,19 @@ import UIKit
         case pathTraversal
     }
 
+    static func containsPathTraversalSegment(_ relativePath: String) -> Bool {
+        return relativePath.split(separator: "/").contains(where: { $0 == ".." })
+    }
+
     static func resolvePathInsideDirectory(baseDirectory: URL, relativePath: String) throws -> URL {
         if relativePath.isEmpty {
             throw SecurePathError.emptyPath
         }
         if relativePath.contains("\\") || relativePath.contains("\0") {
             throw SecurePathError.windowsPath
+        }
+        if containsPathTraversalSegment(relativePath) {
+            throw SecurePathError.pathTraversal
         }
         if (relativePath as NSString).isAbsolutePath {
             throw SecurePathError.absolutePath
@@ -162,6 +169,22 @@ import UIKit
         let isBrotli = fileName.hasSuffix(".br")
         let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
         return try resolvePathInsideDirectory(baseDirectory: baseDirectory, relativePath: targetFileName)
+    }
+
+    static func rememberManifestTarget(_ seenTargets: inout Set<String>, targetFile: URL) -> Bool {
+        return seenTargets.insert(targetFile.standardizedFileURL.path).inserted
+    }
+
+    private struct ManifestDownloadTask {
+        let fileName: String
+        let downloadUrl: String
+        let finalFileHash: String
+        let isBrotli: Bool
+        let destFileName: String
+        let destFilePath: URL
+        let builtinFilePath: URL
+        let cacheFilePath: URL?
+        let legacyCacheFilePath: URL?
     }
 
     private func isTimedOutError(_ error: Error?) -> Bool {
@@ -1416,8 +1439,8 @@ import UIKit
         var downloadError: Error?
         let errorLock = NSLock()
 
-        // Create operations for each file
-        var operations: [Operation] = []
+        var tasks: [ManifestDownloadTask] = []
+        var seenTargets = Set<String>()
 
         for entry in manifest {
             guard let fileName = entry.file_name,
@@ -1489,6 +1512,24 @@ import UIKit
             do {
                 destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
                 builtinFilePath = try Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName)
+                if !Self.rememberManifestTarget(&seenTargets, targetFile: destFilePath) {
+                    logger.error("Duplicate manifest target path: \(fileName)")
+                    self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
+                    let error = NSError(
+                        domain: "ManifestEntryError",
+                        code: 3,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Duplicate manifest target path for \(fileName)"
+                        ]
+                    )
+                    errorLock.lock()
+                    if downloadError == nil {
+                        downloadError = error
+                    }
+                    errorLock.unlock()
+                    hasError.value = true
+                    continue
+                }
             } catch {
                 logger.error("Invalid manifest file path: \(fileName)")
                 self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
@@ -1501,8 +1542,40 @@ import UIKit
                 continue
             }
 
-            // Create parent directories synchronously (before operations start)
-            try? FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            tasks.append(
+                ManifestDownloadTask(
+                    fileName: fileName,
+                    downloadUrl: downloadUrl,
+                    finalFileHash: finalFileHash,
+                    isBrotli: isBrotli,
+                    destFileName: destFileName,
+                    destFilePath: destFilePath,
+                    builtinFilePath: builtinFilePath,
+                    cacheFilePath: cacheFilePath,
+                    legacyCacheFilePath: legacyCacheFilePath
+                )
+            )
+        }
+
+        if hasError.value {
+            let resolvedError = downloadError ?? NSError(
+                domain: "ManifestDownloadError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
+            )
+            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+            self.saveBundleInfo(id: id, bundle: errorBundle)
+            throw resolvedError
+        }
+
+        var operations: [Operation] = []
+
+        for task in tasks {
+            try FileManager.default.createDirectory(
+                at: task.destFilePath.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: nil
+            )
 
             let operation = BlockOperation { [weak self] in
                 guard let self = self else { return }
@@ -1510,26 +1583,29 @@ import UIKit
 
                 do {
                     // Try builtin first
-                    if FileManager.default.fileExists(atPath: builtinFilePath.path) && self.verifyChecksum(file: builtinFilePath, expectedHash: finalFileHash) {
-                        try self.copyItemReplacing(from: builtinFilePath, to: destFilePath)
-                        self.logger.info("downloadManifest \(fileName) using builtin file \(id)")
+                    if FileManager.default.fileExists(atPath: task.builtinFilePath.path) &&
+                        self.verifyChecksum(file: task.builtinFilePath, expectedHash: task.finalFileHash) {
+                        try self.copyItemReplacing(from: task.builtinFilePath, to: task.destFilePath)
+                        self.logger.info("downloadManifest \(task.fileName) using builtin file \(id)")
                     }
                     // Try cache
                     else if
-                        (cacheFilePath != nil && self.tryCopyFromCache(from: cacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) ||
-                            (legacyCacheFilePath != nil && self.tryCopyFromCache(from: legacyCacheFilePath!, to: destFilePath, expectedHash: finalFileHash)) {
-                        self.logger.info("downloadManifest \(fileName) copy from cache \(id)")
+                        (task.cacheFilePath != nil &&
+                            self.tryCopyFromCache(from: task.cacheFilePath!, to: task.destFilePath, expectedHash: task.finalFileHash)) ||
+                            (task.legacyCacheFilePath != nil &&
+                                self.tryCopyFromCache(from: task.legacyCacheFilePath!, to: task.destFilePath, expectedHash: task.finalFileHash)) {
+                        self.logger.info("downloadManifest \(task.fileName) copy from cache \(id)")
                     }
                     // Download
                     else {
                         try self.downloadManifestFile(
-                            downloadUrl: downloadUrl,
-                            destFilePath: destFilePath,
-                            cacheFilePath: cacheFilePath,
-                            fileHash: finalFileHash,
-                            fileName: fileName,
-                            destFileName: destFileName,
-                            isBrotli: isBrotli,
+                            downloadUrl: task.downloadUrl,
+                            destFilePath: task.destFilePath,
+                            cacheFilePath: task.cacheFilePath,
+                            fileHash: task.finalFileHash,
+                            fileName: task.fileName,
+                            destFileName: task.destFileName,
+                            isBrotli: task.isBrotli,
                             sessionKey: sessionKey,
                             version: version,
                             bundleId: id
@@ -1547,8 +1623,8 @@ import UIKit
                     }
                     errorLock.unlock()
                     hasError.value = true
-                    self.logger.error("Manifest file download failed: \(fileName)")
-                    self.logger.debug("Bundle: \(id), File: \(fileName), Error: \(error.localizedDescription)")
+                    self.logger.error("Manifest file download failed: \(task.fileName)")
+                    self.logger.debug("Bundle: \(id), File: \(task.fileName), Error: \(error.localizedDescription)")
                 }
             }
 
