@@ -5,6 +5,7 @@ import {
   defaultHostBaseUrl,
   defaultPort,
   findScenario,
+  getBundleChecksumPath,
   getBundleZipPath,
   getManifestDirectoryPath,
   getManifestMetadataPath,
@@ -269,6 +270,17 @@ function encodeFilePath(relativePath) {
     .join('/');
 }
 
+async function loadBundleChecksum(version) {
+  const checksumPath = getBundleChecksumPath(version);
+
+  if (!existsSync(checksumPath)) {
+    return null;
+  }
+
+  const checksum = (await Bun.file(checksumPath).text()).trim();
+  return checksum.length > 0 ? checksum : null;
+}
+
 async function loadManifestEntries(version) {
   const metadataPath = getManifestMetadataPath(version);
 
@@ -330,6 +342,7 @@ async function handleUpdate(request, scenarioId) {
   }
 
   const zipPath = getBundleZipPath(activeRelease.version);
+  const checksum = await loadBundleChecksum(activeRelease.version);
 
   if (!existsSync(zipPath)) {
     return jsonResponse(
@@ -341,7 +354,18 @@ async function handleUpdate(request, scenarioId) {
     );
   }
 
+  if (!checksum) {
+    return jsonResponse(
+      {
+        error: 'missing_checksum',
+        message: `Checksum fixture not found for ${activeRelease.version}`,
+      },
+      { status: 500 },
+    );
+  }
+
   return jsonResponse({
+    checksum,
     url: `${defaultDeviceBaseUrl}/bundles/${activeRelease.version}.zip`,
     version: activeRelease.version,
   });

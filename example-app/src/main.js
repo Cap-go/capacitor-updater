@@ -2131,13 +2131,6 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
-      if (scenarioId === 'manual-zip' && platform !== 'ios') {
-        markPendingBootAction('verify-persisted-config-after-get-latest-boot');
-        return {
-          message: 'Queued persisted-config verification for the next boot after getLatest().',
-        };
-      }
-
       markPendingBootAction('verify-persisted-config-boot');
       return {
         message: 'Queued persisted-config verification for the next boot.',
@@ -2155,6 +2148,7 @@ const actions = [
         includePluginAppId: false,
         probeLatest:
           platform !== 'ios' &&
+          scenarioId !== 'manual-zip' &&
           scenarioId !== 'manual-zip-config-guards' &&
           scenarioId !== 'manual-zip-no-persist',
       }),
@@ -2170,20 +2164,6 @@ const actions = [
       return {
         message: 'Verified persisted runtime traffic after boot.',
       };
-    },
-  },
-  {
-    id: 'verify-persisted-config-after-get-latest-boot',
-    label: 'Boot getLatest then verify persisted runtime config',
-    showWhen: () => false,
-    markerId: 'persisted',
-    skipRefresh: true,
-    run: async () => {
-      await runGetLatestCheck();
-      return verifyPersistedRuntimeConfig({
-        includePluginAppId: false,
-        probeLatest: false,
-      });
     },
   },
   {
@@ -3128,7 +3108,6 @@ async function bootstrap() {
 
   await refreshState();
   const skipAndroidBootProbeForBootAction =
-    bootActionFromStorage === 'verify-persisted-config-after-get-latest-boot' ||
     bootActionFromStorage === 'verify-persisted-runtime-traffic-boot';
   const shouldRunAndroidBootProbe =
     platform === 'android' &&

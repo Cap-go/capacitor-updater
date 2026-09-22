@@ -359,7 +359,10 @@ extension UIWindow {
             if !next.isBuiltin() {
                 plugin.logger.info("Resetting to: \(next.toString())")
                 _ = updater.set(bundle: next)
-                let destHot = updater.getBundleDirectory(id: next.getId())
+                guard let destHot = try? updater.getBundleDirectory(id: next.getId()) else {
+                    resetBuiltin()
+                    return
+                }
                 plugin.logger.info("Reloading \(next.toString())")
                 bridge.setServerBasePath(destHot.path)
             } else {

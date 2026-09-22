@@ -196,6 +196,10 @@ export function getBundleZipPath(version) {
   return path.join(bundleArtifactDir, `${version}.zip`);
 }
 
+export function getBundleChecksumPath(version) {
+  return path.join(bundleArtifactDir, `${version}.checksum`);
+}
+
 export function getManifestDirectoryPath(version) {
   return path.join(manifestArtifactDir, version);
 }
