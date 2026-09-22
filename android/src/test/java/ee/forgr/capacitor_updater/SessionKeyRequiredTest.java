@@ -226,6 +226,7 @@ public class SessionKeyRequiredTest {
         assertTrue(updater.getSentStatsActions().contains("session_key_required"));
     }
 
+    @Test
     public void downloadRejectsWhenSessionKeyFormatInvalid() {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         updater.setPublicKey(fixturePublicKey);
