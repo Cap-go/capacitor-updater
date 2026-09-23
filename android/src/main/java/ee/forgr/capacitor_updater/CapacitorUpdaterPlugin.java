@@ -5269,7 +5269,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             if (directUpdateAllowedNow) {
                                 logger.info("Direct update to builtin version");
                                 this._reset(false, false);
-                                CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                if (
+                                    CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
+                                        CapacitorUpdaterPlugin.this.directUpdateMode,
+                                        true
+                                    )
+                                ) {
+                                    CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                }
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Updated to builtin version",
                                     latestVersionName,
@@ -5380,7 +5387,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()
                                         ) {
                                             CapacitorUpdaterPlugin.this.notifyBundleSet(latest);
-                                            CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                            if (
+                                                CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
+                                                    CapacitorUpdaterPlugin.this.directUpdateMode,
+                                                    true
+                                                )
+                                            ) {
+                                                CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                            }
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                 "Update installed",
                                                 latestVersionName,
@@ -5389,7 +5403,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                 true
                                             );
                                         } else {
-                                            CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                            if (
+                                                CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
+                                                    CapacitorUpdaterPlugin.this.directUpdateMode,
+                                                    true
+                                                )
+                                            ) {
+                                                CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
+                                            }
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                 "Update install failed",
                                                 latestVersionName,
@@ -5505,7 +5526,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             });
                         } else {
                             logger.info("No need to update, " + current.getId() + " is the latest bundle.");
-                            if (plannedDirectUpdate) {
+                            if (
+                                CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
+                                    CapacitorUpdaterPlugin.this.directUpdateMode,
+                                    plannedDirectUpdate
+                                )
+                            ) {
                                 CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
                             }
                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(

@@ -3318,7 +3318,9 @@ import UIKit
         guard !statsUrl.isEmpty else {
             return
         }
+        statsQueueLock.lock()
         let enqueueGeneration = statsFlushGeneration
+        statsQueueLock.unlock()
 
         let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
         let info = createInfoObject()
