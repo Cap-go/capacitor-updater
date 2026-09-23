@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.getcapacitor.*;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -283,11 +284,17 @@ public class Logger {
 
     @NonNull
     static String capWebViewLogPayload(@NonNull String payload) {
-        if (payload.length() <= MAX_WEBVIEW_LOG_PAYLOAD_CHARS) {
+        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= MAX_WEBVIEW_LOG_PAYLOAD_CHARS) {
             return payload;
         }
 
-        return payload.substring(0, MAX_WEBVIEW_LOG_PAYLOAD_CHARS) + "...";
+        int end = MAX_WEBVIEW_LOG_PAYLOAD_CHARS;
+        while (end > 0 && (bytes[end] & 0xC0) == 0x80) {
+            end--;
+        }
+
+        return new String(bytes, 0, end, StandardCharsets.UTF_8) + "...";
     }
 
     @Nullable

@@ -1,10 +1,18 @@
 package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
+import android.webkit.WebView;
+import com.getcapacitor.Bridge;
 import org.json.JSONArray;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.robolectric.RobolectricTestRunner;
 
+@RunWith(RobolectricTestRunner.class)
 public class LoggerSecurityTest {
 
     private static final String[] INJECTION_PAYLOADS = {
@@ -57,12 +65,40 @@ public class LoggerSecurityTest {
     }
 
     @Test
+    public void logWithTagAtLevel_forwardsEscapedScriptToBridgeEval() throws org.json.JSONException {
+        Bridge bridge = mock(Bridge.class);
+        WebView webView = mock(WebView.class);
+        when(bridge.getWebView()).thenReturn(webView);
+
+        Logger logger = new Logger("CapgoUpdater", new Logger.Options(Logger.LogLevel.debug));
+        logger.setBridge(bridge);
+
+        String maliciousTag = "evil\");alert(1)//";
+        String maliciousMessage = "hello\");alert(1)//";
+        logger.logWithTagAtLevel(Logger.LogLevel.error, "", maliciousTag, maliciousMessage);
+
+        ArgumentCaptor<String> scriptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(bridge).eval(scriptCaptor.capture(), eq(null));
+
+        assertSafeConsoleScript(scriptCaptor.getValue(), "error", "[" + maliciousTag + "] 🔴 " + maliciousMessage);
+    }
+
+    @Test
     public void capWebViewLogPayload_truncatesOversizedMessages() {
         String oversized = "x".repeat(Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS + 10);
         String capped = Logger.capWebViewLogPayload(oversized);
 
-        assertEquals(Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS + 3, capped.length());
         assertTrue(capped.endsWith("..."));
+        assertTrue(capped.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS + 3);
+    }
+
+    @Test
+    public void capWebViewLogPayload_preservesValidUtf8BoundariesForCombiningMarks() {
+        String combiningMarkPayload = "\u0301".repeat(Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS + 10);
+        String capped = Logger.capWebViewLogPayload(combiningMarkPayload);
+
+        assertTrue(capped.endsWith("..."));
+        assertNotNull(capped.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private void assertSafeConsoleScript(String script, String consoleMethod, String expectedPayload) throws org.json.JSONException {

@@ -1,5 +1,15 @@
 import XCTest
+import WebKit
 @testable import CapacitorUpdaterPlugin
+
+private final class RecordingWebView: WKWebView {
+    private(set) var lastScript: String?
+
+    override func evaluateJavaScript(_ javaScriptString: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        lastScript = javaScriptString
+        completionHandler?(nil, nil)
+    }
+}
 
 final class LoggerSecurityTests: XCTestCase {
     private let injectionPayloads = [
@@ -64,13 +74,44 @@ final class LoggerSecurityTests: XCTestCase {
         }
     }
 
+    func testLogAtLevelForwardsEscapedScriptToEvaluateJavaScript() throws {
+        let logger = Logger(withTag: "CapgoUpdater")
+        let webView = RecordingWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        logger.setWebView(webView: webView)
+
+        let maliciousMessage = "hello\");alert(1)//"
+        logger.log(atLevel: .error, message: maliciousMessage)
+
+        let expectation = expectation(description: "evaluateJavaScript dispatched")
+        DispatchQueue.main.async {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+
+        try assertSafeConsoleScript(
+            XCTUnwrap(webView.lastScript),
+            consoleMethod: "error",
+            expectedPayload: "🔴 CapgoUpdater : \(maliciousMessage)",
+            logger: logger
+        )
+    }
+
     func testCapWebViewLogPayloadTruncatesOversizedMessages() {
         let logger = Logger(withTag: "LoggerSecurityTests")
         let oversized = String(repeating: "x", count: Logger.maxWebViewLogPayloadChars + 10)
         let capped = logger.capWebViewLogPayload(oversized)
 
-        XCTAssertEqual(Logger.maxWebViewLogPayloadChars + 3, capped.count)
         XCTAssertTrue(capped.hasSuffix("..."))
+        XCTAssertLessThanOrEqual(capped.utf8.count, Logger.maxWebViewLogPayloadChars + 3)
+    }
+
+    func testCapWebViewLogPayloadPreservesValidUtf8BoundariesForCombiningMarks() {
+        let logger = Logger(withTag: "LoggerSecurityTests")
+        let combiningMarkPayload = String(repeating: "\u{0301}", count: Logger.maxWebViewLogPayloadChars + 10)
+        let capped = logger.capWebViewLogPayload(combiningMarkPayload)
+
+        XCTAssertTrue(capped.hasSuffix("..."))
+        XCTAssertNotNil(String(data: Data(capped.utf8), encoding: .utf8))
     }
 
     private func assertSafeConsoleScript(

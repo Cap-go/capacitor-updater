@@ -225,11 +225,19 @@ public class Logger {
     }
 
     func capWebViewLogPayload(_ payload: String) -> String {
-        if payload.count <= Logger.maxWebViewLogPayloadChars {
+        let suffix = "..."
+        let maxPayloadBytes = Logger.maxWebViewLogPayloadChars - suffix.utf8.count
+        let payloadBytes = Array(payload.utf8)
+        if payloadBytes.count <= maxPayloadBytes {
             return payload
         }
 
-        return String(payload.prefix(Logger.maxWebViewLogPayloadChars)) + "..."
+        var end = maxPayloadBytes
+        while end > 0 && (payloadBytes[end] & 0xC0) == 0x80 {
+            end -= 1
+        }
+
+        return String(decoding: payloadBytes[0..<end], as: UTF8.self) + suffix
     }
 
     func buildWebViewConsoleScript(level: LogLevel, label: String, tag: String, message: String) -> String? {
