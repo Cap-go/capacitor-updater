@@ -227,7 +227,7 @@ public class Logger {
     func capWebViewLogPayload(_ payload: String) -> String {
         let suffix = "..."
         let maxPayloadBytes = Logger.maxWebViewLogPayloadChars - suffix.utf8.count
-        let payloadBytes = Array(payload.utf8)
+        let payloadBytes = Array(payload.utf8.prefix(maxPayloadBytes + 1))
         if payloadBytes.count <= maxPayloadBytes {
             return payload
         }

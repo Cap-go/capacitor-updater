@@ -5,6 +5,11 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.getcapacitor.*;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -284,17 +289,20 @@ public class Logger {
 
     @NonNull
     static String capWebViewLogPayload(@NonNull String payload) {
-        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length <= MAX_WEBVIEW_LOG_PAYLOAD_CHARS) {
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        ByteBuffer bytes = ByteBuffer.allocate(MAX_WEBVIEW_LOG_PAYLOAD_CHARS);
+        CharBuffer chars = CharBuffer.wrap(payload);
+        CoderResult result = encoder.encode(chars, bytes, true);
+        if (result.isUnderflow()) {
+            result = encoder.flush(bytes);
+        }
+        if (result.isUnderflow()) {
             return payload;
         }
 
-        int end = MAX_WEBVIEW_LOG_PAYLOAD_CHARS;
-        while (end > 0 && (bytes[end] & 0xC0) == 0x80) {
-            end--;
-        }
-
-        return new String(bytes, 0, end, StandardCharsets.UTF_8) + "...";
+        return new String(bytes.array(), 0, bytes.position(), StandardCharsets.UTF_8) + "...";
     }
 
     @Nullable

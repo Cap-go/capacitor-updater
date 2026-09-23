@@ -93,12 +93,11 @@ public class LoggerSecurityTest {
     }
 
     @Test
-    public void capWebViewLogPayload_preservesValidUtf8BoundariesForCombiningMarks() {
-        String combiningMarkPayload = "\u0301".repeat(Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS + 10);
-        String capped = Logger.capWebViewLogPayload(combiningMarkPayload);
+    public void capWebViewLogPayload_preservesValidUtf8Boundaries() {
+        String prefix = "x".repeat(Logger.MAX_WEBVIEW_LOG_PAYLOAD_CHARS - 1);
+        String capped = Logger.capWebViewLogPayload(prefix + "💡");
 
-        assertTrue(capped.endsWith("..."));
-        assertNotNull(capped.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(prefix + "...", capped);
     }
 
     private void assertSafeConsoleScript(String script, String consoleMethod, String expectedPayload) throws org.json.JSONException {

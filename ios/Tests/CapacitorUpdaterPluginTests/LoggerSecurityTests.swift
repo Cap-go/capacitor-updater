@@ -105,13 +105,12 @@ final class LoggerSecurityTests: XCTestCase {
         XCTAssertLessThanOrEqual(capped.utf8.count, Logger.maxWebViewLogPayloadChars + 3)
     }
 
-    func testCapWebViewLogPayloadPreservesValidUtf8BoundariesForCombiningMarks() {
+    func testCapWebViewLogPayloadPreservesValidUtf8Boundaries() {
         let logger = Logger(withTag: "LoggerSecurityTests")
-        let combiningMarkPayload = String(repeating: "\u{0301}", count: Logger.maxWebViewLogPayloadChars + 10)
-        let capped = logger.capWebViewLogPayload(combiningMarkPayload)
+        let prefix = String(repeating: "x", count: Logger.maxWebViewLogPayloadChars - 1)
+        let capped = logger.capWebViewLogPayload(prefix + "💡")
 
-        XCTAssertTrue(capped.hasSuffix("..."))
-        XCTAssertNotNil(String(data: Data(capped.utf8), encoding: .utf8))
+        XCTAssertEqual(prefix + "...", capped)
     }
 
     private func assertSafeConsoleScript(
