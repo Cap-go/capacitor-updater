@@ -1433,6 +1433,7 @@ async function advanceServerRelease() {
 async function verifyPersistedRuntimeConfig(options = {}) {
   const includePluginAppId = options.includePluginAppId !== false;
   const shouldProbeLatest = options.probeLatest !== false;
+  const skipStatsUrlRaceCheck = options.skipStatsUrlRaceCheck === true;
   const latest = shouldProbeLatest ? expectGetLatestResult(await plugin.getLatest()) : null;
   const channels = expectListChannelsResult(await plugin.listChannels());
   const appIdResult = includePluginAppId
@@ -1469,7 +1470,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const shouldVerifyStatsUrl =
-    Boolean(lastStatsRequest.url) && (shouldProbeLatest || !expectedUsesRuntimeUrls);
+    Boolean(lastStatsRequest.url) && (!skipStatsUrlRaceCheck || !expectedUsesRuntimeUrls);
   const expectedUpdateUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
   );
@@ -2168,6 +2169,11 @@ const actions = [
           scenarioId !== 'manual-zip' &&
           scenarioId !== 'manual-zip-config-guards' &&
           scenarioId !== 'manual-zip-no-persist',
+        skipStatsUrlRaceCheck:
+          platform === 'ios' ||
+          scenarioId === 'manual-zip' ||
+          scenarioId === 'manual-zip-config-guards' ||
+          scenarioId === 'manual-zip-no-persist',
       }),
   },
   {
