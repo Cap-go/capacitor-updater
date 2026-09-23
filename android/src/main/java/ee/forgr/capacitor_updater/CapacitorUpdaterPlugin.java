@@ -5147,6 +5147,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         this.activeDownloadPlannedDirectUpdate = false;
+        // Consume onLaunch/atInstall one-shots when a planned direct-update attempt ends here.
+        // Downloads handed off to directUpdateFinish do not call this method until that path finishes.
+        if (Boolean.TRUE.equals(plannedDirectUpdate)) {
+            this.commitDirectUpdateOneShotOnSuccess();
+        }
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 

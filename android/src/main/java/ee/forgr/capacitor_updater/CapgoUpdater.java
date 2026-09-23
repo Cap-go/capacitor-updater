@@ -2954,6 +2954,7 @@ public class CapgoUpdater {
         if (statsUrl == null || statsUrl.isEmpty()) {
             return;
         }
+        final long enqueueGeneration = statsFlushGeneration.get();
 
         JSONObject json;
         try {
@@ -2975,6 +2976,9 @@ public class CapgoUpdater {
 
         synchronized (statsQueue) {
             if (statsStopped.get()) {
+                return;
+            }
+            if (statsFlushGeneration.get() != enqueueGeneration) {
                 return;
             }
             while (statsQueue.size() >= MAX_PENDING_STATS) {

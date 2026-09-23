@@ -3318,6 +3318,7 @@ import UIKit
         guard !statsUrl.isEmpty else {
             return
         }
+        let enqueueGeneration = statsFlushGeneration
 
         let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
         let info = createInfoObject()
@@ -3346,6 +3347,10 @@ import UIKit
 
         statsQueueLock.lock()
         if statsStopped {
+            statsQueueLock.unlock()
+            return
+        }
+        if enqueueGeneration != statsFlushGeneration {
             statsQueueLock.unlock()
             return
         }

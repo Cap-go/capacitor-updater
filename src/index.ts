@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import './history';
 
 import {
@@ -92,7 +92,8 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
 export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
   get(target, prop, receiver) {
     if (prop === 'notifyAppReady') {
-      return async (): Promise<AppReadyResult> => notifyAppReadyWithInternalBinding(target);
+      return async (): Promise<AppReadyResult> =>
+        Capacitor.getPlatform() === 'web' ? target.notifyAppReady() : notifyAppReadyWithInternalBinding(target);
     }
     return Reflect.get(target, prop, receiver);
   },

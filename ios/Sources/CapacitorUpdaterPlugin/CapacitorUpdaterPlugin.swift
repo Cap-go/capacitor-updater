@@ -3659,9 +3659,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if (explicitMatch || awaitingMatch) && self.appReadyWebViewLoadToken == 0 {
                 self.syncAppReadyBundleBinding(bundleId: bundle.getId())
             }
-            if (explicitMatch || awaitingMatch) &&
-                self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
-                self.markAppReadyWebViewPageStartedFromNative()
+            if explicitMatch,
+               let reportedLoadToken = call.getString("loadToken"),
+               self.acceptAppReadyBindingLifecycleReport(
+                   reportedBundleId: reportedBundleId,
+                   reportedLoadToken: self.parseAppReadyLoadToken(reportedLoadToken)
+               ),
+               self.appReadyWebViewPageStartedToken < self.appReadyWebViewLoadToken {
+                self.markAppReadyWebViewPageStarted()
             }
         }
         if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
