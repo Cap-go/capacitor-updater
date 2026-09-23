@@ -221,11 +221,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var pendingNotifyAppReady = false
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
+    // Main-thread only for awaitingAppReadyBundleId and appReadyWebView*Token.
     private var awaitingAppReadyBundleId: String?
     private var appReadyWebViewLoadToken = 0
     private var appReadyWebViewLoadedToken = 0
     private var appReadyWebViewPageStartedToken = 0
     private var appReadyWebViewPageLoadPendingToken = 0
+    private static let appReadyBindingSession = UUID().uuidString
     private static let appReadyBindingStorageKey = "__capgoAppReadyBinding"
     private static let appReadyBindingMessageHandlerName = "capgoAppReadyBinding"
     private var appReadyBindingInfrastructureInstalled = false
@@ -579,7 +581,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func reportWebViewError(_ call: CAPPluginCall) {
         let type = call.getString("type") ?? ""
-        self.handleAppReadyBindingLifecycleReport(type: type, call: call)
+        DispatchQueue.main.async {
+            self.handleAppReadyBindingLifecycleReport(type: type, call: call)
+        }
         guard let webViewStatsReporter = webViewStatsReporter else {
             call.resolve()
             return
@@ -713,8 +717,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var seedWrite = ""
         if let seedBundleId, let seedLoadToken {
             let storageValue = self.buildAppReadyBindingStorageValue(bundleId: seedBundleId, loadToken: seedLoadToken)
-            seedWrite =
-                "try{localStorage.setItem('\(Self.appReadyBindingStorageKey)',\(storageValue));}catch(e){}"
+            let sessionKey = Self.jsQuotedString("\(Self.appReadyBindingStorageKey).session")
+            let sessionValue = Self.jsQuotedString(Self.appReadyBindingSession)
+            seedWrite = """
+            var seedKey='\(Self.appReadyBindingStorageKey)';
+            var sessionKey=\(sessionKey);
+            var seedSession=\(sessionValue);
+            var cur=null;
+            try{cur=JSON.parse(localStorage.getItem(seedKey)||'null');}catch(e){}
+            var curSession=null;
+            try{curSession=localStorage.getItem(sessionKey);}catch(e){}
+            if(curSession!==seedSession||!cur||!cur.id||!(cur.token>=\(seedLoadToken))){
+              try{localStorage.setItem(seedKey,\(storageValue));localStorage.setItem(sessionKey,seedSession);}catch(e){}
+            }
+            """
         }
         return """
         (function(){
@@ -3640,6 +3656,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.notifyAppReady(call) }
+            return
+        }
         let bundle = self.implementation.getCurrentBundle()
         let reportedBundleId = call.getString("bundleId")
         if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {

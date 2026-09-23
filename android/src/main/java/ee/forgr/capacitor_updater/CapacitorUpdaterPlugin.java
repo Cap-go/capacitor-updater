@@ -723,6 +723,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                 @Override
                 public void notifyListeners(final String id, final Map<String, Object> res) {
+                    if ("downloadFailed".equals(id)) {
+                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                    }
                     if (activity != null) {
                         activity.runOnUiThread(() -> {
                             CapacitorUpdaterPlugin.this.notifyListeners(id, InternalUtils.mapToJSObject(res));
