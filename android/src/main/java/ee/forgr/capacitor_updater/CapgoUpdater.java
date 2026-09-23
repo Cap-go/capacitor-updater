@@ -3224,6 +3224,9 @@ public class CapgoUpdater {
                 statsQueue.clear();
                 statsInFlight.clear();
                 statsFlushInFlight.set(false);
+                // Definite-assignment for javac: unused after clearedForEmptyStatsUrl early return.
+                flushGeneration = -1L;
+                eventsToSend = java.util.Collections.emptyList();
                 clearedForEmptyStatsUrl = true;
             } else {
                 flushGeneration = statsFlushGeneration.get();
