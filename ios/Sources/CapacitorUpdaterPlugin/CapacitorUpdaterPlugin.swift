@@ -3083,9 +3083,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     ])
                 }
                 let message = res.message.isEmpty ? res.error : res.message
+                let errorCode: String
+                if res.error == "disabled_by_config" {
+                    errorCode = res.error
+                } else if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
+                    errorCode = "channel_private"
+                } else if res.error.contains("Channel URL") {
+                    errorCode = "missing_config"
+                } else {
+                    errorCode = "request_failed"
+                }
                 self.rejectCall(call, message: message, code: "SETCHANNEL_FAILED", data: [
                     "message": message,
-                    "error": res.error
+                    "error": errorCode
                 ])
             } else {
                 guard self.persistDefaultChannelStateFromDefaults() else {
