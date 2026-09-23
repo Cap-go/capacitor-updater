@@ -40,7 +40,7 @@ export async function awaitInjectedAppReadyBundleId(timeoutMs = 60000): Promise<
   return readInjectedAppReadyBundleId();
 }
 
-function readAppReadyBindingToken(): number | undefined {
+export function readAppReadyBindingToken(): number | undefined {
   if (typeof window === 'undefined') {
     return undefined;
   }

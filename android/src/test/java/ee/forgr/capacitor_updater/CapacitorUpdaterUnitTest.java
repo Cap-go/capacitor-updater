@@ -2568,6 +2568,7 @@ public class CapacitorUpdaterUnitTest {
             setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
             when(updater.getCurrentBundle()).thenReturn(bundle);
             when(call.getString("bundleId")).thenReturn("download-id");
+            when(call.getString("loadToken")).thenReturn("2");
 
             plugin.notifyAppReady(call);
 

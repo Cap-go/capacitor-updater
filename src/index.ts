@@ -10,12 +10,13 @@ import {
   awaitAppReadyPageStartedToken,
   awaitInjectedAppReadyBundleId,
   isAppReadyPageStartedMatched,
+  readAppReadyBindingToken,
   readInjectedAppReadyBundleId,
 } from './app-ready';
 import type { AppReadyResult, CapacitorUpdaterPlugin } from './definitions';
 
 type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
-  notifyAppReady(options?: { bundleId?: string }): Promise<AppReadyResult>;
+  notifyAppReady(options?: { bundleId?: string; loadToken?: string }): Promise<AppReadyResult>;
 };
 
 const NOTIFY_APP_READY_WAIT_MS = 55000;
@@ -58,7 +59,11 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
       continue;
     }
 
-    lastResult = await target.notifyAppReady({ bundleId });
+    const loadToken = readAppReadyBindingToken();
+    lastResult = await target.notifyAppReady({
+      bundleId,
+      ...(loadToken != null ? { loadToken: String(loadToken) } : {}),
+    });
     const { bundle } = await target.current();
     if (bundle.status === 'success' && bundle.id === bundleId) {
       return { bundle };
@@ -72,7 +77,14 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
     return { bundle };
   }
   if (bundleId) {
-    return lastResult ?? (await target.notifyAppReady({ bundleId }));
+    const loadToken = readAppReadyBindingToken();
+    return (
+      lastResult ??
+      (await target.notifyAppReady({
+        bundleId,
+        ...(loadToken != null ? { loadToken: String(loadToken) } : {}),
+      }))
+    );
   }
   return lastResult ?? (await target.notifyAppReady());
 }
