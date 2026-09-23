@@ -2441,6 +2441,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.notifyBundleSet(latest);
             sendReadyToJs(latest, "update installed", true);
         } else {
+            // Failed reload still ends the onLaunch direct attempt; keep atInstall armed.
+            if (CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(this.directUpdateMode, true)) {
+                this.commitDirectUpdateOneShotOnSuccess();
+            }
             this.implementation.setNextBundle(latest.getId());
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
