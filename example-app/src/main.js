@@ -1953,7 +1953,21 @@ const actions = [
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
+    successMarker: (result) =>
+      result?.outcome === 'expected-rejection'
+        ? 'Action marker: unset-channel:expected-rejection'
+        : 'Action marker: unset-channel:success',
     run: async () => {
+      if (!allowSetDefaultChannel) {
+        const result = await expectConfiguredRejection(
+          'unsetChannel()',
+          () => plugin.unsetChannel(),
+          ['disabled_by_config', 'configuration'],
+        );
+        state.lastUnsetChannelCheck = 'expected-rejection';
+        return result;
+      }
+
       await plugin.unsetChannel();
       const result = expectChannel(await plugin.getChannel(), '', 'unsetChannel()');
       state.getChannelResult = result;
