@@ -5544,7 +5544,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                     } catch (final Exception e) {
                         logger.error("error in update check " + e.getMessage());
-                        if (plannedDirectUpdate) {
+                        if (
+                            CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
+                                CapacitorUpdaterPlugin.this.directUpdateMode,
+                                plannedDirectUpdate
+                            )
+                        ) {
                             CapacitorUpdaterPlugin.this.commitDirectUpdateOneShotOnSuccess();
                         }
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
