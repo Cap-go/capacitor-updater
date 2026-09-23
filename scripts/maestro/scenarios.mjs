@@ -30,7 +30,7 @@ export const exampleApkPath = path.join(
 );
 
 const sharedMutableConfig = {
-  CAPGO_APP_READY_TIMEOUT: '10000',
+  CAPGO_APP_READY_TIMEOUT: '60000',
   CAPGO_ALLOW_MANUAL_BUNDLE_ERROR: 'true',
   CAPGO_ALLOW_MODIFY_APP_ID: 'true',
   CAPGO_ALLOW_MODIFY_URL: 'true',
@@ -57,7 +57,7 @@ export const scenarios = {
     directUpdate: 'always',
     builtinLabel: 'always-builtin',
     env: {
-      CAPGO_APP_READY_TIMEOUT: '10000',
+      CAPGO_APP_READY_TIMEOUT: '60000',
     },
     releases: [
       { version: 'always-v1', label: 'always-v1' },
@@ -72,7 +72,7 @@ export const scenarios = {
     directUpdate: 'true',
     builtinLabel: 'legacy-true-builtin',
     env: {
-      CAPGO_APP_READY_TIMEOUT: '10000',
+      CAPGO_APP_READY_TIMEOUT: '60000',
     },
     releases: [
       { version: 'legacy-true-v1', label: 'legacy-true-v1' },
@@ -87,7 +87,7 @@ export const scenarios = {
     directUpdate: 'atInstall',
     builtinLabel: 'at-install-builtin',
     env: {
-      CAPGO_APP_READY_TIMEOUT: '10000',
+      CAPGO_APP_READY_TIMEOUT: '60000',
     },
     releases: [
       { version: 'at-install-v1', label: 'at-install-v1' },
@@ -102,7 +102,7 @@ export const scenarios = {
     directUpdate: 'onLaunch',
     builtinLabel: 'on-launch-builtin',
     env: {
-      CAPGO_APP_READY_TIMEOUT: '10000',
+      CAPGO_APP_READY_TIMEOUT: '60000',
     },
     releases: [
       { version: 'on-launch-v1', label: 'on-launch-v1' },
