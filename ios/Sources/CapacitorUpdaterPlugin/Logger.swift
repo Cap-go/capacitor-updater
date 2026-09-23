@@ -224,6 +224,22 @@ public class Logger {
         }
     }
 
+    private func utf8SequenceLength(_ lead: UInt8) -> Int {
+        if (lead & 0x80) == 0 {
+            return 1
+        }
+        if (lead & 0xE0) == 0xC0 {
+            return 2
+        }
+        if (lead & 0xF0) == 0xE0 {
+            return 3
+        }
+        if (lead & 0xF8) == 0xF0 {
+            return 4
+        }
+        return 0
+    }
+
     func capWebViewLogPayload(_ payload: String) -> String {
         let suffix = "..."
         let maxPayloadBytes = Logger.maxWebViewLogPayloadChars
@@ -237,21 +253,15 @@ public class Logger {
             end -= 1
         }
         while end > 0 {
-            let lead = payloadBytes[end - 1]
-            let seqLength: Int
-            if (lead & 0x80) == 0 {
-                seqLength = 1
-            } else if (lead & 0xE0) == 0xC0 {
-                seqLength = 2
-            } else if (lead & 0xF0) == 0xE0 {
-                seqLength = 3
-            } else if (lead & 0xF8) == 0xF0 {
-                seqLength = 4
-            } else {
-                break
+            let leadIndex = end - 1
+            let lead = payloadBytes[leadIndex]
+            let seqLength = utf8SequenceLength(lead)
+            if seqLength == 0 {
+                end -= 1
+                continue
             }
-            if end - 1 + seqLength <= maxPayloadBytes {
-                end = maxPayloadBytes
+            if leadIndex + seqLength <= maxPayloadBytes {
+                end = leadIndex + seqLength
                 break
             }
             end -= 1
