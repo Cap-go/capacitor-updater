@@ -662,7 +662,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance at-install
       background_and_resume_app
-      wait_for_ui_state_with_background_retry \
+      if ! wait_for_ui_state_with_background_retry \
         "atInstall downloads the next release on resume before applying it" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -670,7 +670,15 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release" \
         "Next bundle version: $second_release" \
-        "Last completed download: $second_release"
+        "Last completed download: $second_release"; then
+        wait_for_ui_state \
+          "atInstall already applied the second release during resume recovery" \
+          "Build label: $second_release" \
+          'Scenario: at-install' \
+          'Direct update mode: atInstall' \
+          'Current bundle source: downloaded' \
+          "Current bundle version: $second_release"
+      fi
       background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
       wait_for_at_install_direct_update_ui_state \
         "atInstall applies the downloaded release after the next background cycle" \

@@ -893,7 +893,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.autoSplashscreenLoader = this.getConfig().getBoolean("autoSplashscreenLoader", false);
         int splashscreenTimeoutValue = this.getConfig().getInt("autoSplashscreenTimeout", 10000);
         this.autoSplashscreenTimeout = Math.max(0, splashscreenTimeoutValue);
-        if (Boolean.TRUE.equals(this.autoSplashscreen) && this.autoSplashscreenTimeout < this.appReadyTimeout) {
+        if (
+            Boolean.TRUE.equals(this.autoSplashscreen) &&
+            this.autoSplashscreenTimeout > 0 &&
+            this.autoSplashscreenTimeout < this.appReadyTimeout
+        ) {
             this.autoSplashscreenTimeout = this.appReadyTimeout;
         }
         int responseTimeoutSeconds = this.getConfig().getInt("responseTimeout", 20);
@@ -4887,6 +4891,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken
                 ) {
                     this.markAppReadyWebViewPageStarted();
+                } else if (
+                    awaitingMatch &&
+                    this.semaphoreReady.getRegisteredParties() > 0 &&
+                    this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken
+                ) {
+                    // Only while a reload/launch wait is blocked on notifyAppReady.
+                    this.markAppReadyWebViewPageStartedFromNative();
                 }
             }
             if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {

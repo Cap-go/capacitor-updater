@@ -3333,8 +3333,10 @@ public class CapgoUpdater {
     }
 
     private void releaseStatsFlushInFlight(final long flushGeneration) {
-        if (!isStaleStatsFlush(flushGeneration)) {
-            statsFlushInFlight.set(false);
+        synchronized (statsQueue) {
+            if (!isStaleStatsFlush(flushGeneration)) {
+                statsFlushInFlight.set(false);
+            }
         }
     }
 

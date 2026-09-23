@@ -297,7 +297,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
-        if autoSplashscreen && autoSplashscreenTimeout < appReadyTimeout {
+        if autoSplashscreen && autoSplashscreenTimeout > 0 && autoSplashscreenTimeout < appReadyTimeout {
             autoSplashscreenTimeout = appReadyTimeout
         }
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
@@ -705,7 +705,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func buildAppReadyBindingStorageValue(bundleId: String, loadToken: Int) -> String {
-        return "{\"id\":\(Self.jsQuotedString(bundleId)),\"token\":\(loadToken)}"
+        let json = "{\"id\":\(Self.jsQuotedString(bundleId)),\"token\":\(loadToken)}"
+        return Self.jsQuotedString(json)
     }
 
     private func buildAppReadyBindingDocumentStartScript(seedBundleId: String? = nil, seedLoadToken: Int? = nil) -> String {
