@@ -3672,18 +3672,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
-        // Snapshot the originating load before any main-queue hop so a deferred
-        // option-free call cannot certify a newer same-bundle reload.
+        // Capacitor dispatches plugin methods on a background bridge queue.
+        // Capture load-token state only after hopping to main.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.notifyAppReady(call) }
+            return
+        }
         let originatingLoadToken: Int = {
             if let raw = call.getString("loadToken") {
                 return self.parseAppReadyLoadToken(raw)
             }
-            return self.appReadyWebViewLoadToken
+            // Tokenless: never adopt the current native token (it may belong to a
+            // newer same-bundle reload that started while this call was queued).
+            // Only the zero-token legacy sync path may mint a binding for this call.
+            if self.appReadyWebViewLoadToken == 0 {
+                return 0
+            }
+            return -1
         }()
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { self.notifyAppReady(call, originatingLoadToken: originatingLoadToken) }
-            return
-        }
         self.notifyAppReady(call, originatingLoadToken: originatingLoadToken)
     }
 

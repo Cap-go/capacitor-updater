@@ -3301,4 +3301,18 @@ class CapacitorUpdaterTests: XCTestCase {
         )
     }
 
+    func testShouldCommitNotifyAppReadyRejectsTokenlessSentinelAgainstActiveLoad() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 3, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        // Tokenless deferred calls use -1 so they cannot adopt a newer load token.
+        XCTAssertFalse(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: -1
+            )
+        )
+    }
+
 }

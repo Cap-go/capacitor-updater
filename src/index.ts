@@ -86,7 +86,11 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
       }))
     );
   }
-  return lastResult ?? (await target.notifyAppReady());
+  const loadToken = readAppReadyBindingToken();
+  return (
+    lastResult ??
+    (await target.notifyAppReady(loadToken != null ? { loadToken: String(loadToken) } : undefined))
+  );
 }
 
 export const CapacitorUpdater: CapacitorUpdaterPlugin = new Proxy(CapacitorUpdaterNative, {
