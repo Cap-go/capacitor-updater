@@ -1999,6 +1999,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 Thread.sleep(forTimeInterval: 0.01)
             }
         }
+        let finalPoll = state.poll()
+        if finalPoll.completed {
+            return finalPoll.result
+        }
         state.cancel()
         return false
     }

@@ -3216,6 +3216,7 @@ public class CapgoUpdater {
         final long flushGeneration;
         final String flushStatsUrl;
         final List<QueuedStatsEvent> eventsToSend;
+        boolean clearedForEmptyStatsUrl = false;
         synchronized (statsQueue) {
             flushStatsUrl = this.statsUrl;
             if (flushStatsUrl == null || flushStatsUrl.isEmpty()) {
@@ -3223,18 +3224,22 @@ public class CapgoUpdater {
                 statsQueue.clear();
                 statsInFlight.clear();
                 statsFlushInFlight.set(false);
-                persistStatsQueue();
-                return;
+                clearedForEmptyStatsUrl = true;
+            } else {
+                flushGeneration = statsFlushGeneration.get();
+                if (statsQueue.isEmpty()) {
+                    releaseStatsFlushInFlight(flushGeneration);
+                    return;
+                }
+                eventsToSend = new ArrayList<>(statsQueue);
+                statsQueue.clear();
+                statsInFlight.clear();
+                statsInFlight.addAll(eventsToSend);
             }
-            flushGeneration = statsFlushGeneration.get();
-            if (statsQueue.isEmpty()) {
-                releaseStatsFlushInFlight(flushGeneration);
-                return;
-            }
-            eventsToSend = new ArrayList<>(statsQueue);
-            statsQueue.clear();
-            statsInFlight.clear();
-            statsInFlight.addAll(eventsToSend);
+        }
+        if (clearedForEmptyStatsUrl) {
+            persistStatsQueue();
+            return;
         }
         persistStatsQueue();
 
@@ -3277,10 +3282,10 @@ public class CapgoUpdater {
                         }
 
                         if (response.isSuccessful()) {
-                            if (isStaleStatsFlush(flushGeneration)) {
-                                return;
-                            }
                             synchronized (statsQueue) {
+                                if (isStaleStatsFlush(flushGeneration)) {
+                                    return;
+                                }
                                 statsInFlight.clear();
                             }
                             persistStatsQueue();
@@ -3297,6 +3302,9 @@ public class CapgoUpdater {
                             }
                         } else {
                             synchronized (statsQueue) {
+                                if (isStaleStatsFlush(flushGeneration)) {
+                                    return;
+                                }
                                 statsInFlight.clear();
                             }
                             persistStatsQueue();

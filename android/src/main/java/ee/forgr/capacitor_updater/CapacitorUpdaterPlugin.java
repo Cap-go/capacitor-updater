@@ -4872,9 +4872,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if ((explicitMatch || awaitingMatch) && this.appReadyWebViewLoadToken == 0) {
                     this.syncAppReadyBundleBinding(bundle.getId());
                 }
-                if ((explicitMatch || awaitingMatch) && this.appReadyWebViewPageStartedToken < this.appReadyWebViewLoadToken) {
-                    this.markAppReadyWebViewPageStartedFromNative();
-                }
             }
             if (!this.shouldCommitNotifyAppReady(reportedBundleId, bundle.getId())) {
                 logger.warn(

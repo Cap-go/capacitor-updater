@@ -3501,7 +3501,7 @@ import UIKit
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
-                        self.clearStatsInFlight()
+                        self.clearStatsInFlight(flushGeneration: flushGeneration)
                         self.logger.error("Dropping stats batch after permanent error")
                         self.logger.debug("Response code: \(statusCode)")
                     }
@@ -3511,11 +3511,10 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    if self.isStaleStatsFlush(flushGeneration) {
+                    guard self.clearStatsInFlight(flushGeneration: flushGeneration) else {
                         semaphore.signal()
                         return
                     }
-                    self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(queuedEvents, flushGeneration: flushGeneration)
@@ -3577,10 +3576,16 @@ import UIKit
         ensureStatsTimerStarted()
     }
 
-    private func clearStatsInFlight() {
+    @discardableResult
+    private func clearStatsInFlight(flushGeneration: UInt64) -> Bool {
         statsQueueLock.lock()
+        guard flushGeneration == statsFlushGeneration else {
+            statsQueueLock.unlock()
+            return false
+        }
         statsInFlight.removeAll()
         statsQueueLock.unlock()
+        return true
     }
 
     func setStatsUrlAndDiscardPending(_ url: String) {
