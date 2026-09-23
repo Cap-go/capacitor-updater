@@ -226,14 +226,33 @@ public class Logger {
 
     func capWebViewLogPayload(_ payload: String) -> String {
         let suffix = "..."
-        let maxPayloadBytes = Logger.maxWebViewLogPayloadChars - suffix.utf8.count
+        let maxPayloadBytes = Logger.maxWebViewLogPayloadChars
         let payloadBytes = Array(payload.utf8.prefix(maxPayloadBytes + 1))
         if payloadBytes.count <= maxPayloadBytes {
             return payload
         }
 
         var end = maxPayloadBytes
-        while end > 0 && (payloadBytes[end] & 0xC0) == 0x80 {
+        while end > 0 && (payloadBytes[end - 1] & 0xC0) == 0x80 {
+            end -= 1
+        }
+        while end > 0 {
+            let lead = payloadBytes[end - 1]
+            let seqLength: Int
+            if (lead & 0x80) == 0 {
+                seqLength = 1
+            } else if (lead & 0xE0) == 0xC0 {
+                seqLength = 2
+            } else if (lead & 0xF0) == 0xE0 {
+                seqLength = 3
+            } else if (lead & 0xF8) == 0xF0 {
+                seqLength = 4
+            } else {
+                break
+            }
+            if end - 1 + seqLength <= maxPayloadBytes {
+                break
+            }
             end -= 1
         }
 
