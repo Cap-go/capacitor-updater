@@ -11,8 +11,11 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import org.jetbrains.annotations.Contract;
+import org.json.JSONObject;
 
 public class Logger {
+
+    static final int MAX_WEBVIEW_LOG_PAYLOAD_CHARS = 4096;
 
     private Bridge bridge;
 
@@ -250,11 +253,52 @@ public class Logger {
 
         // Send to JavaScript if webView is available
         if (bridge != null && bridge.getWebView() != null) {
-            bridge.eval(
-                "console." + level.name() + "(\"[" + tag.replace("\"", "\\\"") + "] " + formattedMessage.replace("\"", "\\\"") + "\")",
-                null
-            );
+            String script = buildWebViewConsoleScript(level, tag, formattedMessage);
+            if (script != null) {
+                bridge.eval(script, null);
+            }
         }
+    }
+
+    @Nullable
+    static String consoleMethodForLevel(@NonNull LogLevel level) {
+        switch (level) {
+            case error:
+                return "error";
+            case warn:
+                return "warn";
+            case info:
+                return "info";
+            case debug:
+                return "debug";
+            default:
+                return null;
+        }
+    }
+
+    @NonNull
+    static String toJsStringLiteral(@NonNull String value) {
+        return JSONObject.quote(value);
+    }
+
+    @NonNull
+    static String capWebViewLogPayload(@NonNull String payload) {
+        if (payload.length() <= MAX_WEBVIEW_LOG_PAYLOAD_CHARS) {
+            return payload;
+        }
+
+        return payload.substring(0, MAX_WEBVIEW_LOG_PAYLOAD_CHARS) + "...";
+    }
+
+    @Nullable
+    static String buildWebViewConsoleScript(@NonNull LogLevel level, @NonNull String tag, @NonNull String formattedMessage) {
+        String consoleMethod = consoleMethodForLevel(level);
+        if (consoleMethod == null) {
+            return null;
+        }
+
+        String payload = capWebViewLogPayload("[" + tag + "] " + formattedMessage);
+        return "console." + consoleMethod + "(" + toJsStringLiteral(payload) + ")";
     }
 
     public void dir(Object value) {
