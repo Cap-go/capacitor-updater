@@ -84,7 +84,7 @@ final class LoggerSecurityTests: XCTestCase {
 
         let prefix = "console.\(consoleMethod)("
         let quotedArg = String(script.dropFirst(prefix.count).dropLast())
-        let data = Data("[" + quotedArg + "]".utf8)
+        let data = Data(("[" + quotedArg + "]").utf8)
         let decodedPayloads = try JSONDecoder().decode([String].self, from: data)
         XCTAssertEqual(expectedPayload, decodedPayloads[0])
     }
@@ -94,7 +94,7 @@ final class LoggerSecurityTests: XCTestCase {
         XCTAssertTrue(quoted.hasPrefix("\""))
         XCTAssertTrue(quoted.hasSuffix("\""))
 
-        let data = Data("[" + quoted + "]".utf8)
+        let data = Data(("[" + quoted + "]").utf8)
         let decodedPayloads = try JSONDecoder().decode([String].self, from: data)
         XCTAssertEqual(value, decodedPayloads[0])
     }
