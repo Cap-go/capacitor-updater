@@ -3156,16 +3156,14 @@ async function bootstrap() {
   const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
 
+  let bootActionsSucceeded = true;
   if (bootActionIds.length) {
-    if (!state.harnessReady) {
-      state.harnessReady = true;
-      renderState();
-    }
     await pause(platform === 'ios' ? 500 : 100);
     for (const bootActionId of bootActionIds) {
       try {
         await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
       } catch (error) {
+        bootActionsSucceeded = false;
         console.error(`Boot action ${bootActionId} failed`, error);
         break;
       }
@@ -3202,7 +3200,9 @@ async function bootstrap() {
     }
     renderState();
   }
-  if (!state.harnessReady) {
+  // Only mark harness ready after boot actions succeed so Maestro smoke cannot
+  // race a pending/failed cold-launch verify.
+  if (bootActionsSucceeded && !state.harnessReady) {
     state.harnessReady = true;
     renderState();
   }
