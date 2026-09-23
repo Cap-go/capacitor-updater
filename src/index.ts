@@ -64,17 +64,25 @@ async function notifyAppReadyWithInternalBinding(target: CapacitorUpdaterNativeB
       bundleId,
       ...(loadToken != null ? { loadToken: String(loadToken) } : {}),
     });
-    const { bundle } = await target.current();
-    if (bundle.status === 'success' && bundle.id === bundleId) {
-      return { bundle };
+    try {
+      const { bundle } = await target.current();
+      if (bundle.status === 'success' && bundle.id === bundleId) {
+        return { bundle };
+      }
+    } catch {
+      // Keep retrying; native current() must not escape the notifyAppReady proxy.
     }
-    await sleep(50);
+    await sleep(500);
   }
 
   const bundleId = readInjectedAppReadyBundleId();
-  const { bundle } = await target.current();
-  if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
-    return { bundle };
+  try {
+    const { bundle } = await target.current();
+    if (bundle.status === 'success' && (!bundleId || bundle.id === bundleId)) {
+      return { bundle };
+    }
+  } catch {
+    // Fall through to lastResult / final notify.
   }
   if (bundleId) {
     const loadToken = readAppReadyBindingToken();

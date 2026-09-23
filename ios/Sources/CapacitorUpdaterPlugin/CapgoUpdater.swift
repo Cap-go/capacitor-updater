@@ -3460,6 +3460,11 @@ import UIKit
 
         statsQueueLock.lock()
         guard !statsUrl.isEmpty else {
+            // Nothing to discard: unlock without bumping generation.
+            if statsQueue.isEmpty && statsInFlight.isEmpty {
+                statsQueueLock.unlock()
+                return
+            }
             statsFlushGeneration &+= 1
             statsQueue.removeAll()
             statsInFlight.removeAll()

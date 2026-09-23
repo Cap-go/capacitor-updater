@@ -5223,7 +5223,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
-        this.activeDownloadPlannedDirectUpdate = plannedDirectUpdate;
+        // Do not arm activeDownloadPlannedDirectUpdate until a download actually starts;
+        // splash can time out during getLatest() and must not inherit a planned-direct flag.
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
@@ -5524,6 +5525,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
+                                    // Recheck after getLatest: splash may have timed out meanwhile.
+                                    final boolean directUpdateAllowedAtDispatch =
+                                        CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+                                    CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate =
+                                        plannedDirectUpdate && directUpdateAllowedAtDispatch;
+                                    CapacitorUpdaterPlugin.this.implementation.directUpdate =
+                                        CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate;
                                     CapacitorUpdaterPlugin.this.activeDownloadVersion = latestVersionName;
                                     if (jsRes.has("manifest")) {
                                         // Handle manifest-based download
