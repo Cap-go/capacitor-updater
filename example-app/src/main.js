@@ -1083,14 +1083,16 @@ async function performNotifyAppReady() {
 
 function normalizeError(error) {
   return {
-    code: error?.code ?? error?.error ?? error?.data?.error ?? null,
+    code: error?.code ?? error?.error ?? null,
+    businessCode: error?.data?.error ?? null,
     message: error?.message ?? String(error),
   };
 }
 
 function errorMatches(error, fragments) {
   const normalized = normalizeError(error);
-  const haystack = `${normalized.code ?? ''} ${normalized.message}`.toLowerCase();
+  const haystack =
+    `${normalized.code ?? ''} ${normalized.businessCode ?? ''} ${normalized.message}`.toLowerCase();
   return fragments.some((fragment) => haystack.includes(fragment.toLowerCase()));
 }
 

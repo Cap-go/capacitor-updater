@@ -3031,9 +3031,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 allowSetDefaultChannel: self.allowSetDefaultChannel
             )
             if res.error != "" {
-                self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
-                    "message": res.error,
-                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                let message = res.message.isEmpty ? res.error : res.message
+                self.rejectCall(call, message: message, code: "UNSETCHANNEL_FAILED", data: [
+                    "message": message,
+                    "error": res.error
                 ])
             } else {
                 guard self.persistDefaultChannelStateFromDefaults() else {
@@ -3081,9 +3082,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         "message": res.error
                     ])
                 }
-                self.rejectCall(call, message: res.error, code: "SETCHANNEL_FAILED", data: [
-                    "message": res.error,
-                    "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
+                let message = res.message.isEmpty ? res.error : res.message
+                self.rejectCall(call, message: message, code: "SETCHANNEL_FAILED", data: [
+                    "message": message,
+                    "error": res.error
                 ])
             } else {
                 guard self.persistDefaultChannelStateFromDefaults() else {
