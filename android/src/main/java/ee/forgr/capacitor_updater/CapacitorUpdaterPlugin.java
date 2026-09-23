@@ -5525,13 +5525,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
-                                    // Recheck after getLatest: splash may have timed out meanwhile.
-                                    final boolean directUpdateAllowedAtDispatch =
-                                        CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
-                                    CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate =
-                                        plannedDirectUpdate && directUpdateAllowedAtDispatch;
-                                    CapacitorUpdaterPlugin.this.implementation.directUpdate =
-                                        CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate;
+                                    // Recheck after getLatest for *fresh* downloads only. An in-flight
+                                    // retry must keep the planned-direct flag that was armed when the
+                                    // download started (splash may have timed out mid-flight).
+                                    if (retryingInFlightDownload) {
+                                        CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate =
+                                            Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
+                                            plannedDirectUpdate;
+                                    } else {
+                                        final boolean directUpdateAllowedAtDispatch =
+                                            CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+                                        CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate =
+                                            plannedDirectUpdate && directUpdateAllowedAtDispatch;
+                                        CapacitorUpdaterPlugin.this.implementation.directUpdate =
+                                            CapacitorUpdaterPlugin.this.activeDownloadPlannedDirectUpdate;
+                                    }
                                     CapacitorUpdaterPlugin.this.activeDownloadVersion = latestVersionName;
                                     if (jsRes.has("manifest")) {
                                         // Handle manifest-based download
