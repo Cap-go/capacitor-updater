@@ -1962,7 +1962,7 @@ const actions = [
         const result = await expectConfiguredRejection(
           'unsetChannel()',
           () => plugin.unsetChannel(),
-          ['disabled_by_config', 'configuration'],
+          ['disabled_by_config'],
         );
         state.lastUnsetChannelCheck = 'expected-rejection';
         return result;
