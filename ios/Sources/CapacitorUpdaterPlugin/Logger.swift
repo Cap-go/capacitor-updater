@@ -251,6 +251,7 @@ public class Logger {
                 break
             }
             if end - 1 + seqLength <= maxPayloadBytes {
+                end = maxPayloadBytes
                 break
             }
             end -= 1

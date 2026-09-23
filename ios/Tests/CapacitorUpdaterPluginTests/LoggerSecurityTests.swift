@@ -113,6 +113,14 @@ final class LoggerSecurityTests: XCTestCase {
         XCTAssertEqual(prefix + "...", capped)
     }
 
+    func testCapWebViewLogPayloadPreservesCompleteScalarsAtByteLimit() {
+        let logger = Logger(withTag: "LoggerSecurityTests")
+        let prefix = String(repeating: "x", count: Logger.maxWebViewLogPayloadChars - 2)
+        let capped = logger.capWebViewLogPayload(prefix + "éoverflow")
+
+        XCTAssertEqual(prefix + "é...", capped)
+    }
+
     private func assertSafeConsoleScript(
         _ script: String,
         consoleMethod: String,
