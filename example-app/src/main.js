@@ -2160,7 +2160,10 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
-      if (scenarioId === 'manual-zip') {
+      // manual-zip and manual-zip-no-persist both need an explicit getLatest() after
+      // relaunch so the smoke harness observes the default update URL (probeLatest is
+      // false on verify-persisted-config-boot for these scenarios).
+      if (scenarioId === 'manual-zip' || scenarioId === 'manual-zip-no-persist') {
         markPendingBootAction('verify-persisted-config-after-get-latest-boot');
         return {
           message: 'Queued persisted-config verification for the next boot after getLatest().',
