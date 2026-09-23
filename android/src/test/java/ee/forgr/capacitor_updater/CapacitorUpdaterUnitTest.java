@@ -4375,6 +4375,47 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void unsetChannelClearsOverrideWhenAllowed() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.remove("CapacitorUpdater.defaultChannel")).thenReturn(editor);
+
+        updater.defaultChannel = "beta";
+        final Map<String, Object>[] resultHolder = new Map[1];
+
+        updater.unsetChannel(editor, "CapacitorUpdater.defaultChannel", "stable", true, (res) -> {
+            resultHolder[0] = res;
+        });
+
+        assertNotNull(resultHolder[0]);
+        assertEquals("ok", resultHolder[0].get("status"));
+        assertEquals("Channel override removed", resultHolder[0].get("message"));
+        assertEquals("stable", updater.defaultChannel);
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).apply();
+    }
+
+    @Test
+    public void unsetChannelRejectsWhenDisabledByConfig() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+
+        updater.defaultChannel = "beta";
+        final Map<String, Object>[] resultHolder = new Map[1];
+
+        updater.unsetChannel(editor, "CapacitorUpdater.defaultChannel", "stable", false, (res) -> {
+            resultHolder[0] = res;
+        });
+
+        assertNotNull(resultHolder[0]);
+        assertEquals("disabled_by_config", resultHolder[0].get("error"));
+        assertEquals("unsetChannel is disabled by configuration", resultHolder[0].get("message"));
+        assertEquals("beta", updater.defaultChannel);
+        verify(editor, never()).remove(anyString());
+        verify(editor, never()).apply();
+    }
+
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length() / 2];
         for (int i = 0; i < out.length; i++) {

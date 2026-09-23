@@ -3025,7 +3025,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .utility).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
-            let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
+            let res = self.implementation.unsetChannel(
+                defaultChannelKey: self.defaultChannelDefaultsKey,
+                configDefaultChannel: configDefaultChannel,
+                allowSetDefaultChannel: self.allowSetDefaultChannel
+            )
             if res.error != "" {
                 self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
                     "message": res.error,

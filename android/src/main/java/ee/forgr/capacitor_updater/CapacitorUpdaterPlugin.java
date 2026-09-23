@@ -2663,6 +2663,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     CapacitorUpdaterPlugin.this.editor,
                     DEFAULT_CHANNEL_PREF_KEY,
                     configDefaultChannel,
+                    CapacitorUpdaterPlugin.this.allowSetDefaultChannel,
                     (res) -> {
                         JSObject jsRes = InternalUtils.mapToJSObject(res);
                         if (jsRes.has("error")) {
