@@ -2451,6 +2451,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 false
             );
         }
+        // End of direct-update attempt: drop planned-download flag so a later
+        // check cannot reuse a stale splash-timeout bypass.
+        this.clearBackgroundDownloadState();
     }
 
     private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
