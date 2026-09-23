@@ -227,6 +227,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private volatile boolean activeDownloadPlannedDirectUpdate = false;
+    private volatile String activeDownloadVersion = null;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
     private final Phaser semaphoreReady = new Phaser(0) {
@@ -724,7 +725,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 @Override
                 public void notifyListeners(final String id, final Map<String, Object> res) {
                     if ("downloadFailed".equals(id)) {
-                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                        final Object failedVersion = res == null ? null : res.get("version");
+                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadStateIfOwnedBy(
+                            failedVersion == null ? null : failedVersion.toString()
+                        );
                     }
                     if (activity != null) {
                         activity.runOnUiThread(() -> {
@@ -5168,13 +5172,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         this.activeDownloadPlannedDirectUpdate = false;
+        this.activeDownloadVersion = null;
         logger.info("endBackGroundTaskWithNotif " + msg);
+    }
+
+    private synchronized void clearBackgroundDownloadStateIfOwnedBy(final String version) {
+        if (version != null && version.equals(this.activeDownloadVersion)) {
+            this.clearBackgroundDownloadState();
+        }
     }
 
     private void clearBackgroundDownloadState() {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         this.activeDownloadPlannedDirectUpdate = false;
+        this.activeDownloadVersion = null;
     }
 
     private boolean isDownloadStuckOrTimedOut() {
@@ -5512,6 +5524,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
+                                    CapacitorUpdaterPlugin.this.activeDownloadVersion = latestVersionName;
                                     if (jsRes.has("manifest")) {
                                         // Handle manifest-based download
                                         JSONArray manifest = jsRes.getJSONArray("manifest");

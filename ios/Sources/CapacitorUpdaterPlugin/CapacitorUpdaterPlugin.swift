@@ -879,17 +879,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.appReadyWebViewLoadedToken = self.appReadyWebViewLoadToken
     }
 
-    func shouldCommitNotifyAppReady(reportedBundleId: String?, currentBundleId: String) -> Bool {
+    func shouldCommitNotifyAppReady(
+        reportedBundleId: String?,
+        currentBundleId: String,
+        reportedLoadToken: Int? = nil
+    ) -> Bool {
+        let loadMatches: Bool = {
+            guard self.appReadyWebViewLoadToken > 0,
+                  self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken else {
+                return false
+            }
+            // When a load token is provided (explicit option or deferred snapshot), it must
+            // still match the current load so an earlier call cannot certify a newer page.
+            if let reportedLoadToken {
+                return reportedLoadToken > 0 && reportedLoadToken == self.appReadyWebViewLoadToken
+            }
+            return true
+        }()
+        guard loadMatches else {
+            return false
+        }
         if let reported = reportedBundleId, !reported.isEmpty {
-            return reported == currentBundleId &&
-                self.appReadyWebViewLoadToken > 0 &&
-                self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken
+            return reported == currentBundleId
         }
         guard let awaiting = self.awaitingAppReadyBundleId, awaiting == currentBundleId else {
             return false
         }
-        return self.appReadyWebViewLoadToken > 0 &&
-            self.appReadyWebViewPageStartedToken == self.appReadyWebViewLoadToken
+        return true
     }
 
     private func semaphoreWait(waitTime: Int) {
@@ -3656,13 +3672,30 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func notifyAppReady(_ call: CAPPluginCall) {
+        // Snapshot the originating load before any main-queue hop so a deferred
+        // option-free call cannot certify a newer same-bundle reload.
+        let originatingLoadToken: Int = {
+            if let raw = call.getString("loadToken") {
+                return self.parseAppReadyLoadToken(raw)
+            }
+            return self.appReadyWebViewLoadToken
+        }()
         guard Thread.isMainThread else {
-            DispatchQueue.main.async { self.notifyAppReady(call) }
+            DispatchQueue.main.async { self.notifyAppReady(call, originatingLoadToken: originatingLoadToken) }
             return
         }
+        self.notifyAppReady(call, originatingLoadToken: originatingLoadToken)
+    }
+
+    private func notifyAppReady(_ call: CAPPluginCall, originatingLoadToken: Int) {
         let bundle = self.implementation.getCurrentBundle()
         let reportedBundleId = call.getString("bundleId")
-        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+        var loadTokenForCommit = originatingLoadToken
+        if !self.shouldCommitNotifyAppReady(
+            reportedBundleId: reportedBundleId,
+            currentBundleId: bundle.getId(),
+            reportedLoadToken: loadTokenForCommit
+        ) {
             let explicitMatch = {
                 guard let reportedBundleId, !reportedBundleId.isEmpty else {
                     return false
@@ -3679,6 +3712,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }()
             if (explicitMatch || awaitingMatch) && self.appReadyWebViewLoadToken == 0 {
                 self.syncAppReadyBundleBinding(bundleId: bundle.getId())
+                // Binding was created for this call; allow commit against the new token.
+                loadTokenForCommit = self.appReadyWebViewLoadToken
             }
             if explicitMatch,
                let reportedLoadToken = call.getString("loadToken"),
@@ -3690,7 +3725,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.markAppReadyWebViewPageStarted()
             }
         }
-        if !self.shouldCommitNotifyAppReady(reportedBundleId: reportedBundleId, currentBundleId: bundle.getId()) {
+        if !self.shouldCommitNotifyAppReady(
+            reportedBundleId: reportedBundleId,
+            currentBundleId: bundle.getId(),
+            reportedLoadToken: loadTokenForCommit
+        ) {
             logger.warn(
                 "Ignoring stale notifyAppReady for bundle \(reportedBundleId ?? "unknown"), current is \(bundle.getId())"
             )

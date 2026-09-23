@@ -3280,4 +3280,25 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
     }
 
+    func testShouldCommitNotifyAppReadyRejectsStaleOriginatingLoadToken() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 3, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        // Deferred option-free call that snapshot load token 2 must not certify load 3.
+        XCTAssertFalse(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: 2
+            )
+        )
+        XCTAssertTrue(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: 3
+            )
+        )
+    }
+
 }
