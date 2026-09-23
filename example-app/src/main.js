@@ -1467,9 +1467,9 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
+  const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const shouldVerifyStatsUrl =
     Boolean(lastStatsRequest.url) && (shouldProbeLatest || !expectedUsesRuntimeUrls);
-  const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const expectedUpdateUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
   );
