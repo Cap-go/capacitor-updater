@@ -19,7 +19,7 @@ type CapacitorUpdaterNativeBridge = CapacitorUpdaterPlugin & {
   notifyAppReady(options?: { bundleId?: string; loadToken?: string }): Promise<AppReadyResult>;
 };
 
-const NOTIFY_APP_READY_WAIT_MS = 60000;
+const NOTIFY_APP_READY_WAIT_MS = 55000;
 
 const CapacitorUpdaterNative = registerPlugin<CapacitorUpdaterNativeBridge>('CapacitorUpdater', {
   web: () => import('./web').then((m) => new m.CapacitorUpdaterWeb()),
