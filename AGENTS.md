@@ -129,3 +129,14 @@ We welcome contributions, including AI-generated pull requests. Every PR must in
 ## Timeout Policy
 
 - Keep CI, script, and runtime timeouts at 10 minutes or less. Use `timeout-minutes: 10` or lower in GitHub Actions and cap timeout values at `600000` ms, `600` seconds, or `10m` unless explicitly requested.
+
+## Security (do not regress)
+
+Canonical researcher policy: https://github.com/Cap-go/.github/blob/main/SECURITY.md and https://capgo.app/security/.
+
+- Do **not** put GHSA ids or unpublished advisory/PoC text in public PRs, issues, or changelogs.
+- When `publicKey` is set, do not accept manifest updates with empty / missing `sessionKey` as encrypted delivery.
+- Manifest `file_name` (and equivalent install paths) must reject `..`, absolute paths, and escapes outside the bundle install root on **both** iOS and Android.
+- Bundle `id` values used by `delete` / `set` / `next` must stay constrained to the updater sandbox. No path traversal via id.
+- Signature / checksum / encryption gates are security boundaries. Do not weaken them for convenience without an explicit product decision and tests.
+- Report plugin security issues via private advisories: https://github.com/Cap-go/capacitor-updater/security/advisories/new
