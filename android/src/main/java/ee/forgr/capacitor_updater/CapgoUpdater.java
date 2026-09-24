@@ -257,6 +257,10 @@ public class CapgoUpdater {
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
 
+    void onBackgroundDownloadComplete(final BundleInfo bundle, final String version, final boolean success, final boolean setNext) {}
+
+    private boolean lastFinishDownloadUsedDirectUpdate = false;
+
     public String randomString() {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
@@ -703,6 +707,15 @@ public class CapgoUpdater {
         }
     }
 
+    // Ignore terminal WorkManager replays once the bundle is no longer downloading.
+    private boolean shouldProcessTerminalWorkState(final String id) {
+        if (this.downloadFutures.containsKey(id)) {
+            return true;
+        }
+        final BundleInfo bundle = this.getBundleInfo(id);
+        return bundle == null || BundleStatus.DOWNLOADING == bundle.getStatus();
+    }
+
     private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
@@ -724,6 +737,10 @@ public class CapgoUpdater {
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
+                            if (!shouldProcessTerminalWorkState(id)) {
+                                logger.info("Skipping stale WorkManager success for bundle: " + id);
+                                break;
+                            }
                             logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
@@ -763,10 +780,16 @@ public class CapgoUpdater {
                                 CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
                                 if (future != null) {
                                     future.complete(resultBundle);
+                                } else if (!lastFinishDownloadUsedDirectUpdate) {
+                                    onBackgroundDownloadComplete(resultBundle, version, success, setNext);
                                 }
                             });
                             break;
                         case FAILED:
+                            if (!shouldProcessTerminalWorkState(id)) {
+                                logger.info("Skipping stale WorkManager failure for bundle: " + id);
+                                break;
+                            }
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed");
@@ -800,6 +823,8 @@ public class CapgoUpdater {
                                 CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
                                 if (failedFuture != null) {
                                     failedFuture.complete(failedBundle);
+                                } else {
+                                    onBackgroundDownloadComplete(failedBundle, failedVersion, false, setNext);
                                 }
                             });
                             break;
@@ -870,6 +895,7 @@ public class CapgoUpdater {
         Boolean setNext,
         Boolean isManifest
     ) {
+        this.lastFinishDownloadUsedDirectUpdate = false;
         File downloaded = null;
         File extractedDir = null;
         String checksum = "";
@@ -946,6 +972,7 @@ public class CapgoUpdater {
                     logger.info("directUpdate: " + this.directUpdate);
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
+                    this.lastFinishDownloadUsedDirectUpdate = true;
                 } else {
                     logger.info("directUpdate: " + this.directUpdate);
                     this.setNextBundle(next.getId());

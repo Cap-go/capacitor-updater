@@ -224,6 +224,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean pendingNotifyAppReadyWait = false;
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
+    private volatile boolean backgroundDownloadPlannedDirectUpdate = false;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
 
     private final Phaser semaphoreReady = new Phaser(0) {
@@ -718,6 +719,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         });
                     } else {
                         logger.warn("notifyListeners: Activity is null, skipping notification for event: " + id);
+                    }
+                }
+
+                @Override
+                public void onBackgroundDownloadComplete(
+                    final BundleInfo bundle,
+                    final String version,
+                    final boolean success,
+                    final boolean setNext
+                ) {
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            CapacitorUpdaterPlugin.this.handleBackgroundDownloadComplete(bundle, version, success, setNext);
+                        });
+                    } else {
+                        CapacitorUpdaterPlugin.this.handleBackgroundDownloadComplete(bundle, version, success, setNext);
                     }
                 }
             };
@@ -2334,6 +2351,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
         this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
+    }
+
+    void handleBackgroundDownloadCompleteForTesting(
+        final BundleInfo bundle,
+        final String version,
+        final boolean success,
+        final boolean setNext
+    ) {
+        this.handleBackgroundDownloadComplete(bundle, version, success, setNext);
     }
 
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
@@ -4751,6 +4777,59 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 
+    private void handleBackgroundDownloadComplete(
+        final BundleInfo bundle,
+        final String version,
+        final boolean success,
+        final boolean setNext
+    ) {
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        final boolean plannedDirectUpdate = this.backgroundDownloadPlannedDirectUpdate;
+        final String latestVersionName = version != null && !version.isEmpty() ? version : current.getVersionName();
+
+        if (!success) {
+            this.endBackGroundTaskWithNotif(
+                "Error downloading file",
+                latestVersionName,
+                current,
+                false,
+                plannedDirectUpdate,
+                "download_fail",
+                "downloadFailed",
+                false
+            );
+            return;
+        }
+
+        if (setNext && this.shouldAutoSetNextBundle()) {
+            this.endBackGroundTaskWithNotif(
+                "update downloaded, will install next background",
+                latestVersionName,
+                bundle,
+                false,
+                plannedDirectUpdate
+            );
+            return;
+        }
+
+        if (!this.shouldAutoSetNextBundle()) {
+            this.endBackGroundTaskWithNotif(
+                "update downloaded, autoUpdate onlyDownload",
+                latestVersionName,
+                current,
+                false,
+                plannedDirectUpdate,
+                "download_fail",
+                "downloadFailed",
+                true,
+                false
+            );
+            return;
+        }
+
+        this.endBackGroundTaskWithNotif("update downloaded", latestVersionName, bundle, false, plannedDirectUpdate);
+    }
+
     private void clearBackgroundDownloadState() {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
@@ -4790,6 +4869,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return this.backgroundDownloadTask;
         }
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
+        this.backgroundDownloadPlannedDirectUpdate = plannedDirectUpdate;
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
