@@ -5,14 +5,23 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.getcapacitor.*;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import org.jetbrains.annotations.Contract;
+import org.json.JSONObject;
 
 public class Logger {
+
+    static final int MAX_WEBVIEW_LOG_PAYLOAD_CHARS = 4096;
 
     private Bridge bridge;
 
@@ -250,11 +259,61 @@ public class Logger {
 
         // Send to JavaScript if webView is available
         if (bridge != null && bridge.getWebView() != null) {
-            bridge.eval(
-                "console." + level.name() + "(\"[" + tag.replace("\"", "\\\"") + "] " + formattedMessage.replace("\"", "\\\"") + "\")",
-                null
-            );
+            String script = buildWebViewConsoleScript(level, tag, formattedMessage);
+            if (script != null) {
+                bridge.eval(script, null);
+            }
         }
+    }
+
+    @Nullable
+    static String consoleMethodForLevel(@NonNull LogLevel level) {
+        switch (level) {
+            case error:
+                return "error";
+            case warn:
+                return "warn";
+            case info:
+                return "info";
+            case debug:
+                return "debug";
+            default:
+                return null;
+        }
+    }
+
+    @NonNull
+    static String toJsStringLiteral(@NonNull String value) {
+        return JSONObject.quote(value);
+    }
+
+    @NonNull
+    static String capWebViewLogPayload(@NonNull String payload) {
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        ByteBuffer bytes = ByteBuffer.allocate(MAX_WEBVIEW_LOG_PAYLOAD_CHARS);
+        CharBuffer chars = CharBuffer.wrap(payload);
+        CoderResult result = encoder.encode(chars, bytes, true);
+        if (result.isUnderflow()) {
+            result = encoder.flush(bytes);
+        }
+        if (result.isUnderflow()) {
+            return payload;
+        }
+
+        return new String(bytes.array(), 0, bytes.position(), StandardCharsets.UTF_8) + "...";
+    }
+
+    @Nullable
+    static String buildWebViewConsoleScript(@NonNull LogLevel level, @NonNull String tag, @NonNull String formattedMessage) {
+        String consoleMethod = consoleMethodForLevel(level);
+        if (consoleMethod == null) {
+            return null;
+        }
+
+        String payload = capWebViewLogPayload("[" + tag + "] " + formattedMessage);
+        return "console." + consoleMethod + "(" + toJsStringLiteral(payload) + ")";
     }
 
     public void dir(Object value) {
