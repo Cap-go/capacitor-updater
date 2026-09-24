@@ -2937,8 +2937,15 @@ import UIKit
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String) -> SetChannel {
+    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String, allowSetDefaultChannel: Bool) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
+
+        if !allowSetDefaultChannel {
+            logger.error("unsetChannel is disabled by allowSetDefaultChannel config")
+            setChannel.message = "unsetChannel is disabled by configuration"
+            setChannel.error = "disabled_by_config"
+            return setChannel
+        }
 
         // Clear persisted defaultChannel and revert to config value
         UserDefaults.standard.removeObject(forKey: defaultChannelKey)

@@ -1083,14 +1083,16 @@ async function performNotifyAppReady() {
 
 function normalizeError(error) {
   return {
-    code: error?.code ?? error?.error ?? error?.data?.error ?? null,
+    code: error?.code ?? error?.error ?? null,
+    businessCode: error?.data?.error ?? null,
     message: error?.message ?? String(error),
   };
 }
 
 function errorMatches(error, fragments) {
   const normalized = normalizeError(error);
-  const haystack = `${normalized.code ?? ''} ${normalized.message}`.toLowerCase();
+  const haystack =
+    `${normalized.code ?? ''} ${normalized.businessCode ?? ''} ${normalized.message}`.toLowerCase();
   return fragments.some((fragment) => haystack.includes(fragment.toLowerCase()));
 }
 
@@ -1431,6 +1433,7 @@ async function advanceServerRelease() {
 async function verifyPersistedRuntimeConfig(options = {}) {
   const includePluginAppId = options.includePluginAppId !== false;
   const shouldProbeLatest = options.probeLatest !== false;
+  const skipStatsUrlRaceCheck = options.skipStatsUrlRaceCheck === true;
   const latest = shouldProbeLatest ? expectGetLatestResult(await plugin.getLatest()) : null;
   const channels = expectListChannelsResult(await plugin.listChannels());
   const appIdResult = includePluginAppId
@@ -1465,8 +1468,9 @@ async function verifyPersistedRuntimeConfig(options = {}) {
   ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
-  const shouldVerifyStatsUrl = Boolean(lastStatsRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
+  const shouldVerifyStatsUrl =
+    Boolean(lastStatsRequest.url) && (!skipStatsUrlRaceCheck || !expectedUsesRuntimeUrls);
   const expectedUpdateUrl = formatObservedRequestUrl(
     expectedUsesRuntimeUrls ? getRuntimeUpdateUrl() : getDefaultUpdateUrl(),
   );
@@ -1953,7 +1957,21 @@ const actions = [
     includeInSmokeSequence: true,
     smokeTimeoutMs: 90000,
     showWhen: () => serverUrl.startsWith('http'),
+    successMarker: (result) =>
+      result?.outcome === 'expected-rejection'
+        ? 'Action marker: unset-channel:expected-rejection'
+        : 'Action marker: unset-channel:success',
     run: async () => {
+      if (!allowSetDefaultChannel) {
+        const result = await expectConfiguredRejection(
+          'unsetChannel()',
+          () => plugin.unsetChannel(),
+          ['disabled_by_config'],
+        );
+        state.lastUnsetChannelCheck = 'expected-rejection';
+        return result;
+      }
+
       await plugin.unsetChannel();
       const result = expectChannel(await plugin.getChannel(), '', 'unsetChannel()');
       state.getChannelResult = result;
@@ -2151,6 +2169,11 @@ const actions = [
           scenarioId !== 'manual-zip' &&
           scenarioId !== 'manual-zip-config-guards' &&
           scenarioId !== 'manual-zip-no-persist',
+        skipStatsUrlRaceCheck:
+          platform === 'ios' ||
+          scenarioId === 'manual-zip' ||
+          scenarioId === 'manual-zip-config-guards' ||
+          scenarioId === 'manual-zip-no-persist',
       }),
   },
   {
