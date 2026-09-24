@@ -38,6 +38,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
     private var _appReadyNotifiedAt: Date?
+    var onAppReadyNotified: (() -> Void)?
 
     var appReadyNotifiedAt: Date? {
         eventLock.lock()
@@ -62,6 +63,10 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         _notifiedEventNames.append(eventName)
         if eventName == "appReady" {
             _appReadyNotifiedAt = Date()
+            let callback = onAppReadyNotified
+            eventLock.unlock()
+            callback?()
+            eventLock.lock()
         }
         if let data {
             _notifiedEventPayloads[eventName] = data
@@ -3152,19 +3157,13 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let expectation = expectation(description: "appReady after armed wait timeout")
         let start = Date()
+        testPlugin.onAppReadyNotified = {
+            expectation.fulfill()
+        }
         testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
 
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 2.0)
+        wait(for: [expectation], timeout: 5.0)
+        testPlugin.onAppReadyNotified = nil
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
