@@ -2507,8 +2507,18 @@ public class CapgoUpdater {
         final SharedPreferences.Editor editor,
         final String defaultChannelKey,
         final String configDefaultChannel,
+        final boolean allowSetDefaultChannel,
         final Callback callback
     ) {
+        if (!allowSetDefaultChannel) {
+            logger.error("unsetChannel is disabled by allowSetDefaultChannel config");
+            final Map<String, Object> retError = new HashMap<>();
+            retError.put("message", "unsetChannel is disabled by configuration");
+            retError.put("error", "disabled_by_config");
+            callback.callback(retError);
+            return;
+        }
+
         // Clear persisted defaultChannel and revert to config value
         editor.remove(defaultChannelKey);
         editor.apply();

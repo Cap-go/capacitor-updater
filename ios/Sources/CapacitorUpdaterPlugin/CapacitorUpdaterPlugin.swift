@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "6.51.24"
+    private let pluginVersion: String = "8.51.25"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -3025,11 +3025,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .utility).async {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
-            let res = self.implementation.unsetChannel(defaultChannelKey: self.defaultChannelDefaultsKey, configDefaultChannel: configDefaultChannel)
+            let res = self.implementation.unsetChannel(
+                defaultChannelKey: self.defaultChannelDefaultsKey,
+                configDefaultChannel: configDefaultChannel,
+                allowSetDefaultChannel: self.allowSetDefaultChannel
+            )
             if res.error != "" {
-                self.rejectCall(call, message: res.error, code: "UNSETCHANNEL_FAILED", data: [
-                    "message": res.error,
-                    "error": res.error.contains("Channel URL") ? "missing_config" : "request_failed"
+                let message = res.message.isEmpty ? res.error : res.message
+                self.rejectCall(call, message: message, code: "UNSETCHANNEL_FAILED", data: [
+                    "message": message,
+                    "error": res.error
                 ])
             } else {
                 guard self.persistDefaultChannelStateFromDefaults() else {
@@ -3077,9 +3082,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         "message": res.error
                     ])
                 }
-                self.rejectCall(call, message: res.error, code: "SETCHANNEL_FAILED", data: [
-                    "message": res.error,
-                    "error": res.error.contains("Channel URL") ? "missing_config" : (res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed")) ? "channel_private" : "request_failed"
+                let message = res.message.isEmpty ? res.error : res.message
+                let errorCode: String
+                if res.error == "disabled_by_config" {
+                    errorCode = res.error
+                } else if res.error.contains("cannot_update_via_private_channel") || res.error.contains("channel_self_set_not_allowed") {
+                    errorCode = "channel_private"
+                } else if res.error.contains("Channel URL") {
+                    errorCode = "missing_config"
+                } else {
+                    errorCode = "request_failed"
+                }
+                self.rejectCall(call, message: message, code: "SETCHANNEL_FAILED", data: [
+                    "message": message,
+                    "error": errorCode
                 ])
             } else {
                 guard self.persistDefaultChannelStateFromDefaults() else {
