@@ -4,6 +4,8 @@ import os.log
 import WebKit
 
 public class Logger {
+    static let maxWebViewLogPayloadChars = 4096
+
     public enum LogLevel: Int {
         case silent = 0
         case error
@@ -199,17 +201,85 @@ public class Logger {
         // This will never fail, but we have to keep swift happy
         if let label = _labels[level] {
             log(atLevel: level, label: label, tag: tag, message: message)
-            if let webView = self.webView {
+            if let webView = self.webView, let script = buildWebViewConsoleScript(level: level, label: label, tag: tag, message: message) {
                 DispatchQueue.main.async {
-                    let combined = "\(label) \(self.tag) : \(message)"
-                    let jsArg = self.toJSStringLiteral(combined)
-                    webView.evaluateJavaScript("console.\(level.asString())(\(jsArg))", completionHandler: nil)
+                    webView.evaluateJavaScript(script, completionHandler: nil)
                 }
             }
         }
     }
 
-    private func toJSStringLiteral(_ value: String) -> String {
+    func consoleMethodName(for level: LogLevel) -> String? {
+        switch level {
+        case .error:
+            return "error"
+        case .warn:
+            return "warn"
+        case .info:
+            return "info"
+        case .debug:
+            return "debug"
+        case .silent:
+            return nil
+        }
+    }
+
+    private func utf8SequenceLength(_ lead: UInt8) -> Int {
+        if (lead & 0x80) == 0 {
+            return 1
+        }
+        if (lead & 0xE0) == 0xC0 {
+            return 2
+        }
+        if (lead & 0xF0) == 0xE0 {
+            return 3
+        }
+        if (lead & 0xF8) == 0xF0 {
+            return 4
+        }
+        return 0
+    }
+
+    func capWebViewLogPayload(_ payload: String) -> String {
+        let suffix = "..."
+        let maxPayloadBytes = Logger.maxWebViewLogPayloadChars
+        let payloadBytes = Array(payload.utf8.prefix(maxPayloadBytes + 1))
+        if payloadBytes.count <= maxPayloadBytes {
+            return payload
+        }
+
+        var end = maxPayloadBytes
+        while end > 0 && (payloadBytes[end - 1] & 0xC0) == 0x80 {
+            end -= 1
+        }
+        while end > 0 {
+            let leadIndex = end - 1
+            let lead = payloadBytes[leadIndex]
+            let seqLength = utf8SequenceLength(lead)
+            if seqLength == 0 {
+                end -= 1
+                continue
+            }
+            if leadIndex + seqLength <= maxPayloadBytes {
+                end = leadIndex + seqLength
+                break
+            }
+            end -= 1
+        }
+
+        return String(decoding: payloadBytes[0..<end], as: UTF8.self) + suffix
+    }
+
+    func buildWebViewConsoleScript(level: LogLevel, label: String, tag: String, message: String) -> String? {
+        guard let consoleMethod = consoleMethodName(for: level) else {
+            return nil
+        }
+
+        let payload = capWebViewLogPayload("\(label) \(tag) : \(message)")
+        return "console.\(consoleMethod)(\(toJSStringLiteral(payload)))"
+    }
+
+    func toJSStringLiteral(_ value: String) -> String {
         // Prefer JSON encoding to produce a valid JS string literal
         if let data = try? JSONEncoder().encode(value),
            let encoded = String(data: data, encoding: .utf8) {
