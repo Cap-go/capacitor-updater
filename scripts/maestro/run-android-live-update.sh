@@ -619,9 +619,9 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release"
       control_server advance always
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "always direct update applies a newer release after resume" \
+      run_flow kill-then-direct-update.yaml
+      wait_for_first_direct_update_ui_state \
+        "always direct update applies a newer release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
@@ -640,9 +640,9 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release"
       control_server advance legacy-true
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies a newer release after resume" \
+      run_flow kill-then-direct-update.yaml
+      wait_for_first_direct_update_ui_state \
+        "legacy true direct update applies a newer release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: legacy-true' \
         'Direct update mode: true' \
