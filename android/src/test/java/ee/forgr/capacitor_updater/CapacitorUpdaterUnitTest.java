@@ -2675,6 +2675,80 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testBackgroundDownloadCompleteEmitsAppReadyForDeferredInstall() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "backgroundDownloadPlannedDirectUpdate", false);
+
+            final BundleInfo downloaded = new BundleInfo("downloaded-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            plugin.handleBackgroundDownloadCompleteForTesting(downloaded, "2.0.0", true, true);
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("update downloaded, will install next background", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertEquals("downloaded-id", plugin.getNotifiedEventPayload("appReady").getJSONObject("bundle").getString("id"));
+            assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+        }
+    }
+
+    @Test
+    public void testBackgroundDownloadCompleteEmitsAppReadyAfterFailureWithoutDuplicateDownloadFailed() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "backgroundDownloadPlannedDirectUpdate", false);
+
+            final BundleInfo failed = new BundleInfo("failed-id", "2.0.0", BundleStatus.ERROR, new Date(), "");
+            plugin.notifyListeners("downloadFailed", new JSObject().put("version", "2.0.0"));
+            plugin.handleBackgroundDownloadCompleteForTesting(failed, "2.0.0", false, true);
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("Error downloading file", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertEquals(updater.currentBundle.getId(), plugin.getNotifiedEventPayload("appReady").getJSONObject("bundle").getString("id"));
+            assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
+        }
+    }
+
+    @Test
+    public void testBackgroundDownloadCompleteOnlyDownloadUsesCurrentBundle() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final FreshDownloadCapgoUpdater updater = configureOnlyDownloadBackgroundDownload(plugin);
+            setPrivateField(plugin, "backgroundDownloadPlannedDirectUpdate", false);
+
+            final BundleInfo downloaded = new BundleInfo("downloaded-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            plugin.handleBackgroundDownloadCompleteForTesting(downloaded, "2.0.0", true, false);
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("update downloaded, autoUpdate onlyDownload", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertEquals(updater.currentBundle.getId(), plugin.getNotifiedEventPayload("appReady").getJSONObject("bundle").getString("id"));
+            assertFalse(plugin.hasNotifiedEvent("noNeedUpdate"));
+        }
+    }
+
+    @Test
     public void testOnlyDownloadModeDownloadsWithoutSchedulingOrDirectUpdate() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

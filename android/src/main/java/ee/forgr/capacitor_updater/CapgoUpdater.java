@@ -257,6 +257,10 @@ public class CapgoUpdater {
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
 
+    void onBackgroundDownloadComplete(final BundleInfo bundle, final String version, final boolean success, final boolean setNext) {}
+
+    private boolean lastFinishDownloadUsedDirectUpdate = false;
+
     public String randomString() {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
@@ -763,6 +767,8 @@ public class CapgoUpdater {
                                 CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
                                 if (future != null) {
                                     future.complete(resultBundle);
+                                } else if (!lastFinishDownloadUsedDirectUpdate) {
+                                    onBackgroundDownloadComplete(resultBundle, version, success, setNext);
                                 }
                             });
                             break;
@@ -800,6 +806,8 @@ public class CapgoUpdater {
                                 CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
                                 if (failedFuture != null) {
                                     failedFuture.complete(failedBundle);
+                                } else {
+                                    onBackgroundDownloadComplete(failedBundle, failedVersion, false, setNext);
                                 }
                             });
                             break;
@@ -870,6 +878,7 @@ public class CapgoUpdater {
         Boolean setNext,
         Boolean isManifest
     ) {
+        this.lastFinishDownloadUsedDirectUpdate = false;
         File downloaded = null;
         File extractedDir = null;
         String checksum = "";
@@ -946,6 +955,7 @@ public class CapgoUpdater {
                     logger.info("directUpdate: " + this.directUpdate);
                     CapgoUpdater.this.directUpdateFinish(next);
                     this.directUpdate = false;
+                    this.lastFinishDownloadUsedDirectUpdate = true;
                 } else {
                     logger.info("directUpdate: " + this.directUpdate);
                     this.setNextBundle(next.getId());
