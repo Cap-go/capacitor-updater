@@ -707,6 +707,7 @@ public class CapgoUpdater {
         }
     }
 
+    // Ignore terminal WorkManager replays once the bundle is no longer downloading.
     private boolean shouldProcessTerminalWorkState(final String id) {
         if (this.downloadFutures.containsKey(id)) {
             return true;
