@@ -2811,8 +2811,8 @@ public class CapacitorUpdaterUnitTest {
                 .observe(any(LifecycleOwner.class), any(Observer.class));
 
             final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
-            final BundleInfo downloaded = new BundleInfo(bundleId, version, BundleStatus.PENDING, new Date(), "checksum");
-            final ObserveWorkProgressCapgoUpdater updater = new ObserveWorkProgressCapgoUpdater(plugin, downloaded);
+            final BundleInfo downloading = new BundleInfo(bundleId, version, BundleStatus.DOWNLOADING, new Date(), "checksum");
+            final ObserveWorkProgressCapgoUpdater updater = new ObserveWorkProgressCapgoUpdater(plugin, downloading);
 
             plugin.implementation = updater;
             plugin.configureDirectUpdateModeForTesting("onLaunch", false);
@@ -2827,6 +2827,65 @@ public class CapacitorUpdaterUnitTest {
             assertEquals("update downloaded, will install next background", plugin.getNotifiedEventPayload("appReady").getString("status"));
             assertEquals(bundleId, plugin.getNotifiedEventPayload("appReady").getJSONObject("bundle").getString("id"));
             assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+        }
+    }
+
+    @Test
+    public void testObserveWorkProgressSkipsStaleTerminalWorkWithoutDownloadFuture() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedStatic<WorkManager> workManagerMock = mockStatic(WorkManager.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final AppCompatActivity activity = mock(AppCompatActivity.class);
+            doAnswer((invocation) -> {
+                ((Runnable) invocation.getArgument(0)).run();
+                return null;
+            })
+                .when(activity)
+                .runOnUiThread(any(Runnable.class));
+
+            final WorkManager workManager = mock(WorkManager.class);
+            workManagerMock.when(() -> WorkManager.getInstance(any(Context.class))).thenReturn(workManager);
+
+            final String bundleId = "downloaded-id";
+            final String version = "2.0.0";
+            final WorkInfo workInfo = mock(WorkInfo.class);
+            final Data outputData = new Data.Builder()
+                .putString(DownloadService.FILEDEST, "bundle.zip")
+                .putString(DownloadService.VERSION, version)
+                .putString(DownloadService.SESSIONKEY, "")
+                .putString(DownloadService.CHECKSUM, "checksum")
+                .putBoolean(DownloadService.IS_MANIFEST, false)
+                .build();
+            when(workInfo.getState()).thenReturn(WorkInfo.State.SUCCEEDED);
+            when(workInfo.getOutputData()).thenReturn(outputData);
+
+            @SuppressWarnings("unchecked")
+            final LiveData<List<WorkInfo>> workInfosLiveData = mock(LiveData.class);
+            when(workManager.getWorkInfosByTagLiveData(bundleId)).thenReturn(workInfosLiveData);
+            doAnswer((invocation) -> {
+                final Observer<List<WorkInfo>> observer = invocation.getArgument(1);
+                observer.onChanged(Collections.singletonList(workInfo));
+                return null;
+            })
+                .when(workInfosLiveData)
+                .observe(any(LifecycleOwner.class), any(Observer.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            final BundleInfo alreadyInstalled = new BundleInfo(bundleId, version, BundleStatus.PENDING, new Date(), "checksum");
+            final ObserveWorkProgressCapgoUpdater updater = new ObserveWorkProgressCapgoUpdater(plugin, alreadyInstalled);
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            updater.activity = activity;
+            setPrivateField(updater, "io", IMMEDIATE_IO);
+
+            invokeObserveWorkProgress(updater, activity, bundleId, true);
+
+            assertFalse(plugin.hasNotifiedEvent("appReady"));
         }
     }
 

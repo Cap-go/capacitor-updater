@@ -707,6 +707,14 @@ public class CapgoUpdater {
         }
     }
 
+    private boolean shouldProcessTerminalWorkState(final String id) {
+        if (this.downloadFutures.containsKey(id)) {
+            return true;
+        }
+        final BundleInfo bundle = this.getBundleInfo(id);
+        return bundle == null || BundleStatus.DOWNLOADING == bundle.getStatus();
+    }
+
     private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
@@ -728,6 +736,10 @@ public class CapgoUpdater {
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
+                            if (!shouldProcessTerminalWorkState(id)) {
+                                logger.info("Skipping stale WorkManager success for bundle: " + id);
+                                break;
+                            }
                             logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
@@ -773,6 +785,10 @@ public class CapgoUpdater {
                             });
                             break;
                         case FAILED:
+                            if (!shouldProcessTerminalWorkState(id)) {
+                                logger.info("Skipping stale WorkManager failure for bundle: " + id);
+                                break;
+                            }
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed");
