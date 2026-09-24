@@ -1035,6 +1035,52 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 
+    func testUnsetChannelClearsOverrideWhenAllowed() {
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "beta"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("beta", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.unsetChannel(
+            defaultChannelKey: defaultsKey,
+            configDefaultChannel: "stable",
+            allowSetDefaultChannel: true
+        )
+
+        XCTAssertEqual(result.status, "ok")
+        XCTAssertEqual(result.message, "Channel override removed")
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testUnsetChannelRejectsWhenDisabledByConfig() {
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "beta"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("beta", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.unsetChannel(
+            defaultChannelKey: defaultsKey,
+            configDefaultChannel: "stable",
+            allowSetDefaultChannel: false
+        )
+
+        XCTAssertEqual(result.error, "disabled_by_config")
+        XCTAssertEqual(result.message, "unsetChannel is disabled by configuration")
+        XCTAssertEqual(updater.defaultChannel, "beta")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "beta")
+    }
+
     func testDefaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
         let testPlugin = TestableCapacitorUpdaterPlugin()
         testPlugin.persistDefaultChannelOnReinstall = false
