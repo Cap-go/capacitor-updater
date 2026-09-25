@@ -1,0 +1,10 @@
+appId: app.capgo.updater
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 180000
+- extendedWaitUntil:
+    visible: '${SETTLED_STATE_LINE}'
+    timeout: 300000

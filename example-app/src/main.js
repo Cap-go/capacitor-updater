@@ -218,14 +218,13 @@ const manualZipSmokeActionIds =
         'set-custom-id',
         'set-update-url',
         'set-stats-url',
-        'notify-app-ready',
         'set-channel-url',
+        'notify-app-ready',
         'set-channel-beta',
         'unset-channel',
         'queue-boot-verify-persisted-config',
       ]
     : [
-        'notify-app-ready',
         'current-bundle',
         'list-bundles',
         'get-plugin-version',
@@ -239,6 +238,7 @@ const manualZipSmokeActionIds =
         'set-update-url',
         'set-stats-url',
         'set-channel-url',
+        'notify-app-ready',
         'get-latest',
         ...manualZipChannelSmokeActionIds,
         'get-next-bundle',
@@ -1467,6 +1467,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     'source',
   ]);
   const observedStatsUrl = formatObservedRequestUrl(lastStatsRequest.url);
+  let resolvedStatsUrl = observedStatsUrl;
   const shouldVerifyUpdateUrl = shouldProbeLatest || Boolean(lastUpdateRequest.url);
   const expectedUsesRuntimeUrls = allowModifyUrl && persistModifyUrl;
   const shouldVerifyStatsUrl =
@@ -1498,9 +1499,18 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     `verify persisted config expected channel URL ${expectedChannelUrl}, received ${observedChannelUrl}`,
   );
   if (shouldVerifyStatsUrl) {
+    if (resolvedStatsUrl !== expectedStatsUrl) {
+      const statsDeadline = Date.now() + 15000;
+      while (Date.now() < statsDeadline && resolvedStatsUrl !== expectedStatsUrl) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        await refreshServerState();
+        const refreshedDebug = state.serverDebug?.debug ?? {};
+        resolvedStatsUrl = formatObservedRequestUrl(refreshedDebug.lastStatsRequest?.url);
+      }
+    }
     invariant(
-      observedStatsUrl === expectedStatsUrl,
-      `verify persisted config expected stats URL ${expectedStatsUrl}, received ${observedStatsUrl}`,
+      resolvedStatsUrl === expectedStatsUrl,
+      `verify persisted config expected stats URL ${expectedStatsUrl}, received ${resolvedStatsUrl}`,
     );
   }
   invariant(
@@ -1542,7 +1552,7 @@ async function verifyPersistedRuntimeConfig(options = {}) {
     channels: channels.channels,
     customId: expectedCustomId,
     channelUrl: observedChannelUrl,
-    statsUrl: observedStatsUrl,
+    statsUrl: resolvedStatsUrl,
     updateUrl: observedUpdateUrl,
     version: latest?.version ?? state.serverDebug?.activeRelease ?? 'not-probed',
   };
@@ -1562,6 +1572,7 @@ const actions = [
     buttonLabel: 'Run notifyAppReady',
     description: 'Confirm that the current bundle booted successfully.',
     includeInSmokeSequence: true,
+    smokeTimeoutMs: 90000,
     run: async () => {
       const result = await performNotifyAppReady();
       expectBundle(result?.bundle, 'notifyAppReady()');
@@ -2149,6 +2160,16 @@ const actions = [
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'boot-persisted',
     run: async () => {
+      // manual-zip and manual-zip-no-persist both need an explicit getLatest() after
+      // relaunch so the smoke harness observes the default update URL (probeLatest is
+      // false on verify-persisted-config-boot for these scenarios).
+      if (scenarioId === 'manual-zip' || scenarioId === 'manual-zip-no-persist') {
+        markPendingBootAction('verify-persisted-config-after-get-latest-boot');
+        return {
+          message: 'Queued persisted-config verification for the next boot after getLatest().',
+        };
+      }
+
       markPendingBootAction('verify-persisted-config-boot');
       return {
         message: 'Queued persisted-config verification for the next boot.',
@@ -2165,7 +2186,6 @@ const actions = [
       verifyPersistedRuntimeConfig({
         includePluginAppId: false,
         probeLatest:
-          platform !== 'ios' &&
           scenarioId !== 'manual-zip' &&
           scenarioId !== 'manual-zip-config-guards' &&
           scenarioId !== 'manual-zip-no-persist',
@@ -2187,6 +2207,20 @@ const actions = [
       return {
         message: 'Verified persisted runtime traffic after boot.',
       };
+    },
+  },
+  {
+    id: 'verify-persisted-config-after-get-latest-boot',
+    label: 'Boot getLatest then verify persisted runtime config',
+    showWhen: () => false,
+    markerId: 'persisted',
+    skipRefresh: true,
+    run: async () => {
+      await runGetLatestCheck();
+      return verifyPersistedRuntimeConfig({
+        includePluginAppId: false,
+        probeLatest: false,
+      });
     },
   },
   {
@@ -3119,18 +3153,47 @@ async function bootstrap() {
   renderState();
   await attachListeners();
 
-  if (!skipNotifyAppReady) {
+  const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
+  startStateRefreshWatchers();
+
+  let bootActionsSucceeded = true;
+  let notifyAppReadyCompleted = false;
+  if (bootActionIds.length) {
+    await pause(platform === 'ios' ? 500 : 100);
+    // Cold relaunch boot checks need a committed app-ready + injected binding before
+    // getLatest()/listChannels() traffic is reliable on iOS.
+    if (!skipNotifyAppReady) {
+      try {
+        await performNotifyAppReady();
+        notifyAppReadyCompleted = true;
+      } catch (error) {
+        console.error('notifyAppReady() before boot actions failed', error);
+      }
+    }
+    for (const bootActionId of bootActionIds) {
+      try {
+        await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
+      } catch (error) {
+        bootActionsSucceeded = false;
+        console.error(`Boot action ${bootActionId} failed`, error);
+        break;
+      }
+    }
+  }
+
+  if (!skipNotifyAppReady && !notifyAppReadyCompleted) {
     try {
       await performNotifyAppReady();
     } catch (error) {
       console.error('notifyAppReady() bootstrap failed', error);
     }
-  } else {
+  } else if (skipNotifyAppReady) {
     addEvent('notifyAppReady skipped', { message: 'disabled by VITE_CAPGO_SKIP_NOTIFY_APP_READY' });
   }
 
   await refreshState();
   const skipAndroidBootProbeForBootAction =
+    bootActionFromStorage === 'verify-persisted-config-after-get-latest-boot' ||
     bootActionFromStorage === 'verify-persisted-runtime-traffic-boot';
   const shouldRunAndroidBootProbe =
     platform === 'android' &&
@@ -3148,20 +3211,9 @@ async function bootstrap() {
     }
     renderState();
   }
-  const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
-  startStateRefreshWatchers();
-  if (bootActionIds.length) {
-    await pause(platform === 'ios' ? 500 : 100);
-  }
-  for (const bootActionId of bootActionIds) {
-    try {
-      await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
-    } catch (error) {
-      console.error(`Boot action ${bootActionId} failed`, error);
-      break;
-    }
-  }
-  if (!state.harnessReady) {
+  // Only mark harness ready after boot actions succeed so Maestro smoke cannot
+  // race a pending/failed cold-launch verify.
+  if (bootActionsSucceeded && !state.harnessReady) {
     state.harnessReady = true;
     renderState();
   }

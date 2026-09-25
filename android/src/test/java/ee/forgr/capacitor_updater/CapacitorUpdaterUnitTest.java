@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import com.getcapacitor.Bridge;
@@ -104,6 +105,15 @@ public class CapacitorUpdaterUnitTest {
         private final AppCompatActivity activity = mock(AppCompatActivity.class);
         private boolean startNewThreadCalled = false;
         private boolean reloadCalled = false;
+
+        {
+            doAnswer((invocation) -> {
+                invocation.getArgument(0, Runnable.class).run();
+                return null;
+            })
+                .when(this.activity)
+                .runOnUiThread(any(Runnable.class));
+        }
 
         @Override
         public AppCompatActivity getActivity() {
@@ -311,6 +321,11 @@ public class CapacitorUpdaterUnitTest {
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
             this.updateAvailableNotifier.accept(version);
+        }
+
+        @Override
+        public Boolean set(final BundleInfo bundle) {
+            return true;
         }
 
         @Override
@@ -1058,6 +1073,24 @@ public class CapacitorUpdaterUnitTest {
             }
         }
         throw new NoSuchFieldException(fieldName);
+    }
+
+    private static void stubReloadBridgeThreading(final Bridge bridge, final WebView webView) {
+        doAnswer((invocation) -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
+        })
+            .when(bridge)
+            .executeOnMainThread(any(Runnable.class));
+        doAnswer((invocation) -> {
+            final ValueCallback<String> callback = invocation.getArgument(1);
+            if (callback != null) {
+                callback.onReceiveValue(null);
+            }
+            return null;
+        })
+            .when(webView)
+            .evaluateJavascript(anyString(), any());
     }
 
     private static Object getPrivateField(final Object target, final String fieldName) throws Exception {
@@ -2338,6 +2371,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -2369,6 +2403,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -2400,6 +2435,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             assertFalse(plugin._reload());
 
@@ -2420,14 +2456,175 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "current-bundle-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
 
             when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("current-bundle-id");
 
             plugin.notifyAppReady(call);
 
             final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
             assertFalse(semaphore.isTerminated());
             assertEquals(0, semaphore.getRegisteredParties());
+            verify(call).resolve(any(JSObject.class));
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
+        }
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyRejectsZeroTokens() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyAcceptsAfterSyncAndPageStart() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+
+            assertTrue(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyRejectsMismatchedTokens() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+
+            assertFalse(plugin.shouldCommitNotifyAppReady("current-bundle-id", "current-bundle-id"));
+        }
+    }
+
+    @Test
+    public void testShouldCommitNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "current-bundle-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+            setPrivateField(plugin, "appReadyWebViewLoadedToken", 1);
+
+            assertTrue(plugin.shouldCommitNotifyAppReady(null, "current-bundle-id"));
+        }
+    }
+
+    @Test
+    public void testNotifyAppReadyRejectsStaleBundleId() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("new-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("old-bundle-id");
+
+            plugin.notifyAppReady(call);
+
+            verify(updater, never()).setSuccess(any(BundleInfo.class), anyBoolean());
+            verify(call).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
+    public void testNotifyAppReadyWithExplicitBundleIdAdvancesPageStartBeforeCommit() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "download-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("download-id");
+            when(call.getString("loadToken")).thenReturn("2");
+
+            plugin.notifyAppReady(call);
+
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
+            verify(call).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
+    public void testNotifyAppReadyWithExplicitBundleIdRejectsStaleLoadToken() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "download-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("download-id");
+            when(call.getString("loadToken")).thenReturn("1");
+
+            plugin.notifyAppReady(call);
+
+            verify(updater, never()).setSuccess(any(BundleInfo.class), anyBoolean());
+            verify(call).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
+    public void testNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "awaitingAppReadyBundleId", "pending-bundle-id");
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 2);
+            setPrivateField(plugin, "appReadyWebViewLoadedToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 2);
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn(null);
+
+            plugin.notifyAppReady(call);
+
+            verify(updater).setSuccess(bundle, (Boolean) getPrivateField(plugin, "autoDeletePrevious"));
             verify(call).resolve(any(JSObject.class));
         }
     }
@@ -2476,7 +2673,10 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             setPrivateField(plugin, "appReadyTimeout", 5000);
             setPrivateField(plugin, "autoSplashscreen", false);
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
             when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("id");
 
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
@@ -2547,6 +2747,7 @@ public class CapacitorUpdaterUnitTest {
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
             when(webView.post(any(Runnable.class))).thenReturn(true);
+            stubReloadBridgeThreading(bridge, webView);
 
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
@@ -2574,7 +2775,10 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             setPrivateField(plugin, "appReadyTimeout", 5000);
             setPrivateField(plugin, "autoSplashscreen", false);
+            setPrivateField(plugin, "appReadyWebViewLoadToken", 1);
+            setPrivateField(plugin, "appReadyWebViewPageStartedToken", 1);
             when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getString("bundleId")).thenReturn("id");
 
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             plugin.notifyAppReady(call);
@@ -2617,7 +2821,75 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testOnLaunchCompletionConsumesWindowWithoutClearingInFlightDirectUpdate() {
+    public void testDirectUpdateAllowedAfterSplashTimeoutWhenDownloadIsInFlight() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+
+            assertTrue(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+            assertFalse(plugin.isDirectUpdateCurrentlyAllowedForTesting(true));
+        }
+    }
+
+    @Test
+    public void testShouldUseDirectUpdateHonorsInFlightDownloadAfterSplashTimeout() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", false);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+        }
+    }
+
+    @Test
+    public void testExistingDownloadedBundleAppliesDirectUpdateAfterSplashTimeoutWhenDownloadInFlight() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final FreshDownloadCapgoUpdater updater = new FreshDownloadCapgoUpdater();
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
+
+            updater.existingLatestBundle = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "updateUrl", "https://example.com/updates");
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            setPrivateField(plugin, "activeDownloadPlannedDirectUpdate", true);
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
+
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
+
+            invokeBackgroundDownload(plugin);
+
+            assertTrue(plugin.reloadCalled);
+            assertFalse(updater.setNextBundleCalled);
+        }
+    }
+
+    @Test
+    public void testOnLaunchCompletionDoesNotConsumeWindowBeforeDirectUpdateSuccess() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -2637,14 +2909,14 @@ public class CapacitorUpdaterUnitTest {
 
             plugin.completeBackgroundTaskForTesting(current, true);
 
-            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
-            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
         }
     }
 
     @Test
-    public void testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() throws Exception {
+    public void testOnLaunchFreshDownloadDoesNotConsumeWindowBeforeDirectUpdateSuccess() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -2666,10 +2938,10 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
 
             assertTrue(updater.downloadBackgroundCalled);
-            assertTrue(updater.consumedWhenDownloadStarted);
+            assertFalse(updater.consumedWhenDownloadStarted);
             assertTrue(updater.directUpdateWhenDownloadStarted);
-            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
-            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            assertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
             assertTrue(plugin.implementation.directUpdate);
         }
     }
@@ -3041,12 +3313,15 @@ public class CapacitorUpdaterUnitTest {
             final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
 
             plugin.implementation = updater;
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
             plugin.setLoggerForTesting(mock(Logger.class));
 
             plugin.scheduleDirectUpdateFinish(latest);
 
             assertTrue(plugin.startNewThreadCalled);
             assertTrue(plugin.reloadCalled);
+            assertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting());
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
             assertEquals(0, updater.setCalls);
             assertEquals(1, updater.stagePendingReloadCalls);
             assertEquals(1, updater.finalizePendingReloadCalls);

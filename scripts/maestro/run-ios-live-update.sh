@@ -536,6 +536,17 @@ run_core_assert() {
     "CURRENT_VERSION_LINE=$(regex_contains_for_maestro "$current_version_line")"
 }
 
+run_on_launch_first_release_assert() {
+  local scenario_id="$1"
+  local first_release="$2"
+  local settled_state_line="Harness: ready | Build label: $first_release | Scenario: on-launch | Direct update mode: onLaunch | Auto update enabled: true | Auto update available: true | Notify app ready: ok ($first_release) | Current bundle source: downloaded | Current bundle version: $first_release"
+
+  run_flow \
+    "${scenario_id}-first-release" \
+    "$ROOT_DIR/.maestro/ios/on-launch-first-release.yaml" \
+    "SETTLED_STATE_LINE=$(regex_contains_for_maestro "$settled_state_line")"
+}
+
 run_download_assert() {
   local label="$1"
   local build_label="$2"
@@ -671,16 +682,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       ;;
     on-launch)
-      run_core_assert \
-        "${scenario_id}-first-release" \
-        "Build label: $first_release" \
-        'Scenario: on-launch' \
-        'Direct update mode: onLaunch' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
+      run_on_launch_first_release_assert "$scenario_id" "$first_release"
       ;;
     manual-zip)
       run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-flow.yaml"

@@ -146,6 +146,12 @@ dump_ui_hierarchy() {
   return 0
 }
 
+dump_logcat_snapshot() {
+  echo "=== logcat snapshot (CapgoUpdater / Capacitor / AndroidRuntime) ===" >&2
+  run_adb_command 30 logcat -d -v threadtime CapgoUpdater:D Capacitor:D CapacitorUpdater:D AndroidRuntime:E chromium:I '*:S' 2>&1 | tail -n 250 >&2 || true
+  return 0
+}
+
 tap_android_anr_wait_button_if_present() {
   local hierarchy="$1"
   local wait_button_pattern='text="Wait".*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
@@ -317,6 +323,7 @@ wait_for_ui_state_with_timeout() {
 
   echo "Timed out waiting for UI state: ${description}" >&2
   dump_ui_hierarchy >&2 || true
+  dump_logcat_snapshot || true
   return 1
 }
 
@@ -325,6 +332,29 @@ wait_for_ui_state() {
   shift
 
   wait_for_ui_state_with_timeout "$description" "$UI_STATE_TIMEOUT_SECONDS" "$@"
+}
+
+wait_for_ui_state_with_background_retry() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+  local attempt=1
+  local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
+
+  while [[ $attempt -le $max_attempts ]]; do
+    if wait_for_ui_state "$description" "${fragments[@]}"; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "UI state did not settle for ${description}; driving one extra background cycle." >&2
+      background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
 }
 
 wait_for_direct_update_ui_state() {
@@ -339,8 +369,24 @@ wait_for_direct_update_ui_state() {
   echo "Direct update UI did not settle for ${description}; force-stopping and relaunching once." >&2
   run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
   relaunch_android_app
-  wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"
-  return 0
+  if wait_for_ui_state_with_timeout "$description" "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" "${fragments[@]}"; then
+    return 0
+  fi
+
+  return 1
+}
+
+wait_for_first_direct_update_ui_state() {
+  local description="$1"
+  shift
+  local -a fragments=("$@")
+
+  if wait_for_direct_update_ui_state "$description" "${fragments[@]}"; then
+    return 0
+  fi
+
+  echo "Force-stop relaunch did not settle ${description}; trying background-cycle recovery." >&2
+  wait_for_at_install_direct_update_ui_state "$description" "${fragments[@]}"
 }
 
 wait_for_at_install_direct_update_ui_state() {
@@ -350,12 +396,15 @@ wait_for_at_install_direct_update_ui_state() {
   local attempt=1
   local max_attempts="${CAPGO_MAESTRO_SPLIT_RETRIES:-2}"
   local target_version=""
+  local direct_update_mode_fragment=""
   local fragment=""
+  local prep_timeout_seconds="${CAPGO_MAESTRO_DIRECT_UPDATE_PREP_TIMEOUT_SECONDS:-60}"
 
   for fragment in "${fragments[@]}"; do
     if [[ "$fragment" == Current\ bundle\ version:\ * ]]; then
       target_version="${fragment#Current bundle version: }"
-      break
+    elif [[ "$fragment" == Direct\ update\ mode:\ * ]]; then
+      direct_update_mode_fragment="$fragment"
     fi
   done
 
@@ -365,19 +414,19 @@ wait_for_at_install_direct_update_ui_state() {
     fi
 
     if [[ $attempt -lt $max_attempts ]]; then
-      if [[ -n "$target_version" ]]; then
+      if [[ -n "$target_version" && -n "$direct_update_mode_fragment" ]]; then
         if ! wait_for_ui_state_with_timeout \
-          "atInstall finished preparing ${target_version} before the extra background cycle" \
-          "$DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS" \
-          'Direct update mode: atInstall' \
+          "direct update finished preparing ${target_version} before the extra background cycle" \
+          "$prep_timeout_seconds" \
+          "$direct_update_mode_fragment" \
           'Current bundle source: downloaded' \
           "Next bundle version: ${target_version}" \
           "Last completed download: ${target_version}"; then
-          echo "atInstall never exposed ${target_version} as the pending next bundle before the extra background cycle." >&2
+          echo "Direct update never exposed ${target_version} as the pending next bundle before the extra background cycle." >&2
         fi
       fi
 
-      echo "atInstall UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
+      echo "Direct update UI did not settle for ${description}; driving one extra background cycle without force-stopping the current bundle." >&2
       background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
     fi
 
@@ -562,7 +611,7 @@ run_scenario() {
       control_server reset always
       prepare_scenario always
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "always direct update applies on first launch" \
         "Build label: $first_release" \
         'Scenario: always' \
@@ -570,9 +619,9 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release"
       control_server advance always
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "always direct update applies a newer release after resume" \
+      run_flow kill-then-direct-update.yaml
+      wait_for_first_direct_update_ui_state \
+        "always direct update applies a newer release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
@@ -583,7 +632,7 @@ run_scenario() {
       control_server reset legacy-true
       prepare_scenario legacy-true
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "legacy true direct update applies on first launch" \
         "Build label: $first_release" \
         'Scenario: legacy-true' \
@@ -591,9 +640,9 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release"
       control_server advance legacy-true
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies a newer release after resume" \
+      run_flow kill-then-direct-update.yaml
+      wait_for_first_direct_update_ui_state \
+        "legacy true direct update applies a newer release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: legacy-true' \
         'Direct update mode: true' \
@@ -604,7 +653,7 @@ run_scenario() {
       control_server reset at-install
       prepare_scenario at-install
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "atInstall applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -613,7 +662,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance at-install
       background_and_resume_app
-      wait_for_ui_state \
+      if ! wait_for_ui_state_with_background_retry \
         "atInstall downloads the next release on resume before applying it" \
         "Build label: $first_release" \
         'Scenario: at-install' \
@@ -621,7 +670,15 @@ run_scenario() {
         'Current bundle source: downloaded' \
         "Current bundle version: $first_release" \
         "Next bundle version: $second_release" \
-        "Last completed download: $second_release"
+        "Last completed download: $second_release"; then
+        wait_for_ui_state \
+          "atInstall already applied the second release during resume recovery" \
+          "Build label: $second_release" \
+          'Scenario: at-install' \
+          'Direct update mode: atInstall' \
+          'Current bundle source: downloaded' \
+          "Current bundle version: $second_release"
+      fi
       background_and_resume_app "$DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS"
       wait_for_at_install_direct_update_ui_state \
         "atInstall applies the downloaded release after the next background cycle" \
@@ -635,7 +692,7 @@ run_scenario() {
       control_server reset on-launch
       prepare_scenario on-launch
       run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "onLaunch applies the first downloaded release on first launch" \
         "Build label: $first_release" \
         'Scenario: on-launch' \
@@ -644,7 +701,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       control_server advance on-launch
       run_flow kill-then-direct-update.yaml
-      wait_for_direct_update_ui_state \
+      wait_for_first_direct_update_ui_state \
         "onLaunch applies the next release after a cold relaunch" \
         "Build label: $second_release" \
         'Scenario: on-launch' \
@@ -743,11 +800,32 @@ wait_for_android_boot() {
 }
 
 unlock_android_device() {
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm dismiss-keyguard >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent 82 >/dev/null 2>&1 || true
-  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings put global stay_on_while_plugged_in 3 >/dev/null 2>&1 || true
-  return 0
+  local attempt=1
+  local max_attempts=3
+  local unlock_output=""
+
+  while [[ $attempt -le $max_attempts ]]; do
+    unlock_output="$(
+      {
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent KEYCODE_WAKEUP 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell wm dismiss-keyguard 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell input keyevent 82 2>&1 || true
+        run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell settings put global stay_on_while_plugged_in 3 2>&1 || true
+      } | tr -d '\r'
+    )"
+
+    if [[ "$unlock_output" != *"DeadSystemException"* && "$unlock_output" != *"DeadSystemRuntimeException"* ]]; then
+      return 0
+    fi
+
+    echo "Android unlock hit DeadSystemException; waiting for package manager before retry ${attempt}/${max_attempts}." >&2
+    wait_for_package_manager || true
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  echo "Android unlock still failing after ${max_attempts} attempts." >&2
+  return 1
 }
 
 restart_adb_server() {

@@ -216,14 +216,17 @@ console.log(state.debug?.requestCounts?.[requestKind] ?? 0);
 wait_for_queued_boot_verification() {
   local before_state=""
   local before_channel_count="0"
+  local before_update_count="0"
   local server_state=""
 
   before_state="$(read_smoke_server_state)"
   before_channel_count="$(server_request_count "$before_state" channel)"
+  before_update_count="$(server_request_count "$before_state" update)"
 
   echo "Running queued iOS boot verification with simctl relaunch."
   xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+  sleep 3
 
   for _ in $(seq 1 60); do
     server_state="$(read_smoke_server_state)"
@@ -231,16 +234,22 @@ wait_for_queued_boot_verification() {
 const state = JSON.parse(process.argv[1]);
 const scenarioId = process.argv[2];
 const beforeChannelCount = Number(process.argv[3]);
+const beforeUpdateCount = Number(process.argv[5]);
 const debug = state.debug ?? {};
 const channel = debug.lastChannelRequest ?? {};
+const update = debug.lastUpdateRequest ?? {};
 const channelPayload = channel.payload ?? {};
 const channelCount = debug.requestCounts?.channel ?? 0;
+const updateCount = debug.requestCounts?.update ?? 0;
 const channelUrl = channel.url ?? '';
+const updateUrl = update.url ?? '';
 const channelAppId = channelPayload.app_id ?? '';
 const channelCustomId = channelPayload.custom_id ?? '';
 const defaultAppId = process.argv[4];
 const runtimeAppId = defaultAppId + '.e2e';
-let ok = channelCount > beforeChannelCount;
+let ok =
+  channelCount > beforeChannelCount ||
+  (updateCount > beforeUpdateCount && updateUrl.includes('/api/updates/' + scenarioId));
 
 if (scenarioId === 'manual-zip') {
   ok =
@@ -268,7 +277,7 @@ if (scenarioId === 'manual-zip') {
 }
 
 process.exit(ok ? 0 : 1);
-" "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
+" "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID" "$before_update_count"; then
       return 0
     fi
     sleep 2

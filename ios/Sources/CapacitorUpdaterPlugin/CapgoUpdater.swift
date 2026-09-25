@@ -77,6 +77,7 @@ import UIKit
     private let statsPersistLock = NSLock()
     private var statsFlushTimer: Timer?
     private var statsStopped = false
+    private var statsFlushGeneration: UInt64 = 0
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
     private let pendingStatsFileName = "capgo_pending_stats.json"
@@ -3317,6 +3318,9 @@ import UIKit
         guard !statsUrl.isEmpty else {
             return
         }
+        statsQueueLock.lock()
+        let enqueueGeneration = statsFlushGeneration
+        statsQueueLock.unlock()
 
         let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
         let info = createInfoObject()
@@ -3345,6 +3349,10 @@ import UIKit
 
         statsQueueLock.lock()
         if statsStopped {
+            statsQueueLock.unlock()
+            return
+        }
+        if enqueueGeneration != statsFlushGeneration {
             statsQueueLock.unlock()
             return
         }
@@ -3451,6 +3459,19 @@ import UIKit
         }
 
         statsQueueLock.lock()
+        guard !statsUrl.isEmpty else {
+            // Nothing to discard: unlock without bumping generation.
+            if statsQueue.isEmpty && statsInFlight.isEmpty {
+                statsQueueLock.unlock()
+                return
+            }
+            statsFlushGeneration &+= 1
+            statsQueue.removeAll()
+            statsInFlight.removeAll()
+            statsQueueLock.unlock()
+            persistStatsQueue()
+            return
+        }
         guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
             statsQueueLock.unlock()
             return
@@ -3458,6 +3479,8 @@ import UIKit
         let queuedEvents = statsQueue
         statsQueue.removeAll()
         statsInFlight = queuedEvents
+        let flushGeneration = statsFlushGeneration
+        let flushStatsUrl = statsUrl
         statsQueueLock.unlock()
         persistStatsQueue()
 
@@ -3468,29 +3491,29 @@ import UIKit
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
             self.alamofireSession.request(
-                self.statsUrl,
+                flushStatsUrl,
                 method: .post,
                 parameters: eventsToSend,
                 encoder: JSONParameterEncoder.default,
                 requestModifier: { $0.timeoutInterval = self.timeout }
             ).responseData { response in
-                if self.abandonStoppedStatsFlush() {
+                if self.abandonStoppedStatsFlush(flushGeneration) {
                     semaphore.signal()
                     return
                 }
                 if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(queuedEvents, flushGeneration: flushGeneration)
                     semaphore.signal()
                     return
                 }
 
                 if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
-                        self.requeueStatsEvents(queuedEvents)
+                        self.requeueStatsEvents(queuedEvents, flushGeneration: flushGeneration)
                         self.logger.error("Error sending stats batch")
                         self.logger.debug("Retrying later, response code: \(statusCode)")
                     } else {
-                        self.clearStatsInFlight()
+                        self.clearStatsInFlight(flushGeneration: flushGeneration)
                         self.logger.error("Dropping stats batch after permanent error")
                         self.logger.debug("Response code: \(statusCode)")
                     }
@@ -3500,12 +3523,15 @@ import UIKit
 
                 switch response.result {
                 case .success:
-                    self.clearStatsInFlight()
+                    guard self.clearStatsInFlight(flushGeneration: flushGeneration) else {
+                        semaphore.signal()
+                        return
+                    }
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
-                    self.runStatsCallbacks(queuedEvents)
+                    self.runStatsCallbacks(queuedEvents, flushGeneration: flushGeneration)
                 case let .failure(error):
-                    self.requeueStatsEvents(queuedEvents)
+                    self.requeueStatsEvents(queuedEvents, flushGeneration: flushGeneration)
                     self.logger.error("Error sending stats batch")
                     self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
@@ -3519,8 +3545,18 @@ import UIKit
         operationQueue.addOperation(operation)
     }
 
-    private func abandonStoppedStatsFlush() -> Bool {
-        statsStopped
+    private func isStaleStatsFlush(_ flushGeneration: UInt64) -> Bool {
+        statsQueueLock.lock()
+        let stale = flushGeneration != statsFlushGeneration
+        statsQueueLock.unlock()
+        return stale
+    }
+
+    private func abandonStoppedStatsFlush(_ flushGeneration: UInt64) -> Bool {
+        if !statsStopped && !isStaleStatsFlush(flushGeneration) {
+            return false
+        }
+        return true
     }
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
@@ -3528,15 +3564,20 @@ import UIKit
         return statusCode == 429 || statusCode == 408 || statusCode >= 500
     }
 
-    private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
+    private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent], flushGeneration: UInt64) {
+        guard !isStaleStatsFlush(flushGeneration) else { return }
         for sentEvent in sentEvents {
             sentEvent.onSent?()
         }
     }
 
-    private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
+    private func requeueStatsEvents(_ events: [QueuedStatsEvent], flushGeneration: UInt64) {
         guard !statsStopped, !events.isEmpty else { return }
         statsQueueLock.lock()
+        guard flushGeneration == statsFlushGeneration else {
+            statsQueueLock.unlock()
+            return
+        }
         statsInFlight.removeAll()
         statsQueue.insert(contentsOf: events, at: 0)
         if statsQueue.count > CapgoUpdater.maxPendingStats {
@@ -3547,10 +3588,35 @@ import UIKit
         ensureStatsTimerStarted()
     }
 
-    private func clearStatsInFlight() {
+    @discardableResult
+    private func clearStatsInFlight(flushGeneration: UInt64) -> Bool {
         statsQueueLock.lock()
+        guard flushGeneration == statsFlushGeneration else {
+            statsQueueLock.unlock()
+            return false
+        }
         statsInFlight.removeAll()
         statsQueueLock.unlock()
+        return true
+    }
+
+    func setStatsUrlAndDiscardPending(_ url: String) {
+        statsQueueLock.lock()
+        statsUrl = url
+        statsFlushGeneration &+= 1
+        statsQueue.removeAll()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
+        persistStatsQueue(force: true)
+    }
+
+    func discardPendingStats() {
+        statsQueueLock.lock()
+        statsFlushGeneration &+= 1
+        statsQueue.removeAll()
+        statsInFlight.removeAll()
+        statsQueueLock.unlock()
+        persistStatsQueue(force: true)
     }
 
     public func getBundleInfo(id: String?) -> BundleInfo {

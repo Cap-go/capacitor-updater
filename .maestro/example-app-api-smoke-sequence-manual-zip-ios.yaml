@@ -13,7 +13,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
-    timeout: 120000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: 'Quick run smoke test sequence'
@@ -29,7 +29,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
-    timeout: 120000
+    timeout: 60000
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 180000

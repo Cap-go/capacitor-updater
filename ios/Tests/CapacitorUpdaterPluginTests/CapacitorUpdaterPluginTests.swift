@@ -38,6 +38,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
     private var _appReadyNotifiedAt: Date?
+    var onAppReadyNotified: (() -> Void)?
 
     var appReadyNotifiedAt: Date? {
         eventLock.lock()
@@ -62,6 +63,10 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         _notifiedEventNames.append(eventName)
         if eventName == "appReady" {
             _appReadyNotifiedAt = Date()
+            let callback = onAppReadyNotified
+            eventLock.unlock()
+            callback?()
+            eventLock.lock()
         }
         if let data {
             _notifiedEventPayloads[eventName] = data
@@ -3152,19 +3157,13 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let expectation = expectation(description: "appReady after armed wait timeout")
         let start = Date()
+        testPlugin.onAppReadyNotified = {
+            expectation.fulfill()
+        }
         testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
 
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 2.0)
+        wait(for: [expectation], timeout: 5.0)
+        testPlugin.onAppReadyNotified = nil
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
@@ -3246,6 +3245,73 @@ class CapacitorUpdaterTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsZeroTokens() {
+        let plugin = CapacitorUpdaterPlugin()
+        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-b", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyAcceptsMatchingBundleId() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-b", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsMismatchedTokens() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 0)
+        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-b", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsStaleBundleId() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        XCTAssertFalse(plugin.shouldCommitNotifyAppReady(reportedBundleId: "bundle-a", currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyWithoutBundleIdAcceptsPageStartedWhenAwaiting() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 2, loadedToken: 1)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        XCTAssertTrue(plugin.shouldCommitNotifyAppReady(reportedBundleId: nil, currentBundleId: "bundle-b"))
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsStaleOriginatingLoadToken() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 3, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        // Deferred option-free call that snapshot load token 2 must not certify load 3.
+        XCTAssertFalse(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: 2
+            )
+        )
+        XCTAssertTrue(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: 3
+            )
+        )
+    }
+
+    func testShouldCommitNotifyAppReadyRejectsTokenlessSentinelAgainstActiveLoad() {
+        let plugin = CapacitorUpdaterPlugin()
+        plugin.setAppReadyBindingForTesting(bundleId: "bundle-b", loadToken: 3, loadedToken: 0)
+        plugin.markAppReadyWebViewPageStartedForTesting()
+        // Tokenless deferred calls use -1 so they cannot adopt a newer load token.
+        XCTAssertFalse(
+            plugin.shouldCommitNotifyAppReady(
+                reportedBundleId: "bundle-b",
+                currentBundleId: "bundle-b",
+                reportedLoadToken: -1
+            )
+        )
     }
 
 }
