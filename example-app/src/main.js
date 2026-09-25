@@ -3157,8 +3157,19 @@ async function bootstrap() {
   startStateRefreshWatchers();
 
   let bootActionsSucceeded = true;
+  let notifyAppReadyCompleted = false;
   if (bootActionIds.length) {
     await pause(platform === 'ios' ? 500 : 100);
+    // Cold relaunch boot checks need a committed app-ready + injected binding before
+    // getLatest()/listChannels() traffic is reliable on iOS.
+    if (!skipNotifyAppReady) {
+      try {
+        await performNotifyAppReady();
+        notifyAppReadyCompleted = true;
+      } catch (error) {
+        console.error('notifyAppReady() before boot actions failed', error);
+      }
+    }
     for (const bootActionId of bootActionIds) {
       try {
         await runAction(getActionById(bootActionId), {}, { skipRefresh: false });
@@ -3170,13 +3181,13 @@ async function bootstrap() {
     }
   }
 
-  if (!skipNotifyAppReady) {
+  if (!skipNotifyAppReady && !notifyAppReadyCompleted) {
     try {
       await performNotifyAppReady();
     } catch (error) {
       console.error('notifyAppReady() bootstrap failed', error);
     }
-  } else {
+  } else if (skipNotifyAppReady) {
     addEvent('notifyAppReady skipped', { message: 'disabled by VITE_CAPGO_SKIP_NOTIFY_APP_READY' });
   }
 
