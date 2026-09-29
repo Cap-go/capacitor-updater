@@ -296,6 +296,21 @@ declare module '@capacitor/cli' {
       allowModifyUrl?: boolean;
 
       /**
+       * Allow the plugin to follow redirects from HTTPS to plain HTTP for its own network requests
+       * (update checks, stats, channel calls, and bundle/manifest downloads).
+       *
+       * Blocked by default so a redirect can never downgrade updater traffic to an unencrypted connection.
+       * Only enable this if your self-hosted update server or CDN must redirect to an HTTP URL.
+       * Direct HTTP URLs (for example `localApi` during development) are not affected.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since  8.52.0
+       */
+      allowHttpsToHttpRedirect?: boolean;
+
+      /**
        * Allow the plugin to modify the appId dynamically from the JavaScript side.
        *
        *
