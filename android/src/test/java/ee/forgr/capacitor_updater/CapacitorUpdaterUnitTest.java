@@ -17,7 +17,6 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
-import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;

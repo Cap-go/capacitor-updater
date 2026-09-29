@@ -15,7 +15,6 @@ import java.io.*;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -35,7 +34,9 @@ import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.CookieJar;
 import okhttp3.Dispatcher;
+import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -126,6 +127,8 @@ public class DownloadService extends Worker {
     // Match CapgoUpdater.timeout / responseTimeout default (20s). OkHttp's 10s
     // defaults were unused by the plugin config and aborted slow manifest GETs.
     private static volatile int httpTimeoutMs = 20_000;
+    // Off by default: a redirect must never downgrade updater traffic from HTTPS to plain HTTP.
+    private static volatile boolean allowHttpsToHttpRedirect = false;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
     private static String currentVersionOs = "unknown";
@@ -138,6 +141,9 @@ public class DownloadService extends Worker {
         sharedClient = new OkHttpClient.Builder()
             .dispatcher(dispatcher)
             .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            // Never share cookies with Capgo endpoints: the app's java.net.CookieHandler default is
+            // Capacitor's WebView cookie manager, and it must not see (or be fed by) plugin traffic.
+            .cookieJar(CookieJar.NO_COOKIES)
             .connectTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
@@ -147,7 +153,31 @@ public class DownloadService extends Worker {
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
+            .addNetworkInterceptor((chain) -> {
+                Response response = chain.proceed(chain.request());
+                if (!allowHttpsToHttpRedirect && isHttpsToHttpRedirect(response)) {
+                    response.close();
+                    throw new IOException("Blocked HTTPS to HTTP redirect; set allowHttpsToHttpRedirect to true to allow it");
+                }
+                return response;
+            })
             .build();
+    }
+
+    static void setAllowHttpsToHttpRedirect(boolean allow) {
+        allowHttpsToHttpRedirect = allow;
+    }
+
+    static boolean isHttpsToHttpRedirect(Response response) {
+        if (!response.isRedirect() || !response.request().isHttps()) {
+            return false;
+        }
+        String location = response.header("Location");
+        if (location == null) {
+            return false;
+        }
+        HttpUrl target = response.request().url().resolve(location);
+        return target != null && !target.isHttps();
     }
 
     static int httpTimeoutMs() {
@@ -768,20 +798,16 @@ public class DownloadService extends Worker {
             throw new RuntimeException("insufficient_disk_space");
         }
 
-        HttpURLConnection httpConn = null;
+        Response response = null;
         InputStream inputStream = null;
         BufferedReader reader = null;
         BufferedWriter writer = null;
 
         try {
-            URL u = new URL(url);
-            httpConn = (HttpURLConnection) u.openConnection();
-
-            // Zip can stall longer than a JSON API call; keep a floor so
-            // responseTimeout cannot shrink large-bundle downloads.
-            int zipTimeoutMs = Math.max(httpTimeoutMs, 60_000);
-            httpConn.setConnectTimeout(zipTimeoutMs);
-            httpConn.setReadTimeout(zipTimeoutMs);
+            HttpUrl zipUrl = url != null ? HttpUrl.parse(url) : null;
+            if (zipUrl == null) {
+                throw new MalformedURLException("Expected an http or https URL");
+            }
 
             // Reading progress file (if exist)
             long downloadedBytes = 0;
@@ -810,15 +836,16 @@ public class DownloadService extends Worker {
                 throw new DownloadRetryException("download_stopped");
             }
 
-            if (downloadedBytes > 0) {
-                httpConn.setRequestProperty("Range", "bytes=" + downloadedBytes + "-");
-            }
-
-            int responseCode = httpConn.getResponseCode();
+            response = executeZipRequest(zipUrl, downloadedBytes);
+            int responseCode = response.code();
 
             if (responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_PARTIAL) {
-                ZipWritePlan writePlan = planZipResumeWrite(responseCode, downloadedBytes, httpConn.getHeaderField("Content-Range"));
-                long responseBodyLength = httpConn.getContentLength();
+                ResponseBody responseBody = response.body();
+                if (responseBody == null) {
+                    throw new IOException("Response body is null");
+                }
+                ZipWritePlan writePlan = planZipResumeWrite(responseCode, downloadedBytes, response.header("Content-Range"));
+                long responseBodyLength = responseBody.contentLength();
                 long contentLength = shouldAppendHttpBody(writePlan.statusCode, writePlan.writeOffset)
                     ? (responseBodyLength >= 0 ? responseBodyLength + writePlan.writeOffset : -1)
                     : responseBodyLength;
@@ -829,7 +856,7 @@ public class DownloadService extends Worker {
                 }
 
                 try {
-                    inputStream = httpConn.getInputStream();
+                    inputStream = responseBody.byteStream();
 
                     if (writePlan.writeOffset == 0 && downloadedBytes == 0) {
                         writer = new BufferedWriter(new FileWriter(infoFile));
@@ -840,7 +867,7 @@ public class DownloadService extends Worker {
 
                     final int[] lastNotifiedPercent = { 0 };
                     final long totalContentLength = contentLength;
-                    String contentRangeHeader = httpConn.getHeaderField("Content-Range");
+                    String contentRangeHeader = response.header("Content-Range");
                     writeHttpBody(tempFile, inputStream, writePlan.statusCode, writePlan.writeOffset, this::isStopped, (written) -> {
                         int percent = calcTotalPercent(written, totalContentLength);
                         if (percent >= lastNotifiedPercent[0] + 10) {
@@ -916,12 +943,33 @@ public class DownloadService extends Worker {
             throw new RuntimeException(e.getMessage());
         } finally {
             // Ensure connection is closed
-            if (httpConn != null) {
+            if (response != null) {
                 try {
-                    httpConn.disconnect();
+                    response.close();
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    /**
+     * Zip bundle request on the shared client (no cookies, same User-Agent), resuming from
+     * {@code downloadedBytes} with a Range header. The caller closes the response.
+     */
+    static Response executeZipRequest(HttpUrl url, long downloadedBytes) throws IOException {
+        // Zip can stall longer than a JSON API call; keep a floor so
+        // responseTimeout cannot shrink large-bundle downloads.
+        int zipTimeoutMs = Math.max(httpTimeoutMs, 60_000);
+        OkHttpClient zipClient = sharedClient
+            .newBuilder()
+            .connectTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
+            .writeTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
+            .build();
+        Request.Builder builder = new Request.Builder().url(url);
+        if (downloadedBytes > 0) {
+            builder.header("Range", "bytes=" + downloadedBytes + "-");
+        }
+        return zipClient.newCall(builder.build()).execute();
     }
 
     static boolean isRetryableHttpStatus(int responseCode) {

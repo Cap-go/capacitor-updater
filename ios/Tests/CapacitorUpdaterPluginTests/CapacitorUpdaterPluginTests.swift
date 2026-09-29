@@ -1,7 +1,6 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
-import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
@@ -570,7 +569,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
         let logger = Logger(withTag: "TestLogger")
-        let version = try Version("1.0.0")
+        let version = try CapgoSemanticVersion("1.0.0")
         return DelayUpdateUtils(currentVersionNative: version, logger: logger)
     }
 

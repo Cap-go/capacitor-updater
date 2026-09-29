@@ -48,12 +48,10 @@ import com.google.android.play.core.install.InstallStateUpdatedListener;
 import com.google.android.play.core.install.model.AppUpdateType;
 import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
-import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -75,7 +73,11 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-// Removed OkHttpClient and Protocol imports - using shared client in DownloadService instead
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -727,7 +729,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
             this.implementation.pluginVersion = this.pluginVersion;
             this.implementation.versionCode = this.getVersionCode(pInfo);
-            // Removed unused OkHttpClient creation - using shared client in DownloadService instead
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
             this.currentBuildVersion = this.getVersionCode(pInfo);
             this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
@@ -886,6 +887,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         long responseTimeoutMillis = responseTimeoutSeconds > 0 ? (long) responseTimeoutSeconds * 1000L : 20_000L;
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
         DownloadService.applyHttpTimeouts(this.implementation.timeout);
+        DownloadService.setAllowHttpsToHttpRedirect(this.getConfig().getBoolean("allowHttpsToHttpRedirect", false));
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
@@ -3862,17 +3864,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private JSONObject fetchPreviewPayload(final String payloadUrl) throws IOException, JSONException {
-        final HttpURLConnection connection = (HttpURLConnection) new URL(payloadUrl).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setConnectTimeout(30000);
-        connection.setReadTimeout(60000);
+        final HttpUrl url = payloadUrl != null ? HttpUrl.parse(payloadUrl) : null;
+        if (url == null) {
+            throw new MalformedURLException("Expected an http or https preview payload URL");
+        }
+        // Shared client: no cookies, Capgo User-Agent.
+        final OkHttpClient client = DownloadService.sharedClient
+            .newBuilder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build();
+        final Request request = new Request.Builder().url(url).get().header("Accept", "application/json").build();
 
-        try {
-            final int statusCode = connection.getResponseCode();
-            final String body = this.readResponseBody(
-                statusCode >= 200 && statusCode < 300 ? connection.getInputStream() : connection.getErrorStream()
-            );
+        try (Response response = client.newCall(request).execute()) {
+            final int statusCode = response.code();
+            final ResponseBody responseBody = response.body();
+            final String body = this.readResponseBody(responseBody != null ? responseBody.byteStream() : null);
             final JSONObject payload = new JSONObject(body);
             if (statusCode < 200 || statusCode >= 300) {
                 throw new IOException(
@@ -3880,8 +3887,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
             return payload;
-        } finally {
-            connection.disconnect();
         }
     }
 

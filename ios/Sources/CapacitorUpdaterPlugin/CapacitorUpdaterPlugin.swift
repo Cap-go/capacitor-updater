@@ -8,7 +8,6 @@ import Foundation
 import Capacitor
 import UIKit
 import WebKit
-import Version
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -147,7 +146,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
-    private var currentVersionNative: Version = "0.0.0"
+    private var currentVersionNative = CapgoSemanticVersion(major: 0, minor: 0, patch: 0)
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
@@ -264,7 +263,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Cannot get version name")
         }
         do {
-            currentVersionNative = try Version(versionName)
+            currentVersionNative = try CapgoSemanticVersion(versionName)
         } catch {
             logger.error("Cannot parse versionName \(versionName)")
         }
@@ -288,6 +287,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
+        implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -2705,12 +2705,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var response: URLResponse?
         var responseError: Error?
 
-        URLSession.shared.dataTask(with: request) { data, urlResponse, error in
+        self.implementation.startRawDataTask(request) { data, urlResponse, error in
             responseData = data
             response = urlResponse
             responseError = error
             semaphore.signal()
-        }.resume()
+        }
 
         if semaphore.wait(timeout: .now() + 60) == .timedOut {
             throw makePreviewError("Preview payload request timed out")
@@ -5052,8 +5052,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Determine update availability by comparing versions
                         if let availableVersion = availableVersion {
                             do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
+                                let currentVer = try CapgoSemanticVersion(currentVersionName)
+                                let availableVer = try CapgoSemanticVersion(availableVersion)
                                 if availableVer > currentVer {
                                     result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
                                 } else {
