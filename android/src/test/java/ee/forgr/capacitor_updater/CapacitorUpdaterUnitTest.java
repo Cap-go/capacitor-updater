@@ -1829,6 +1829,47 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testEmitLaunchDownloadReadyNotifiesAppReady() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.setLoggerForTesting(mock(Logger.class));
+            final BundleInfo bundle = new BundleInfo("bundleB001", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.emitLaunchDownloadReady(bundle, "update downloaded, will install next background");
+
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("update downloaded, will install next background", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+        }
+    }
+
+    @Test
+    public void testLaunchDownloadReadyIsEmittedWhenBackgroundDownloadSettles() {
+        assertTrue(CapgoUpdater.shouldNotifyLaunchDownloadReady(false, true, false, false));
+        assertEquals("update downloaded, will install next background", CapgoUpdater.launchDownloadReadyStatus(true, true));
+        assertEquals("update downloaded, autoUpdate onlyDownload", CapgoUpdater.launchDownloadReadyStatus(true, false));
+    }
+
+    @Test
+    public void testLaunchDownloadReadyIsEmittedWhenBackgroundDownloadFails() {
+        assertTrue(CapgoUpdater.shouldNotifyLaunchDownloadReady(false, false, false, false));
+        assertEquals("Error downloading file", CapgoUpdater.launchDownloadReadyStatus(false, true));
+    }
+
+    @Test
+    public void testLaunchDownloadReadyIsSkippedForAwaitedDirectAndPreviewDownloads() {
+        assertFalse(CapgoUpdater.shouldNotifyLaunchDownloadReady(true, true, false, false));
+        assertFalse(CapgoUpdater.shouldNotifyLaunchDownloadReady(true, false, false, false));
+        assertFalse(CapgoUpdater.shouldNotifyLaunchDownloadReady(false, true, true, false));
+        assertFalse(CapgoUpdater.shouldNotifyLaunchDownloadReady(false, true, false, true));
+    }
+
+    @Test
     public void testPeriodCheckDelayZeroDisablesPeriodicChecks() {
         assertEquals(0, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(0));
     }
