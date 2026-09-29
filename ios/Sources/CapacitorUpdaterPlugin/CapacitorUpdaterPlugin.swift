@@ -219,6 +219,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Best-effort flag: set before we expect notifyAppReady (load/reload).
     // No lock — never held across waits; a rare race only mis-times one wait.
     private var pendingNotifyAppReady = false
+    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    // A call from the previous page has no matching generation and must not mark the new bundle successful.
+    private var readyGuardArmed = false
+    private var readyGeneration = 0
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
 
@@ -1709,6 +1713,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.logger.error("Cannot get capBridge")
             return false
         }
+        self.armReadyGuard(webView: vc.webView)
         if self.keepUrlPathAfterReload {
             if let currentURL = vc.webView?.url {
                 capBridge.setServerBasePath(dest.path)
@@ -3318,7 +3323,63 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    static func shouldAcceptReadyCall(guardArmed: Bool, expectedGeneration: Int, reportedGeneration: Int?) -> Bool {
+        if !guardArmed {
+            return true
+        }
+        guard let reportedGeneration else {
+            return false
+        }
+        return reportedGeneration == expectedGeneration
+    }
+
+    static func readyGenerationScript(_ generation: Int) -> String {
+        return "(function(){window.__CAPGO_READY_GEN=\(generation);if(window.__capgoReadyPatch)return;window.__capgoReadyPatch=true;function arm(){var cap=window.Capacitor;var plugin=cap&&cap.Plugins&&cap.Plugins.CapacitorUpdater;if(!plugin||plugin.__capgoReadyPatched||!plugin.notifyAppReady)return false;var orig=plugin.notifyAppReady.bind(plugin);plugin.notifyAppReady=function(opts){var next={};if(opts&&typeof opts==='object'){for(var k in opts){if(Object.prototype.hasOwnProperty.call(opts,k))next[k]=opts[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;return orig(next);};plugin.__capgoReadyPatched=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();"
+    }
+
+    private func armReadyGuard(webView: WKWebView?) {
+        let generation = self.readyGeneration + 1
+        guard let webView else {
+            logger.warn("Cannot stamp notifyAppReady generation without a webview")
+            self.readyGuardArmed = false
+            return
+        }
+        let userScript = WKUserScript(
+            source: CapacitorUpdaterPlugin.readyGenerationScript(generation),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        webView.configuration.userContentController.addUserScript(userScript)
+        self.readyGeneration = generation
+        self.readyGuardArmed = true
+    }
+
+    private func reportedReadyGeneration(_ call: CAPPluginCall) -> Int? {
+        if let generation = call.getInt("loadGeneration") {
+            return generation
+        }
+        // The bridge often boxes JS numbers as NSNumber, which getInt does not cast.
+        if let number = call.getValue("loadGeneration") as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
+    private func acceptsReadyCall(_ call: CAPPluginCall) -> Bool {
+        let reported = self.readyGuardArmed ? self.reportedReadyGeneration(call) : nil
+        return CapacitorUpdaterPlugin.shouldAcceptReadyCall(
+            guardArmed: self.readyGuardArmed,
+            expectedGeneration: self.readyGeneration,
+            reportedGeneration: reported
+        )
+    }
+
     @objc func notifyAppReady(_ call: CAPPluginCall) {
+        if !self.acceptsReadyCall(call) {
+            logger.info("Ignoring notifyAppReady from a page that is no longer current")
+            call.resolve(["bundle": self.implementation.getCurrentBundle().toJSON()])
+            return
+        }
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
