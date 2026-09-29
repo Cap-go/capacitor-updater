@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import {
   defaultDeviceBaseUrl,
@@ -480,60 +481,81 @@ async function handleUpdate(request, scenarioId) {
   });
 }
 
-function createDroppedResponse(
-  bytes,
-  { contentType, stall = false, onDisconnect = () => {}, onDropped = () => {}, onRelease = null, signal = null },
-) {
-  // Advertise the full length, send roughly half the body, then fail the stream so the client
-  // sees a connection that dies midway instead of a clean HTTP error.
+// Marks a response that must die midway. Bun.serve cannot guarantee that (some versions drop
+// Content-Length and end a failed stream as a clean chunked body), so the node:http layer below
+// writes these itself: full Content-Length, roughly half the body, then a destroyed socket.
+class InterruptedResponse {
+  constructor(bytes, { contentType, stall = false, onDisconnect = () => {}, onDropped = () => {}, onRelease = null }) {
+    this.bytes = bytes;
+    this.contentType = contentType;
+    this.stall = stall;
+    this.onDisconnect = onDisconnect;
+    this.onDropped = onDropped;
+    this.onRelease = onRelease;
+  }
+}
+
+function createDroppedResponse(bytes, options) {
+  return new InterruptedResponse(bytes, options);
+}
+
+function writeInterruptedResponse(connection, res, interrupted) {
+  const { bytes, contentType, stall, onDisconnect, onDropped, onRelease } = interrupted;
   const cutoff = Math.max(1, Math.floor(bytes.length / 2));
-  let sentPartialBody = false;
-  let disconnected = false;
+  let finished = false;
+
   const markDisconnected = () => {
-    if (!disconnected) {
-      disconnected = true;
+    if (!finished) {
+      finished = true;
       onDisconnect();
     }
   };
 
-  signal?.addEventListener('abort', markDisconnected, { once: true });
+  const { socket } = connection;
+  res.on('close', markDisconnected);
+  connection.onGone(markDisconnected);
 
-  const body = new ReadableStream({
-    async pull(controller) {
-      if (!sentPartialBody) {
-        sentPartialBody = true;
-        controller.enqueue(bytes.subarray(0, cutoff));
+  let trickleTimer = null;
+  const drop = () => {
+    clearInterval(trickleTimer);
+    if (finished) {
+      return;
+    }
+    finished = true;
+    onDropped();
+    socket?.destroy();
+  };
+
+  res.writeHead(200, {
+    ...baseHeaders,
+    'content-length': String(bytes.length),
+    'content-type': contentType,
+  });
+  res.write(Buffer.from(bytes.subarray(0, cutoff)));
+
+  if (stall) {
+    onRelease?.(drop);
+    // Trickle one byte at a time like a very slow network. The writes also surface a client that
+    // vanished (app killed), which an idle socket does not report on every Bun release.
+    let offset = cutoff;
+    trickleTimer = setInterval(() => {
+      if (finished || offset >= bytes.length - 1) {
+        clearInterval(trickleTimer);
         return;
       }
-
-      if (stall) {
-        await new Promise((resolve) => {
-          onRelease?.(resolve);
-          signal?.addEventListener('abort', resolve, { once: true });
-        });
-      } else {
-        // Let the partial body reach the device before the reset: adb reverse relays through a
-        // buffer, and resetting too early discards bytes still in flight on slow CI emulators.
-        await Bun.sleep(2000);
-      }
-
-      if (!disconnected) {
-        onDropped();
-      }
-      controller.error(new Error('fake-capgo simulated network drop'));
-    },
-    cancel() {
-      markDisconnected();
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      ...baseHeaders,
-      'content-length': String(bytes.length),
-      'content-type': contentType,
-    },
-  });
+      res.write(Buffer.from(bytes.subarray(offset, offset + 1)), (error) => {
+        if (error) {
+          clearInterval(trickleTimer);
+          markDisconnected();
+        }
+      });
+      offset += 1;
+    }, 500);
+  } else {
+    // Let the partial body reach the device before the reset: adb reverse relays through a
+    // buffer, and resetting too early discards bytes still in flight on slow CI emulators.
+    setTimeout(drop, 2000);
+  }
 }
 
 function parseRangeStart(rangeHeader, size) {
@@ -566,7 +588,9 @@ async function serveBundle(request, version, zipPath, debugState) {
     debugState.bundleDownloads.ranged += 1;
   }
   console.log(`[fake-capgo] bundle=${version} served from byte ${rangeStart}`);
-  return fileResponse(file.slice(rangeStart), {
+  // Slice the bytes directly: Blob.slice responses serve the whole file on older Bun releases.
+  const bytes = new Uint8Array(await file.arrayBuffer()).subarray(rangeStart);
+  return fileResponse(bytes, {
     status: 206,
     headers: {
       'content-range': `bytes ${rangeStart}-${file.size - 1}/${file.size}`,
@@ -650,7 +674,6 @@ async function handleBundle(request, method, version) {
   return createDroppedResponse(bytes, {
     contentType: 'application/zip',
     stall: bundleFault === 'stall',
-    signal: request.signal,
     onDisconnect: () => {
       debugState.bundleDownloads.aborted += 1;
       console.log(`[fake-capgo] bundle=${version} client disconnected mid-download`);
@@ -882,15 +905,94 @@ async function handleRequest(request) {
   return new Response('not found', { headers: baseHeaders, status: 404 });
 }
 
-const server = Bun.serve({
-  hostname: '0.0.0.0',
-  port: defaultPort,
-  fetch: handleRequest,
+function toRequestHeaders(incomingHeaders) {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(incomingHeaders)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => headers.append(key, entry));
+    } else if (value !== undefined) {
+      headers.set(key, value);
+    }
+  }
+  return headers;
+}
+
+async function writeResponse(res, response) {
+  const body = response.body ? Buffer.from(await response.arrayBuffer()) : null;
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  res.end(body ?? undefined);
+}
+
+// Older Bun releases only report a vanished client to listeners attached before the request body
+// is read, so track that from the very start of each request.
+function trackConnection(req) {
+  const listeners = new Set();
+  let gone = false;
+  const markGone = () => {
+    if (!gone) {
+      gone = true;
+      listeners.forEach((listener) => listener());
+    }
+  };
+
+  req.on('aborted', markGone);
+  req.socket?.on('close', markGone);
+  req.socket?.on('error', markGone);
+
+  return {
+    socket: req.socket,
+    onGone(listener) {
+      if (gone) {
+        listener();
+        return;
+      }
+      listeners.add(listener);
+    },
+  };
+}
+
+const server = http.createServer(async (req, res) => {
+  const connection = trackConnection(req);
+
+  try {
+    const chunks = [];
+    const acceptsBody = req.method !== 'GET' && req.method !== 'HEAD';
+    // Draining a body also stops older Bun releases from reporting client disconnects, so only
+    // read it when the method carries one (bundle downloads are GETs).
+    if (acceptsBody) {
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+    }
+
+    const hasBody = acceptsBody && chunks.length > 0;
+    const request = new Request(`http://${req.headers.host ?? '127.0.0.1'}${req.url}`, {
+      method: req.method,
+      headers: toRequestHeaders(req.headers),
+      body: hasBody ? Buffer.concat(chunks) : undefined,
+    });
+    const response = await handleRequest(request);
+
+    if (response instanceof InterruptedResponse) {
+      writeInterruptedResponse(connection, res, response);
+      return;
+    }
+
+    await writeResponse(res, response);
+  } catch (error) {
+    console.error('[fake-capgo] request failed', error);
+    if (!res.headersSent) {
+      res.writeHead(500, baseHeaders);
+    }
+    res.end();
+  }
 });
+
+await new Promise((resolve) => server.listen(defaultPort, '0.0.0.0', resolve));
 
 const defaultPortSuffix = `:${defaultPort}`;
 const listeningUrl = defaultHostBaseUrl.endsWith(defaultPortSuffix)
-  ? `${defaultHostBaseUrl.slice(0, -defaultPortSuffix.length)}:${server.port}`
+  ? `${defaultHostBaseUrl.slice(0, -defaultPortSuffix.length)}:${server.address().port}`
   : defaultHostBaseUrl;
 
 console.log(`[fake-capgo] listening on ${listeningUrl}`);
