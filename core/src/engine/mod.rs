@@ -5,8 +5,12 @@
 //! JSON configuration, then drive it with [`Engine::call`] (blocking; call it
 //! off the UI thread). Long-running work reports progress through events.
 
+pub mod archive;
 pub mod backend;
 pub mod config;
+pub mod download;
+pub mod fsutil;
+pub mod manifest;
 mod ops;
 pub mod stats;
 pub mod store;
@@ -28,6 +32,7 @@ pub struct Engine {
     config: RwLock<EngineConfig>,
     pub(crate) stats: stats::StatsState,
     pub(crate) delete_lock: Mutex<()>,
+    pub(crate) downloads: Mutex<std::collections::HashMap<String, download::Cancel>>,
     weak: Weak<Engine>,
 }
 
@@ -41,14 +46,20 @@ impl Engine {
             &config.platform,
         );
         let timeout = Duration::from_millis(config.timeout_ms);
-        Ok(Arc::new_cyclic(|weak| Self {
+        let allow_downgrade = config.allow_https_to_http_redirect;
+        let engine = Arc::new_cyclic(|weak| Self {
             http: Http::new(host.clone(), user_agent, timeout),
             host,
             config: RwLock::new(config),
             stats: stats::StatsState::default(),
             delete_lock: Mutex::new(()),
+            downloads: Mutex::new(Default::default()),
             weak: weak.clone(),
-        }))
+        });
+        engine
+            .http
+            .set_allow_https_to_http_redirect(allow_downgrade);
+        Ok(engine)
     }
 
     pub fn host(&self) -> &Arc<dyn Host> {

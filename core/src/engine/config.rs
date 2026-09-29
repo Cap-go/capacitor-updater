@@ -58,6 +58,8 @@ pub struct EngineConfig {
     pub public_key: String,
     pub key_id: String,
     pub preview_session: bool,
+    /// Follow redirects that downgrade HTTPS to HTTP (off by default).
+    pub allow_https_to_http_redirect: bool,
     pub timeout_ms: u64,
     /// Directory holding one sub-directory per downloaded bundle id.
     pub bundle_root: PathBuf,
@@ -67,6 +69,10 @@ pub struct EngineConfig {
     pub stats_dir: PathBuf,
     /// Delta cache directory (`capgo_downloads`).
     pub cache_dir: PathBuf,
+    /// Builtin web assets on disk (iOS `Bundle.main/public`, Android `filesDir/public`).
+    pub builtin_dir: PathBuf,
+    /// Android APK holding `assets/public/...` (builtin reuse for delta downloads).
+    pub builtin_apk: PathBuf,
     /// Stored server path meaning "builtin" (`public` on Android, empty on iOS).
     pub builtin_server_path: String,
     pub keys: Keys,
@@ -100,6 +106,8 @@ impl EngineConfig {
             storage_root: path("storageRoot"),
             stats_dir: path("statsDir"),
             cache_dir: path("cacheDir"),
+            builtin_dir: path("builtinDir"),
+            builtin_apk: path("builtinApk"),
             builtin_server_path: text(object, "builtinServerPath"),
             keys: Keys::default(),
             ..Self::default()
@@ -163,6 +171,12 @@ impl EngineConfig {
         }
         if let Some(value) = object.get("previewSession").and_then(Value::as_bool) {
             self.preview_session = value;
+        }
+        if let Some(value) = object
+            .get("allowHttpsToHttpRedirect")
+            .and_then(Value::as_bool)
+        {
+            self.allow_https_to_http_redirect = value;
         }
         if let Some(value) = object.get("timeoutMs").and_then(Value::as_u64) {
             self.timeout_ms = value;

@@ -292,6 +292,45 @@ impl Engine {
                     ))
                 }
                 "isRemoteBlocked" => json!({ "blocked": self.is_remote_blocked() }),
+
+                // ---- downloads
+                "download" => {
+                    let request = super::download::DownloadRequest::from_json(input)?;
+                    let installed = if request.manifest.is_some() {
+                        self.download_manifest(&request)?
+                    } else {
+                        if request.url.is_empty() {
+                            return Err(CoreError::invalid_input("Download called without url"));
+                        }
+                        self.download_zip(&request)?
+                    };
+                    bundle(installed)
+                }
+                "cancelDownload" => {
+                    json!({ "cancelled": self.cancel_download(req_str(input, "version")?) })
+                }
+                "isDownloading" => {
+                    json!({ "downloading": self.is_downloading(req_str(input, "version")?) })
+                }
+                "missingBundleFiles" => {
+                    let manifest = input
+                        .get("manifest")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.missing_bundle_files(
+                        &manifest,
+                        opt_str(input, "sessionKey").unwrap_or_default(),
+                    )
+                }
+                "populateDeltaCache" => {
+                    self.populate_delta_cache(req_str(input, "id")?);
+                    json!({})
+                }
+                "cleanupDownloadTempFiles" => {
+                    self.cleanup_download_temp_files();
+                    json!({})
+                }
                 _ => return Err(CoreError::new("__not_engine__", "")),
             })
         })();

@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -67,13 +66,14 @@ impl TestEngine {
     }
 }
 
+pub type Reply = (u16, Vec<(String, String)>, Vec<u8>);
+type Responder = Arc<Mutex<Box<dyn FnMut(&RecordedRequest) -> Reply + Send>>>;
+
 /// Minimal HTTP server answering with scripted responses and recording requests.
 pub struct FakeServer {
     pub url: String,
     pub requests: Arc<Mutex<Vec<RecordedRequest>>>,
-    responder: Arc<
-        Mutex<Box<dyn FnMut(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>) + Send>>,
-    >,
+    responder: Responder,
 }
 
 #[derive(Clone, Debug)]
@@ -105,14 +105,12 @@ impl FakeServer {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let url = format!("http://{}", server.server_addr().to_ip().unwrap());
         let requests: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
-        let responder: Arc<
-            Mutex<Box<dyn FnMut(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>) + Send>>,
-        > = Arc::new(Mutex::new(Box::new(responder)));
+        let responder: Responder = Arc::new(Mutex::new(Box::new(responder)));
         let (requests_clone, responder_clone) = (requests.clone(), responder.clone());
         std::thread::spawn(move || {
             for mut request in server.incoming_requests() {
                 let mut body = Vec::new();
-                let _ = request.as_reader().read_to_end(&mut body);
+                let _ = std::io::Read::read_to_end(request.as_reader(), &mut body);
                 let recorded = RecordedRequest {
                     method: request.method().to_string(),
                     url: request.url().to_string(),

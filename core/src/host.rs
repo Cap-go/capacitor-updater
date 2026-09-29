@@ -60,6 +60,11 @@ pub trait Host: Send + Sync + 'static {
         true
     }
 
+    /// Gate run before any download touches disk (e.g. wait for launch cleanup).
+    fn before_download(&self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Cancels every platform-scheduled download.
     fn cancel_all_downloads(&self) {}
 

@@ -17,6 +17,7 @@ use crate::host::Host;
 
 /// Largest non-download response body accepted (JSON API responses).
 const MAX_API_BODY_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetErrorKind {
@@ -24,6 +25,7 @@ pub enum NetErrorKind {
     Network,
     Tls,
     InvalidUrl,
+    InsecureRedirect,
     Io,
 }
 
@@ -92,9 +94,12 @@ impl StreamHead {
 
 pub struct Http {
     agent: RwLock<ureq::Agent>,
+    /// Bundle transfers: per-read timeout of at least 60 s (large files on slow links).
+    download_agent: RwLock<ureq::Agent>,
     tls: Arc<ClientConfig>,
     user_agent: RwLock<String>,
     timeout: RwLock<Duration>,
+    allow_https_to_http_redirect: std::sync::atomic::AtomicBool,
 }
 
 fn classify_io(error: &std::io::Error) -> NetErrorKind {
@@ -151,11 +156,14 @@ impl Http {
     pub fn new(host: Arc<dyn Host>, user_agent: String, timeout: Duration) -> Self {
         let tls = Arc::new(tls_config(host));
         let agent = build_agent(tls.clone(), timeout);
+        let download_agent = build_agent(tls.clone(), timeout.max(Duration::from_secs(60)));
         Self {
             agent: RwLock::new(agent),
+            download_agent: RwLock::new(download_agent),
             tls,
             user_agent: RwLock::new(user_agent),
             timeout: RwLock::new(timeout),
+            allow_https_to_http_redirect: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -184,22 +192,90 @@ impl Http {
         }
         *current = timeout;
         *self.agent.write().unwrap() = build_agent(self.tls.clone(), timeout);
+        *self.download_agent.write().unwrap() =
+            build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
     }
 
     fn prepare(
         &self,
+        agent: &RwLock<ureq::Agent>,
         method: &str,
         url: &str,
         headers: &[(&str, &str)],
-    ) -> Result<ureq::Request, NetError> {
-        let agent = self.agent.read().unwrap().clone();
+    ) -> ureq::Request {
+        let agent = agent.read().unwrap().clone();
         let mut request = agent
             .request(method, url)
             .set("User-Agent", &self.user_agent());
         for (name, value) in headers {
             request = request.set(name, value);
         }
-        Ok(request)
+        request
+    }
+
+    /// Sends a request, following up to 5 redirects. A redirect from HTTPS to
+    /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set.
+    fn execute(
+        &self,
+        agent: &RwLock<ureq::Agent>,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<&[u8]>,
+    ) -> Result<ureq::Response, NetError> {
+        let mut current = url.to_string();
+        let mut method = method.to_string();
+        let mut body = body;
+        for _ in 0..=MAX_REDIRECTS {
+            let request = self.prepare(agent, &method, &current, headers);
+            let response = Self::finish(match body {
+                Some(body) => request.send_bytes(body),
+                None => request.call(),
+            })?;
+            let status = response.status();
+            if !(300..400).contains(&status) || status == 304 {
+                return Ok(response);
+            }
+            let Some(location) = response.header("Location").map(str::to_string) else {
+                return Ok(response);
+            };
+            let base = url::Url::parse(&current).map_err(|error| NetError {
+                kind: NetErrorKind::InvalidUrl,
+                message: error.to_string(),
+            })?;
+            let next = base.join(&location).map_err(|error| NetError {
+                kind: NetErrorKind::InvalidUrl,
+                message: error.to_string(),
+            })?;
+            if !redirect_allowed(
+                base.scheme(),
+                next.scheme(),
+                self.allow_https_to_http_redirect
+                    .load(std::sync::atomic::Ordering::SeqCst),
+            ) {
+                return Err(NetError {
+                    kind: NetErrorKind::InsecureRedirect,
+                    message: format!("Refused redirect from HTTPS to HTTP: {next}"),
+                });
+            }
+            // 303 (and 301/302 for POST, like browsers) switch to GET without a body.
+            if status == 303
+                || ((status == 301 || status == 302) && method != "GET" && method != "HEAD")
+            {
+                method = "GET".into();
+                body = None;
+            }
+            current = next.to_string();
+        }
+        Err(NetError {
+            kind: NetErrorKind::Network,
+            message: "Too many redirects".into(),
+        })
+    }
+
+    pub fn set_allow_https_to_http_redirect(&self, allow: bool) {
+        self.allow_https_to_http_redirect
+            .store(allow, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn finish(result: Result<ureq::Response, ureq::Error>) -> Result<ureq::Response, NetError> {
@@ -219,11 +295,7 @@ impl Http {
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Result<Response, NetError> {
-        let request = self.prepare(method, url, headers)?;
-        let response = Self::finish(match body {
-            Some(body) => request.send_bytes(body),
-            None => request.call(),
-        })?;
+        let response = self.execute(&self.agent, method, url, headers, body)?;
         let status = response.status();
         let headers = headers_of(&response);
         let mut buffer = Vec::new();
@@ -263,16 +335,15 @@ impl Http {
         )
     }
 
-    /// Streams a response body into `sink`. `sink` returning an error aborts the download.
+    /// Streams a GET response to `handler`: first [`Stream::Head`], then every
+    /// [`Stream::Chunk`]. An error from the handler aborts the transfer.
     pub fn download(
         &self,
         url: &str,
         headers: &[(&str, &str)],
-        mut on_head: impl FnMut(&StreamHead) -> Result<(), NetError>,
-        mut sink: impl FnMut(&[u8]) -> Result<(), NetError>,
+        handler: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
     ) -> Result<StreamHead, NetError> {
-        let request = self.prepare("GET", url, headers)?;
-        let response = Self::finish(request.call())?;
+        let response = self.execute(&self.download_agent, "GET", url, headers, None)?;
         let head = StreamHead {
             status: response.status(),
             headers: headers_of(&response),
@@ -280,7 +351,7 @@ impl Http {
                 .header("Content-Length")
                 .and_then(|value| value.trim().parse().ok()),
         };
-        on_head(&head)?;
+        handler(Stream::Head(&head))?;
         let mut reader = response.into_reader();
         let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
         loop {
@@ -291,10 +362,22 @@ impl Http {
             if read == 0 {
                 break;
             }
-            sink(&buffer[..read])?;
+            handler(Stream::Chunk(&buffer[..read]))?;
         }
         Ok(head)
     }
+}
+
+/// A redirect may never downgrade HTTPS to plain HTTP unless explicitly allowed.
+pub fn redirect_allowed(from_scheme: &str, to_scheme: &str, allow_downgrade: bool) -> bool {
+    !(from_scheme.eq_ignore_ascii_case("https") && to_scheme.eq_ignore_ascii_case("http"))
+        || allow_downgrade
+}
+
+/// Events of [`Http::download`].
+pub enum Stream<'a> {
+    Head(&'a StreamHead),
+    Chunk(&'a [u8]),
 }
 
 fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
@@ -306,6 +389,7 @@ fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
         .max_idle_connections(64)
         .max_idle_connections_per_host(64)
         .try_proxy_from_env(true)
+        .redirects(0)
         .build()
 }
 
