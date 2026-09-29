@@ -5195,20 +5195,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
                 final String failedId = current.getId();
-                final String failedVersion = current.getVersionName();
-                logger.info("Deleting failing bundle: " + failedVersion);
-                // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
-                CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, current.setStatus(BundleStatus.DELETING));
-                startNewThread(() -> {
-                    try {
-                        final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
-                        if (Boolean.TRUE.equals(res)) {
-                            logger.info("Failed bundle deleted: " + failedVersion);
+                final BundleInfo latest = this.implementation.getBundleInfo(failedId);
+                final boolean stillCurrent = failedId.equals(this.implementation.getCurrentBundle().getId());
+                // performReset waits for notifyAppReady. Resetting onto this same bundle writes
+                // SUCCESS before we get here, so the pre-reset snapshot must not become DELETING.
+                if (latest == null || BundleStatus.ERROR != latest.getStatus() || stillCurrent) {
+                    logger.info("Skip deleting bundle " + failedId + " after reset");
+                } else {
+                    final String failedVersion = latest.getVersionName();
+                    logger.info("Deleting failing bundle: " + failedVersion);
+                    // Mark before async work so kill/OOM still resumes via drainPendingDeletes.
+                    CapacitorUpdaterPlugin.this.implementation.saveBundleInfo(failedId, latest.setStatus(BundleStatus.DELETING));
+                    startNewThread(() -> {
+                        try {
+                            final Boolean res = CapacitorUpdaterPlugin.this.implementation.delete(failedId, false, false);
+                            if (Boolean.TRUE.equals(res)) {
+                                logger.info("Failed bundle deleted: " + failedVersion);
+                            }
+                        } catch (final IOException e) {
+                            logger.error("Failed to delete failed bundle: " + failedVersion + " " + e.getMessage());
                         }
-                    } catch (final IOException e) {
-                        logger.error("Failed to delete failed bundle: " + failedVersion + " " + e.getMessage());
-                    }
-                });
+                    });
+                }
             }
         } else {
             logger.info("notifyAppReady was called. This is fine: " + current.getId());
