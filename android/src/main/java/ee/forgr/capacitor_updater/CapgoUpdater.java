@@ -3469,6 +3469,10 @@ public class CapgoUpdater {
             if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
                 return false;
             }
+            if (next.equals(this.getCurrentBundleId()) && BundleStatus.SUCCESS == newBundle.getStatus()) {
+                logger.info("Bundle " + next + " is already the current successful bundle. Skip next().");
+                return true;
+            }
             this.editor.putString(NEXT_VERSION, next);
             this.setBundleStatus(next, BundleStatus.PENDING);
             bundleToNotify = newBundle;

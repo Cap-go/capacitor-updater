@@ -690,6 +690,122 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class RevertStatusCapgoUpdater extends CapgoUpdater {
+
+        BundleInfo active;
+        BundleInfo fallbackBundle;
+        boolean promoteCurrentToSuccessOnReload = false;
+        final Map<String, BundleInfo> bundles = new HashMap<>();
+        final List<BundleStatus> savedStatuses = new ArrayList<>();
+
+        RevertStatusCapgoUpdater() {
+            super(null);
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.active;
+        }
+
+        @Override
+        public BundleInfo getFallbackBundle() {
+            return this.fallbackBundle;
+        }
+
+        @Override
+        public BundleInfo getNextBundle() {
+            return null;
+        }
+
+        @Override
+        public BundleInfo getBundleInfo(final String id) {
+            final BundleInfo stored = this.bundles.get(id);
+            if (stored != null) {
+                return stored;
+            }
+            if (this.fallbackBundle != null && this.fallbackBundle.getId().equals(id)) {
+                return this.fallbackBundle;
+            }
+            return new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "");
+        }
+
+        @Override
+        ResetState captureResetState() {
+            return new ResetState("public", BundleInfo.ID_BUILTIN, null);
+        }
+
+        @Override
+        boolean canSet(final BundleInfo bundle) {
+            return true;
+        }
+
+        @Override
+        void prepareResetStateForTransition() {}
+
+        @Override
+        public void setError(final BundleInfo bundle) {
+            final BundleInfo errored = bundle.setStatus(BundleStatus.ERROR);
+            this.bundles.put(bundle.getId(), errored);
+            if (this.active != null && this.active.getId().equals(bundle.getId())) {
+                this.active = errored;
+            }
+        }
+
+        @Override
+        public boolean saveBundleInfo(final String id, final BundleInfo info) {
+            if (info != null) {
+                this.savedStatuses.add(info.getStatus());
+                this.bundles.put(id, info);
+                if (this.active != null && this.active.getId().equals(id)) {
+                    this.active = info;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public Boolean set(final BundleInfo bundle) {
+            if (bundle == null) {
+                return false;
+            }
+            final BundleInfo stored = this.bundles.get(bundle.getId());
+            this.active = stored != null ? stored : bundle;
+            return true;
+        }
+
+        @Override
+        public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) {
+            return true;
+        }
+    }
+
+    private static final class SuccessOnReloadPlugin extends TestableCapacitorUpdaterPlugin {
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        protected boolean _reload() {
+            if (this.implementation instanceof RevertStatusCapgoUpdater) {
+                final RevertStatusCapgoUpdater updater = (RevertStatusCapgoUpdater) this.implementation;
+                if (updater.promoteCurrentToSuccessOnReload && updater.active != null) {
+                    final BundleInfo success = updater.active.setStatus(BundleStatus.SUCCESS);
+                    updater.bundles.put(success.getId(), success);
+                    updater.active = success;
+                }
+            }
+            return true;
+        }
+    }
+
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
@@ -1787,6 +1903,107 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(updater.resetCalled);
             assertFalse(plugin.hasNotifiedEvent("updateFailed"));
         }
+    }
+
+    private void runCheckRevert(final RevertStatusCapgoUpdater updater) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final SuccessOnReloadPlugin plugin = new SuccessOnReloadPlugin();
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            invokePrivateVoidMethod(plugin, "checkRevert");
+        }
+    }
+
+    @Test
+    public void testCheckRevertDoesNotOverwriteSuccessWhenResetTargetIsSameBundle() throws Exception {
+        final BundleInfo pending = new BundleInfo("bundleB001", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+        final RevertStatusCapgoUpdater updater = new RevertStatusCapgoUpdater();
+        updater.active = pending;
+        updater.bundles.put(pending.getId(), pending);
+        updater.fallbackBundle = pending;
+        updater.promoteCurrentToSuccessOnReload = true;
+
+        this.runCheckRevert(updater);
+
+        assertEquals(BundleStatus.SUCCESS, updater.getBundleInfo(pending.getId()).getStatus());
+        assertFalse(updater.savedStatuses.contains(BundleStatus.DELETING));
+    }
+
+    @Test
+    public void testCheckRevertDoesNotMarkCurrentBundleDeletingWhenReadyTimesOut() throws Exception {
+        final BundleInfo pending = new BundleInfo("bundleB001", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+        final RevertStatusCapgoUpdater updater = new RevertStatusCapgoUpdater();
+        updater.active = pending;
+        updater.bundles.put(pending.getId(), pending);
+        updater.fallbackBundle = pending;
+
+        this.runCheckRevert(updater);
+
+        assertEquals(BundleStatus.ERROR, updater.getBundleInfo(pending.getId()).getStatus());
+        assertFalse(updater.savedStatuses.contains(BundleStatus.DELETING));
+    }
+
+    @Test
+    public void testCheckRevertStillDeletesADifferentFailedBundle() throws Exception {
+        final BundleInfo pending = new BundleInfo("bundleB001", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+        final BundleInfo fallback = new BundleInfo("fallback01", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+        final RevertStatusCapgoUpdater updater = new RevertStatusCapgoUpdater();
+        updater.active = pending;
+        updater.bundles.put(pending.getId(), pending);
+        updater.fallbackBundle = fallback;
+        updater.promoteCurrentToSuccessOnReload = true;
+
+        this.runCheckRevert(updater);
+
+        assertEquals(BundleStatus.DELETING, updater.getBundleInfo(pending.getId()).getStatus());
+        assertEquals(BundleStatus.SUCCESS, updater.getBundleInfo(fallback.getId()).getStatus());
+        assertTrue(updater.savedStatuses.contains(BundleStatus.DELETING));
+    }
+
+    @Test
+    public void testSetNextBundleOnCurrentSuccessIsNoOp() throws Exception {
+        final String currentId = "bundleB001";
+        final String otherId = "bundleC002";
+        final Path tempDir = createExistingBundleDirectory("capgo-next-current", currentId);
+        final Path otherDir = tempDir.resolve("versions").resolve(otherId);
+        Files.createDirectories(otherDir);
+        Files.write(otherDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        otherDir.toFile().deleteOnExit();
+
+        final Map<String, String> store = new HashMap<>();
+        store.put("server-path", tempDir.resolve("versions").resolve(currentId).toString());
+        store.put(currentId + "_info", new BundleInfo(currentId, "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum").toString());
+        store.put(otherId + "_info", new BundleInfo(otherId, "3.0.0", BundleStatus.SUCCESS, new Date(), "checksum").toString());
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+
+        when(prefs.getString(anyString(), any())).thenAnswer((inv) -> store.getOrDefault(inv.getArgument(0), inv.getArgument(1)));
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+
+        assertTrue(updater.setNextBundle(currentId));
+        assertEquals(BundleStatus.SUCCESS, BundleInfo.fromJSON(store.get(currentId + "_info")).getStatus());
+        assertFalse(store.containsKey("nextVersion"));
+
+        assertTrue(updater.setNextBundle(otherId));
+        assertEquals(otherId, store.get("nextVersion"));
+        assertEquals(BundleStatus.PENDING, BundleInfo.fromJSON(store.get(otherId + "_info")).getStatus());
+        assertEquals(BundleStatus.SUCCESS, BundleInfo.fromJSON(store.get(currentId + "_info")).getStatus());
     }
 
     @Test
