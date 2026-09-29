@@ -24,7 +24,6 @@ FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\
 DEBUG_LOG_FAILURE_PATTERN="fail|Fail|failure|Failure|error|Error|Exception|CommandFailed|Assertion is false|crash|Crash"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
-EDGE_CASE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_BACKGROUND_SETTLE_SECONDS:-5}"
 
 # shellcheck source=scripts/maestro/edge-cases.sh
 source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
@@ -656,20 +655,6 @@ kill_example_app() {
   return 1
 }
 
-cold_launch_example_app() {
-  kill_example_app || return 1
-  sleep 1
-  launch_example_app
-}
-
-# Sends the app to the background (so deferred bundles get applied), then cold launches it.
-background_then_cold_launch_example_app() {
-  echo "Backgrounding ${APP_ID} for ${EDGE_CASE_BACKGROUND_SETTLE_SECONDS}s before a cold launch"
-  xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1 || true
-  sleep "$EDGE_CASE_BACKGROUND_SETTLE_SECONDS"
-  cold_launch_example_app
-}
-
 # Builds a Maestro regex over the pinned E2E summary line; fragments must follow its field order.
 edge_summary_pattern() {
   local pattern='.*Harness: ready'
@@ -680,14 +665,6 @@ edge_summary_pattern() {
   done
 
   printf '%s.*' "$pattern"
-}
-
-wait_for_edge_summary() {
-  local label="$1"
-  shift
-
-  run_flow "$label" "$ROOT_DIR/.maestro/ios/edge-case-wait-summary.yaml" \
-    "SUMMARY_PATTERN=$(edge_summary_pattern "$@")"
 }
 
 run_edge_case_once() {
@@ -715,6 +692,16 @@ run_edge_case_once() {
   launch_example_app || return 1
 
   wait_for_edge_case_fault_hit "$edge_case_id" "$app_scenario" || return 1
+  assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
+
+  local builtin_pattern=""
+  builtin_pattern="$(edge_summary_pattern \
+    "Build label: $builtin_label" \
+    "Scenario: $app_scenario" \
+    "$direct_update_line" \
+    "Notify app ready: ok ($builtin_version)" \
+    "$ASSERT_SOURCE_BUILTIN" \
+    "Current bundle version: $builtin_version")"
 
   if [[ "$edge_case_id" == "edge-kill-download" ]]; then
     # Kill the app while the bundle is still streaming, then bring the network back.
@@ -723,43 +710,36 @@ run_edge_case_once() {
     set_server_fault "$app_scenario" bundle none || return 1
     launch_example_app || return 1
   else
-    # The failed update must leave the builtin bundle running and usable.
-    wait_for_edge_summary "${edge_case_id}-builtin-survives" \
-      "Build label: $builtin_label" \
-      "Scenario: $app_scenario" \
-      "$direct_update_line" \
-      "Notify app ready: ok ($builtin_version)" \
-      "$ASSERT_SOURCE_BUILTIN" \
-      "Current bundle version: $builtin_version" \
-      'Next bundle version: none' || return 1
-    assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
-
-    set_server_fault "$app_scenario" bundle none || return 1
-    set_server_fault "$app_scenario" update none || return 1
-    cold_launch_example_app || return 1
+    # The failed update must leave the builtin bundle running with nothing queued.
+    builtin_pattern="${builtin_pattern}$(regex_escape_for_maestro 'Next bundle version: none').*"
   fi
 
+  local applied_pattern=""
+  applied_pattern="$(edge_summary_pattern \
+    "Build label: $first_release" \
+    "Scenario: $app_scenario" \
+    "$direct_update_line" \
+    "Notify app ready: ok ($first_release)" \
+    "$ASSERT_SOURCE_DOWNLOADED" \
+    "Current bundle version: $first_release")"
+
   if [[ "$app_scenario" == "edge-direct" ]]; then
-    wait_for_edge_summary "${edge_case_id}-recovered" \
-      "Build label: $first_release" \
-      "Scenario: $app_scenario" \
-      "$direct_update_line" \
-      "Notify app ready: ok ($first_release)" \
-      "$ASSERT_SOURCE_DOWNLOADED" \
-      "Current bundle version: $first_release" || return 1
+    run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
+      "HOST_SERVER_URL=$HOST_SERVER_URL" \
+      "SCENARIO_ID=$app_scenario" \
+      "BUILTIN_PATTERN=$builtin_pattern" \
+      "APPLIED_PATTERN=$applied_pattern" || return 1
   else
-    wait_for_edge_summary "${edge_case_id}-downloaded" \
-      "Build label: $builtin_label" \
-      "Scenario: $app_scenario" \
-      "$ASSERT_SOURCE_BUILTIN" \
-      "Next bundle version: $first_release" || return 1
-    background_then_cold_launch_example_app || return 1
-    wait_for_edge_summary "${edge_case_id}-applied" \
-      "Build label: $first_release" \
-      "Scenario: $app_scenario" \
-      "Notify app ready: ok ($first_release)" \
-      "$ASSERT_SOURCE_DOWNLOADED" \
-      "Current bundle version: $first_release" || return 1
+    run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-deferred.yaml" \
+      "HOST_SERVER_URL=$HOST_SERVER_URL" \
+      "SCENARIO_ID=$app_scenario" \
+      "BUILTIN_PATTERN=$builtin_pattern" \
+      "DOWNLOADED_PATTERN=$(edge_summary_pattern \
+        "Build label: $builtin_label" \
+        "Scenario: $app_scenario" \
+        "$ASSERT_SOURCE_BUILTIN" \
+        "Next bundle version: $first_release")" \
+      "APPLIED_PATTERN=$applied_pattern" || return 1
   fi
 
   assert_edge_case_recovered "$edge_case_id" "$app_scenario" || return 1
