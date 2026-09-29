@@ -1,5 +1,5 @@
 {
   "setup-worktree": [
-    "npm install && cd example-app && npm install"
+    "bun install && cd example-app && bun install"
   ]
 }
