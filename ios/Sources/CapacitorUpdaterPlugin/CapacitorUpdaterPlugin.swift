@@ -308,16 +308,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
-            let emit = {
-                self?.notifyListeners(eventName, data: data)
-            }
-            if Thread.isMainThread {
-                emit()
-            } else {
-                DispatchQueue.main.async {
-                    emit()
-                }
-            }
+            self?.notifyListenersOnMain(eventName, data: data)
         }
         implementation.pluginVersion = self.pluginVersion
 
@@ -1244,9 +1235,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.keepAlive = true
     }
 
-    private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
+    /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
+    /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
+    private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
-            self.notifyListeners(eventName, data: data)
+            self.notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
         }
 
         if Thread.isMainThread {
@@ -1767,7 +1760,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return false
             }
             self.checkAppReady()
-            self.notifyListeners("appReloaded", data: [:])
+            self.notifyListenersOnMain("appReloaded", data: [:])
             return true
         }
 
@@ -1790,7 +1783,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return false
             }
             self.checkAppReady()
-            self.notifyListeners("appReloaded", data: [:])
+            self.notifyListenersOnMain("appReloaded", data: [:])
             return true
         }
 
@@ -3433,7 +3426,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if BundleStatus.SUCCESS.storedValue != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
-            self.notifyListeners("updateFailed", data: [
+            self.notifyListenersOnMain("updateFailed", data: [
                 "bundle": current.toJSON()
             ])
             self.persistLastFailedBundle(current)
@@ -3475,7 +3468,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func notifyBundleSet(_ bundle: BundleInfo) {
-        self.notifyListeners("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
+        self.notifyListenersOnMain("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
     }
 
     func sendReadyToJs(current: BundleInfo, msg: String) {
@@ -3487,7 +3480,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.consumePendingNotifyAppReady() {
                 self.semaphoreWait(waitTime: self.appReadyTimeout)
             }
-            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
+            self.notifyListenersOnMain("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
@@ -4263,8 +4256,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let payload: [String: Any] = ["version": version]
-        self.notifyListeners("breakingAvailable", data: payload)
-        self.notifyListeners("majorAvailable", data: payload)
+        self.notifyListenersOnMain("breakingAvailable", data: payload)
+        self.notifyListenersOnMain("majorAvailable", data: payload)
     }
 
     private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
@@ -4304,7 +4297,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let responseMessage = res.message?.isEmpty == false ? res.message : nil
         let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
         let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
-        self.notifyListeners("updateCheckResult", data: [
+        self.notifyListenersOnMain("updateCheckResult", data: [
             "kind": responseKind,
             "error": backendError,
             "message": message,
@@ -4357,10 +4350,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
             }
-            self.notifyListeners(failureEvent, data: ["version": latestVersionName])
+            self.notifyListenersOnMain(failureEvent, data: ["version": latestVersionName])
         }
         if notifyNoNeedUpdate {
-            self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+            self.notifyListenersOnMain("noNeedUpdate", data: ["bundle": current.toJSON()])
         }
         self.sendReadyToJs(current: current, msg: msg)
         logger.info("endBackGroundTaskWithNotif \(msg) current: \(current.getVersionName()) latestVersionName: \(latestVersionName)")
@@ -4517,7 +4510,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     let builtinUpdateAvailable = !current.isBuiltin()
                     if builtinUpdateAvailable {
                         let builtinBundle = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
-                        self.notifyListeners("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
+                        self.notifyListenersOnMain("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
                     }
                     self.endBackGroundTaskWithNotif(
                         msg: "Latest version is builtin, autoUpdate onlyDownload",
@@ -4668,7 +4661,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         } else if self.queueBundleForNextBackgroundInstall(next) {
-                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "Direct update reload failed, update will install next background",
                                 latestVersionName: latestVersionName,
@@ -4689,7 +4682,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
                         if self.queueBundleForNextBackgroundInstall(next) {
-                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
@@ -4707,7 +4700,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                     } else {
                         self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
-                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
+                        self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
                         self.endBackGroundTaskWithNotif(
                             msg: "update downloaded, autoUpdate onlyDownload",
                             latestVersionName: latestVersionName,
