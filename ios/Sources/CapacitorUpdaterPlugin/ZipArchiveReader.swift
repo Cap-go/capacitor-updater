@@ -122,7 +122,13 @@ final class ZipArchiveReader {
                 // Some writers store empty files as deflate with no payload at all.
                 return
             }
-            try readDeflated(from: dataOffset, compressedSize: entry.compressedSize, bufferSize: bufferSize, consumer: consumer)
+            try readDeflated(
+                from: dataOffset,
+                compressedSize: entry.compressedSize,
+                expectedSize: entry.uncompressedSize,
+                bufferSize: bufferSize,
+                consumer: consumer
+            )
         default:
             throw ZipError.unsupportedCompressionMethod(localMethod)
         }
@@ -158,7 +164,15 @@ final class ZipArchiveReader {
         }
     }
 
-    private func readDeflated(from offset: UInt64, compressedSize: UInt64, bufferSize: Int, consumer: (Data) throws -> Void) throws {
+    /// Inflates an entry, rejecting output that differs from the central directory's uncompressed size.
+    /// This also bounds decompression bombs to the declared size.
+    private func readDeflated(
+        from offset: UInt64,
+        compressedSize: UInt64,
+        expectedSize: UInt64,
+        bufferSize: Int,
+        consumer: (Data) throws -> Void
+    ) throws {
         guard compressedSize <= fileSize, offset <= fileSize - compressedSize else {
             throw ZipError.truncatedEntryData
         }
@@ -181,6 +195,7 @@ final class ZipArchiveReader {
         stream.pointee.src_ptr = UnsafePointer(sourceBuffer)
         stream.pointee.src_size = 0
 
+        var producedTotal: UInt64 = 0
         var finished = false
         while !finished {
             try autoreleasepool {
@@ -201,11 +216,18 @@ final class ZipArchiveReader {
                 let status = compression_stream_process(stream, flags)
                 let produced = bufferSize - stream.pointee.dst_size
                 if produced > 0 {
+                    producedTotal += UInt64(produced)
+                    guard producedTotal <= expectedSize else {
+                        throw ZipError.corruptedEntryData
+                    }
                     try consumer(Data(bytes: destinationBuffer, count: produced))
                 }
 
                 switch status {
                 case COMPRESSION_STATUS_END:
+                    guard producedTotal == expectedSize else {
+                        throw ZipError.corruptedEntryData
+                    }
                     finished = true
                 case COMPRESSION_STATUS_OK:
                     // All input consumed and no output produced: the deflate stream is truncated.

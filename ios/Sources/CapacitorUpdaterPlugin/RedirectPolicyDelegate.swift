@@ -35,7 +35,7 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
     }
 
     func urlSession(
-        _ session: URLSession,
+        _: URLSession,
         task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest,

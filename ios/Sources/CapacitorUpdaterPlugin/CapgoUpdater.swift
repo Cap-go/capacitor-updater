@@ -236,12 +236,12 @@ import UIKit
     }
 
     // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
-    private var _urlSession: URLSession?
+    private var cachedUrlSession: URLSession?
     private let urlSessionLock = NSLock()
     private var urlSession: URLSession {
         urlSessionLock.lock()
         defer { urlSessionLock.unlock() }
-        if let session = _urlSession {
+        if let session = cachedUrlSession {
             return session
         }
         let configuration = URLSessionConfiguration.ephemeral
@@ -256,7 +256,7 @@ import UIKit
             self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
         }
         let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
-        _urlSession = session
+        cachedUrlSession = session
         return session
     }
 
@@ -579,7 +579,7 @@ import UIKit
     deinit {
         shutdown()
         // Alamofire's Session invalidated its URLSession on deinit; keep releasing the session the same way.
-        _urlSession?.invalidateAndCancel()
+        cachedUrlSession?.invalidateAndCancel()
     }
 
     public func shutdown() {

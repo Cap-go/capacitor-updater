@@ -45,8 +45,8 @@ final class CapgoSemanticVersionTests: XCTestCase {
         XCTAssertTrue(try version("1.0.0-rc.1") < version("1.0.0"))
         XCTAssertFalse(try version("1.0.0") < version("1.0.0-rc.1"))
         XCTAssertTrue(try version("2.1.0") > version("2.0.9"))
-        XCTAssertTrue(try version("1.0.0") >= version("1.0.0"))
-        XCTAssertTrue(try version("1.0.0") <= version("1.0.0"))
+        XCTAssertTrue(try version("1.0.0+a") >= version("1.0.0+b"))
+        XCTAssertTrue(try version("1") <= version("1.0.0"))
     }
 
     func testMissingComponentsCompareAsZeroAndBuildIsIgnored() throws {

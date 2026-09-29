@@ -180,8 +180,7 @@ public class Version implements Comparable<Version> {
 
     @Override
     public final boolean equals(Object o) {
-        if (o instanceof Version && isEqual((Version) o)) return true;
-        return super.equals(o);
+        return o instanceof Version && isEqual((Version) o);
     }
 
     @Override

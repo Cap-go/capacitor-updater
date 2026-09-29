@@ -164,7 +164,9 @@ final class ZipArchiveReaderTests: XCTestCase {
         var writer = TestZipWriter()
         writer.addFile("file.txt", Data("abc".utf8))
         let reader = try ZipArchiveReader(url: try writeZip(writer))
-        XCTAssertThrowsError(try reader.extract(reader.entries[0], bufferSize: 0) { _ in }) { error in
+        XCTAssertThrowsError(try reader.extract(reader.entries[0], bufferSize: 0) { _ in
+            // No chunk is expected: the buffer size is rejected before reading.
+        }) { error in
             XCTAssertEqual(error as? ZipError, .invalidBufferSize)
         }
     }
@@ -234,6 +236,29 @@ final class ZipArchiveReaderTests: XCTestCase {
         try data.write(to: url)
         let reader = try ZipArchiveReader(url: url)
         XCTAssertThrowsError(try readAll(reader, reader.entries[0]))
+    }
+
+    func testRejectsDeflatedOutputThatDiffersFromDeclaredSize() throws {
+        let payload = compressibleData(count: 100_000)
+        for declaredSize: UInt32 in [10, 200_000] {
+            var writer = TestZipWriter()
+            writer.addFile("app.js", payload, method: .deflate)
+            var data = writer.build()
+            // Patch the central directory's uncompressed size (offset 24 in the central header).
+            let signature = Data([0x50, 0x4B, 0x01, 0x02])
+            guard let range = data.range(of: signature) else {
+                return XCTFail("central directory not found")
+            }
+            var littleEndian = declaredSize.littleEndian
+            let sizeBytes = Data(bytes: &littleEndian, count: 4)
+            data.replaceSubrange((range.lowerBound + 24)..<(range.lowerBound + 28), with: sizeBytes)
+            let url = root.appendingPathComponent("size-\(declaredSize).zip")
+            try data.write(to: url)
+            let reader = try ZipArchiveReader(url: url)
+            XCTAssertThrowsError(try readAll(reader, reader.entries[0])) { error in
+                XCTAssertEqual(error as? ZipError, .corruptedEntryData)
+            }
+        }
     }
 
     func testRejectsTruncatedDeflateStream() throws {
