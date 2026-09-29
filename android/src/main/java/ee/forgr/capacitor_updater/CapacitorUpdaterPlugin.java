@@ -222,6 +222,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile Thread appReadyCheck;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
+    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    private final Object readyGuardLock = new Object();
+    private volatile int readyGeneration = 0;
+    private volatile boolean readyGuardArmed = false;
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
@@ -2948,6 +2952,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void applyCurrentBundleToBridge() {
+        this.stampReadyGenerationBeforeReload();
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         if (this.keepUrlPathAfterReload) {
@@ -4513,10 +4518,120 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    static boolean shouldAcceptReadyCall(
+        final boolean guardArmed,
+        final int expectedGeneration,
+        final boolean hasGeneration,
+        final int reportedGeneration
+    ) {
+        if (!guardArmed) {
+            return true;
+        }
+        return hasGeneration && reportedGeneration == expectedGeneration;
+    }
+
+    static String readyGenerationScript(final int generation) {
+        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
+        // ignores assignments to notifyAppReady. Each document keeps its own generation.
+        return (
+            "(function(){window.__CAPGO_READY_GEN=" +
+            generation +
+            ";if(window.__capgoReadyBridge)return;" +
+            "function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;" +
+            "var orig=cap.nativePromise.bind(cap);" +
+            "cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){" +
+            "var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}" +
+            "next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};" +
+            "cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}" +
+            "if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}" +
+            "})();"
+        );
+    }
+
+    private int armReadyGuard() {
+        synchronized (this.readyGuardLock) {
+            this.readyGeneration = this.readyGeneration + 1;
+            this.readyGuardArmed = true;
+            return this.readyGeneration;
+        }
+    }
+
+    private void disarmReadyGuard(final int generation) {
+        synchronized (this.readyGuardLock) {
+            if (this.readyGeneration == generation) {
+                this.readyGuardArmed = false;
+                logger.warn("Could not stamp notifyAppReady for the next page. Readiness guard disabled for this reload.");
+            }
+        }
+    }
+
+    private void stampReadyGenerationBeforeReload() {
+        final int generation = this.armReadyGuard();
+        final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
+        if (webView == null) {
+            this.disarmReadyGuard(generation);
+            return;
+        }
+        webView.post(() -> {
+            if (!this.installReadyGenerationScript(webView, generation)) {
+                this.disarmReadyGuard(generation);
+            }
+        });
+    }
+
+    private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {
+        try {
+            final Class<?> webViewFeature = Class.forName("androidx.webkit.WebViewFeature");
+            final String feature = (String) webViewFeature.getField("DOCUMENT_START_SCRIPT").get(null);
+            final Boolean supported = (Boolean) webViewFeature.getMethod("isFeatureSupported", String.class).invoke(null, feature);
+            if (!Boolean.TRUE.equals(supported)) {
+                return false;
+            }
+            if (this.bridge == null || this.bridge.getAppUrl() == null) {
+                return false;
+            }
+            final String allowedOrigin = Uri.parse(this.bridge.getAppUrl())
+                .buildUpon()
+                .path(null)
+                .fragment(null)
+                .clearQuery()
+                .build()
+                .toString();
+            final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+            webViewCompat
+                .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
+                .invoke(null, webView, readyGenerationScript(generation), java.util.Collections.singleton(allowedOrigin));
+            return true;
+        } catch (final Exception e) {
+            logger.warn("Unable to stamp notifyAppReady generation: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean acceptsReadyCall(final PluginCall call) {
+        if (!this.readyGuardArmed) {
+            return true;
+        }
+        final JSObject data = call.getData();
+        final boolean hasGeneration = data != null && data.has("loadGeneration");
+        final int reported = hasGeneration ? data.optInt("loadGeneration", -1) : -1;
+        return shouldAcceptReadyCall(this.readyGuardArmed, this.readyGeneration, hasGeneration, reported);
+    }
+
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
         try {
+            if (!this.acceptsReadyCall(call)) {
+                logger.info("Ignoring notifyAppReady from a page that is no longer current");
+                final BundleInfo current = this.implementation.getCurrentBundle();
+                final JSObject ignored = new JSObject();
+                if (current != null) {
+                    ignored.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+                }
+                call.resolve(ignored);
+                return;
+            }
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
             this.reportAppLaunchReady(bundle);

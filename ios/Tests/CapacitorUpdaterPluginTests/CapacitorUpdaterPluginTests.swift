@@ -3295,4 +3295,15 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
     }
 
+    func testReadyCallFromPreviousPageIsRejected() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: false, expectedGeneration: 1, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 1))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 2))
+        let script = CapacitorUpdaterPlugin.readyGenerationScript(2)
+        XCTAssertTrue(script.contains("window.__CAPGO_READY_GEN=2"))
+        XCTAssertTrue(script.contains("cap.nativePromise"))
+        XCTAssertFalse(script.contains("plugin.notifyAppReady="))
+    }
+
 }
