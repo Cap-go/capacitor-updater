@@ -1,7 +1,6 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
-import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
@@ -38,6 +37,20 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
     private var _appReadyNotifiedAt: Date?
+    private var _appReadyNotifiedOnMainThread: Bool?
+    private var _appReadyRetainUntilConsumed: Bool?
+
+    var appReadyNotifiedOnMainThread: Bool? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyNotifiedOnMainThread
+    }
+
+    var appReadyRetainUntilConsumed: Bool? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyRetainUntilConsumed
+    }
 
     var appReadyNotifiedAt: Date? {
         eventLock.lock()
@@ -57,11 +70,13 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         return _notifiedEventPayloads
     }
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         eventLock.lock()
         _notifiedEventNames.append(eventName)
         if eventName == "appReady" {
             _appReadyNotifiedAt = Date()
+            _appReadyNotifiedOnMainThread = Thread.isMainThread
+            _appReadyRetainUntilConsumed = retain
         }
         if let data {
             _notifiedEventPayloads[eventName] = data
@@ -570,7 +585,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
         let logger = Logger(withTag: "TestLogger")
-        let version = try Version("1.0.0")
+        let version = try CapgoSemanticVersion("1.0.0")
         return DelayUpdateUtils(currentVersionNative: version, logger: logger)
     }
 
@@ -3138,6 +3153,37 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
 
+    func testSendReadyToJsNotifiesAppReadyOnMainThread() {
+        // CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157).
+        // sendReadyToJs runs on a background queue, so appReady must hop to main.
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady notified")
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertEqual(testPlugin.appReadyNotifiedOnMainThread, true)
+        XCTAssertEqual(testPlugin.appReadyRetainUntilConsumed, true)
+    }
+
     func testSendReadyToJsWaitsOnlyWhenArmed() {
         let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
         testPlugin.setAppReadyTimeoutForTesting(200)
@@ -3246,6 +3292,17 @@ class CapacitorUpdaterTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+    }
+
+    func testReadyCallFromPreviousPageIsRejected() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: false, expectedGeneration: 1, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 1))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 2))
+        let script = CapacitorUpdaterPlugin.readyGenerationScript(2)
+        XCTAssertTrue(script.contains("window.__CAPGO_READY_GEN=2"))
+        XCTAssertTrue(script.contains("cap.nativePromise"))
+        XCTAssertFalse(script.contains("plugin.notifyAppReady="))
     }
 
 }
