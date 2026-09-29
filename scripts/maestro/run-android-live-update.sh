@@ -584,7 +584,7 @@ run_edge_case_once() {
   local direct_update_line=""
   local cycle_mode="background"
 
-  app_scenario="$(edge_case_app_scenario "$edge_case_id")"
+  app_scenario="$(edge_case_app_scenario "$edge_case_id")" || return 1
   IFS=$'\t' read -r builtin_label builtin_version first_release _ <<<"$(load_scenario_config "$app_scenario")"
 
   if [[ "$app_scenario" == "edge-direct" ]]; then
@@ -636,6 +636,7 @@ run_edge_case_once() {
         'Current bundle source: builtin' \
         "Current bundle version: $builtin_version" \
         'Next bundle version: none' || return 1
+      assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
       set_server_fault "$app_scenario" bundle none || return 1
       set_server_fault "$app_scenario" update none || return 1
 

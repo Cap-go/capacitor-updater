@@ -706,6 +706,7 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
+      # A full case takes most of the 10 minute cap on hosted macOS runners, so no case-level retry here.
       - name: Run edge case Maestro flows
         run: |
           set -euo pipefail
@@ -715,6 +716,7 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=240 \
+          CAPGO_MAESTRO_EDGE_CASE_RETRIES=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts
@@ -906,6 +908,13 @@ jobs:
             exit 1
           fi
           echo "Android live update Maestro scenario '${{ matrix.scenario }}' passed."
+      - name: Upload fake Capgo server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-android-server-log-${{ matrix.scenario }}
+          path: .maestro-artifacts/fake-capgo-server.log
+          if-no-files-found: ignore
 
   maestro_android:
     if: always()

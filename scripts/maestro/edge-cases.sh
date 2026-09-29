@@ -4,8 +4,12 @@
 # Failures are injected by fake-capgo-server.mjs because the device reaches the server through
 # adb reverse / the host loopback, so toggling the emulator or simulator radio would not cut it.
 
-EDGE_CASE_IDS=(edge-network-drop edge-kill-download edge-corrupt-bundle edge-offline-check edge-direct-network-drop)
 EDGE_CASE_SERVER_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS:-180}"
+# edgeCases in scenarios.mjs is the single source of truth for case ids and their app scenario.
+read -r -a EDGE_CASE_IDS <<<"$(bun --eval "
+import { edgeCases } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+console.log(Object.keys(edgeCases).join(' '));
+")"
 
 is_edge_case() {
   local candidate="$1"
@@ -20,16 +24,17 @@ is_edge_case() {
   return 1
 }
 
-# Keep in sync with edgeCases in scenarios.mjs.
 edge_case_app_scenario() {
-  case "$1" in
-    edge-direct-network-drop)
-      echo 'edge-direct'
-      ;;
-    *)
-      echo 'edge-deferred'
-      ;;
-  esac
+  bun --eval "
+import { edgeCases } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+
+const app = edgeCases[process.argv[1]]?.app;
+if (!app) {
+  console.error('Unknown edge case: ' + process.argv[1]);
+  process.exit(1);
+}
+console.log(app);
+" "$1"
 }
 
 set_server_fault() {
@@ -55,7 +60,7 @@ wait_for_server_condition() {
   echo "Waiting for fake server state: ${description}"
 
   while ((SECONDS < deadline)); do
-    server_state="$(curl --silent --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario" || true)"
+    server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario" || true)"
 
     if [[ -n "$server_state" ]] && bun --eval "
 const state = JSON.parse(process.argv[1]);
@@ -127,7 +132,7 @@ assert_edge_case_recovered() {
   local edge_case_id="$1"
   local app_scenario="$2"
 
-  wait_for_server_condition "$app_scenario" 'a full bundle download was served after the fault cleared' 'downloads.served >= 1' 30
+  wait_for_server_condition "$app_scenario" 'a full bundle download was served after the fault cleared' 'downloads.served >= 1' 30 || return 1
 
   case "$edge_case_id" in
     edge-kill-download)
@@ -137,8 +142,17 @@ assert_edge_case_recovered() {
       wait_for_server_condition "$app_scenario" 'the checksum mismatch was reported' '(stats.checksum_fail ?? 0) >= 1' 5
       ;;
     edge-offline-check)
-      wait_for_server_condition "$app_scenario" 'no bundle was requested while the update check failed' 'downloads.faulted === 0' 5 &&
-        wait_for_server_condition "$app_scenario" 'the failed update check was reported' '(stats.download_fail ?? 0) >= 1' 5
+      wait_for_server_condition "$app_scenario" 'the failed update check was reported' '(stats.download_fail ?? 0) >= 1' 5
       ;;
   esac
+}
+
+# Server-side proof that the failure stayed contained; call it before the fault is cleared.
+assert_edge_case_failure_contained() {
+  local edge_case_id="$1"
+  local app_scenario="$2"
+
+  if [[ "$edge_case_id" == "edge-offline-check" ]]; then
+    wait_for_server_condition "$app_scenario" 'no bundle was requested while the update check failed' 'downloads.started === 0' 5
+  fi
 }

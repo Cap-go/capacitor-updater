@@ -512,7 +512,9 @@ function createDroppedResponse(
           signal?.addEventListener('abort', resolve, { once: true });
         });
       } else {
-        await Bun.sleep(250);
+        // Let the partial body reach the device before the reset: adb reverse relays through a
+        // buffer, and resetting too early discards bytes still in flight on slow CI emulators.
+        await Bun.sleep(2000);
       }
 
       if (!disconnected) {

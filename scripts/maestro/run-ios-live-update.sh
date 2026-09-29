@@ -624,13 +624,38 @@ launch_example_app() {
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 }
 
+# Simulator apps are host processes under the device's data directory.
+example_app_pids() {
+  pgrep -f "Devices/${SIMULATOR_ID}/data/Containers/Bundle/Application/[^ ]*/App\.app/App" || true
+}
+
+# SIGKILL, like the OS killing the app. simctl terminate can hang while the Maestro driver is
+# attached and leave the app running, which would turn the next cold launch into a resume.
 kill_example_app() {
+  local pids=""
+
   echo "Killing ${APP_ID} on the simulator"
-  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
+  pids="$(example_app_pids)"
+  if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids >/dev/null 2>&1 || true
+  else
+    run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
+  fi
+
+  for _ in $(seq 1 20); do
+    if [[ -z "$(example_app_pids)" ]]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "${APP_ID} is still running after the kill." >&2
+  return 1
 }
 
 cold_launch_example_app() {
-  kill_example_app
+  kill_example_app || return 1
   sleep 1
   launch_example_app
 }
@@ -672,7 +697,7 @@ run_edge_case_once() {
   local first_release=""
   local direct_update_line=""
 
-  app_scenario="$(edge_case_app_scenario "$edge_case_id")"
+  app_scenario="$(edge_case_app_scenario "$edge_case_id")" || return 1
   scenario_config="$(load_scenario_config "$app_scenario")" || return 1
   IFS=$'\t' read -r builtin_label builtin_version first_release _ <<<"$scenario_config"
 
@@ -691,7 +716,7 @@ run_edge_case_once() {
 
   if [[ "$edge_case_id" == "edge-kill-download" ]]; then
     # Kill the app while the bundle is still streaming, then bring the network back.
-    kill_example_app
+    kill_example_app || return 1
     wait_for_server_condition "$app_scenario" 'server saw the killed download disconnect' 'downloads.aborted >= 1' 60 || return 1
     set_server_fault "$app_scenario" bundle none || return 1
     launch_example_app || return 1
@@ -705,6 +730,7 @@ run_edge_case_once() {
       "$ASSERT_SOURCE_BUILTIN" \
       "Current bundle version: $builtin_version" \
       'Next bundle version: none' || return 1
+    assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
 
     set_server_fault "$app_scenario" bundle none || return 1
     set_server_fault "$app_scenario" update none || return 1
@@ -757,7 +783,7 @@ run_edge_case() {
 
     if [[ $attempt -lt $EDGE_CASE_RETRIES ]]; then
       echo "iOS edge case ${edge_case_id} failed; retrying from a clean install." >&2
-      kill_example_app
+      kill_example_app || true
       reset_ios_maestro_driver
       boot_simulator || true
       sleep 5
