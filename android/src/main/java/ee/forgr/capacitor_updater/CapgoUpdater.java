@@ -123,8 +123,7 @@ public class CapgoUpdater {
     // Released again when the send fails, so a later 429 can retry it.
     private static boolean rateLimitStatisticSent = false;
 
-    // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
-    private static final long MAX_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000L;
+    // A client-side 429 block is capped at one day by the core (see resolveRateLimitBlockedUntilMs).
 
     // Stats batching - queue events and send max once per second
     private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
@@ -266,23 +265,42 @@ public class CapgoUpdater {
         final boolean directInstall,
         final boolean previewSession
     ) {
-        if (awaitedByCaller) {
-            return false;
-        }
-        if (!success) {
-            return true;
-        }
-        return !directInstall && !previewSession;
+        return CapgoCore.bool(
+            "launchDownloadReady",
+            launchDownloadReadyInput(awaitedByCaller, success, directInstall, previewSession, true),
+            "notify",
+            !awaitedByCaller
+        );
     }
 
     static String launchDownloadReadyStatus(final boolean success, final boolean setNext) {
-        if (!success) {
-            return "Error downloading file";
-        }
-        if (setNext) {
-            return "update downloaded, will install next background";
-        }
-        return "update downloaded, autoUpdate onlyDownload";
+        return CapgoCore.string(
+            "launchDownloadReady",
+            launchDownloadReadyInput(true, success, false, false, setNext),
+            "status",
+            "Error downloading file"
+        );
+    }
+
+    private static org.json.JSONObject launchDownloadReadyInput(
+        final boolean awaitedByCaller,
+        final boolean success,
+        final boolean directInstall,
+        final boolean previewSession,
+        final boolean setNext
+    ) {
+        return CapgoCore.input(
+            "awaitedByCaller",
+            awaitedByCaller,
+            "success",
+            success,
+            "directInstall",
+            directInstall,
+            "previewSession",
+            previewSession,
+            "setNext",
+            setNext
+        );
     }
 
     public String randomString() {
@@ -330,39 +348,34 @@ public class CapgoUpdater {
     }
 
     static boolean containsPathTraversalSegment(final String relativePath) {
-        for (final String segment : relativePath.split("/")) {
-            if ("..".equals(segment)) {
-                return true;
-            }
-        }
-        return false;
+        return CapgoCore.bool("pathTraversalSegment", CapgoCore.input("path", relativePath), "traversal", true);
     }
 
+    /**
+     * Resolves an untrusted relative path (manifest file_name, zip entry, bundle id) strictly inside
+     * {@code baseDirectory}. The lexical guard is the shared core rule; the canonical (symlink-resolving) check is
+     * kept here as defense in depth.
+     */
     static File resolvePathInsideDirectory(final File baseDirectory, final String relativePath) throws IOException {
-        if (relativePath == null || relativePath.isEmpty()) {
-            throw new IOException("Invalid empty path");
-        }
-        if (relativePath.contains("\\") || relativePath.indexOf('\0') >= 0) {
-            throw new IOException("Invalid path separator");
-        }
-        if (containsPathTraversalSegment(relativePath)) {
-            throw new IOException("Path traversal segments are not allowed");
-        }
-        if (new File(relativePath).isAbsolute()) {
-            throw new IOException("Absolute paths are not allowed");
-        }
+        return resolveInsideDirectory("resolvePathInside", baseDirectory, "path", relativePath);
+    }
 
+    static File resolveInsideDirectory(final String operation, final File baseDirectory, final String key, final String relativePath)
+        throws IOException {
         final File canonicalBase = baseDirectory.getCanonicalFile();
-        final File canonicalTarget = new File(canonicalBase, relativePath).getCanonicalFile();
-        final String basePath = canonicalBase.getPath();
-        final String targetPath = canonicalTarget.getPath();
-        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        final String resolved;
+        try {
+            resolved = CapgoCore.call(operation, CapgoCore.input("base", canonicalBase.getPath(), key, relativePath)).getString("path");
+        } catch (CapgoCore.Failure | org.json.JSONException e) {
+            throw new IOException("Invalid path: " + e.getMessage());
+        }
 
-        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
-        if (!targetPath.startsWith(normalizedBasePath)) {
+        final File canonicalTarget = new File(resolved).getCanonicalFile();
+        final String basePath = canonicalBase.getPath();
+        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+        if (!canonicalTarget.getPath().startsWith(normalizedBasePath)) {
             throw new IOException("Path escapes base directory: " + relativePath);
         }
-
         return canonicalTarget;
     }
 
@@ -624,34 +637,15 @@ public class CapgoUpdater {
     static final String EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     static boolean isSafeCacheHash(final String hash) {
-        if (hash == null) {
-            return false;
-        }
-        final int len = hash.length();
-        if (len != 64 && len != 8) {
-            return false;
-        }
-        for (int i = 0; i < len; i++) {
-            final char c = hash.charAt(i);
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-                return false;
-            }
-        }
-        return true;
+        return CapgoCore.bool("safeCacheHash", CapgoCore.input("hash", hash), "safe", false);
     }
 
     // SHA-256 hash-named cache files were verified when written. Existence is
     // enough for non-empty files; empty files are reused only for the empty SHA-256.
     // CRC32 (8 hex) is too collision-prone to trust without a re-read.
     static boolean isReusableCacheFile(final File file, final String expectedHash) {
-        if (file == null || !file.isFile() || !isSafeCacheHash(expectedHash) || expectedHash.length() != 64) {
-            return false;
-        }
-        final long length = file.length();
-        if (length > 0) {
-            return true;
-        }
-        return length == 0 && EMPTY_SHA256.equalsIgnoreCase(expectedHash);
+        final Long size = file != null && file.isFile() ? file.length() : null;
+        return CapgoCore.bool("reusableCacheFile", CapgoCore.input("hash", expectedHash, "size", size), "reusable", false);
     }
 
     public JSONArray getMissingBundleFiles(final JSONArray manifest, final String sessionKey) throws JSONException {
@@ -1247,7 +1241,12 @@ public class CapgoUpdater {
     }
 
     static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
-        return bundlePath != null && !bundlePath.trim().isEmpty() && !isBuiltin && !hasStoredBundleInfo;
+        return CapgoCore.bool(
+            "foreignBundleReset",
+            CapgoCore.input("bundlePath", bundlePath, "isBuiltin", isBuiltin, "hasStoredBundleInfo", hasStoredBundleInfo),
+            "reset",
+            false
+        );
     }
 
     static final class BackgroundRunnerWorkConfig {
@@ -2218,81 +2217,28 @@ public class CapgoUpdater {
     }
 
     static String parseRemoteError(final String responseData) {
-        if (responseData == null || responseData.isEmpty()) {
-            return "";
-        }
-        try {
-            final JSONObject json = new JSONObject(responseData);
-            return json.optString("error", "");
-        } catch (JSONException ignored) {
-            return "";
-        }
+        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "error", "");
     }
 
     static String parseRemoteMessage(final String responseData) {
-        if (responseData == null || responseData.isEmpty()) {
-            return "";
-        }
-        try {
-            final JSONObject json = new JSONObject(responseData);
-            return json.optString("message", "");
-        } catch (JSONException ignored) {
-            return "";
-        }
+        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "message", "");
     }
 
     private long resolveRateLimitBlockedUntilMs(final Response response, final String responseData) {
         return resolveRateLimitBlockedUntilMs(response.header("Retry-After"), responseData, System.currentTimeMillis());
     }
 
+    /**
+     * Epoch ms until which requests stay blocked after a 429 (0 = no block). Honours Retry-After, then
+     * retryAfterSeconds, then rateLimitResetAt, capped at one day (shared core rule).
+     */
     static long resolveRateLimitBlockedUntilMs(final String retryAfterHeader, final String responseData, final long nowMs) {
-        final double candidate = rawRateLimitDeadlineMs(retryAfterHeader, responseData, nowMs);
-        // NaN and past deadlines mean "no client-side block"; anything further out is capped.
-        if (!(candidate > nowMs)) {
-            return 0L;
-        }
-        return (long) Math.min(candidate, (double) nowMs + MAX_RATE_LIMIT_WINDOW_MS);
-    }
-
-    static double rawRateLimitDeadlineMs(final String header, final String responseData, final long nowMs) {
-        if (header != null) {
-            try {
-                final double seconds = Double.parseDouble(header.trim());
-                if (seconds >= 0) {
-                    return nowMs + seconds * 1000d;
-                }
-            } catch (NumberFormatException ignored) {
-                // Fall through to body fields
-            }
-        }
-
-        if (responseData != null && !responseData.isEmpty()) {
-            try {
-                final JSONObject json = new JSONObject(responseData);
-                final JSONObject moreInfo = json.optJSONObject("moreInfo");
-                if (moreInfo != null && moreInfo.has("retryAfterSeconds")) {
-                    final double retryAfter = moreInfo.getDouble("retryAfterSeconds");
-                    if (retryAfter >= 0) {
-                        return nowMs + retryAfter * 1000d;
-                    }
-                } else if (json.has("retryAfterSeconds")) {
-                    final double retryAfter = json.getDouble("retryAfterSeconds");
-                    if (retryAfter >= 0) {
-                        return nowMs + retryAfter * 1000d;
-                    }
-                }
-                if (moreInfo != null && moreInfo.has("rateLimitResetAt")) {
-                    return moreInfo.getDouble("rateLimitResetAt");
-                } else if (json.has("rateLimitResetAt")) {
-                    return json.getDouble("rateLimitResetAt");
-                }
-            } catch (JSONException ignored) {
-                // No retry hint
-            }
-        }
-
-        // No retry hint — do not hold a client-side block; allow immediate retry to the worker
-        return 0d;
+        return CapgoCore.number(
+            "rateLimitDeadline",
+            CapgoCore.input("retryAfter", retryAfterHeader, "body", responseData, "nowMs", nowMs),
+            "blockedUntilMs",
+            0L
+        );
     }
 
     private static boolean claimRateLimitStatistic() {

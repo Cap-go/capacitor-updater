@@ -6,15 +6,8 @@
 
 package ee.forgr.capacitor_updater;
 
-/**
- * Created by Awesometic
- * It's encrypt returns Base64 encoded, and also decrypt for Base64 encoded cipher
- * references: http://stackoverflow.com/questions/12471999/rsa-encryption-decryption-in-android
- */
 import android.util.Base64;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
@@ -27,13 +20,17 @@ import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import org.json.JSONObject;
 
+/**
+ * Bundle crypto entry points. RSA recovery (PKCS#1 v1.5 type 1, as produced by the Capgo CLI with
+ * {@code privateEncrypt}), AES-128-CBC decryption and file SHA-256 run in the shared Rust core; this class keeps the
+ * plugin's Java API, logging and exception types.
+ */
 public class CryptoCipher {
 
     private static Logger logger;
@@ -42,23 +39,51 @@ public class CryptoCipher {
         logger = loggerInstance;
     }
 
+    /** Recovers data signed with the private key matching {@code publicKey}. */
     public static byte[] decryptRSA(byte[] source, PublicKey publicKey)
         throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
-        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-        cipher.init(Cipher.DECRYPT_MODE, publicKey);
-        byte[] decryptedBytes = cipher.doFinal(source);
-        return decryptedBytes;
+        if (publicKey == null || publicKey.getEncoded() == null) {
+            throw new InvalidKeyException("Missing RSA public key");
+        }
+        try {
+            final JSONObject result = CapgoCore.call(
+                "rsaPublicDecrypt",
+                CapgoCore.input(
+                    "publicKey",
+                    Base64.encodeToString(publicKey.getEncoded(), Base64.NO_WRAP),
+                    "ciphertextHex",
+                    CapgoCore.hex(source)
+                )
+            );
+            return CapgoCore.bytes(result.optString("plaintextHex", ""));
+        } catch (CapgoCore.Failure e) {
+            if ("invalid_public_key".equals(e.code)) {
+                throw new InvalidKeyException(e.getMessage());
+            }
+            throw new BadPaddingException(e.getMessage());
+        }
     }
 
     public static byte[] decryptAES(byte[] cipherText, SecretKey key, byte[] iv) throws GeneralSecurityException {
         if (key == null || iv == null) {
             throw new IllegalArgumentException("AES key and IV must not be null");
         }
-        IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        SecretKeySpec keySpec = new SecretKeySpec(key.getEncoded(), "AES");
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParameterSpec);
-        return cipher.doFinal(cipherText);
+        try {
+            final JSONObject result = CapgoCore.call(
+                "aesDecrypt",
+                CapgoCore.input(
+                    "ciphertextHex",
+                    CapgoCore.hex(cipherText),
+                    "keyHex",
+                    CapgoCore.hex(key.getEncoded()),
+                    "ivHex",
+                    CapgoCore.hex(iv)
+                )
+            );
+            return CapgoCore.bytes(result.optString("plaintextHex", ""));
+        } catch (CapgoCore.Failure e) {
+            throw new GeneralSecurityException(e.getMessage());
+        }
     }
 
     public static SecretKey byteToSessionKey(byte[] sessionKey) {
@@ -66,121 +91,43 @@ public class CryptoCipher {
         return new SecretKeySpec(sessionKey, 0, sessionKey.length, "AES");
     }
 
-    private static PublicKey readX509PublicKey(byte[] x509Bytes) throws GeneralSecurityException {
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(x509Bytes);
-        try {
-            return keyFactory.generatePublic(keySpec);
-        } catch (InvalidKeySpecException e) {
-            throw new IllegalArgumentException("Unexpected key format!", e);
-        }
-    }
-
+    /** Parses a PKCS#1 ({@code RSA PUBLIC KEY}) or SPKI ({@code PUBLIC KEY}) PEM with the shared core rules. */
     public static PublicKey stringToPublicKey(String public_key) throws GeneralSecurityException {
-        String pkcs1Pem = public_key
-            .replaceAll("\\s+", "")
-            .replace("-----BEGINRSAPUBLICKEY-----", "")
-            .replace("-----ENDRSAPUBLICKEY-----", "");
-
-        byte[] pkcs1EncodedBytes = Base64.decode(pkcs1Pem, Base64.DEFAULT);
-        return readPkcs1PublicKey(pkcs1EncodedBytes);
-    }
-
-    // since the public key is in pkcs1 format, we have to convert it to x509 format similar
-    // to what needs done with the private key converting to pkcs8 format
-    // so, the rest of the code below here is adapted from here https://stackoverflow.com/a/54246646
-    private static final int SEQUENCE_TAG = 0x30;
-    private static final int BIT_STRING_TAG = 0x03;
-    private static final byte[] NO_UNUSED_BITS = new byte[] { 0x00 };
-    private static final byte[] RSA_ALGORITHM_IDENTIFIER_SEQUENCE = {
-        (byte) 0x30,
-        (byte) 0x0d,
-        (byte) 0x06,
-        (byte) 0x09,
-        (byte) 0x2a,
-        (byte) 0x86,
-        (byte) 0x48,
-        (byte) 0x86,
-        (byte) 0xf7,
-        (byte) 0x0d,
-        (byte) 0x01,
-        (byte) 0x01,
-        (byte) 0x01,
-        (byte) 0x05,
-        (byte) 0x00
-    };
-
-    private static PublicKey readPkcs1PublicKey(byte[] pkcs1Bytes)
-        throws NoSuchAlgorithmException, InvalidKeySpecException, GeneralSecurityException {
-        // convert the pkcs1 public key to an x509 favorable format
-        byte[] keyBitString = createDEREncoding(BIT_STRING_TAG, joinPublic(NO_UNUSED_BITS, pkcs1Bytes));
-        byte[] keyInfoValue = joinPublic(RSA_ALGORITHM_IDENTIFIER_SEQUENCE, keyBitString);
-        byte[] keyInfoSequence = createDEREncoding(SEQUENCE_TAG, keyInfoValue);
-        return readX509PublicKey(keyInfoSequence);
-    }
-
-    private static byte[] joinPublic(byte[]... bas) {
-        int len = 0;
-        for (int i = 0; i < bas.length; i++) {
-            len += bas[i].length;
+        final JSONObject info;
+        try {
+            info = CapgoCore.call("publicKeyInfo", CapgoCore.input("publicKey", public_key == null ? "" : public_key));
+        } catch (CapgoCore.Failure e) {
+            throw new InvalidKeySpecException(e.getMessage());
         }
-
-        byte[] buf = new byte[len];
-        int off = 0;
-        for (int i = 0; i < bas.length; i++) {
-            System.arraycopy(bas[i], 0, buf, off, bas[i].length);
-            off += bas[i].length;
-        }
-
-        return buf;
+        final byte[] spki = Base64.decode(info.optString("spkiDerBase64", ""), Base64.NO_WRAP);
+        return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(spki));
     }
 
     public static boolean isValidSessionKey(final String sessionKey) {
-        if (sessionKey == null || sessionKey.isEmpty()) {
-            return false;
-        }
-        String[] sessionKeyParts = sessionKey.split(":", -1);
-        return sessionKeyParts.length == 2 && !sessionKeyParts[0].isEmpty() && !sessionKeyParts[1].isEmpty();
+        return CapgoCore.bool("sessionKeyValid", CapgoCore.input("sessionKey", sessionKey), "valid", false);
     }
 
+    /** Decrypts an encrypted bundle in place. No-op when the bundle is not encrypted. */
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
-        if (publicKey.isEmpty() || !isValidSessionKey(ivSessionKey)) {
-            if (logger != null) {
-                logger.info("Encryption not set, no public key or session, ignored");
-            }
-            return;
-        }
-        if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
-            if (logger != null) {
-                logger.error("The public key is not a valid RSA Public key");
-            }
-            return;
-        }
-
+        final String outcome;
         try {
-            String ivB64 = ivSessionKey.split(":")[0];
-            String sessionKeyB64 = ivSessionKey.split(":")[1];
-            byte[] iv = Base64.decode(ivB64.getBytes(), Base64.DEFAULT);
-            byte[] sessionKey = Base64.decode(sessionKeyB64.getBytes(), Base64.DEFAULT);
-            if (iv.length != 16) {
-                throw new IOException("AES file decryption failed: IV must be 16 bytes");
-            }
-            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
-            byte[] decryptedSessionKey = CryptoCipher.decryptRSA(sessionKey, pKey);
-            if (decryptedSessionKey == null || decryptedSessionKey.length != 16) {
-                throw new IOException("AES file decryption failed: decrypted session key must be 16 bytes");
-            }
-
-            SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-            decryptAesFile(file, sKey, iv);
-        } catch (GeneralSecurityException e) {
+            final JSONObject result = CapgoCore.call(
+                "decryptFile",
+                CapgoCore.input("path", file.getAbsolutePath(), "publicKey", publicKey, "sessionKey", ivSessionKey)
+            );
+            outcome = result.optString("outcome", "");
+        } catch (CapgoCore.Failure e) {
             if (logger != null) {
                 logger.info("decryptFile fail");
             }
             throw new IOException("AES file decryption failed: " + e.getMessage(), e);
         }
+        if (logger != null && "notEncrypted".equals(outcome)) {
+            logger.info("Encryption not set, no public key or session, ignored");
+        }
     }
 
+    /** AES-128-CBC decrypts {@code file} in place (streamed; the file is untouched on failure). */
     static void decryptAesFile(File file, SecretKey key, byte[] iv) throws IOException {
         if (key == null) {
             throw new IOException("AES file decryption failed: missing session key");
@@ -198,41 +145,13 @@ public class CryptoCipher {
         if (file.length() == 0) {
             throw new IOException("Empty encrypted data");
         }
-        File parent = file.getAbsoluteFile().getParentFile();
-        if (parent == null) {
-            throw new IOException("Cannot create temp file for " + file.getAbsolutePath());
-        }
-        File tempFile = File.createTempFile("capgo-aes-", ".tmp", parent);
         try {
-            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(iv));
-            byte[] inBuf = new byte[ioBufferBytes()];
-            // Reuse one output buffer. cipher.update(in) allocates a new byte[] per chunk.
-            byte[] outBuf = new byte[inBuf.length + 16];
-            try (FileInputStream fis = new FileInputStream(file); FileOutputStream fos = new FileOutputStream(tempFile)) {
-                int n;
-                while ((n = fis.read(inBuf)) != -1) {
-                    int outLen = cipher.update(inBuf, 0, n, outBuf, 0);
-                    if (outLen > 0) {
-                        fos.write(outBuf, 0, outLen);
-                    }
-                }
-                int last = cipher.doFinal(outBuf, 0);
-                if (last > 0) {
-                    fos.write(outBuf, 0, last);
-                }
-            }
-            if (tempFile.length() == 0) {
-                throw new IOException("Empty decrypted data");
-            }
-            replaceFile(tempFile, file);
-            tempFile = null;
-        } catch (GeneralSecurityException e) {
+            CapgoCore.call(
+                "aesDecryptFile",
+                CapgoCore.input("path", file.getAbsolutePath(), "keyHex", CapgoCore.hex(keyBytes), "ivHex", CapgoCore.hex(iv))
+            );
+        } catch (CapgoCore.Failure e) {
             throw new IOException("AES file decryption failed: " + e.getMessage(), e);
-        } finally {
-            if (tempFile != null && tempFile.exists()) {
-                tempFile.delete();
-            }
         }
     }
 
@@ -243,93 +162,26 @@ public class CryptoCipher {
         throw new IOException("Failed to replace file: " + to.getAbsolutePath());
     }
 
-    private static byte[] hexStringToByteArray(String s) {
-        int len = s.length();
-        byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4) + Character.digit(s.charAt(i + 1), 16));
-        }
-        return data;
-    }
-
+    /**
+     * Decrypts a bundle checksum signed with the private key (hex, or legacy base64). Returns the checksum unchanged
+     * when no public key is configured.
+     */
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
             logger.error("No encryption set (public key) ignored");
             return checksum;
         }
         try {
-            // TODO: remove this in a month or two
-            // Determine if input is hex or base64 encoded
-            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
-            byte[] checksumBytes;
-            String detectedFormat;
-            if (checksum.matches("^[0-9a-fA-F]+$")) {
-                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
-                checksumBytes = hexStringToByteArray(checksum);
-                detectedFormat = "hex";
-            } else {
-                // TODO: remove backwards compatibility
-                // Base64 encoded (old format for backwards compatibility)
-                checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-                detectedFormat = "base64";
-            }
-            logger.debug(
-                "Received checksum format: " +
-                    detectedFormat +
-                    " (length: " +
-                    checksum.length() +
-                    " chars, " +
-                    checksumBytes.length +
-                    " bytes)"
-            );
-
-            // RSA-2048 encrypted data must be exactly 256 bytes
-            // If the checksum is not 256 bytes, the bundle was not encrypted properly
-            if (checksumBytes.length != 256) {
-                logger.error(
-                    "Checksum is not RSA encrypted (size: " +
-                        checksumBytes.length +
-                        " bytes, expected 256 for RSA-2048). Bundle must be uploaded with encryption when public key is configured."
-                );
-                throw new IOException("Bundle checksum is not encrypted. Upload bundle with --key flag when encryption is configured.");
-            }
-
-            PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
-            byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
-            // Return as hex string to match calcChecksum output format
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : decryptedChecksum) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            String result = hexString.toString();
-
-            // Detect checksum algorithm based on length
-            String detectedAlgorithm;
-            if (decryptedChecksum.length == 32) {
-                detectedAlgorithm = "SHA-256";
-            } else if (decryptedChecksum.length == 4) {
-                detectedAlgorithm = "CRC32 (deprecated)";
-                logger.error("CRC32 checksum detected - deprecated algorithm");
-            } else {
-                detectedAlgorithm = "unknown (" + decryptedChecksum.length + " bytes)";
-                logger.error("Unknown checksum algorithm detected");
-                logger.debug("Byte count: " + decryptedChecksum.length + ", Expected: 32 (SHA-256)");
-            }
-            logger.debug(
-                "Decrypted checksum: " +
-                    detectedAlgorithm +
-                    " hex format (length: " +
-                    result.length() +
-                    " chars, " +
-                    decryptedChecksum.length +
-                    " bytes)"
-            );
-            return result;
-        } catch (GeneralSecurityException e) {
+            final JSONObject result = CapgoCore.call("decryptChecksum", CapgoCore.input("checksum", checksum, "publicKey", publicKey));
+            final String decrypted = result.optString("checksum", "");
+            logChecksumInfo("Decrypted checksum", decrypted);
+            return decrypted;
+        } catch (CapgoCore.Failure e) {
             logger.error("Checksum decryption failed");
             logger.debug("Error: " + e.getMessage());
+            if ("checksum_not_encrypted".equals(e.code)) {
+                throw new IOException("Bundle checksum is not encrypted. Upload bundle with --key flag when encryption is configured.");
+            }
             throw new IOException("Decryption failed: " + e.getMessage());
         }
     }
@@ -340,17 +192,7 @@ public class CryptoCipher {
      * CRC32 = 8 hex chars (4 bytes)
      */
     public static String detectChecksumAlgorithm(String hexChecksum) {
-        if (hexChecksum == null || hexChecksum.isEmpty()) {
-            return "empty";
-        }
-        int len = hexChecksum.length();
-        if (len == 64) {
-            return "SHA-256";
-        } else if (len == 8) {
-            return "CRC32 (deprecated)";
-        } else {
-            return "unknown (" + len + " hex chars)";
-        }
+        return CapgoCore.string("checksumAlgorithm", CapgoCore.input("checksum", hexChecksum), "algorithm", "empty");
     }
 
     /**
@@ -383,16 +225,18 @@ public class CryptoCipher {
         return IO_BUFFER_BYTES;
     }
 
+    /** Lowercase hex SHA-256 of a file (computed by the core), or "" when it cannot be read. */
     public static String calcChecksum(File file) {
-        try (FileInputStream fis = new FileInputStream(file)) {
-            return calcChecksum(fis);
-        } catch (IOException e) {
+        try {
+            return CapgoCore.call("checksumFile", CapgoCore.input("path", file.getAbsolutePath())).optString("checksum", "");
+        } catch (CapgoCore.Failure e) {
             logger.error("Cannot calculate checksum");
             logger.debug("Path: " + file.getPath() + ", Error: " + e.getMessage());
             return "";
         }
     }
 
+    /** SHA-256 of a stream (APK assets have no file path, so they are hashed in Java). */
     public static String calcChecksum(InputStream inputStream) {
         final int BUFFER_SIZE = checksumBufferBytes();
         MessageDigest digest;
@@ -418,58 +262,11 @@ public class CryptoCipher {
     }
 
     static String digestToHex(MessageDigest digest) {
-        byte[] hash = digest.digest();
-        StringBuilder hexString = new StringBuilder(hash.length * 2);
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
-            hexString.append(hex);
-        }
-        return hexString.toString();
+        return CapgoCore.hex(digest.digest());
     }
 
     static String shortPathKey(String fileName) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update((fileName == null ? "" : fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return digestToHex(digest).substring(0, 16);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            return Integer.toHexString((fileName == null ? "" : fileName).hashCode());
-        }
-    }
-
-    private static byte[] createDEREncoding(int tag, byte[] value) {
-        if (tag < 0 || tag >= 0xFF) {
-            throw new IllegalArgumentException("Currently only single byte tags supported");
-        }
-
-        byte[] lengthEncoding = createDERLengthEncoding(value.length);
-
-        int size = 1 + lengthEncoding.length + value.length;
-        byte[] derEncodingBuf = new byte[size];
-
-        int off = 0;
-        derEncodingBuf[off++] = (byte) tag;
-        System.arraycopy(lengthEncoding, 0, derEncodingBuf, off, lengthEncoding.length);
-        off += lengthEncoding.length;
-        System.arraycopy(value, 0, derEncodingBuf, off, value.length);
-
-        return derEncodingBuf;
-    }
-
-    private static byte[] createDERLengthEncoding(int size) {
-        if (size <= 0x7F) {
-            // single byte length encoding
-            return new byte[] { (byte) size };
-        } else if (size <= 0xFF) {
-            // double byte length encoding
-            return new byte[] { (byte) 0x81, (byte) size };
-        } else if (size <= 0xFFFF) {
-            // triple byte length encoding
-            return new byte[] { (byte) 0x82, (byte) (size >> Byte.SIZE), (byte) size };
-        }
-
-        throw new IllegalArgumentException("size too large, only up to 64KiB length encoding supported: " + size);
+        return CapgoCore.string("shortPathKey", CapgoCore.input("value", fileName == null ? "" : fileName), "key", "");
     }
 
     /**
@@ -482,14 +279,6 @@ public class CryptoCipher {
         if (publicKey == null || publicKey.isEmpty()) {
             return "";
         }
-
-        // Remove PEM headers and whitespace to get the raw key data
-        String cleanedKey = publicKey
-            .replaceAll("\\s+", "")
-            .replace("-----BEGINRSAPUBLICKEY-----", "")
-            .replace("-----ENDRSAPUBLICKEY-----", "");
-
-        // Return first 20 characters of the base64-encoded key
-        return cleanedKey.length() >= 20 ? cleanedKey.substring(0, 20) : cleanedKey;
+        return CapgoCore.string("keyId", CapgoCore.input("publicKey", publicKey), "keyId", "");
     }
 }

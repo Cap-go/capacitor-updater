@@ -72,6 +72,30 @@ dependencies {
     implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
 }
 
+// JVM unit tests load the shared Rust core (../core) built for the host machine.
+// The npm package does not ship core/, so app builds never run cargo; they use
+// the prebuilt src/main/jniLibs from scripts/build-core.sh android.
+def capgoCoreDir = file("../core")
+if (capgoCoreDir.exists()) {
+    def capgoCoreHostLibDir = new File(capgoCoreDir, "target/host/release")
+    def buildCapgoCoreHost = tasks.register("buildCapgoCoreHost", Exec) {
+        description = "Builds the Capgo Rust core for the host JVM (unit tests)"
+        workingDir capgoCoreDir
+        def cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty('user.home')}/.cargo"
+        def rustupCargo = new File(cargoHome, "bin/cargo")
+        executable rustupCargo.exists() ? rustupCargo.absolutePath : "cargo"
+        args "build", "--release", "--locked", "--features", "jni", "--target-dir", "target/host"
+        inputs.dir(new File(capgoCoreDir, "src"))
+        inputs.file(new File(capgoCoreDir, "Cargo.toml"))
+        inputs.file(new File(capgoCoreDir, "Cargo.lock"))
+        outputs.dir(capgoCoreHostLibDir)
+    }
+    tasks.withType(Test).configureEach {
+        dependsOn buildCapgoCoreHost
+        systemProperty "capgo.core.hostLibrary", new File(capgoCoreHostLibDir, System.mapLibraryName("capgo_updater_core")).absolutePath
+    }
+}
+
 tasks.withType(Test) {
     testLogging {
         events "passed", "skipped", "failed", "standardOut", "standardError"

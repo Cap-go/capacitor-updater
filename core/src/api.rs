@@ -297,7 +297,6 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
                 "outcome": match outcome {
                     DecryptOutcome::Decrypted => "decrypted",
                     DecryptOutcome::NotEncrypted => "notEncrypted",
-                    DecryptOutcome::UnsupportedPublicKey => "unsupportedPublicKey",
                 }
             })
         }

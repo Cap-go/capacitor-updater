@@ -2,11 +2,11 @@ import Foundation
 @testable import CapacitorUpdaterPlugin
 
 /// Maps a shared core contract operation (`group` + JSON `input`) onto the
-/// current Swift implementation and returns the JSON output object.
+/// plugin's Swift API (backed by the Rust core) and returns the JSON output object.
 ///
 /// Success returns a dictionary with exactly the keys of the fixture `expect`.
 /// Contract errors (`expect: {"error": ...}`) must surface as a thrown error;
-/// the error type is not compared because canonical codes belong to the Rust core.
+/// the error type is not compared here (the Rust contract runner checks codes).
 /// Malformed fixture input throws `CoreContractAdapter.InputError`, which the
 /// runner always reports as a failure.
 enum CoreContractAdapter {
@@ -16,19 +16,19 @@ enum CoreContractAdapter {
 
     typealias Operation = (ContractInput) throws -> [String: Any]
 
-    /// Groups without an iOS implementation yet. The Rust core will own them.
-    static let unsupportedGroups: Set<String> = [
-        // Android-only: iOS has no launch-download settle/notify helper; the logic is inline in the plugin download flow.
+    /// Groups the iOS plugin has no Swift wrapper for (Android download-flow
+    /// helpers). They still run on iOS, straight through the core binding.
+    static let coreOnlyGroups: Set<String> = [
         "launchDownloadReady",
-        // Android-only: iOS never parses Content-Range; ranged resumes only check the 206 status (see appendHttpBody).
         "contentRange",
-        // Android-only: iOS has no zip resume planner; see appendHttpBody for the iOS resume decision.
         "zipResumePlan",
-        // Android-only: iOS reads builtin files from Bundle.main via resolveManifestTargetPath, not an asset path.
         "builtinAssetPath"
     ]
 
     static func run(group: String, input: [String: Any]) throws -> [String: Any] {
+        if coreOnlyGroups.contains(group) {
+            return try CapgoCore.call(group, input.mapValues { $0 as Any? })
+        }
         guard let operation = operations[group] else {
             throw InputError(description: "No iOS adapter for group \(group)")
         }
@@ -86,9 +86,9 @@ enum CoreContractAdapter {
 
     private static let httpOperations: [String: Operation] = [
         "userAgent": { input in
-            // The iOS builder hard codes the platform; the runner only sends `platform: "ios"` cases.
+            // The iOS builder hard codes the platform; other platforms go straight to the core.
             guard try input.string("platform") == "ios" else {
-                throw InputError(description: "userAgent: iOS only builds the ios platform")
+                return try CapgoCore.call("userAgent", input.values.mapValues { $0 as Any? })
             }
             return ["userAgent": CapgoUpdater.buildUserAgent(
                 appId: try input.string("appId"),

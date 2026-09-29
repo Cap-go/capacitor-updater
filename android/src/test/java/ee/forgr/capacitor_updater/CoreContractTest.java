@@ -27,23 +27,15 @@ import org.robolectric.annotation.Config;
  * crypto.json) against the Android implementation through {@link CoreContractAdapter}.
  *
  * Success cases must match `expect` exactly (deep JSON equality). Error cases
- * (`expect: {"error": code}`) only require the operation to throw: the codes are the
- * canonical Rust core codes, which the current Java code does not produce.
+ * (`expect: {"error": code}`) only require the operation to throw: error codes are checked
+ * by the Rust contract runner (core/tests/contract.rs).
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
 public class CoreContractTest {
 
-    private static final String PLATFORM = "android";
-
     /** Contract groups with no Android implementation yet. Currently every group is covered. */
     private static final Set<String> GROUPS_WITHOUT_ANDROID_IMPLEMENTATION = Collections.emptySet();
-
-    /**
-     * Non-divergent cases where the current Android behavior differs from the fixture.
-     * Every entry is a bug to fix (in the Rust core migration) or a fixture to revisit.
-     */
-    private static final Set<String> KNOWN_ANDROID_MISMATCHES = Collections.emptySet();
 
     @BeforeClass
     public static void setUpClass() {
@@ -89,17 +81,6 @@ public class CoreContractTest {
                 String id = testCase.getString("id");
                 String label = name + "." + group + " " + id;
 
-                if (divergesOnPlatform(testCase)) {
-                    System.out.println("[core-contract] SKIP " + label + ": divergence " + PLATFORM);
-                    skipped++;
-                    continue;
-                }
-                if (KNOWN_ANDROID_MISMATCHES.contains(id)) {
-                    System.out.println("[core-contract] SKIP " + label + ": known Android mismatch");
-                    skipped++;
-                    continue;
-                }
-
                 JSONObject input = resolveInput(testCase.getJSONObject("input"), publicKeyPem);
                 JSONObject expect = testCase.getJSONObject("expect");
                 boolean expectsError = isErrorExpectation(expect);
@@ -138,19 +119,6 @@ public class CoreContractTest {
             fail(name + ".json core contract failures:\n  " + String.join("\n  ", failures));
         }
         assertTrue(name + ".json ran no cases", passed > 0);
-    }
-
-    private static boolean divergesOnPlatform(JSONObject testCase) throws Exception {
-        JSONArray divergence = testCase.optJSONArray("divergence");
-        if (divergence == null) {
-            return false;
-        }
-        for (int i = 0; i < divergence.length(); i++) {
-            if (PLATFORM.equals(divergence.getString(i))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

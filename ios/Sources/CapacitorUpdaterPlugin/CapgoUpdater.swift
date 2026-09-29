@@ -29,9 +29,8 @@ import UIKit
     static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
 
     static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        min(64, max(8, max(1, processorCount) * 2))
+        CapgoCore.int("manifestConcurrency", ["processorCount": processorCount], "maxConcurrentFiles", fallback: 8)
     }
-    private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
 
@@ -86,27 +85,13 @@ import UIKit
         let onSent: (() -> Void)?
     }
 
-    private static func sanitizeHeaderValue(_ value: String) -> String {
-        if value.isEmpty {
-            return "unknown"
-        }
-
-        let filteredScalars = value.unicodeScalars.filter { scalar in
-            let cp = scalar.value
-            let isVisibleAscii = (0x20...0x7E).contains(cp)
-            let isIso88591 = (0xA0...0xFF).contains(cp)
-            return isVisibleAscii || isIso88591
-        }
-
-        let sanitized = String(String.UnicodeScalarView(filteredScalars)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? "unknown" : sanitized
-    }
-
     static func buildUserAgent(appId: String, pluginVersion: String, versionOs: String) -> String {
-        let safePluginVersion = sanitizeHeaderValue(pluginVersion)
-        let safeAppId = sanitizeHeaderValue(appId)
-        let safeVersionOs = sanitizeHeaderValue(versionOs)
-        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(safeVersionOs)"
+        CapgoCore.string(
+            "userAgent",
+            ["appId": appId, "pluginVersion": pluginVersion, "versionOs": versionOs, "platform": "ios"],
+            "userAgent",
+            fallback: "CapacitorUpdater/unknown (unknown) ios/unknown"
+        )
     }
 
     private var userAgent: String {
@@ -135,35 +120,13 @@ import UIKit
     }
 
     static func containsPathTraversalSegment(_ relativePath: String) -> Bool {
-        return relativePath.split(separator: "/").contains(where: { $0 == ".." })
+        CapgoCore.bool("pathTraversalSegment", ["path": relativePath], "traversal", fallback: true)
     }
 
+    /// Resolves an untrusted relative path (manifest file_name, zip entry, bundle id)
+    /// strictly inside `baseDirectory`. The guard lives in the shared Rust core.
     static func resolvePathInsideDirectory(baseDirectory: URL, relativePath: String) throws -> URL {
-        if relativePath.isEmpty {
-            throw SecurePathError.emptyPath
-        }
-        if relativePath.contains("\\") || relativePath.contains("\0") {
-            throw SecurePathError.windowsPath
-        }
-        if containsPathTraversalSegment(relativePath) {
-            throw SecurePathError.pathTraversal
-        }
-        if (relativePath as NSString).isAbsolutePath {
-            throw SecurePathError.absolutePath
-        }
-
-        let canonicalBase = baseDirectory.standardizedFileURL
-        let canonicalBasePath = canonicalBase.path
-        let normalizedBasePath = canonicalBasePath.hasSuffix("/") ? canonicalBasePath : "\(canonicalBasePath)/"
-        let canonicalTarget = canonicalBase.appendingPathComponent(relativePath).standardizedFileURL
-        let canonicalTargetPath = canonicalTarget.path
-
-        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
-        if !canonicalTargetPath.hasPrefix(normalizedBasePath) {
-            throw SecurePathError.pathTraversal
-        }
-
-        return canonicalTarget
+        try resolveInsideDirectory("resolvePathInside", baseDirectory: baseDirectory, input: ["path": relativePath])
     }
 
     static func resolveBundleDirectory(libraryDir: URL, bundleId: String) throws -> URL {
@@ -172,9 +135,30 @@ import UIKit
     }
 
     static func resolveManifestTargetPath(baseDirectory: URL, fileName: String) throws -> URL {
-        let isBrotli = fileName.hasSuffix(".br")
-        let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-        return try resolvePathInsideDirectory(baseDirectory: baseDirectory, relativePath: targetFileName)
+        try resolveInsideDirectory("manifestTargetPath", baseDirectory: baseDirectory, input: ["fileName": fileName])
+    }
+
+    private static func resolveInsideDirectory(_ operation: String, baseDirectory: URL, input: [String: Any?]) throws -> URL {
+        var request = input
+        request["base"] = baseDirectory.standardizedFileURL.path
+        do {
+            let result = try CapgoCore.call(operation, request)
+            guard let path = result["path"] as? String else {
+                throw SecurePathError.pathTraversal
+            }
+            return URL(fileURLWithPath: path, isDirectory: false)
+        } catch let failure as CapgoCore.Failure {
+            switch failure.code {
+            case "empty_path":
+                throw SecurePathError.emptyPath
+            case "invalid_separator":
+                throw SecurePathError.windowsPath
+            case "absolute_path":
+                throw SecurePathError.absolutePath
+            default:
+                throw SecurePathError.pathTraversal
+            }
+        }
     }
 
     static func rememberManifestTarget(_ seenTargets: inout Set<String>, targetFile: URL) -> Bool {
@@ -345,7 +329,7 @@ import UIKit
     }
 
     static func shouldAppendHttpBody(statusCode: Int, existingBytes: Int64) -> Bool {
-        existingBytes > 0 && statusCode == 206
+        CapgoCore.bool("appendHttpBody", ["statusCode": statusCode, "existingBytes": existingBytes], "append")
     }
 
     static func safePartialToken(_ fileName: String) -> String {
@@ -353,12 +337,13 @@ import UIKit
     }
 
     static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
-        let token = safePartialToken(fileName)
-        if isSafeCacheHash(hash) && hash.count == 64 {
-            return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
-        }
-        let digest = CryptoCipher.shortPathKey("\(hash)|\(fileName)")
-        return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
+        let name = CapgoCore.string(
+            "manifestPartialName",
+            ["hash": hash, "fileName": fileName],
+            "name",
+            fallback: "partial_\(safePartialToken(fileName)).tmp"
+        )
+        return cacheFolder.appendingPathComponent(name)
     }
 
     private func cleanupOldManifestPartials() {
@@ -641,13 +626,9 @@ import UIKit
     }
 
     static func parseRemoteError(data: Data?) -> (error: String, message: String) {
-        guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return ("", "")
-        }
-        let error = json["error"] as? String ?? ""
-        let message = json["message"] as? String ?? ""
-        return (error, message)
+        let body = data.flatMap { String(data: $0, encoding: .utf8) }
+        let result = (try? CapgoCore.call("remoteError", ["body": body])) ?? [:]
+        return (result["error"] as? String ?? "", result["message"] as? String ?? "")
     }
 
     private func resolveRateLimitBlockedUntilMs(data: Data?, response: HTTPURLResponse?) -> Double {
@@ -658,37 +639,17 @@ import UIKit
         )
     }
 
+    /// Epoch ms until which requests stay blocked after a 429 (0 = no block).
+    /// Honours Retry-After, then retryAfterSeconds, then rateLimitResetAt, capped at one day.
     static func resolveRateLimitBlockedUntilMs(retryAfterHeader: String?, data: Data?, nowMs: Double) -> Double {
-        let candidate = rawRateLimitDeadlineMs(retryAfterHeader: retryAfterHeader, data: data, nowMs: nowMs)
-        // NaN and past deadlines mean "no client-side block"; anything further out is capped.
-        guard candidate > nowMs else {
-            return 0
-        }
-        return min(candidate, nowMs + CapgoUpdater.maxRateLimitWindowMs)
-    }
-
-    private static func rawRateLimitDeadlineMs(retryAfterHeader: String?, data: Data?, nowMs: Double) -> Double {
-        if let header = retryAfterHeader?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let seconds = Double(header), seconds >= 0 {
-            return nowMs + seconds * 1000
-        }
-
-        if let data = data,
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let moreInfo = json["moreInfo"] as? [String: Any]
-            if let retryAfter = (moreInfo?["retryAfterSeconds"] as? NSNumber)?.doubleValue
-                ?? (json["retryAfterSeconds"] as? NSNumber)?.doubleValue,
-               retryAfter >= 0 {
-                return nowMs + retryAfter * 1000
-            }
-            if let resetAt = (moreInfo?["rateLimitResetAt"] as? NSNumber)?.doubleValue
-                ?? (json["rateLimitResetAt"] as? NSNumber)?.doubleValue {
-                return resetAt
-            }
-        }
-
-        // No retry hint — do not hold a client-side block; allow immediate retry to the worker
-        return 0
+        let body = data.flatMap { String(data: $0, encoding: .utf8) }
+        let blockedUntil = CapgoCore.value(
+            "rateLimitDeadline",
+            ["retryAfter": retryAfterHeader, "body": body, "nowMs": Int64(nowMs)],
+            "blockedUntilMs",
+            fallback: NSNumber(value: 0)
+        )
+        return blockedUntil.doubleValue
     }
 
     private func isRemoteBlocked() -> Bool {
@@ -1240,10 +1201,11 @@ import UIKit
     }
 
     static func shouldResetForForeignBundle(bundlePath: String?, isBuiltin: Bool, hasStoredBundleInfo: Bool) -> Bool {
-        guard let bundlePath, !bundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        return !isBuiltin && !hasStoredBundleInfo
+        CapgoCore.bool(
+            "foreignBundleReset",
+            ["bundlePath": bundlePath, "isBuiltin": isBuiltin, "hasStoredBundleInfo": hasStoredBundleInfo],
+            "reset"
+        )
     }
 
     private func hasStoredBundleInfo(id: String) -> Bool {
@@ -1342,26 +1304,12 @@ import UIKit
     }
 
     static func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
-        guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
-            return false
-        }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-        if size > 0 {
-            return true
-        }
-        return size == 0 && expectedHash.lowercased() == Self.emptySha256
+        let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        return CapgoCore.bool("reusableCacheFile", ["hash": expectedHash, "size": size], "reusable")
     }
 
     static func isSafeCacheHash(_ hash: String) -> Bool {
-        let count = hash.count
-        guard count == 64 || count == 8 else {
-            return false
-        }
-        return hash.unicodeScalars.allSatisfy { scalar in
-            (0x30...0x39).contains(scalar.value) ||
-                (0x41...0x46).contains(scalar.value) ||
-                (0x61...0x66).contains(scalar.value)
-        }
+        CapgoCore.bool("safeCacheHash", ["hash": hash], "safe")
     }
 
     public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
@@ -3540,7 +3488,7 @@ import UIKit
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
     static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
-        return statusCode == 429 || statusCode == 408 || statusCode >= 500
+        CapgoCore.bool("retryableHttpStatus", ["status": statusCode], "retryable")
     }
 
     private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {

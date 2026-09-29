@@ -265,14 +265,13 @@ const policy = {
     ['deleting', 'deleting', 'deleting'],
     ['downloading', 'downloading', 'downloading'],
     ['unknown', 'installed', null],
-    ['padded', ' success ', 'success', ['android']],
-    ['uppercase', 'SUCCESS', 'success', ['android']],
-    ['empty', '', 'pending', ['ios']],
-  ].map(([id, value, status, divergence]) => ({
+    ['padded', ' success ', 'success'],
+    ['uppercase', 'SUCCESS', 'success'],
+    ['empty', '', 'pending'],
+  ].map(([id, value, status]) => ({
     id: `bundle-status.${id}`,
     input: { value },
     expect: { status },
-    ...(divergence ? { divergence } : {}),
   })),
 };
 
@@ -316,13 +315,12 @@ const security = {
     ['nested-parent', 'a/../../x', { error: 'path_traversal' }],
     ['inner-parent', 'a/../b', { error: 'path_traversal' }],
     ['absolute', '/etc/passwd', { error: 'absolute_path' }],
-    ['tilde', '~/x', { error: 'absolute_path' }, ['android']],
+    ['tilde', '~/x', { error: 'absolute_path' }],
     ['self', '.', { error: 'escapes_base' }],
-  ].map(([id, relativePath, expect, divergence]) => ({
+  ].map(([id, relativePath, expect]) => ({
     id: `resolve.${id}`,
     input: { base: BASE, path: relativePath },
     expect,
-    ...(divergence ? { divergence } : {}),
   })),
   manifestTargetPath: [
     ['brotli', 'a.js.br', { path: `${BASE}/a.js` }],
@@ -378,13 +376,12 @@ const security = {
   })),
   manifestPartialName: [
     ['sha256', HASH_A, 'assets/app.js', `partial_${HASH_A}_${shortPathKey('assets/app.js')}.tmp`],
-    ['crc32', 'deadbeef', 'assets/app.js', `partial_${shortPathKey('deadbeef\u0000assets/app.js')}_${shortPathKey('assets/app.js')}.tmp`, ['ios']],
-    ['unsafe-hash', '../../x', 'a.js', `partial_${shortPathKey('../../x\u0000a.js')}_${shortPathKey('a.js')}.tmp`, ['ios']],
-  ].map(([id, hash, fileName, name, divergence]) => ({
+    ['crc32', 'deadbeef', 'assets/app.js', `partial_${shortPathKey('deadbeef\u0000assets/app.js')}_${shortPathKey('assets/app.js')}.tmp`],
+    ['unsafe-hash', '../../x', 'a.js', `partial_${shortPathKey('../../x\u0000a.js')}_${shortPathKey('a.js')}.tmp`],
+  ].map(([id, hash, fileName, name]) => ({
     id: `partial-name.${id}`,
     input: { hash, fileName },
     expect: { name },
-    ...(divergence ? { divergence } : {}),
   })),
   shortPathKey: ['index.html', '', 'a/b/c.js', 'café/é.js'].map((value) => ({
     id: `short-path-key.${value || 'empty'}`,
@@ -504,12 +501,13 @@ function buildCrypto() {
       ['no-public-key-noop', '', sessionKey, hex(smallCipher), { plaintextHex: hex(smallCipher) }],
       ['no-session-key-noop', null, '', hex(smallCipher), { plaintextHex: hex(smallCipher) }],
       ['invalid-session-key-noop', null, 'nocolon', hex(smallCipher), { plaintextHex: hex(smallCipher) }],
+      // Fail closed: an unusable key must never leave the bundle silently undecrypted.
       [
-        'spki-public-key-noop',
+        'invalid-public-key',
         '-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----',
         sessionKey,
         hex(smallCipher),
-        { plaintextHex: hex(smallCipher) },
+        { error: 'invalid_public_key' },
       ],
       ['short-iv', null, shortIvSession, hex(smallCipher), { error: 'invalid_iv' }],
       ['garbage-session-key', null, garbageKeySession, hex(smallCipher), { error: 'session_key_decrypt_failed' }],

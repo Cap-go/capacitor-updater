@@ -16,9 +16,14 @@ let package = Package(
         .package(url: "https://github.com/mrackwitz/Version.git", exact: "0.8.0")
     ],
     targets: [
+        // Shared Rust updater core (core/), built by scripts/build-core.sh ios.
+        .binaryTarget(
+            name: "CapgoUpdaterCore",
+            path: "ios/Frameworks/CapgoUpdaterCore.xcframework"),
         .target(
             name: "CapacitorUpdaterPlugin",
             dependencies: [
+                "CapgoUpdaterCore",
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),

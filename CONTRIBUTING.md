@@ -19,7 +19,21 @@ This guide provides instructions for contributing to this Capacitor plugin.
     brew install swiftlint
     ```
 
+1. Install the Rust toolchain for the shared updater core (`core/`).
+
+    ```shell
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    cargo install cargo-ndk   # Android builds; also needs an Android NDK
+    bun run core:build        # Android .so files + iOS xcframework
+    ```
+
+    See [`core/README.md`](core/README.md) for what the core owns and how the shared fixtures in `native-contract-tests/` keep Rust, Android and iOS in sync.
+
 ### Scripts
+
+#### `bun run core:test`
+
+Runs the Rust core unit tests and every shared contract fixture.
 
 #### `npm run build`
 

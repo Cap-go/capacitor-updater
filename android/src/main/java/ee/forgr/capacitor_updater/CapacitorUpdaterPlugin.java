@@ -1423,7 +1423,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final boolean nativeBuildVersionChanged,
         final boolean restoredReinstall
     ) {
-        return !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged));
+        return CapgoCore.bool(
+            "clearPersistedDefaultChannel",
+            CapgoCore.input(
+                "persistDefaultChannelOnReinstall",
+                persistDefaultChannelOnReinstall,
+                "resetWhenUpdate",
+                resetWhenUpdate,
+                "nativeBuildVersionChanged",
+                nativeBuildVersionChanged,
+                "restoredReinstall",
+                restoredReinstall
+            ),
+            "clear",
+            false
+        );
     }
 
     static boolean clearPersistedDefaultChannel(final SharedPreferences.Editor editor) {
@@ -1915,27 +1929,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static String statsActionForWebViewErrorType(final String type) {
-        switch (type) {
-            case "unhandled_rejection":
-                return "webview_unhandled_rejection";
-            case "resource_error":
-                return "webview_resource_error";
-            case "security_policy_violation":
-                return "webview_security_policy_violation";
-            case "webview_unclean_restart":
-                return "webview_unclean_restart";
-            case "render_process_gone":
-                return "webview_render_process_gone";
-            case "web_content_process_terminated":
-                return "webview_content_process_terminated";
-            case "webview_dom_content_loaded":
-                return "webview_dom_content_loaded";
-            case "webview_page_loaded":
-                return "webview_page_loaded";
-            case "javascript_error":
-            default:
-                return "webview_javascript_error";
-        }
+        return CapgoCore.string("webViewErrorStatsAction", CapgoCore.input("type", type), "action", "webview_javascript_error");
     }
 
     static Map<String, String> buildWebViewErrorMetadata(final JSObject data) {
@@ -2178,86 +2172,43 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return Boolean.TRUE.equals(this.getConfig().getBoolean("directUpdate", false)) ? AUTO_UPDATE_MODE_ALWAYS : "false";
     }
 
+    // Update policy decisions live in the shared Rust core (see CapgoCore).
+
     static String normalizedAutoUpdateMode(final String value) {
-        if (value == null) {
-            return AUTO_UPDATE_MODE_BACKGROUND;
-        }
-        switch (value) {
-            case "false":
-            case AUTO_UPDATE_MODE_OFF:
-                return AUTO_UPDATE_MODE_OFF;
-            case "true":
-            case AUTO_UPDATE_MODE_BACKGROUND:
-                return AUTO_UPDATE_MODE_BACKGROUND;
-            case AUTO_UPDATE_MODE_INSTALL:
-            case AUTO_UPDATE_MODE_LAUNCH:
-            case AUTO_UPDATE_MODE_ALWAYS:
-            case AUTO_UPDATE_MODE_ONLY_DOWNLOAD:
-                return value;
-            default:
-                return AUTO_UPDATE_MODE_BACKGROUND;
-        }
+        return CapgoCore.string("autoUpdateMode", CapgoCore.input("mode", value), "mode", AUTO_UPDATE_MODE_BACKGROUND);
     }
 
     static String normalizedShakeMenuGesture(final String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return SHAKE_MENU_GESTURE_SHAKE;
-        }
-        final String normalized = value.trim();
-        if (SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized)) {
-            return SHAKE_MENU_GESTURE_THREE_FINGER_PINCH;
-        }
-        return SHAKE_MENU_GESTURE_SHAKE;
+        return CapgoCore.string("shakeMenuGesture", CapgoCore.input("value", value), "gesture", SHAKE_MENU_GESTURE_SHAKE);
     }
 
     static boolean isSupportedShakeMenuGesture(final String value) {
-        if (value == null) {
-            return true;
-        }
-        final String normalized = value.trim();
-        if (normalized.isEmpty()) {
-            return false;
-        }
-        return SHAKE_MENU_GESTURE_SHAKE.equals(normalized) || SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized);
+        return CapgoCore.bool("shakeMenuGesture", CapgoCore.input("value", value), "supported", false);
     }
 
     static String autoUpdateModeForLegacyDirectUpdateMode(final String directUpdateMode) {
-        switch (directUpdateMode) {
-            case AUTO_UPDATE_MODE_INSTALL:
-            case AUTO_UPDATE_MODE_LAUNCH:
-            case AUTO_UPDATE_MODE_ALWAYS:
-                return directUpdateMode;
-            case "false":
-            default:
-                return AUTO_UPDATE_MODE_BACKGROUND;
-        }
+        return CapgoCore.string(
+            "legacyDirectUpdateAutoMode",
+            CapgoCore.input("directUpdateMode", directUpdateMode),
+            "mode",
+            AUTO_UPDATE_MODE_BACKGROUND
+        );
     }
 
     static String directUpdateModeForAutoUpdateMode(final String autoUpdateMode) {
-        switch (autoUpdateMode) {
-            case AUTO_UPDATE_MODE_INSTALL:
-            case AUTO_UPDATE_MODE_LAUNCH:
-            case AUTO_UPDATE_MODE_ALWAYS:
-                return autoUpdateMode;
-            default:
-                return "false";
-        }
+        return CapgoCore.string("autoUpdateMode", CapgoCore.input("mode", autoUpdateMode), "directUpdateMode", "false");
     }
 
     static boolean isAutoUpdateModeEnabled(final String autoUpdateMode) {
-        return !AUTO_UPDATE_MODE_OFF.equals(autoUpdateMode);
+        return CapgoCore.bool("autoUpdateMode", CapgoCore.input("mode", autoUpdateMode), "enabled", true);
     }
 
     static boolean shouldAutoUpdateModeSetNextBundle(final String autoUpdateMode) {
-        return isAutoUpdateModeEnabled(autoUpdateMode) && !AUTO_UPDATE_MODE_ONLY_DOWNLOAD.equals(autoUpdateMode);
+        return CapgoCore.bool("autoUpdateMode", CapgoCore.input("mode", autoUpdateMode), "setNextBundle", true);
     }
 
     static boolean isDirectUpdateMode(final String directUpdateMode) {
-        return (
-            AUTO_UPDATE_MODE_INSTALL.equals(directUpdateMode) ||
-            AUTO_UPDATE_MODE_LAUNCH.equals(directUpdateMode) ||
-            AUTO_UPDATE_MODE_ALWAYS.equals(directUpdateMode)
-        );
+        return CapgoCore.bool("isDirectUpdateMode", CapgoCore.input("directUpdateMode", directUpdateMode), "direct", false);
     }
 
     private boolean shouldAutoSetNextBundle() {
@@ -2269,7 +2220,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && "onLaunch".equals(directUpdateMode);
+        return CapgoCore.bool(
+            "onLaunchDirectUpdateConsumption",
+            CapgoCore.input("mode", directUpdateMode, "plannedDirectUpdate", plannedDirectUpdate),
+            "consume",
+            false
+        );
     }
 
     static int normalizedPeriodCheckDelayMs(final int valueSeconds) {
@@ -2282,10 +2238,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static int normalizedPeriodCheckDelaySeconds(final int valueSeconds) {
-        if (valueSeconds <= 0) {
-            return 0;
-        }
-        return Math.max(600, valueSeconds);
+        return (int) CapgoCore.number("periodCheckDelay", CapgoCore.input("seconds", valueSeconds), "normalizedSeconds", 0);
     }
 
     private void consumeOnLaunchDirectUpdateAttempt(final boolean plannedDirectUpdate) {
@@ -4652,10 +4605,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static String normalizedUpdateResponseKind(final String kind) {
-        if ("up_to_date".equals(kind) || "blocked".equals(kind) || "failed".equals(kind)) {
-            return kind;
-        }
-        return "failed";
+        return CapgoCore.string("updateResponseKind", CapgoCore.input("kind", kind), "kind", "failed");
     }
 
     private String getUpdateResponseKind(final String kind) {

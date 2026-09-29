@@ -621,7 +621,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         resetWhenUpdate: Bool,
         restoredReinstall: Bool
     ) -> Bool {
-        !persistDefaultChannelOnReinstall && (restoredReinstall || (resetWhenUpdate && nativeBuildVersionChanged))
+        CapgoCore.bool(
+            "clearPersistedDefaultChannel",
+            [
+                "persistDefaultChannelOnReinstall": persistDefaultChannelOnReinstall,
+                "resetWhenUpdate": resetWhenUpdate,
+                "nativeBuildVersionChanged": nativeBuildVersionChanged,
+                "restoredReinstall": restoredReinstall
+            ],
+            "clear"
+        )
     }
 
     func clearPersistedDefaultChannel() -> Bool {
@@ -4066,68 +4075,39 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return getConfig().getBoolean("directUpdate", false) ? Self.autoUpdateModeAlways : "false"
     }
 
+    // Update policy decisions live in the shared Rust core (see CapgoCore).
+
     static func normalizedAutoUpdateMode(_ value: String?) -> String {
-        guard let value else {
-            return autoUpdateModeBackground
-        }
-        switch value {
-        case "false", autoUpdateModeOff:
-            return autoUpdateModeOff
-        case "true", autoUpdateModeBackground:
-            return autoUpdateModeBackground
-        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways, autoUpdateModeOnlyDownload:
-            return value
-        default:
-            return autoUpdateModeBackground
-        }
+        CapgoCore.string("autoUpdateMode", ["mode": value], "mode", fallback: autoUpdateModeBackground)
     }
 
     static func normalizedShakeMenuGesture(_ value: String?) -> String {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return shakeMenuGestureShake
-        }
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized == shakeMenuGestureThreeFingerPinch {
-            return shakeMenuGestureThreeFingerPinch
-        }
-        return shakeMenuGestureShake
+        CapgoCore.string("shakeMenuGesture", ["value": value], "gesture", fallback: shakeMenuGestureShake)
     }
 
     static func isSupportedShakeMenuGesture(_ value: String?) -> Bool {
-        guard let value else {
-            return true
-        }
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized.isEmpty {
-            return false
-        }
-        return normalized == shakeMenuGestureShake || normalized == shakeMenuGestureThreeFingerPinch
+        CapgoCore.bool("shakeMenuGesture", ["value": value], "supported")
     }
 
     static func autoUpdateModeForLegacyDirectUpdateMode(_ directUpdateMode: String) -> String {
-        switch directUpdateMode {
-        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
-            return directUpdateMode
-        default:
-            return autoUpdateModeBackground
-        }
+        CapgoCore.string(
+            "legacyDirectUpdateAutoMode",
+            ["directUpdateMode": directUpdateMode],
+            "mode",
+            fallback: autoUpdateModeBackground
+        )
     }
 
     static func directUpdateModeForAutoUpdateMode(_ autoUpdateMode: String) -> String {
-        switch autoUpdateMode {
-        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
-            return autoUpdateMode
-        default:
-            return "false"
-        }
+        CapgoCore.string("autoUpdateMode", ["mode": autoUpdateMode], "directUpdateMode", fallback: "false")
     }
 
     static func isAutoUpdateModeEnabled(_ autoUpdateMode: String) -> Bool {
-        autoUpdateMode != autoUpdateModeOff
+        CapgoCore.bool("autoUpdateMode", ["mode": autoUpdateMode], "enabled", fallback: true)
     }
 
     static func shouldAutoUpdateModeSetNextBundle(_ autoUpdateMode: String) -> Bool {
-        isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
+        CapgoCore.bool("autoUpdateMode", ["mode": autoUpdateMode], "setNextBundle", fallback: true)
     }
 
     /// Incomplete leftovers must be downloaded again. Android already skips
@@ -4138,7 +4118,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
-        directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
+        CapgoCore.bool("isDirectUpdateMode", ["directUpdateMode": directUpdateMode], "direct")
     }
 
     private func shouldAutoSetNextBundle() -> Bool {
@@ -4146,14 +4126,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     static func shouldConsumeOnLaunchDirectUpdate(directUpdateMode: String, plannedDirectUpdate: Bool) -> Bool {
-        plannedDirectUpdate && directUpdateMode == "onLaunch"
+        CapgoCore.bool(
+            "onLaunchDirectUpdateConsumption",
+            ["mode": directUpdateMode, "plannedDirectUpdate": plannedDirectUpdate],
+            "consume"
+        )
     }
 
     static func normalizedPeriodCheckDelaySeconds(_ value: Int) -> Int {
-        guard value > 0 else {
-            return 0
-        }
-        return max(600, value)
+        CapgoCore.int("periodCheckDelay", ["seconds": value], "normalizedSeconds")
     }
 
     private func getOnLaunchDirectUpdateUsed() -> Bool {
@@ -4276,10 +4257,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     static func normalizedUpdateResponseKind(kind: String?) -> String {
-        if let kind, ["up_to_date", "blocked", "failed"].contains(kind) {
-            return kind
-        }
-        return "failed"
+        CapgoCore.string("updateResponseKind", ["kind": kind], "kind", fallback: "failed")
     }
 
     private func updateResponseKind(kind: String?) -> String {

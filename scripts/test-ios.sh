@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Always rebuild the Rust core so tests never run against a stale xcframework.
+"$ROOT_DIR/scripts/build-core.sh" ios
+
 SIMULATOR_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')
 
 if [[ -z "${SIMULATOR_ID:-}" ]]; then

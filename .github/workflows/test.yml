@@ -41,6 +41,36 @@ jobs:
             exit 1
           fi
 
+  rust_core:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Rust core (fmt, clippy, contract tests)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Format
+        working-directory: core
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: core
+        run: cargo clippy --locked --all-targets --features jni -- -D warnings
+      - name: Test (shared native contract fixtures)
+        working-directory: core
+        run: cargo test --locked
+
   build_android:
     permissions:
       contents: read
@@ -68,6 +98,10 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
           cache: gradle
+      - name: Build Rust core (Android)
+        uses: ./.github/actions/build-core
+        with:
+          platform: android
       - name: Build and test Android plugin
         id: build_code
         run: bun run verify:android
@@ -96,6 +130,10 @@ jobs:
         run: bun run check:wiring
       - name: Check Cap 9 deprecated APIs
         run: bun run check:cap9-deprecated
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build
         id: build_code
         run: bun run verify:ios
@@ -239,6 +277,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (Android)
+        uses: ./.github/actions/build-core
+        with:
+          platform: android
       - name: Build Android app
         run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
       - name: Upload Android app (attempt 1)
@@ -323,6 +365,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build iOS app
         run: |
           set -euo pipefail

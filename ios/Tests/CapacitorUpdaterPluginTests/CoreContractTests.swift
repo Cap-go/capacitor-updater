@@ -5,17 +5,6 @@ import XCTest
 /// Runs the shared core contract fixtures (policy, security, crypto) through
 /// `CoreContractAdapter`, which targets the current Swift implementation.
 final class CoreContractTests: XCTestCase {
-    /// Cases where the current iOS behavior differs from the shared contract
-    /// without a declared `divergence`. The Rust core fixes these; do not add
-    /// entries without triage.
-    private static let knownIosMismatches: Set<String> = [
-        // CommonCrypto CCCryptorFinal accepts a corrupted PKCS#7 pad and returns the raw last block
-        // instead of failing, so decryptFile succeeds with garbage plaintext.
-        "decrypt-file.bad-padding",
-        // A 15-byte (not block aligned) ciphertext decrypts "successfully" to 15 garbage bytes.
-        "decrypt-file.not-block-aligned"
-    ]
-
     private enum ContractError: Error {
         case missingFixture(String)
         case invalidRoot(String)
@@ -53,10 +42,6 @@ final class CoreContractTests: XCTestCase {
             guard let cases = fixture[group] as? [[String: Any]] else {
                 throw ContractError.invalidCase("\(name).\(group) must be an array of cases")
             }
-            if CoreContractAdapter.unsupportedGroups.contains(group) {
-                skipped.append("\(group) (no iOS implementation, \(cases.count) cases)")
-                continue
-            }
             for testCase in cases {
                 guard let id = testCase["id"] as? String,
                       var input = testCase["input"] as? [String: Any],
@@ -84,16 +69,9 @@ final class CoreContractTests: XCTestCase {
     }
 
     private func skipReason(group: String, testCase: [String: Any], input: [String: Any]) -> String? {
-        if let divergence = testCase["divergence"] as? [String], divergence.contains("ios") {
-            return "declared ios divergence"
-        }
-        if group == "userAgent", (input["platform"] as? String) != "ios" {
-            return "platform-specific user agent"
-        }
-        if let id = testCase["id"] as? String, Self.knownIosMismatches.contains(id) {
-            return "known iOS mismatch"
-        }
-        return nil
+        // Every case runs: the plugin is backed by the shared Rust core, so there
+        // are no platform divergences left to skip.
+        nil
     }
 
     private func check(group: String, id: String, input: [String: Any], expect: [String: Any]) -> Bool {

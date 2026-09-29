@@ -76,12 +76,14 @@ enum BundleStatus: LocalizedString, CaseIterable, Decodable, Encodable {
     }
 
     private static func fromStoredValue(_ value: String) -> BundleStatus? {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let status = BundleStatus(localizedString: normalized) {
+        if let status = BundleStatus(localizedString: value) {
             return status
         }
-
-        let storedValue = normalized.lowercased()
+        // Shared core rules: trimmed, case-insensitive, empty means pending.
+        guard let result = try? CapgoCore.call("bundleStatus", ["value": value]),
+              let storedValue = result["status"] as? String else {
+            return nil
+        }
         return BundleStatus.allCases.first(where: { $0.storedValue == storedValue })
     }
 

@@ -7,28 +7,14 @@
 import Foundation
 import CryptoKit
 
+/// Bundle crypto entry points. The work (RSA recovery, AES-128-CBC
+/// decryption, SHA-256 of files) runs in the shared Rust core; this type keeps
+/// the plugin's logging and error surface.
 public struct CryptoCipher {
     private static var logger: Logger!
 
     public static func setLogger(_ logger: Logger) {
         self.logger = logger
-    }
-
-    private static func hexStringToData(_ hex: String) -> Data? {
-        var data = Data()
-        var hexIterator = hex.makeIterator()
-        while let char1 = hexIterator.next(), let char2 = hexIterator.next() {
-            guard let byte = UInt8(String([char1, char2]), radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-        }
-        return data
-    }
-
-    private static func isHexString(_ str: String) -> Bool {
-        let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        return str.unicodeScalars.allSatisfy { hexCharacterSet.contains($0) }
     }
 
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
@@ -37,77 +23,15 @@ public struct CryptoCipher {
             return checksum
         }
         do {
-            // Determine if input is hex or base64 encoded
-            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
-            let checksumBytes: Data
-            let detectedFormat: String
-            if isHexString(checksum) {
-                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
-                guard let hexData = hexStringToData(checksum) else {
-                    logger.error("Cannot decode checksum as hex")
-                    logger.debug("Checksum value: \(checksum)")
-                    throw CustomError.cannotDecode
-                }
-                checksumBytes = hexData
-                detectedFormat = "hex"
-            } else {
-                // TODO: remove backwards compatibility
-                // Base64 encoded (old format for backwards compatibility)
-                guard let base64Data = Data(base64Encoded: checksum) else {
-                    logger.error("Cannot decode checksum as base64")
-                    logger.debug("Checksum value: \(checksum)")
-                    throw CustomError.cannotDecode
-                }
-                checksumBytes = base64Data
-                detectedFormat = "base64"
-            }
-            // swiftlint:disable:next line_length
-            logger.debug("Received checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
-
-            if checksumBytes.isEmpty {
-                logger.error("Decoded checksum is empty")
+            let result = try CapgoCore.call("decryptChecksum", ["checksum": checksum, "publicKey": publicKey])
+            guard let decrypted = result["checksum"] as? String else {
                 throw CustomError.cannotDecode
             }
-
-            // RSA-2048 encrypted data must be exactly 256 bytes
-            // If the checksum is not 256 bytes, the bundle was not encrypted properly
-            if checksumBytes.count != 256 {
-                // swiftlint:disable:next line_length
-                logger.error("Checksum is not RSA encrypted (size: \(checksumBytes.count) bytes, expected 256 for RSA-2048). Bundle must be uploaded with encryption when public key is configured.")
-                throw CustomError.cannotDecode
-            }
-
-            guard let rsaPublicKey = RSAPublicKey.load(rsaPublicKey: publicKey) else {
-                logger.error("The public key is not a valid RSA Public key")
-                throw CustomError.cannotDecode
-            }
-
-            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
-                logger.error("decryptChecksum fail")
-                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
-            }
-
-            // Return as hex string to match calcChecksum output format
-            let result = decryptedChecksum.map { String(format: "%02x", $0) }.joined()
-
-            // Detect checksum algorithm based on length
-            let detectedAlgorithm: String
-            if decryptedChecksum.count == 32 {
-                detectedAlgorithm = "SHA-256"
-            } else if decryptedChecksum.count == 4 {
-                detectedAlgorithm = "CRC32 (deprecated)"
-                logger.error("CRC32 checksum detected - deprecated algorithm")
-            } else {
-                detectedAlgorithm = "unknown (\(decryptedChecksum.count) bytes)"
-                logger.error("Unknown checksum algorithm detected")
-                logger.debug("Byte count: \(decryptedChecksum.count), Expected: 32 (SHA-256)")
-            }
-            // swiftlint:disable:next line_length
-            logger.debug("Decrypted checksum: \(detectedAlgorithm) hex format (length: \(result.count) chars, \(decryptedChecksum.count) bytes)")
-            return result
+            logChecksumInfo(label: "Decrypted checksum", hexChecksum: decrypted)
+            return decrypted
         } catch {
             logger.error("Checksum decryption failed")
-            logger.debug("Error: \(error.localizedDescription)")
+            logger.debug("Error: \(error)")
             throw CustomError.cannotDecode
         }
     }
@@ -116,17 +40,7 @@ public struct CryptoCipher {
     /// SHA-256 = 64 hex chars (32 bytes)
     /// CRC32 = 8 hex chars (4 bytes)
     public static func detectChecksumAlgorithm(_ hexChecksum: String) -> String {
-        if hexChecksum.isEmpty {
-            return "empty"
-        }
-        let len = hexChecksum.count
-        if len == 64 {
-            return "SHA-256"
-        } else if len == 8 {
-            return "CRC32 (deprecated)"
-        } else {
-            return "unknown (\(len) hex chars)"
-        }
+        CapgoCore.string("checksumAlgorithm", ["checksum": hexChecksum], "algorithm", fallback: "empty")
     }
 
     /// Log checksum info and warn if deprecated algorithm detected.
@@ -157,49 +71,19 @@ public struct CryptoCipher {
         return ioBufferBytesValue
     }
 
+    /// Lowercase hex SHA-256 of a file, or "" when it cannot be read.
     public static func calcChecksum(filePath: URL) -> String {
-        let bufferSize = checksumBufferBytes()
-        var sha256 = SHA256()
-
-        let fileHandle: FileHandle
         do {
-            fileHandle = try FileHandle(forReadingFrom: filePath)
+            let result = try CapgoCore.call("checksumFile", ["path": filePath.path])
+            return result["checksum"] as? String ?? ""
         } catch {
-            logger.error("Cannot open file for checksum calculation")
+            logger.error("Cannot calculate checksum")
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
-
-        defer {
-            do {
-                try fileHandle.close()
-            } catch {
-                logger.error("Error closing file during checksum")
-                logger.debug("Error: \(error)")
-            }
-        }
-
-        while autoreleasepool(invoking: {
-            let fileData: Data
-            do {
-                fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
-            } catch {
-                logger.error("Error reading file during checksum")
-                logger.debug("Error: \(error)")
-                return false
-            }
-
-            if fileData.count > 0 {
-                sha256.update(data: fileData)
-                return true // Continue
-            } else {
-                return false // End of file
-            }
-        }) {}
-
-        return hexString(from: sha256)
     }
 
+    /// Incremental SHA-256 for bytes streamed during a download.
     final class RunningChecksum {
         private var sha256 = SHA256()
 
@@ -220,87 +104,30 @@ public struct CryptoCipher {
     }
 
     static func shortPathKey(_ fileName: String) -> String {
-        var sha256 = SHA256()
-        sha256.update(data: Data(fileName.utf8))
-        return String(hexString(from: sha256).prefix(16))
+        CapgoCore.string("shortPathKey", ["value": fileName], "key")
     }
 
     public static func isValidSessionKey(_ sessionKey: String) -> Bool {
-        if sessionKey.isEmpty {
-            return false
-        }
-        let sessionKeyParts = sessionKey.components(separatedBy: ":")
-        return sessionKeyParts.count == 2 && !sessionKeyParts[0].isEmpty && !sessionKeyParts[1].isEmpty
+        CapgoCore.bool("sessionKeyValid", ["sessionKey": sessionKey], "valid")
     }
 
+    /// Decrypts an encrypted bundle in place. No-op when the bundle is not encrypted.
     public static func decryptFile(filePath: URL, publicKey: String, sessionKey: String, version: String) throws {
-        if publicKey.isEmpty || !isValidSessionKey(sessionKey) {
-            logger.info("Encryption not set, no public key or session, ignored")
-            return
-        }
-
-        if !publicKey.hasPrefix("-----BEGIN RSA PUBLIC KEY-----") {
-            logger.error("The public key is not a valid RSA Public key")
-            return
-        }
-
+        let outcome: String
         do {
-            guard let rsaPublicKey = RSAPublicKey.load(rsaPublicKey: publicKey) else {
-                logger.error("The public key is not a valid RSA Public key")
-                throw CustomError.cannotDecode
-            }
-
-            let sessionKeyComponents = sessionKey.components(separatedBy: ":")
-            let ivBase64 = sessionKeyComponents[0]
-            let encryptedKeyBase64 = sessionKeyComponents[1]
-
-            guard let ivData = Data(base64Encoded: ivBase64) else {
-                logger.error("Cannot decode sessionKey IV")
-                logger.debug("IV value: \(ivBase64)")
-                throw CustomError.cannotDecode
-            }
-
-            if ivData.count != 16 {
-                logger.error("IV data has invalid length")
-                logger.debug("Length: \(ivData.count), Expected: 16")
-                throw CustomError.cannotDecode
-            }
-
-            guard let sessionKeyDataEncrypted = Data(base64Encoded: encryptedKeyBase64) else {
-                logger.error("Cannot decode sessionKey data")
-                logger.debug("Key value: \(encryptedKeyBase64)")
-                throw NSError(domain: "Invalid session key data", code: 1, userInfo: nil)
-            }
-
-            guard let sessionKeyDataDecrypted = rsaPublicKey.decrypt(data: sessionKeyDataEncrypted) else {
-                logger.error("Failed to decrypt session key data")
-                throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
-            }
-
-            if sessionKeyDataDecrypted.count != 16 {
-                logger.error("Decrypted session key has invalid length")
-                logger.debug("Length: \(sessionKeyDataDecrypted.count), Expected: 16")
-                throw NSError(domain: "Invalid decrypted session key", code: 5, userInfo: nil)
-            }
-
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
-
-            let encryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
-            if encryptedSize == 0 {
-                logger.error("Encrypted file data is empty")
-                throw NSError(domain: "Empty encrypted data", code: 6, userInfo: nil)
-            }
-
-            try aesPrivateKey.decrypt(from: filePath, to: filePath)
-            let decryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
-            if decryptedSize == 0 {
-                logger.error("Decrypted data is empty")
-                throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
-            }
-
+            let result = try CapgoCore.call("decryptFile", [
+                "path": filePath.path,
+                "publicKey": publicKey,
+                "sessionKey": sessionKey
+            ])
+            outcome = result["outcome"] as? String ?? ""
         } catch {
             logger.error("File decryption failed")
+            logger.debug("Version: \(version), Error: \(error)")
             throw CustomError.cannotDecode
+        }
+        if outcome == "notEncrypted" {
+            logger.info("Encryption not set, no public key or session, ignored")
         }
     }
 
@@ -309,19 +136,6 @@ public struct CryptoCipher {
     /// The first 12 chars are always "MIIBCgKCAQEA" for RSA 2048-bit keys,
     /// so the unique part starts at character 13
     public static func calcKeyId(publicKey: String) -> String {
-        if publicKey.isEmpty {
-            return ""
-        }
-
-        // Remove PEM headers and whitespace to get the raw key data
-        let cleanedKey = publicKey
-            .replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "\n", with: "")
-            .replacingOccurrences(of: "\r", with: "")
-            .replacingOccurrences(of: " ", with: "")
-
-        // Return first 20 characters of the base64-encoded key
-        return String(cleanedKey.prefix(20))
+        CapgoCore.string("keyId", ["publicKey": publicKey], "keyId")
     }
 }

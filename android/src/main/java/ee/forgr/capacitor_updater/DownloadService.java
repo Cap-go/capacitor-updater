@@ -126,9 +126,11 @@ public class DownloadService extends Worker {
     // Match CapgoUpdater.timeout / responseTimeout default (20s). OkHttp's 10s
     // defaults were unused by the plugin config and aborted slow manifest GETs.
     private static volatile int httpTimeoutMs = 20_000;
-    private static String currentAppId = "unknown";
-    private static String currentPluginVersion = "unknown";
-    private static String currentVersionOs = "unknown";
+    private static final String DEFAULT_USER_AGENT = "CapacitorUpdater/unknown (unknown) android/unknown";
+    // Built once by updateUserAgent (sanitized by the core), read by every request.
+    private static volatile String currentUserAgent = DEFAULT_USER_AGENT;
+    // Stats fallback when the worker input has no OS version.
+    private static volatile String currentVersionOs = "unknown";
 
     // Initialize shared client with User-Agent interceptor
     static {
@@ -143,8 +145,7 @@ public class DownloadService extends Worker {
             .writeTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
-                String userAgent = buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs);
-                Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
+                Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", currentUserAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
             .build();
@@ -181,46 +182,24 @@ public class DownloadService extends Worker {
     }
 
     static int manifestMaxConcurrentFiles(int processors) {
-        int cores = Math.max(1, processors);
-        return Math.min(64, Math.max(8, cores * 2));
+        return (int) CapgoCore.number("manifestConcurrency", CapgoCore.input("processorCount", processors), "maxConcurrentFiles", 8);
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
-        return (
-            "CapacitorUpdater/" +
-            sanitizeUserAgentValue(pluginVersion) +
-            " (" +
-            sanitizeUserAgentValue(appId) +
-            ") android/" +
-            sanitizeUserAgentValue(versionOs)
+        return CapgoCore.string(
+            "userAgent",
+            CapgoCore.input("appId", appId, "pluginVersion", pluginVersion, "versionOs", versionOs, "platform", "android"),
+            "userAgent",
+            DEFAULT_USER_AGENT
         );
-    }
-
-    private static String sanitizeUserAgentValue(String value) {
-        if (value == null || value.isEmpty()) {
-            return "unknown";
-        }
-
-        StringBuilder sanitized = new StringBuilder();
-        value.codePoints().forEach((cp) -> {
-            boolean isVisibleAscii = cp >= 0x20 && cp <= 0x7E;
-            boolean isIso88591 = cp >= 0xA0 && cp <= 0xFF;
-            if (isVisibleAscii || isIso88591) {
-                sanitized.appendCodePoint(cp);
-            }
-        });
-
-        String result = sanitized.toString().trim();
-        return result.isEmpty() ? "unknown" : result;
     }
 
     // Method to update User-Agent values
     public static void updateUserAgent(String appId, String pluginVersion, String versionOs) {
-        currentAppId = sanitizeUserAgentValue(appId);
-        currentPluginVersion = sanitizeUserAgentValue(pluginVersion);
-        currentVersionOs = sanitizeUserAgentValue(versionOs);
+        currentUserAgent = buildUserAgent(appId, pluginVersion, versionOs);
+        currentVersionOs = versionOs == null || versionOs.trim().isEmpty() ? "unknown" : versionOs.trim();
         if (logger != null) {
-            logger.debug("Updated User-Agent: " + buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs));
+            logger.debug("Updated User-Agent: " + currentUserAgent);
         }
     }
 
@@ -255,28 +234,20 @@ public class DownloadService extends Worker {
     }
 
     static File resolveManifestTargetFile(final File destFolder, final String fileName) throws IOException {
-        final boolean isBrotli = fileName.endsWith(".br");
-        final String targetFileName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
-        return CapgoUpdater.resolvePathInsideDirectory(destFolder, targetFileName);
+        return CapgoUpdater.resolveInsideDirectory("manifestTargetPath", destFolder, "fileName", fileName);
     }
 
     static File resolveManifestBuiltinFile(final File builtinFolder, final String fileName) throws IOException {
-        final boolean isBrotli = fileName.endsWith(".br");
-        final String resolvedName = isBrotli ? fileName.substring(0, fileName.length() - 3) : fileName;
-        return CapgoUpdater.resolvePathInsideDirectory(builtinFolder, resolvedName);
+        return resolveManifestTargetFile(builtinFolder, fileName);
     }
 
     /** APK web assets live in assets/public/; strip .br so store files match. */
     static String resolveBuiltinAssetPath(final String fileName) throws IOException {
-        final File base = new File("/capgo-builtin-assets");
-        final File resolved = resolveManifestBuiltinFile(base, fileName);
-        final String basePath = base.getCanonicalPath();
-        final String resolvedPath = resolved.getCanonicalPath();
-        final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
-        if (!resolvedPath.startsWith(normalizedBasePath)) {
+        try {
+            return CapgoCore.call("builtinAssetPath", CapgoCore.input("fileName", fileName)).getString("assetPath");
+        } catch (CapgoCore.Failure | org.json.JSONException e) {
             throw new IOException("Invalid manifest file path: " + fileName);
         }
-        return "public/" + resolvedPath.substring(normalizedBasePath.length()).replace(File.separatorChar, '/');
     }
 
     static boolean copyStreamIfChecksumMatches(final InputStream input, final File dest, final String expectedHash) throws IOException {
@@ -925,7 +896,7 @@ public class DownloadService extends Worker {
     }
 
     static boolean isRetryableHttpStatus(int responseCode) {
-        return responseCode >= 500 || responseCode == 408 || responseCode == 429;
+        return CapgoCore.bool("retryableHttpStatus", CapgoCore.input("status", responseCode), "retryable", false);
     }
 
     static long parseContentRangeStart(String contentRange) {
@@ -934,31 +905,15 @@ public class DownloadService extends Worker {
     }
 
     static ContentRangeInfo parseContentRange(String contentRange) {
-        if (contentRange == null || contentRange.isEmpty()) {
-            return null;
-        }
-        String trimmed = contentRange.trim();
-        if (!trimmed.startsWith("bytes ")) {
-            return null;
-        }
-        int slash = trimmed.indexOf('/');
-        if (slash < 0) {
-            return null;
-        }
-        int dash = trimmed.indexOf('-', 6);
-        if (dash < 0 || dash >= slash) {
-            return null;
-        }
         try {
-            long start = Long.parseLong(trimmed.substring(6, dash).trim());
-            long end = Long.parseLong(trimmed.substring(dash + 1, slash).trim());
-            String totalPart = trimmed.substring(slash + 1).trim();
-            long total = "*".equals(totalPart) ? -1 : Long.parseLong(totalPart);
-            if (end < start) {
+            final org.json.JSONObject range = CapgoCore.call("contentRange", CapgoCore.input("header", contentRange)).optJSONObject(
+                "range"
+            );
+            if (range == null) {
                 return null;
             }
-            return new ContentRangeInfo(start, end, total);
-        } catch (NumberFormatException e) {
+            return new ContentRangeInfo(range.getLong("start"), range.getLong("end"), range.getLong("total"));
+        } catch (CapgoCore.Failure | org.json.JSONException e) {
             return null;
         }
     }
@@ -995,20 +950,17 @@ public class DownloadService extends Worker {
     }
 
     static ZipWritePlan planZipResumeWrite(int responseCode, long downloadedBytes, String contentRange) {
-        if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
-            long rangeStart = parseContentRangeStart(contentRange);
-            if (rangeStart == downloadedBytes) {
-                return new ZipWritePlan(HttpURLConnection.HTTP_PARTIAL, downloadedBytes);
-            }
-            if (rangeStart == 0) {
-                return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
-            }
+        try {
+            final org.json.JSONObject plan = CapgoCore.call(
+                "zipResumePlan",
+                CapgoCore.input("responseCode", responseCode, "downloadedBytes", downloadedBytes, "contentRange", contentRange)
+            );
+            return new ZipWritePlan(plan.getInt("responseCode"), plan.getLong("writeOffset"));
+        } catch (CapgoCore.Failure e) {
+            throw new DownloadRetryException(e.code);
+        } catch (org.json.JSONException e) {
             throw new DownloadRetryException("invalid_content_range");
         }
-        if (responseCode == HttpURLConnection.HTTP_OK && downloadedBytes > 0) {
-            return new ZipWritePlan(HttpURLConnection.HTTP_OK, 0);
-        }
-        return new ZipWritePlan(responseCode, downloadedBytes);
     }
 
     private void clearDownloadData(String docDir, String id) {
@@ -1195,16 +1147,17 @@ public class DownloadService extends Worker {
     }
 
     static File manifestPartialFile(File cacheDir, String hash, String fileName) {
-        String token = safePartialToken(fileName);
-        if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
-            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
-        }
-        String digest = CryptoCipher.shortPathKey((hash == null ? "" : hash) + "\0" + (fileName == null ? "" : fileName));
-        return new File(cacheDir, "partial_" + digest + "_" + token + ".tmp");
+        final String name = CapgoCore.string(
+            "manifestPartialName",
+            CapgoCore.input("hash", hash, "fileName", fileName),
+            "name",
+            "partial_" + safePartialToken(fileName) + ".tmp"
+        );
+        return new File(cacheDir, name);
     }
 
     static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {
-        return existingBytes > 0 && statusCode == HttpURLConnection.HTTP_PARTIAL;
+        return CapgoCore.bool("appendHttpBody", CapgoCore.input("statusCode", statusCode, "existingBytes", existingBytes), "append", false);
     }
 
     static void writeHttpBody(File dest, InputStream body, int statusCode, long existingBytes) throws IOException {

@@ -323,14 +323,14 @@
       }
     },
     {
-      "id": "decrypt-file.spki-public-key-noop",
+      "id": "decrypt-file.invalid-public-key",
       "input": {
         "publicKey": "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----",
         "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
         "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
       },
       "expect": {
-        "plaintextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+        "error": "invalid_public_key"
       }
     },
     {

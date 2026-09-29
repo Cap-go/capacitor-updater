@@ -11,8 +11,6 @@ use crate::text::{base64_decode, hex_decode, hex_encode, is_hex};
 
 pub use self::rsa::RsaPublicKey;
 
-pub const RSA_PUBLIC_KEY_HEADER: &str = "-----BEGIN RSA PUBLIC KEY-----";
-
 /// `<iv base64>:<RSA-encrypted AES key base64>`, both parts non-empty.
 pub fn is_valid_session_key(session_key: Option<&str>) -> bool {
     let Some(session_key) = session_key else {
@@ -116,12 +114,11 @@ pub enum DecryptOutcome {
     Decrypted,
     /// No public key or no session key: the bundle is not encrypted.
     NotEncrypted,
-    /// The configured key is not a PKCS#1 `RSA PUBLIC KEY`; decryption is skipped (legacy behavior).
-    UnsupportedPublicKey,
 }
 
 /// Decrypts an encrypted bundle file in place (AES-128-CBC, PKCS#7), streaming.
 ///
+/// Fails closed: an unusable public key is an error, never a silent skip.
 /// Hosts must separately refuse unencrypted downloads when a public key is
 /// configured (see `requireSessionKey` in the plugins); this function only
 /// performs the decryption step.
@@ -132,9 +129,6 @@ pub fn decrypt_bundle_file(
 ) -> CoreResult<DecryptOutcome> {
     if public_key.is_empty() || !is_valid_session_key(session_key) {
         return Ok(DecryptOutcome::NotEncrypted);
-    }
-    if !public_key.starts_with(RSA_PUBLIC_KEY_HEADER) {
-        return Ok(DecryptOutcome::UnsupportedPublicKey);
     }
     let session = decrypt_session_key(public_key, session_key.unwrap_or_default())?;
     aes_cbc::decrypt_file_in_place(path, &session.key, &session.iv)?;

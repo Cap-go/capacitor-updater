@@ -196,28 +196,7 @@ final class WebViewStatsReporter {
     }
 
     static func statsAction(for type: String) -> String {
-        switch type {
-        case "unhandled_rejection":
-            return "webview_unhandled_rejection"
-        case "resource_error":
-            return "webview_resource_error"
-        case "security_policy_violation":
-            return "webview_security_policy_violation"
-        case "webview_unclean_restart":
-            return "webview_unclean_restart"
-        case "render_process_gone":
-            return "webview_render_process_gone"
-        case "web_content_process_terminated":
-            return "webview_content_process_terminated"
-        case "webview_dom_content_loaded":
-            return "webview_dom_content_loaded"
-        case "webview_page_loaded":
-            return "webview_page_loaded"
-        case "javascript_error":
-            return "webview_javascript_error"
-        default:
-            return "webview_javascript_error"
-        }
+        CapgoCore.string("webViewErrorStatsAction", ["type": type], "action", fallback: "webview_javascript_error")
     }
 
     static func buildMetadata(_ values: [String: String?]) -> [String: String] {

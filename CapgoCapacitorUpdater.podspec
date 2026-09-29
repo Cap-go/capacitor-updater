@@ -11,6 +11,8 @@ Pod::Spec.new do |s|
   s.author = package['author']
   s.source = { :git => package['repository']['url'], :tag => s.version.to_s }
   s.source_files = 'ios/Sources/**/*.{swift,h,m,c,cc,mm,cpp}'
+  # Shared Rust updater core (core/), built by scripts/build-core.sh ios.
+  s.vendored_frameworks = 'ios/Frameworks/CapgoUpdaterCore.xcframework'
   s.ios.deployment_target = '15.0'
   s.dependency 'Capacitor'
   s.dependency 'ZIPFoundation', '~> 0.9'

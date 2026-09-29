@@ -251,10 +251,7 @@
       },
       "expect": {
         "error": "absolute_path"
-      },
-      "divergence": [
-        "android"
-      ]
+      }
     },
     {
       "id": "resolve.self",
@@ -559,10 +556,7 @@
       },
       "expect": {
         "name": "partial_75868027b5304832_489e15dd56f2315d.tmp"
-      },
-      "divergence": [
-        "ios"
-      ]
+      }
     },
     {
       "id": "partial-name.unsafe-hash",
@@ -572,10 +566,7 @@
       },
       "expect": {
         "name": "partial_107dae1e06d597d5_dc5985b2a377c4ea.tmp"
-      },
-      "divergence": [
-        "ios"
-      ]
+      }
     }
   ],
   "shortPathKey": [

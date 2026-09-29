@@ -36,10 +36,16 @@ public enum BundleStatus {
         return this.label;
     }
 
+    /** Shared core rule: trimmed, case-insensitive, empty means pending, unknown is null. */
     public static BundleStatus fromString(final String status) {
         if (status == null || status.isEmpty()) {
             return BundleStatus.PENDING;
         }
-        return BundleStatus.BY_LABEL.get(status);
+        final BundleStatus exact = BundleStatus.BY_LABEL.get(status);
+        if (exact != null) {
+            return exact;
+        }
+        final String label = CapgoCore.optString("bundleStatus", CapgoCore.input("value", status), "status");
+        return label == null ? null : BundleStatus.BY_LABEL.get(label);
     }
 }

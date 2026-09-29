@@ -89,10 +89,10 @@ final class CoreContractAdapter {
             case "manifestConcurrency":
                 return out("maxConcurrentFiles", DownloadService.manifestMaxConcurrentFiles(input.getInt("processorCount")));
             case "userAgent": {
-                // The Android builder hard codes the "android" platform segment.
+                // The Android builder hard codes the "android" platform segment; other platforms go straight to the core.
                 String platform = input.getString("platform");
                 if (!"android".equals(platform)) {
-                    throw new UnsupportedCase("platform " + platform + " is not built by the Android user agent helper");
+                    return CapgoCore.call("userAgent", input);
                 }
                 return out(
                     "userAgent",
