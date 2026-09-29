@@ -1,0 +1,37 @@
+[package]
+name = "capgo-updater-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MPL-2.0"
+description = "Platform-neutral core of the Capgo live updater: update policy, path guards, bundle crypto and checksums."
+repository = "https://github.com/Cap-go/capacitor-updater"
+publish = false
+
+[lib]
+name = "capgo_updater_core"
+# staticlib: iOS xcframework. cdylib: Android .so and host library for JVM unit tests. rlib: Rust tests.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# JNI entry points used by the Android plugin (and by the JVM unit tests on the host).
+jni = ["dep:jni"]
+
+[dependencies]
+aes = "0.8"
+base64 = "0.22"
+jni = { version = "0.21", default-features = false, optional = true }
+num-bigint = "0.4"
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# Only applies to linked outputs (Android .so); iOS static libs are stripped by scripts/build-core.sh.
+strip = true

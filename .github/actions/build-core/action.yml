@@ -1,0 +1,33 @@
+name: Build Capgo Rust core
+description: Build the shared Rust updater core (core/) for Android (.so) or iOS (xcframework).
+inputs:
+  platform:
+    description: android, ios or host.
+    required: true
+  cache:
+    description: Restore/save the cargo cache. Disable in privileged (publish) workflows.
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal
+        rustup default stable
+    - name: Cache Rust build
+      if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: core -> target
+        key: ${{ inputs.platform }}
+    - name: Install cargo-ndk
+      if: inputs.platform == 'android'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk
+    - name: Build core
+      shell: bash
+      env:
+        CAPGO_CORE_PLATFORM: ${{ inputs.platform }}
+      run: ./scripts/build-core.sh "$CAPGO_CORE_PLATFORM"
