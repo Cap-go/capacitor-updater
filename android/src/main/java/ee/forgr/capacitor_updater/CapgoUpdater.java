@@ -752,6 +752,7 @@ public class CapgoUpdater {
             return;
         }
 
+        final AtomicBoolean terminalHandled = new AtomicBoolean(false);
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(id)
@@ -767,6 +768,7 @@ public class CapgoUpdater {
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
@@ -817,6 +819,7 @@ public class CapgoUpdater {
                             });
                             break;
                         case FAILED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed");
@@ -855,6 +858,7 @@ public class CapgoUpdater {
                             });
                             break;
                         case CANCELLED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             DataManager.getInstance().clearManifest(id);
                             CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                             if (cancelledFuture != null) {
