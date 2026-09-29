@@ -4531,16 +4531,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     static String readyGenerationScript(final int generation) {
+        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
+        // ignores assignments to notifyAppReady. Each document keeps its own generation.
         return (
             "(function(){window.__CAPGO_READY_GEN=" +
             generation +
-            ";if(window.__capgoReadyPatch)return;window.__capgoReadyPatch=true;" +
-            "function arm(){var cap=window.Capacitor;var plugin=cap&&cap.Plugins&&cap.Plugins.CapacitorUpdater;" +
-            "if(!plugin||plugin.__capgoReadyPatched||!plugin.notifyAppReady)return false;" +
-            "var orig=plugin.notifyAppReady.bind(plugin);" +
-            "plugin.notifyAppReady=function(opts){var next={};if(opts&&typeof opts==='object'){for(var k in opts){if(Object.prototype.hasOwnProperty.call(opts,k))next[k]=opts[k];}}" +
-            "next.loadGeneration=window.__CAPGO_READY_GEN;return orig(next);};" +
-            "plugin.__capgoReadyPatched=true;return true;}" +
+            ";if(window.__capgoReadyBridge)return;" +
+            "function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;" +
+            "var orig=cap.nativePromise.bind(cap);" +
+            "cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){" +
+            "var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}" +
+            "next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};" +
+            "cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}" +
             "if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}" +
             "})();"
         );

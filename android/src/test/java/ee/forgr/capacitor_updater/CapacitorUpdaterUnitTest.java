@@ -2745,7 +2745,10 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, false, 0));
         assertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, true, 1));
         assertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, true, 2));
-        assertTrue(CapacitorUpdaterPlugin.readyGenerationScript(2).contains("window.__CAPGO_READY_GEN=2"));
+        final String script = CapacitorUpdaterPlugin.readyGenerationScript(2);
+        assertTrue(script.contains("window.__CAPGO_READY_GEN=2"));
+        assertTrue(script.contains("cap.nativePromise"));
+        assertFalse(script.contains("plugin.notifyAppReady="));
     }
 
     @Test
