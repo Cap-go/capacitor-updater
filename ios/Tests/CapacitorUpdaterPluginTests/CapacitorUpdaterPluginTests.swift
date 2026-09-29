@@ -38,6 +38,20 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     private var _notifiedEventNames: [String] = []
     private var _notifiedEventPayloads: [String: [String: Any]] = [:]
     private var _appReadyNotifiedAt: Date?
+    private var _appReadyNotifiedOnMainThread: Bool?
+    private var _appReadyRetainUntilConsumed: Bool?
+
+    var appReadyNotifiedOnMainThread: Bool? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyNotifiedOnMainThread
+    }
+
+    var appReadyRetainUntilConsumed: Bool? {
+        eventLock.lock()
+        defer { eventLock.unlock() }
+        return _appReadyRetainUntilConsumed
+    }
 
     var appReadyNotifiedAt: Date? {
         eventLock.lock()
@@ -57,11 +71,13 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         return _notifiedEventPayloads
     }
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed _: Bool) {
+    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         eventLock.lock()
         _notifiedEventNames.append(eventName)
         if eventName == "appReady" {
             _appReadyNotifiedAt = Date()
+            _appReadyNotifiedOnMainThread = Thread.isMainThread
+            _appReadyRetainUntilConsumed = retain
         }
         if let data {
             _notifiedEventPayloads[eventName] = data
@@ -3136,6 +3152,37 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
         XCTAssertEqual(testPlugin.notifiedEventPayloads["appReady"]?["status"] as? String, "disabled")
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
+    }
+
+    func testSendReadyToJsNotifiesAppReadyOnMainThread() {
+        // CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157).
+        // sendReadyToJs runs on a background queue, so appReady must hop to main.
+        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
+        let bundle = BundleInfo(
+            id: BundleInfo.ID_BUILTIN,
+            version: "builtin",
+            status: .SUCCESS,
+            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
+            checksum: ""
+        )
+
+        let expectation = expectation(description: "appReady notified")
+        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
+
+        DispatchQueue.global().async {
+            for _ in 0..<40 {
+                if testPlugin.notifiedEventNames.contains("appReady") {
+                    expectation.fulfill()
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
+
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertEqual(testPlugin.appReadyNotifiedOnMainThread, true)
+        XCTAssertEqual(testPlugin.appReadyRetainUntilConsumed, true)
     }
 
     func testSendReadyToJsWaitsOnlyWhenArmed() {
