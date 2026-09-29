@@ -98,9 +98,7 @@ impl RecordedRequest {
 
 impl FakeServer {
     pub fn start(
-        responder: impl FnMut(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>)
-            + Send
-            + 'static,
+        responder: impl FnMut(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + 'static,
     ) -> Self {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let url = format!("http://{}", server.server_addr().to_ip().unwrap());
@@ -125,9 +123,7 @@ impl FakeServer {
                 let (status, headers, body) = (responder_clone.lock().unwrap())(&recorded);
                 let mut response = tiny_http::Response::from_data(body).with_status_code(status);
                 for (key, value) in headers {
-                    response.add_header(
-                        tiny_http::Header::from_bytes(key.as_bytes(), value.as_bytes()).unwrap(),
-                    );
+                    response.add_header(tiny_http::Header::from_bytes(key.as_bytes(), value.as_bytes()).unwrap());
                 }
                 let _ = request.respond(response);
             }

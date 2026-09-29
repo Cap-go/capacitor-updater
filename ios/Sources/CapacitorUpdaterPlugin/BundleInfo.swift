@@ -174,6 +174,33 @@ import Foundation
         return result
     }
 
+    /// Raw fields for the Rust engine (see `BundleInfo::to_raw` in core).
+    func toRaw() -> [String: Any] {
+        var raw: [String: Any] = [
+            "id": self.id,
+            "version": self.version,
+            "downloaded": self.downloaded,
+            "checksum": self.checksum,
+            "status": self.status.storedValue
+        ]
+        raw["link"] = self.link ?? NSNull()
+        raw["comment"] = self.comment ?? NSNull()
+        return raw
+    }
+
+    /// Inverse of `toRaw()`.
+    static func fromRaw(_ raw: [String: Any]) -> BundleInfo {
+        BundleInfo(
+            id: raw["id"] as? String ?? "",
+            version: raw["version"] as? String ?? "",
+            status: BundleStatus(storedValue: raw["status"] as? String ?? "") ?? .ERROR,
+            downloaded: raw["downloaded"] as? String ?? "",
+            checksum: raw["checksum"] as? String ?? "",
+            link: raw["link"] as? String,
+            comment: raw["comment"] as? String
+        )
+    }
+
     public static func == (lhs: BundleInfo, rhs: BundleInfo) -> Bool {
         return lhs.getVersionName() == rhs.getVersionName()
     }

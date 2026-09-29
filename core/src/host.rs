@@ -78,11 +78,7 @@ pub trait Host: Send + Sync + 'static {
     /// Verifies a TLS server chain (DER, leaf first) with the platform trust
     /// store. `None` means "not handled here": the engine then uses its
     /// built-in platform verifier.
-    fn verify_server_certificate(
-        &self,
-        _chain: &[&[u8]],
-        _server_name: &str,
-    ) -> Option<Result<(), String>> {
+    fn verify_server_certificate(&self, _chain: &[&[u8]], _server_name: &str) -> Option<Result<(), String>> {
         None
     }
 }
@@ -161,9 +157,6 @@ impl Host for MemoryHost {
     }
 
     fn emit(&self, event: &str, payload: &Value) {
-        self.events
-            .lock()
-            .unwrap()
-            .push((event.to_string(), payload.clone()));
+        self.events.lock().unwrap().push((event.to_string(), payload.clone()));
     }
 }

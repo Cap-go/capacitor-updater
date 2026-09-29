@@ -65,26 +65,18 @@ impl Engine {
 
                 // ---- store
                 "bundleGet" => bundle(self.get_bundle_info(opt_str(input, "id"))),
-                "bundleGetByName" => {
-                    optional_bundle(self.get_bundle_info_by_name(req_str(input, "version")?))
-                }
+                "bundleGetByName" => optional_bundle(self.get_bundle_info_by_name(req_str(input, "version")?)),
                 "bundleSave" => {
                     let id = req_str(input, "id")?;
                     let info = match input.get("bundle") {
                         None | Some(Value::Null) => None,
                         Some(value) => Some(
-                            BundleInfo::from_raw(value)
-                                .ok_or_else(|| CoreError::invalid_input("invalid bundle"))?,
+                            BundleInfo::from_raw(value).ok_or_else(|| CoreError::invalid_input("invalid bundle"))?,
                         ),
                     };
                     json!({ "saved": self.save_bundle_info(id, info.as_ref()) })
                 }
-                "bundleList" => Value::Array(
-                    self.list(flag(input, "raw", false))
-                        .into_iter()
-                        .map(bundle)
-                        .collect(),
-                ),
+                "bundleList" => Value::Array(self.list(flag(input, "raw", false)).into_iter().map(bundle).collect()),
                 "bundleHasInfo" => {
                     json!({ "stored": self.has_stored_bundle_info(req_str(input, "id")?) })
                 }
@@ -128,10 +120,7 @@ impl Engine {
                         .weak_self()
                         .upgrade()
                         .ok_or_else(|| CoreError::new("internal", "engine dropped"))?;
-                    engine.set_success(
-                        req_str(input, "id")?,
-                        flag(input, "autoDeletePrevious", false),
-                    );
+                    engine.set_success(req_str(input, "id")?, flag(input, "autoDeletePrevious", false));
                     json!({})
                 }
                 "bundleSetError" => {
@@ -159,12 +148,8 @@ impl Engine {
                 }
                 "bundleRestoreResetState" => {
                     self.restore_reset_state(&super::store::ResetState {
-                        current_bundle_path: opt_str(input, "currentBundlePath")
-                            .unwrap_or_default()
-                            .to_string(),
-                        fallback_bundle_id: opt_str(input, "fallbackBundleId")
-                            .unwrap_or_default()
-                            .to_string(),
+                        current_bundle_path: opt_str(input, "currentBundlePath").unwrap_or_default().to_string(),
+                        fallback_bundle_id: opt_str(input, "fallbackBundleId").unwrap_or_default().to_string(),
                         next_bundle_id: opt_str(input, "nextBundleId").map(str::to_string),
                     });
                     json!({})
@@ -190,10 +175,7 @@ impl Engine {
                 }
                 "bundleFinalizePendingReload" => {
                     let info = subject(self, input)?;
-                    self.finalize_pending_reload(
-                        &info,
-                        opt_str(input, "previousBundleName").unwrap_or_default(),
-                    );
+                    self.finalize_pending_reload(&info, opt_str(input, "previousBundleName").unwrap_or_default());
                     json!({})
                 }
                 "bundleDrainPendingDeletes" => {
@@ -203,11 +185,7 @@ impl Engine {
                 "bundleAllowedIdsForCleanup" => json!(self.allowed_bundle_ids_for_cleanup()),
                 "bundleCleanupDownloadDirectories" => {
                     let allowed: BTreeSet<String> = match input.get("allowedIds") {
-                        Some(Value::Array(ids)) => ids
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_string)
-                            .collect(),
+                        Some(Value::Array(ids)) => ids.iter().filter_map(Value::as_str).map(str::to_string).collect(),
                         _ => self.allowed_bundle_ids_for_cleanup(),
                     };
                     self.cleanup_download_directories(&allowed, &|| false);
@@ -221,9 +199,7 @@ impl Engine {
                     self.cleanup_delta_cache();
                     json!({})
                 }
-                "bundleNewDownloadRecord" => {
-                    bundle(self.new_download_record(req_str(input, "version")?))
-                }
+                "bundleNewDownloadRecord" => bundle(self.new_download_record(req_str(input, "version")?)),
                 "randomId" => json!({ "id": super::store::random_id() }),
 
                 // ---- stats
@@ -285,11 +261,7 @@ impl Engine {
                     let update_url = opt_str(input, "updateUrl")
                         .map(str::to_string)
                         .unwrap_or_else(|| self.config().update_url.clone());
-                    Value::Object(self.bundle_download_size(
-                        &update_url,
-                        opt_str(input, "version"),
-                        &manifest,
-                    ))
+                    Value::Object(self.bundle_download_size(&update_url, opt_str(input, "version"), &manifest))
                 }
                 "isRemoteBlocked" => json!({ "blocked": self.is_remote_blocked() }),
 
@@ -327,10 +299,7 @@ impl Engine {
                         .and_then(Value::as_array)
                         .cloned()
                         .unwrap_or_default();
-                    self.missing_bundle_files(
-                        &manifest,
-                        opt_str(input, "sessionKey").unwrap_or_default(),
-                    )
+                    self.missing_bundle_files(&manifest, opt_str(input, "sessionKey").unwrap_or_default())
                 }
                 "populateDeltaCache" => {
                     self.populate_delta_cache(req_str(input, "id")?);

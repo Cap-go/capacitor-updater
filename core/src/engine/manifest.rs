@@ -49,18 +49,10 @@ thread_local! {
 }
 
 impl ApkAssets {
-    fn with_entry<R>(
-        &self,
-        name: &str,
-        f: impl FnOnce(&mut dyn Read) -> io::Result<R>,
-    ) -> Option<R> {
+    fn with_entry<R>(&self, name: &str, f: impl FnOnce(&mut dyn Read) -> io::Result<R>) -> Option<R> {
         APK.with(|cell| {
             let mut slot = cell.borrow_mut();
-            if slot
-                .as_ref()
-                .map(|(path, _)| path != &self.path)
-                .unwrap_or(true)
-            {
+            if slot.as_ref().map(|(path, _)| path != &self.path).unwrap_or(true) {
                 let file = File::open(&self.path).ok()?;
                 let archive = zip::ZipArchive::new(io::BufReader::new(file)).ok()?;
                 *slot = Some((self.path.clone(), archive));
@@ -77,11 +69,9 @@ impl ApkAssets {
     }
 
     fn copy_if_matches(&self, name: &str, hash: &str, target: &Path) -> bool {
-        self.with_entry(name, |reader| {
-            fsutil::write_verified(reader, target, Some(hash))
-        })
-        .flatten()
-        .is_some()
+        self.with_entry(name, |reader| fsutil::write_verified(reader, target, Some(hash)))
+            .flatten()
+            .is_some()
     }
 }
 
@@ -111,11 +101,7 @@ fn decode_brotli(source: &Path, target: &Path, expected: &str) -> io::Result<Opt
     if bytes_len == 0 || (bytes_len == 3 && has_head && head == [0x1b, 0x00, 0x06]) {
         return fsutil::write_verified(&mut io::empty(), target, Some(expected));
     }
-    if bytes_len > 3
-        && last == 0x03
-        && has_head
-        && (head == [0x1b, 0x00, 0x06] || head == [0x0b, 0x02, 0x80])
-    {
+    if bytes_len > 3 && last == 0x03 && has_head && (head == [0x1b, 0x00, 0x06] || head == [0x0b, 0x02, 0x80]) {
         use std::io::Seek;
         let mut file = File::open(source)?;
         file.seek(io::SeekFrom::Start(3))?;
@@ -123,10 +109,8 @@ fn decode_brotli(source: &Path, target: &Path, expected: &str) -> io::Result<Opt
         return fsutil::write_verified(&mut limited, target, Some(expected));
     }
     let file = File::open(source)?;
-    let mut decoder = brotli_decompressor::Decompressor::new(
-        io::BufReader::new(file),
-        crate::crypto::checksum::IO_BUFFER_BYTES,
-    );
+    let mut decoder =
+        brotli_decompressor::Decompressor::new(io::BufReader::new(file), crate::crypto::checksum::IO_BUFFER_BYTES);
     fsutil::write_verified(&mut decoder, target, Some(expected))
 }
 
@@ -187,12 +171,8 @@ impl Engine {
                 if file_name.is_empty() {
                     return true;
                 }
-                if let Ok(path) =
-                    paths::resolve_manifest_target_path(&builtin.to_string_lossy(), file_name)
-                {
-                    if !builtin.as_os_str().is_empty()
-                        && fsutil::file_matches_hash(Path::new(&path), &hash)
-                    {
+                if let Ok(path) = paths::resolve_manifest_target_path(&builtin.to_string_lossy(), file_name) {
+                    if !builtin.as_os_str().is_empty() && fsutil::file_matches_hash(Path::new(&path), &hash) {
                         return false;
                     }
                 }
@@ -242,7 +222,7 @@ impl Engine {
                 if let Ok(dir) = self.bundle_directory(record.id()) {
                     let _ = remove_path(&dir);
                 }
-                self.fail_download(&record, &error);
+                self.fail_download(&record, &error, request.emit_events);
                 Err(error)
             }
         }
@@ -257,12 +237,7 @@ impl Engine {
         );
     }
 
-    fn plan_tasks(
-        &self,
-        request: &DownloadRequest,
-        manifest: &[Value],
-        destination: &Path,
-    ) -> CoreResult<Vec<Task>> {
+    fn plan_tasks(&self, request: &DownloadRequest, manifest: &[Value], destination: &Path) -> CoreResult<Vec<Task>> {
         let builtin = self.config().builtin_dir.clone();
         let mut seen = BTreeSet::new();
         let mut tasks = Vec::with_capacity(manifest.len());
@@ -298,39 +273,27 @@ impl Engine {
                 continue;
             }
             let Some(hash) = self.manifest_hash(entry, &request.session_key) else {
-                self.host
-                    .error(format!("Checksum decryption failed for {file_name}"));
+                self.host.error(format!("Checksum decryption failed for {file_name}"));
                 fail(
-                    CoreError::new(
-                        "decrypt_fail",
-                        format!("Cannot decrypt file_hash for {file_name}"),
-                    ),
+                    CoreError::new("decrypt_fail", format!("Cannot decrypt file_hash for {file_name}")),
                     &mut first_error,
                 );
                 continue;
             };
-            let target = match paths::resolve_manifest_target_path(
-                &destination.to_string_lossy(),
-                &file_name,
-            ) {
+            let target = match paths::resolve_manifest_target_path(&destination.to_string_lossy(), &file_name) {
                 Ok(target) => PathBuf::from(target),
                 Err(_) => {
-                    self.host
-                        .error(format!("Invalid manifest file path: {file_name}"));
+                    self.host.error(format!("Invalid manifest file path: {file_name}"));
                     self.manifest_path_fail(&request.version, &file_name);
                     fail(
-                        CoreError::new(
-                            "invalid_manifest",
-                            format!("Invalid manifest file path: {file_name}"),
-                        ),
+                        CoreError::new("invalid_manifest", format!("Invalid manifest file path: {file_name}")),
                         &mut first_error,
                     );
                     continue;
                 }
             };
             if !seen.insert(target.clone()) {
-                self.host
-                    .error(format!("Duplicate manifest target path: {file_name}"));
+                self.host.error(format!("Duplicate manifest target path: {file_name}"));
                 self.manifest_path_fail(&request.version, &file_name);
                 fail(
                     CoreError::new(
@@ -386,12 +349,7 @@ impl Engine {
         if !cache.as_os_str().is_empty() {
             let _ = fs::create_dir_all(&cache);
         }
-        self.send_stats(
-            "download_manifest_start",
-            Some(&request.version),
-            None,
-            None,
-        );
+        self.send_stats("download_manifest_start", Some(&request.version), None, None);
         let tasks = self.plan_tasks(request, manifest, &destination)?;
         let total = tasks.len();
         let workers = (crate::policy::manifest_max_concurrent_files(
@@ -438,12 +396,7 @@ impl Engine {
         if let Some(error) = first_error.into_inner().unwrap() {
             return Err(error);
         }
-        self.send_stats(
-            "download_manifest_complete",
-            Some(&request.version),
-            None,
-            None,
-        );
+        self.send_stats("download_manifest_complete", Some(&request.version), None, None);
         self.progress(&id, 71);
         self.progress(&id, 91);
         Ok(self.finish_install(record, "", request))
@@ -457,13 +410,11 @@ impl Engine {
         cancel: &Cancel,
     ) -> CoreResult<()> {
         if let Some(parent) = task.target.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| CoreError::io("Failed to create parent directory", error))?;
+            fs::create_dir_all(parent).map_err(|error| CoreError::io("Failed to create parent directory", error))?;
         }
         // 1. Builtin bundle on disk.
         if let Some(builtin) = &task.builtin {
-            if fsutil::file_matches_hash(builtin, &task.hash)
-                && fsutil::copy_atomically(builtin, &task.target).is_ok()
+            if fsutil::file_matches_hash(builtin, &task.hash) && fsutil::copy_atomically(builtin, &task.target).is_ok()
             {
                 return Ok(());
             }
@@ -476,9 +427,7 @@ impl Engine {
         }
         // 3. Delta cache (hash-named files were verified when written).
         for cached in [&task.cache, &task.legacy_cache].into_iter().flatten() {
-            if Self::reusable(Some(cached), &task.hash)
-                && fsutil::copy_atomically(cached, &task.target).is_ok()
-            {
+            if Self::reusable(Some(cached), &task.hash) && fsutil::copy_atomically(cached, &task.target).is_ok() {
                 return Ok(());
             }
         }
@@ -486,12 +435,7 @@ impl Engine {
         self.download_manifest_file(task, request, cancel)
     }
 
-    fn download_manifest_file(
-        &self,
-        task: &Task,
-        request: &DownloadRequest,
-        cancel: &Cancel,
-    ) -> CoreResult<()> {
+    fn download_manifest_file(&self, task: &Task, request: &DownloadRequest, cancel: &Cancel) -> CoreResult<()> {
         let cache = self.config().cache_dir.clone();
         let partial_dir = if cache.as_os_str().is_empty() {
             self.config().storage_root.clone()
@@ -499,18 +443,13 @@ impl Engine {
             cache.clone()
         };
         let _ = fs::create_dir_all(&partial_dir);
-        let partial = partial_dir.join(paths::manifest_partial_name(
-            Some(&task.hash),
-            &task.file_name,
-        ));
+        let partial = partial_dir.join(paths::manifest_partial_name(Some(&task.hash), &task.file_name));
         let stat_name = format!("{}:{}", request.version, task.file_name);
         let file_fail = |message: String| {
             self.send_stats("download_manifest_file_fail", Some(&stat_name), None, None);
             CoreError::new("download_manifest_file_fail", message)
         };
-        let existing = fs::metadata(&partial)
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
+        let existing = fs::metadata(&partial).map(|metadata| metadata.len()).unwrap_or(0);
         let range = format!("bytes={existing}-");
         let headers: Vec<(&str, &str)> = if existing > 0 {
             vec![("Range", range.as_str())]
@@ -532,8 +471,7 @@ impl Engine {
                             message: format!("Unexpected response code: {}", head.status),
                         });
                     }
-                    let append =
-                        crate::http::should_append_http_body(head.status as i64, existing as i64);
+                    let append = crate::http::should_append_http_body(head.status as i64, existing as i64);
                     output = Some(
                         OpenOptions::new()
                             .create(true)
@@ -569,15 +507,11 @@ impl Engine {
             if error.message == "download_stopped" {
                 return Err(CoreError::new("download_stopped", "Download cancelled"));
             }
-            return Err(file_fail(format!(
-                "Failed to download {}: {error}",
-                task.file_name
-            )));
+            return Err(file_fail(format!("Failed to download {}: {error}", task.file_name)));
         }
         // Decrypt a work copy; the partial stays encrypted (resumable, reusable).
         let public_key = self.config().public_key.clone();
-        let encrypted =
-            !public_key.is_empty() && crypto::is_valid_session_key(Some(&request.session_key));
+        let encrypted = !public_key.is_empty() && crypto::is_valid_session_key(Some(&request.session_key));
         let work = if encrypted {
             let work = partial_dir.join(format!(
                 "work_{}_{}",
@@ -586,10 +520,7 @@ impl Engine {
             ));
             let decrypted = fs::copy(&partial, &work)
                 .map_err(|error| CoreError::io("Cannot copy manifest partial", error))
-                .and_then(|_| {
-                    crypto::decrypt_bundle_file(&work, &public_key, Some(&request.session_key))
-                        .map(|_| ())
-                });
+                .and_then(|_| crypto::decrypt_bundle_file(&work, &public_key, Some(&request.session_key)).map(|_| ()));
             if let Err(error) = decrypted {
                 let _ = fs::remove_file(&work);
                 let _ = fs::remove_file(&partial);
@@ -607,28 +538,17 @@ impl Engine {
         let written = if task.brotli {
             decode_brotli(&source, &task.target, &task.hash)
         } else {
-            File::open(&source).and_then(|mut file| {
-                fsutil::write_verified(&mut file, &task.target, Some(&task.hash))
-            })
+            File::open(&source).and_then(|mut file| fsutil::write_verified(&mut file, &task.target, Some(&task.hash)))
         };
         if let Some(work) = &work {
             let _ = fs::remove_file(work);
         }
-        let stat_target = format!(
-            "{}:{}",
-            request.version,
-            paths::manifest_target_name(&task.file_name)
-        );
+        let stat_target = format!("{}:{}", request.version, paths::manifest_target_name(&task.file_name));
         match written {
             Ok(Some(_)) => {}
             Ok(None) => {
                 let _ = fs::remove_file(&partial);
-                self.send_stats(
-                    "download_manifest_checksum_fail",
-                    Some(&stat_target),
-                    None,
-                    None,
-                );
+                self.send_stats("download_manifest_checksum_fail", Some(&stat_target), None, None);
                 return Err(CoreError::new(
                     "checksum_fail",
                     format!(
@@ -640,31 +560,21 @@ impl Engine {
             Err(error) => {
                 let _ = fs::remove_file(&partial);
                 if task.brotli {
-                    self.send_stats(
-                        "download_manifest_brotli_fail",
-                        Some(&stat_target),
-                        None,
-                        None,
-                    );
+                    self.send_stats("download_manifest_brotli_fail", Some(&stat_target), None, None);
                     return Err(CoreError::new(
                         "brotli_fail",
                         format!("Brotli process failed for {}: {error}", task.file_name),
                     ));
                 }
-                return Err(file_fail(format!(
-                    "Failed to write {}: {error}",
-                    task.file_name
-                )));
+                return Err(file_fail(format!("Failed to write {}: {error}", task.file_name)));
             }
         }
         let _ = fs::remove_file(&partial);
         // Best effort: a full cache must not fail the update.
         if let Some(cache_file) = &task.cache {
             if !cache_file.exists() && fsutil::copy_atomically(&task.target, cache_file).is_err() {
-                self.host.debug(format!(
-                    "Delta cache write failed: {}",
-                    cache_file.display()
-                ));
+                self.host
+                    .debug(format!("Delta cache write failed: {}", cache_file.display()));
             }
         }
         Ok(())

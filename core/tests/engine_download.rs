@@ -21,8 +21,7 @@ fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {
             writer
                 .start_file(
                     *name,
-                    zip::write::SimpleFileOptions::default()
-                        .compression_method(zip::CompressionMethod::Deflated),
+                    zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
                 )
                 .unwrap();
             writer.write_all(content).unwrap();
@@ -45,19 +44,13 @@ fn keys() -> &'static Keys {
             .to_public_key()
             .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
             .unwrap();
-        Keys {
-            private,
-            public_pem,
-        }
+        Keys { private, public_pem }
     })
 }
 
 /// Node `privateEncrypt` (PKCS#1 v1.5 type 1, no DigestInfo).
 fn private_encrypt(data: &[u8]) -> Vec<u8> {
-    keys()
-        .private
-        .sign(rsa::Pkcs1v15Sign::new_unprefixed(), data)
-        .unwrap()
+    keys().private.sign(rsa::Pkcs1v15Sign::new_unprefixed(), data).unwrap()
 }
 
 const AES_KEY: [u8; 16] = [7; 16];
@@ -83,11 +76,7 @@ fn aes_encrypt(plain: &[u8]) -> Vec<u8> {
 
 fn session_key() -> String {
     let b64 = base64::engine::general_purpose::STANDARD;
-    format!(
-        "{}:{}",
-        b64.encode(IV),
-        b64.encode(private_encrypt(&AES_KEY))
-    )
+    format!("{}:{}", b64.encode(IV), b64.encode(private_encrypt(&AES_KEY)))
 }
 
 fn encrypted_checksum(plain: &[u8]) -> String {
@@ -118,17 +107,14 @@ fn web_bundle(marker: &str) -> Vec<u8> {
 #[test]
 fn zip_download_installs_pending_bundle() {
     let bundle = web_bundle("v2");
-    let server = serve(Arc::new(Mutex::new(vec![(
-        "/b.zip".into(),
-        bundle.clone(),
-    )])));
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), bundle.clone())])));
     let t = TestEngine::new(json!({}));
-    let installed = t.call("download", json!({ "url": format!("{}/b.zip", server.url), "version": "2.0.0", "checksum": sha256(&bundle) }));
+    let installed = t.call(
+        "download",
+        json!({ "url": format!("{}/b.zip", server.url), "version": "2.0.0", "checksum": sha256(&bundle) }),
+    );
     assert_eq!(installed["status"], "pending");
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(
         std::fs::read_to_string(dir.join("index.html")).unwrap(),
         "<html>v2</html>"
@@ -143,10 +129,7 @@ fn zip_download_installs_pending_bundle() {
         .collect();
     assert_eq!(percents.first(), Some(&0));
     assert_eq!(percents.last(), Some(&100));
-    assert!(
-        percents.windows(2).all(|pair| pair[0] <= pair[1]),
-        "{percents:?}"
-    );
+    assert!(percents.windows(2).all(|pair| pair[0] <= pair[1]), "{percents:?}");
     let leftovers: Vec<_> = std::fs::read_dir(t.root())
         .unwrap()
         .filter_map(Result::ok)
@@ -163,20 +146,14 @@ fn zip_download_installs_pending_bundle() {
 
 #[test]
 fn zip_single_folder_is_unwrapped() {
-    let bundle = zip_of(&[
-        ("dist/index.html", b"<html>dist</html>"),
-        ("__MACOSX/._x", b"junk"),
-    ]);
-    let server = serve(Arc::new(Mutex::new(vec![(
-        "/b.zip".into(),
-        bundle.clone(),
-    )])));
+    let bundle = zip_of(&[("dist/index.html", b"<html>dist</html>"), ("__MACOSX/._x", b"junk")]);
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), bundle.clone())])));
     let t = TestEngine::new(json!({}));
-    let installed = t.call("download", json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) }));
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let installed = t.call(
+        "download",
+        json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) }),
+    );
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert!(dir.join("index.html").exists());
 }
 
@@ -185,7 +162,13 @@ fn checksum_mismatch_fails_before_extraction() {
     let bundle = web_bundle("v2");
     let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), bundle)])));
     let t = TestEngine::new(json!({}));
-    let error = t.engine.call("download", &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(b"other") })).unwrap_err();
+    let error = t
+        .engine
+        .call(
+            "download",
+            &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(b"other") }),
+        )
+        .unwrap_err();
     assert_eq!(error.code, "checksum_fail");
     let failed = t.call("bundleGetByName", json!({ "version": "2" }));
     assert!(failed.is_null() || failed["status"] == "error");
@@ -200,17 +183,17 @@ fn checksum_mismatch_fails_before_extraction() {
 #[test]
 fn zip_slip_entry_is_rejected() {
     let bundle = zip_of(&[("index.html", b"x"), ("../../evil.txt", b"pwned")]);
-    let server = serve(Arc::new(Mutex::new(vec![(
-        "/b.zip".into(),
-        bundle.clone(),
-    )])));
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), bundle.clone())])));
     let t = TestEngine::new(json!({}));
-    let error = t.engine.call("download", &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) })).unwrap_err();
+    let error = t
+        .engine
+        .call(
+            "download",
+            &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) }),
+        )
+        .unwrap_err();
     assert_eq!(error.code, "unzip_fail");
-    assert!(
-        !t.root().join("evil.txt").exists()
-            && !t.root().parent().unwrap().join("evil.txt").exists()
-    );
+    assert!(!t.root().join("evil.txt").exists() && !t.root().parent().unwrap().join("evil.txt").exists());
 }
 
 #[test]
@@ -219,16 +202,19 @@ fn encrypted_zip_requires_session_key_and_decrypts() {
     let encrypted = aes_encrypt(&bundle);
     let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), encrypted)])));
     let t = TestEngine::new(json!({ "publicKey": keys().public_pem }));
-    let missing = t.engine.call("download", &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": encrypted_checksum(&bundle) })).unwrap_err();
+    let missing = t
+        .engine
+        .call(
+            "download",
+            &json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": encrypted_checksum(&bundle) }),
+        )
+        .unwrap_err();
     assert_eq!(missing.code, "session_key_required");
     let installed = t.call(
         "download",
         json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": encrypted_checksum(&bundle), "sessionKey": session_key() }),
     );
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(
         std::fs::read_to_string(dir.join("index.html")).unwrap(),
         "<html>secret</html>"
@@ -256,7 +242,10 @@ fn transient_server_errors_are_retried() {
         }
     });
     let t = TestEngine::new(json!({}));
-    t.call("download", json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) }));
+    t.call(
+        "download",
+        json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle) }),
+    );
     assert_eq!(*calls.lock().unwrap(), 2);
 }
 
@@ -278,16 +267,13 @@ fn not_found_is_not_retried() {
 #[test]
 fn set_next_and_direct_update_after_install() {
     let bundle = web_bundle("next");
-    let server = serve(Arc::new(Mutex::new(vec![(
-        "/b.zip".into(),
-        bundle.clone(),
-    )])));
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), bundle.clone())])));
     let t = TestEngine::new(json!({}));
-    let installed = t.call("download", json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle), "setNext": true }));
-    assert_eq!(
-        t.kv("nextVersion").unwrap(),
-        installed["id"].as_str().unwrap()
+    let installed = t.call(
+        "download",
+        json!({ "url": format!("{}/b.zip", server.url), "version": "2", "checksum": sha256(&bundle), "setNext": true }),
     );
+    assert_eq!(t.kv("nextVersion").unwrap(), installed["id"].as_str().unwrap());
     t.call("download", json!({ "url": format!("{}/b.zip", server.url), "version": "3", "checksum": sha256(&bundle), "setNext": true, "directUpdate": true }));
     assert_eq!(t.host.events_named("directUpdateFinish").len(), 1);
 }
@@ -302,35 +288,22 @@ fn manifest_download_then_cache_reuse() {
     let server = serve(files.clone());
     let a = b"<html>a</html>".to_vec();
     let b = vec![42u8; 5000];
-    files
-        .lock()
-        .unwrap()
-        .push(("/files/index.html".into(), a.clone()));
-    files
-        .lock()
-        .unwrap()
-        .push(("/files/assets/b.bin".into(), b.clone()));
+    files.lock().unwrap().push(("/files/index.html".into(), a.clone()));
+    files.lock().unwrap().push(("/files/assets/b.bin".into(), b.clone()));
     let t = TestEngine::new(json!({}));
     let manifest = json!([
         manifest_entry(&server, "index.html", &a),
         manifest_entry(&server, "assets/b.bin", &b)
     ]);
     let installed = t.call("download", json!({ "version": "2", "manifest": manifest }));
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("assets/b.bin")).unwrap(), b);
     let requests = server.requests().len();
     let missing = t.call("missingBundleFiles", json!({ "manifest": manifest }));
     assert_eq!(missing["missingCount"], 0);
     // Same files again: everything comes from the delta cache.
     t.call("download", json!({ "version": "3", "manifest": manifest }));
-    assert_eq!(
-        server.requests().len(),
-        requests,
-        "no network for cached files"
-    );
+    assert_eq!(server.requests().len(), requests, "no network for cached files");
 }
 
 #[test]
@@ -341,15 +314,11 @@ fn manifest_reuses_builtin_files() {
     let builtin = t.root().join("public");
     std::fs::create_dir_all(builtin.join("js")).unwrap();
     std::fs::write(builtin.join("js/app.js"), b"builtin").unwrap();
-    let t = TestEngine::new(
-        json!({ "builtinDir": builtin.to_string_lossy(), "storageRoot": t.root().to_string_lossy() }),
-    );
+    let t =
+        TestEngine::new(json!({ "builtinDir": builtin.to_string_lossy(), "storageRoot": t.root().to_string_lossy() }));
     let manifest = json!([{ "file_name": "js/app.js", "file_hash": sha256(b"builtin"), "download_url": format!("{}/nope", server.url) }]);
     let installed = t.call("download", json!({ "version": "2", "manifest": manifest }));
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("js/app.js")).unwrap(), b"builtin");
     assert!(server.requests().is_empty());
 }
@@ -363,10 +332,7 @@ fn manifest_brotli_and_checksum_failure() {
     let mut wrapped = vec![0x0b, 0x02, 0x80];
     wrapped.extend(&content);
     wrapped.push(0x03);
-    files
-        .lock()
-        .unwrap()
-        .push(("/files/a.js.br".into(), wrapped));
+    files.lock().unwrap().push(("/files/a.js.br".into(), wrapped));
     files
         .lock()
         .unwrap()
@@ -376,10 +342,7 @@ fn manifest_brotli_and_checksum_failure() {
         "download",
         json!({ "version": "2", "manifest": [manifest_entry(&server, "a.js.br", &content)] }),
     );
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("a.js")).unwrap(), content);
     let error = t
         .engine
@@ -424,10 +387,7 @@ fn encrypted_manifest_files_are_decrypted() {
         "download",
         json!({ "version": "2", "manifest": [entry], "sessionKey": session_key() }),
     );
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("index.html")).unwrap(), content);
 }
 
@@ -443,10 +403,7 @@ fn https_to_http_redirect_is_refused() {
         }
     });
     // http -> http redirects are followed.
-    let response = t.call(
-        "getLatest",
-        json!({ "updateUrl": format!("{}/start", server.url) }),
-    );
+    let response = t.call("getLatest", json!({ "updateUrl": format!("{}/start", server.url) }));
     assert_eq!(response["ok"], true);
 }
 
@@ -469,18 +426,12 @@ fn manifest_real_brotli_stream() {
         let mut writer = brotli::CompressorWriter::new(&mut compressed, 4096, 9, 22);
         writer.write_all(&content).unwrap();
     }
-    files
-        .lock()
-        .unwrap()
-        .push(("/files/big.js.br".into(), compressed));
+    files.lock().unwrap().push(("/files/big.js.br".into(), compressed));
     let t = TestEngine::new(json!({}));
     let installed = t.call(
         "download",
         json!({ "version": "2", "manifest": [manifest_entry(&server, "big.js.br", &content)] }),
     );
-    let dir = t
-        .root()
-        .join("versions")
-        .join(installed["id"].as_str().unwrap());
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("big.js")).unwrap(), content);
 }

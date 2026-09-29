@@ -41,44 +41,34 @@ pub struct DownloadRequest {
     /// to the host for an immediate install (`directUpdateFinish` event).
     pub set_next: bool,
     pub direct_update: bool,
+    /// Emit `updateAvailable` / `downloadFailed` (hosts whose plugin layer
+    /// reports those events itself pass `false`).
+    pub emit_events: bool,
 }
 
 impl DownloadRequest {
     pub fn from_json(input: &Value) -> CoreResult<Self> {
-        let text = |key: &str| {
-            input
-                .get(key)
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string()
-        };
+        let text = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
         let version = text("version");
         if version.is_empty() {
             return Err(CoreError::invalid_input("Download called without version"));
         }
         Ok(Self {
-            id: input.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()).map(str::to_string),
+            id: input
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string),
             url: text("url"),
             version,
             session_key: text("sessionKey"),
             checksum: text("checksum"),
             manifest: input.get("manifest").and_then(Value::as_array).cloned(),
-            link: input
-                .get("link")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            comment: input
-                .get("comment")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            set_next: input
-                .get("setNext")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            direct_update: input
-                .get("directUpdate")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            link: input.get("link").and_then(Value::as_str).map(str::to_string),
+            comment: input.get("comment").and_then(Value::as_str).map(str::to_string),
+            set_next: input.get("setNext").and_then(Value::as_bool).unwrap_or(false),
+            direct_update: input.get("directUpdate").and_then(Value::as_bool).unwrap_or(false),
+            emit_events: input.get("emitEvents").and_then(Value::as_bool).unwrap_or(true),
         })
     }
 }
@@ -118,10 +108,8 @@ impl Engine {
 
     /// Refuses unencrypted delivery when a public key is configured.
     pub(crate) fn require_session_key(&self, session_key: &str, version: &str) -> CoreResult<()> {
-        if !self.config().public_key.is_empty() && !crypto::is_valid_session_key(Some(session_key))
-        {
-            self.host
-                .error("Public key present but no valid session key provided");
+        if !self.config().public_key.is_empty() && !crypto::is_valid_session_key(Some(session_key)) {
+            self.host.error("Public key present but no valid session key provided");
             self.send_stats("session_key_required", Some(version), None, None);
             return Err(CoreError::new(
                 "session_key_required",
@@ -156,8 +144,7 @@ impl Engine {
             }
             Some(_) => Ok(()),
             None => {
-                self.host
-                    .warn("Could not determine free disk space; continuing");
+                self.host.warn("Could not determine free disk space; continuing");
                 Ok(())
             }
         }
@@ -197,24 +184,20 @@ impl Engine {
     }
 
     /// Marks a download failed: ERROR record, `downloadFailed` event, `download_fail` stat.
-    pub(crate) fn fail_download(&self, record: &BundleInfo, error: &CoreError) {
-        self.host
-            .error(format!("Download failed: {}", error.message));
+    pub(crate) fn fail_download(&self, record: &BundleInfo, error: &CoreError, emit_events: bool) {
+        self.host.error(format!("Download failed: {}", error.message));
         self.save_bundle_info(record.id(), Some(&record.with_status(BundleStatus::Error)));
-        self.host.emit(
-            "downloadFailed",
-            &json!({ "version": record.version_name(), "error": error.code }),
-        );
+        if emit_events {
+            self.host.emit(
+                "downloadFailed",
+                &json!({ "version": record.version_name(), "error": error.code }),
+            );
+        }
         self.send_stats("download_fail", Some(record.version_name()), None, None);
     }
 
     /// Final step shared by zip and manifest downloads.
-    pub(crate) fn finish_install(
-        &self,
-        record: &BundleInfo,
-        checksum: &str,
-        request: &DownloadRequest,
-    ) -> BundleInfo {
+    pub(crate) fn finish_install(&self, record: &BundleInfo, checksum: &str, request: &DownloadRequest) -> BundleInfo {
         let mut installed = BundleInfo::new(
             record.id(),
             record.version.clone(),
@@ -226,18 +209,17 @@ impl Engine {
         installed.comment = record.comment.clone();
         self.save_bundle_info(record.id(), Some(&installed));
         self.progress(record.id(), 100);
-        self.host
-            .emit("updateAvailable", &json!({ "bundle": installed.to_js() }));
+        if request.emit_events {
+            self.host
+                .emit("updateAvailable", &json!({ "bundle": installed.to_js() }));
+        }
         if request.set_next {
             if self.config().preview_session {
-                self.host.info(
-                    "Preview session is active, skipping automatic install of downloaded bundle",
-                );
+                self.host
+                    .info("Preview session is active, skipping automatic install of downloaded bundle");
             } else if request.direct_update {
-                self.host.emit(
-                    "directUpdateFinish",
-                    &json!({ "bundle": installed.to_raw() }),
-                );
+                self.host
+                    .emit("directUpdateFinish", &json!({ "bundle": installed.to_raw() }));
             } else {
                 self.set_next_bundle(Some(record.id()));
             }
@@ -262,7 +244,7 @@ impl Engine {
         match result {
             Ok(installed) => Ok(installed),
             Err(error) => {
-                self.fail_download(&record, &error);
+                self.fail_download(&record, &error, request.emit_events);
                 Err(error)
             }
         }
@@ -278,8 +260,7 @@ impl Engine {
         self.check_disk_space(MIN_FREE_BYTES, &request.version)?;
         self.send_stats("download_zip_start", Some(&request.version), None, None);
         let storage = self.config().storage_root.clone();
-        fs::create_dir_all(&storage)
-            .map_err(|error| CoreError::io("Cannot create updater storage", error))?;
+        fs::create_dir_all(&storage).map_err(|error| CoreError::io("Cannot create updater storage", error))?;
         let temp = storage.join(format!("temp_{id}.tmp"));
         let info = storage.join(format!("update_{id}.dat"));
         let cleanup = |paths: &[&Path]| {
@@ -359,15 +340,10 @@ impl Engine {
         let public_key = self.config().public_key.clone();
         let mut expected = request.checksum.clone();
         if crypto::is_valid_session_key(Some(&request.session_key)) {
-            crypto::decrypt_bundle_file(zip, &public_key, Some(&request.session_key)).map_err(
-                |error| {
-                    self.send_stats("decrypt_fail", Some(&request.version), None, None);
-                    CoreError::new(
-                        "decrypt_fail",
-                        format!("AES file decryption failed: {}", error.message),
-                    )
-                },
-            )?;
+            crypto::decrypt_bundle_file(zip, &public_key, Some(&request.session_key)).map_err(|error| {
+                self.send_stats("decrypt_fail", Some(&request.version), None, None);
+                CoreError::new("decrypt_fail", format!("AES file decryption failed: {}", error.message))
+            })?;
             expected = crypto::decrypt_checksum(&request.checksum, &public_key)?;
         } else if !public_key.is_empty() {
             expected = crypto::decrypt_checksum(&request.checksum, &public_key)?;
@@ -375,8 +351,7 @@ impl Engine {
         let actual = crypto::checksum::sha256_file(zip)?;
         if !expected.eq_ignore_ascii_case(&actual) {
             self.host.error("Checksum mismatch");
-            self.host
-                .debug(format!("Expected: {expected}, Got: {actual}"));
+            self.host.debug(format!("Expected: {expected}, Got: {actual}"));
             self.send_stats("checksum_fail", Some(&request.version), None, None);
             return Err(CoreError::new(
                 "checksum_fail",
@@ -425,9 +400,7 @@ impl Engine {
         temp: &Path,
         cancel: &Cancel,
     ) -> Result<(), (CoreError, bool)> {
-        let existing = fs::metadata(temp)
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
+        let existing = fs::metadata(temp).map(|metadata| metadata.len()).unwrap_or(0);
         let range = format!("bytes={existing}-");
         let headers: Vec<(&str, &str)> = if existing > 0 {
             vec![("Range", range.as_str())]
@@ -467,11 +440,10 @@ impl Engine {
                 offset = plan.write_offset as u64;
                 content_range = head.header("Content-Range").map(str::to_string);
                 body_len = head.content_length;
-                let append =
-                    crate::http::should_append_http_body(plan.response_code, existing as i64);
-                expected_total =
-                    head.content_length
-                        .map(|length| if append { length + offset } else { length });
+                let append = crate::http::should_append_http_body(plan.response_code, existing as i64);
+                expected_total = head
+                    .content_length
+                    .map(|length| if append { length + offset } else { length });
                 if let (Some(total), Some(free)) = (expected_total, fsutil::available_space(temp)) {
                     if free < total.saturating_mul(2) {
                         return Err(NetError {
@@ -523,18 +495,12 @@ impl Engine {
                 if error.message == "insufficient_disk_space" {
                     self.send_stats("insufficient_disk_space", Some(version), None, None);
                     return Err((
-                        CoreError::new(
-                            "insufficient_disk_space",
-                            "Insufficient disk space for download",
-                        ),
+                        CoreError::new("insufficient_disk_space", "Insufficient disk space for download"),
                         false,
                     ));
                 }
                 if error.message == "download_stopped" {
-                    return Err((
-                        CoreError::new("download_stopped", "Download cancelled"),
-                        false,
-                    ));
+                    return Err((CoreError::new("download_stopped", "Download cancelled"), false));
                 }
                 let retryable = match error
                     .message
@@ -558,15 +524,8 @@ impl Engine {
             }
         }
         // Completeness checks (resume safety).
-        let length = fs::metadata(temp)
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
-        let incomplete = |reason: &str| {
-            Err((
-                CoreError::new("incomplete_download", reason.to_string()),
-                true,
-            ))
-        };
+        let length = fs::metadata(temp).map(|metadata| metadata.len()).unwrap_or(0);
+        let incomplete = |reason: &str| Err((CoreError::new("incomplete_download", reason.to_string()), true));
         if plan_status == 206 {
             match crate::http::parse_content_range(content_range.as_deref()) {
                 Some(range) if range.total >= 0 => {
@@ -608,9 +567,7 @@ impl Engine {
                 continue;
             };
             let relative = file.strip_prefix(&bundle).unwrap_or(&file);
-            if !builtin.as_os_str().is_empty()
-                && fsutil::file_matches_hash(&builtin.join(relative), &hash)
-            {
+            if !builtin.as_os_str().is_empty() && fsutil::file_matches_hash(&builtin.join(relative), &hash) {
                 continue;
             }
             let name = file
@@ -622,8 +579,7 @@ impl Engine {
                 continue;
             }
             if fsutil::copy_atomically(&file, &target).is_err() {
-                self.host
-                    .debug(format!("Delta cache copy failed: {}", file.display()));
+                self.host.debug(format!("Delta cache copy failed: {}", file.display()));
             }
         }
     }

@@ -62,10 +62,7 @@ impl Engine {
         info.insert("version_build".into(), json!(config.version_build));
         info.insert("version_code".into(), json!(config.version_code));
         info.insert("version_os".into(), json!(config.version_os));
-        info.insert(
-            "version_name".into(),
-            json!(self.current_bundle().version_name()),
-        );
+        info.insert("version_name".into(), json!(self.current_bundle().version_name()));
         info.insert("plugin_version".into(), json!(config.plugin_version));
         info.insert("is_emulator".into(), json!(config.is_emulator));
         info.insert("is_prod".into(), json!(config.is_prod));
@@ -127,11 +124,7 @@ impl Engine {
             parsed_message
         };
         let now = now_ms();
-        let until = crate::http::rate_limit_blocked_until_ms(
-            response.header("Retry-After"),
-            Some(&body),
-            now,
-        );
+        let until = crate::http::rate_limit_blocked_until_ms(response.header("Retry-After"), Some(&body), now);
         let claim = {
             let mut state = RATE_LIMIT.lock().unwrap();
             if until > state.blocked_until_ms {
@@ -174,33 +167,24 @@ impl Engine {
             return;
         }
         let mut event = self.info_object(None);
-        event.insert(
-            "version_name".into(),
-            json!(self.current_bundle().version_name()),
-        );
+        event.insert("version_name".into(), json!(self.current_bundle().version_name()));
         event.insert("old_version_name".into(), json!(""));
         event.insert("action".into(), json!("rate_limit_reached"));
         let Some(engine) = self.weak_self().upgrade() else {
             release();
             return;
         };
-        std::thread::spawn(move || {
-            match engine.http.post_json(&stats_url, &Value::Object(event)) {
-                Ok(response) if response.is_success() => {
-                    engine.host.info("Rate limit statistic sent")
-                }
-                Ok(response) => {
-                    release();
-                    engine.host.error("Error sending rate limit statistic");
-                    engine
-                        .host
-                        .debug(format!("Response code: {}", response.status));
-                }
-                Err(error) => {
-                    release();
-                    engine.host.error("Failed to send rate limit statistic");
-                    engine.host.debug(format!("Error: {error}"));
-                }
+        std::thread::spawn(move || match engine.http.post_json(&stats_url, &Value::Object(event)) {
+            Ok(response) if response.is_success() => engine.host.info("Rate limit statistic sent"),
+            Ok(response) => {
+                release();
+                engine.host.error("Error sending rate limit statistic");
+                engine.host.debug(format!("Response code: {}", response.status));
+            }
+            Err(error) => {
+                release();
+                engine.host.error("Failed to send rate limit statistic");
+                engine.host.debug(format!("Error: {error}"));
             }
         });
     }
@@ -227,11 +211,7 @@ impl Engine {
                 object
                     .get(key)
                     .filter(|value| !value.is_null())
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .map_or_else(|| value.to_string(), str::to_string)
-                    })
+                    .map(|value| value.as_str().map_or_else(|| value.to_string(), str::to_string))
             };
             let mut ret = Json::new();
             if status == 429 {
@@ -252,10 +232,7 @@ impl Engine {
                         block.message
                     }),
                 );
-                ret.insert(
-                    "kind".into(),
-                    json!(text("kind").unwrap_or_else(|| "failed".into())),
-                );
+                ret.insert("kind".into(), json!(text("kind").unwrap_or_else(|| "failed".into())));
             } else {
                 if let Some(error) = text("error") {
                     ret.insert("error".into(), json!(error));
@@ -265,8 +242,7 @@ impl Engine {
                 }
                 ret.insert(
                     "message".into(),
-                    json!(text("message")
-                        .unwrap_or_else(|| "server did not provide a message".into())),
+                    json!(text("message").unwrap_or_else(|| "server did not provide a message".into())),
                 );
             }
             if let Some(version) = text("version") {
@@ -283,16 +259,20 @@ impl Engine {
             return ret;
         }
         if !response.is_success() {
-            let mut ret = error_map("response_error", format!("Server error: {status}"));
+            // Keep the server's explanation when the error body only carries a message.
+            let message = parsed
+                .as_ref()
+                .and_then(|object| object.get("message"))
+                .and_then(Value::as_str)
+                .filter(|message| !message.is_empty())
+                .map_or_else(|| format!("Server error: {status}"), str::to_string);
+            let mut ret = error_map("response_error", message);
             ret.insert("kind".into(), json!("failed"));
             ret.insert("statusCode".into(), json!(status));
             return ret;
         }
         let Some(object) = parsed else {
-            let mut ret = error_map(
-                "parse_error",
-                "JSON parse error: Response is not a JSON object",
-            );
+            let mut ret = error_map("parse_error", "JSON parse error: Response is not a JSON object");
             ret.insert("kind".into(), json!("failed"));
             return ret;
         };
@@ -309,18 +289,11 @@ impl Engine {
     }
 
     /// Asks the backend for the latest bundle of this device's channel.
-    pub fn get_latest(
-        &self,
-        update_url: Option<&str>,
-        channel: Option<&str>,
-        app_id_override: Option<&str>,
-    ) -> Json {
+    pub fn get_latest(&self, update_url: Option<&str>, channel: Option<&str>, app_id_override: Option<&str>) -> Json {
         if self.is_remote_blocked() {
             let mut ret = self.remote_blocked_error();
-            self.host.debug(format!(
-                "Skipping getLatest due to remote block ({}).",
-                ret["error"]
-            ));
+            self.host
+                .debug(format!("Skipping getLatest due to remote block ({}).", ret["error"]));
             ret.insert("kind".into(), json!("failed"));
             return ret;
         }
@@ -328,10 +301,8 @@ impl Engine {
         if let Some(channel) = channel {
             info.insert("defaultChannel".into(), json!(channel));
         }
-        self.host.info(format!(
-            "Auto-update parameters: {}",
-            Value::Object(info.clone())
-        ));
+        self.host
+            .info(format!("Auto-update parameters: {}", Value::Object(info.clone())));
         let url = update_url
             .map(str::to_string)
             .unwrap_or_else(|| self.config().update_url.clone());
@@ -362,10 +333,7 @@ impl Engine {
         if !allow_set_default_channel {
             self.host
                 .error("unsetChannel is disabled by allowSetDefaultChannel config");
-            return error_map(
-                "disabled_by_config",
-                "unsetChannel is disabled by configuration",
-            );
+            return error_map("disabled_by_config", "unsetChannel is disabled by configuration");
         }
         self.persist_default_channel(persist_key, None);
         self.config_mut().default_channel = config_default_channel.to_string();
@@ -388,10 +356,7 @@ impl Engine {
         if !allow_set_default_channel {
             self.host
                 .error("setChannel is disabled by allowSetDefaultChannel config");
-            return error_map(
-                "disabled_by_config",
-                "setChannel is disabled by configuration",
-            );
+            return error_map("disabled_by_config", "setChannel is disabled by configuration");
         }
         if self.is_remote_blocked() {
             return self.remote_blocked_error();
@@ -409,13 +374,11 @@ impl Engine {
         if res.get("unset").and_then(Value::as_bool) == Some(true) {
             self.persist_default_channel(persist_key, None);
             self.config_mut().default_channel = config_default_channel.to_string();
-            self.host
-                .info("Public channel requested, channel override removed");
+            self.host.info("Public channel requested, channel override removed");
         } else {
             self.config_mut().default_channel = channel.to_string();
             self.persist_default_channel(persist_key, Some(channel));
-            self.host
-                .info(format!("defaultChannel persisted locally: {channel}"));
+            self.host.info(format!("defaultChannel persisted locally: {channel}"));
         }
         res
     }
@@ -439,37 +402,26 @@ impl Engine {
         }
         let body = response.text();
         let default_channel = self.config().default_channel.clone();
-        if response.status == 400
-            && body.contains("channel_not_found")
-            && !default_channel.is_empty()
-        {
+        if response.status == 400 && body.contains("channel_not_found") && !default_channel.is_empty() {
             let mut ret = Json::new();
             ret.insert("channel".into(), json!(default_channel));
             ret.insert("status".into(), json!("default"));
             return ret;
         }
         if !response.is_success() {
-            return error_map(
-                "response_error",
-                format!("Server error: {}", response.status),
-            );
+            return error_map("response_error", format!("Server error: {}", response.status));
         }
         if body.is_empty() {
             return error_map("no_response_body", "Empty response body");
         }
         let Some(object) = response.json().and_then(|value| value.as_object().cloned()) else {
-            return error_map(
-                "parse_error",
-                "JSON parse error: Response is not a JSON object",
-            );
+            return error_map("parse_error", "JSON parse error: Response is not a JSON object");
         };
         if let Some(error) = object.get("error") {
             let mut ret = Json::new();
             ret.insert(
                 "error".into(),
-                json!(error
-                    .as_str()
-                    .map_or_else(|| error.to_string(), str::to_string)),
+                json!(error.as_str().map_or_else(|| error.to_string(), str::to_string)),
             );
             ret.insert(
                 "message".into(),
@@ -484,9 +436,8 @@ impl Engine {
             if !channel.is_empty() && channel != crate::bundle::ID_BUILTIN {
                 self.config_mut().default_channel = channel.to_string();
                 self.persist_default_channel(persist_key, Some(channel));
-                self.host.info(format!(
-                    "defaultChannel synchronized from getChannel(): {channel}"
-                ));
+                self.host
+                    .info(format!("defaultChannel synchronized from getChannel(): {channel}"));
             }
         }
         object
@@ -504,17 +455,12 @@ impl Engine {
         let query: Vec<String> = info
             .iter()
             .map(|(key, value)| {
-                let value = value
-                    .as_str()
-                    .map_or_else(|| value.to_string(), str::to_string);
+                let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
                 format!("{}={}", encode_query(key), encode_query(&value))
             })
             .collect();
         let separator = if url.contains('?') { '&' } else { '?' };
-        let response = match self
-            .http
-            .get(&format!("{url}{separator}{}", query.join("&")))
-        {
+        let response = match self.http.get(&format!("{url}{separator}{}", query.join("&"))) {
             Ok(response) => response,
             Err(error) => return error_map("network_error", format!("Request failed: {error}")),
         };
@@ -523,10 +469,7 @@ impl Engine {
             return error_map(&block.error, block.message);
         }
         if !response.is_success() {
-            return error_map(
-                "response_error",
-                format!("Server error: {}", response.status),
-            );
+            return error_map("response_error", format!("Server error: {}", response.status));
         }
         if response.body.is_empty() {
             return error_map("no_response_body", "Empty response body");
@@ -536,16 +479,10 @@ impl Engine {
                 let mut list = Vec::new();
                 for channel in channels {
                     let Some(object) = channel.as_object() else {
-                        return error_map(
-                            "parse_error",
-                            "JSON parse error: channel is not an object",
-                        );
+                        return error_map("parse_error", "JSON parse error: channel is not an object");
                     };
                     let Some(id) = object.get("id").filter(|id| id.is_number()) else {
-                        return error_map(
-                            "parse_error",
-                            "JSON parse error: Channel id must be a number",
-                        );
+                        return error_map("parse_error", "JSON parse error: Channel id must be a number");
                     };
                     list.push(json!({
                         "id": id,
@@ -594,12 +531,7 @@ impl Engine {
     }
 
     /// Asks the backend (`<updateUrl>/manifest_size`) how much a manifest download weighs.
-    pub fn bundle_download_size(
-        &self,
-        update_url: &str,
-        version: Option<&str>,
-        manifest: &[Value],
-    ) -> Json {
+    pub fn bundle_download_size(&self, update_url: &str, version: Option<&str>, manifest: &[Value]) -> Json {
         if manifest.is_empty() {
             let mut ret = Json::new();
             ret.insert("totalSize".into(), json!(0));
@@ -613,12 +545,10 @@ impl Engine {
         info.insert("manifest".into(), Value::Array(manifest.to_vec()));
         let url = manifest_size_url(update_url);
         match self.http.post_json(&url, &Value::Object(info)) {
-            Ok(response) if response.is_success() && !response.body.is_empty() => {
-                match response.json() {
-                    Some(Value::Object(object)) => object,
-                    _ => Self::unavailable_bundle_size(manifest, "response_error"),
-                }
-            }
+            Ok(response) if response.is_success() && !response.body.is_empty() => match response.json() {
+                Some(Value::Object(object)) => object,
+                _ => Self::unavailable_bundle_size(manifest, "response_error"),
+            },
             Ok(_) => Self::unavailable_bundle_size(manifest, "response_error"),
             Err(error) => {
                 self.host.error("Error getting bundle download size");
@@ -633,7 +563,8 @@ impl Engine {
     /// GETs a JSON document (preview payloads). Non-2xx bodies become the error message.
     pub fn fetch_json(&self, url: &str) -> crate::error::CoreResult<Value> {
         use crate::error::CoreError;
-        let parsed = url::Url::parse(url).map_err(|_| CoreError::new("invalid_url", "Expected an http or https URL"))?;
+        let parsed =
+            url::Url::parse(url).map_err(|_| CoreError::new("invalid_url", "Expected an http or https URL"))?;
         if parsed.scheme() != "http" && parsed.scheme() != "https" {
             return Err(CoreError::new("invalid_url", "Expected an http or https URL"));
         }
@@ -668,9 +599,7 @@ fn encode_query(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char)
-            }
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }

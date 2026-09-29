@@ -135,12 +135,7 @@ pub fn parse_remote_error(body: Option<&str>) -> (String, String) {
     let Some(json) = parse_json_object(body) else {
         return (String::new(), String::new());
     };
-    let field = |key: &str| {
-        json.get(key)
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    };
+    let field = |key: &str| json.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
     (field("error"), field("message"))
 }
 
@@ -177,11 +172,7 @@ fn raw_rate_limit_deadline_ms(retry_after: Option<&str>, body: Option<&str>, now
 
 /// Epoch ms until which requests must be blocked after a 429, or `0` for no block.
 /// Honours `Retry-After`, then `retryAfterSeconds`, then `rateLimitResetAt`, capped at one day.
-pub fn rate_limit_blocked_until_ms(
-    retry_after: Option<&str>,
-    body: Option<&str>,
-    now_ms: i64,
-) -> i64 {
+pub fn rate_limit_blocked_until_ms(retry_after: Option<&str>, body: Option<&str>, now_ms: i64) -> i64 {
     let now = now_ms as f64;
     let candidate = raw_rate_limit_deadline_ms(retry_after, body, now);
     // NaN and past deadlines mean "no client-side block"; anything further out is capped.

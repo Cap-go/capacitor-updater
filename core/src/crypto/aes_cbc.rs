@@ -97,12 +97,9 @@ pub fn decrypt(ciphertext: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<V
 }
 
 fn temp_path_for(path: &Path) -> CoreResult<PathBuf> {
-    let parent = path.parent().ok_or_else(|| {
-        CoreError::new(
-            "io_error",
-            format!("No parent directory for {}", path.display()),
-        )
-    })?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| CoreError::new("io_error", format!("No parent directory for {}", path.display())))?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
@@ -120,10 +117,8 @@ pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> Core
     }
     let temp = temp_path_for(path)?;
     let result = (|| {
-        let mut input =
-            File::open(path).map_err(|error| CoreError::io("Cannot open encrypted file", error))?;
-        let mut output =
-            File::create(&temp).map_err(|error| CoreError::io("Cannot create temp file", error))?;
+        let mut input = File::open(path).map_err(|error| CoreError::io("Cannot open encrypted file", error))?;
+        let mut output = File::create(&temp).map_err(|error| CoreError::io("Cannot create temp file", error))?;
         let mut decryptor = CbcDecryptor::new(key, iv);
         let mut buffer = vec![0u8; IO_BUFFER_BYTES];
         let mut plain = Vec::with_capacity(IO_BUFFER_BYTES + BLOCK);
@@ -154,8 +149,7 @@ pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> Core
         if written == 0 {
             return Err(CoreError::new("empty_output", "Empty decrypted data"));
         }
-        fs::rename(&temp, path)
-            .map_err(|error| CoreError::io("Cannot replace encrypted file", error))
+        fs::rename(&temp, path).map_err(|error| CoreError::io("Cannot replace encrypted file", error))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp);
@@ -178,20 +172,15 @@ mod tests {
             .unwrap()
             .try_into()
             .unwrap();
-        let ciphertext = crate::text::hex_decode(
-            "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2",
-        )
-        .unwrap();
+        let ciphertext =
+            crate::text::hex_decode("7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2").unwrap();
         let mut decryptor = CbcDecryptor::new(&key, &iv);
         let mut out = Vec::new();
         for chunk in ciphertext.chunks(7) {
             decryptor.update(chunk, &mut out);
         }
         // The final block is withheld until finish(); these blocks carry no padding.
-        assert_eq!(
-            crate::text::hex_encode(&out),
-            "6bc1bee22e409f96e93d7e117393172a"
-        );
+        assert_eq!(crate::text::hex_encode(&out), "6bc1bee22e409f96e93d7e117393172a");
         assert!(decryptor.finish(&mut out).is_err());
     }
 }

@@ -27,10 +27,7 @@ fn relative_components(relative_path: &str) -> CoreResult<Vec<&str>> {
         return Err(CoreError::new("empty_path", "Invalid empty path"));
     }
     if relative_path.contains('\\') || relative_path.contains('\0') {
-        return Err(CoreError::new(
-            "invalid_separator",
-            "Invalid path separator",
-        ));
+        return Err(CoreError::new("invalid_separator", "Invalid path separator"));
     }
     if contains_path_traversal_segment(relative_path) {
         return Err(CoreError::new(
@@ -39,10 +36,7 @@ fn relative_components(relative_path: &str) -> CoreResult<Vec<&str>> {
         ));
     }
     if is_absolute(relative_path) {
-        return Err(CoreError::new(
-            "absolute_path",
-            "Absolute paths are not allowed",
-        ));
+        return Err(CoreError::new("absolute_path", "Absolute paths are not allowed"));
     }
     let components: Vec<&str> = relative_path
         .split('/')
@@ -97,9 +91,7 @@ pub fn builtin_asset_path(file_name: &str) -> CoreResult<String> {
 /// Cache file names embed the hash, so only accept plain SHA-256 (64) or CRC32 (8) hex.
 pub fn is_safe_cache_hash(hash: Option<&str>) -> bool {
     match hash {
-        Some(hash) => {
-            (hash.len() == 64 || hash.len() == 8) && hash.bytes().all(|c| c.is_ascii_hexdigit())
-        }
+        Some(hash) => (hash.len() == 64 || hash.len() == 8) && hash.bytes().all(|c| c.is_ascii_hexdigit()),
         None => false,
     }
 }

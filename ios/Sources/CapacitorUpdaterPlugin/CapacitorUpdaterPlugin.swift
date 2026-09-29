@@ -1634,7 +1634,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let manifestEntries = manifestEntries {
             next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
         } else {
-            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
+            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey, checksum: rawChecksum)
         }
 
         if manifestEntries == nil {
@@ -2704,40 +2704,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func fetchPreviewPayload(_ payloadUrl: URL) throws -> PreviewPayload {
-        var request = URLRequest(url: payloadUrl)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var responseData: Data?
-        var response: URLResponse?
-        var responseError: Error?
-
-        self.implementation.startRawDataTask(request) { data, urlResponse, error in
-            responseData = data
-            response = urlResponse
-            responseError = error
-            semaphore.signal()
+        // Engine HTTP client: no cookies, Capgo User-Agent, HTTPS downgrade guard.
+        let object: [String: Any]
+        do {
+            object = try self.implementation.fetchJson(url: payloadUrl)
+        } catch {
+            throw makePreviewError(error.localizedDescription)
         }
-
-        if semaphore.wait(timeout: .now() + 60) == .timedOut {
-            throw makePreviewError("Preview payload request timed out")
-        }
-
-        if let responseError = responseError {
-            throw responseError
-        }
-
-        let data = responseData ?? Data()
-        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-            if let payload = try? JSONDecoder().decode(PreviewPayload.self, from: data) {
-                throw makePreviewError(payload.message ?? payload.error ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)")
-            }
-            let message = String(data: data, encoding: .utf8) ?? "Preview payload request failed with HTTP \(httpResponse.statusCode)"
-            throw makePreviewError(message)
-        }
-
+        let data = try JSONSerialization.data(withJSONObject: object)
         return try JSONDecoder().decode(PreviewPayload.self, from: data)
     }
+
 
     private func refreshPreviewSessionFromPayloadUrl(_ payloadUrl: URL) -> Bool {
         do {
@@ -4619,7 +4596,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 )
                                 return
                             }
-                            nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
+                            nextImpl = try self.implementation.download(
+                                url: downloadUrl,
+                                version: latestVersionName,
+                                sessionKey: sessionKey,
+                                checksum: res.checksum,
+                                link: res.link,
+                                comment: res.comment
+                            )
                         }
                     }
                     guard let next = nextImpl else {

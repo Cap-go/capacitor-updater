@@ -54,11 +54,7 @@ pub fn copy_atomically(source: &Path, destination: &Path) -> io::Result<()> {
 /// Streams `reader` into `destination` (temp + rename) and returns its SHA-256.
 /// With `expected`, the file is only put in place when the hash matches
 /// (case-insensitive); otherwise `Ok(None)` is returned and nothing is written.
-pub fn write_verified(
-    reader: &mut dyn Read,
-    destination: &Path,
-    expected: Option<&str>,
-) -> io::Result<Option<String>> {
+pub fn write_verified(reader: &mut dyn Read, destination: &Path, expected: Option<&str>) -> io::Result<Option<String>> {
     let parent = destination
         .parent()
         .ok_or_else(|| io::Error::other("destination has no parent"))?;
@@ -109,8 +105,7 @@ pub fn file_matches_hash(path: &Path, expected: &str) -> bool {
     if expected.is_empty() || !path.is_file() {
         return false;
     }
-    crate::crypto::checksum::sha256_file(path)
-        .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
+    crate::crypto::checksum::sha256_file(path).is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
 }
 
 pub fn modified_before(path: &Path, age: std::time::Duration) -> bool {

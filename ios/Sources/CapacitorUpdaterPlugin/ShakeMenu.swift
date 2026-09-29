@@ -779,10 +779,12 @@ extension UIWindow {
                                     }
                                     return
                                 }
+                                // The engine verifies the checksum before installing anything.
                                 bundle = try updater.download(
                                     url: downloadUrl,
                                     version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
+                                    sessionKey: latest.sessionKey ?? "",
+                                    checksum: latest.checksum
                                 )
                             }
 

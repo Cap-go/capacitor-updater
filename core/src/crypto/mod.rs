@@ -56,12 +56,7 @@ pub fn decrypt_checksum(checksum: &str, public_key: &str) -> CoreResult<String> 
         base64_decode(checksum)
     }
     .filter(|bytes| !bytes.is_empty())
-    .ok_or_else(|| {
-        CoreError::new(
-            "invalid_checksum",
-            "Cannot decode checksum as hex or base64",
-        )
-    })?;
+    .ok_or_else(|| CoreError::new("invalid_checksum", "Cannot decode checksum as hex or base64"))?;
 
     if encrypted.len() != 256 {
         return Err(CoreError::new(
@@ -90,8 +85,8 @@ fn decrypt_session_key(public_key: &str, session_key: &str) -> CoreResult<Sessio
     let iv: [u8; 16] = base64_decode(iv_b64)
         .and_then(|iv| iv.try_into().ok())
         .ok_or_else(|| CoreError::new("invalid_iv", "IV must be 16 bytes of base64"))?;
-    let encrypted_key = base64_decode(key_b64)
-        .ok_or_else(|| CoreError::new("invalid_session_key", "Session key is not base64"))?;
+    let encrypted_key =
+        base64_decode(key_b64).ok_or_else(|| CoreError::new("invalid_session_key", "Session key is not base64"))?;
     let rsa_key = RsaPublicKey::from_pem(public_key)?;
     let key = rsa_key.public_decrypt(&encrypted_key).map_err(|error| {
         CoreError::new(

@@ -123,7 +123,7 @@ final class SessionKeyRequiredTests: XCTestCase {
     func testDownloadRejectsWhenSessionKeyMissing() {
         let url = URL(string: "https://example.com/update.zip")!
 
-        XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "")) { error in
+        XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "", checksum: "")) { error in
             XCTAssertEqual((error as NSError).domain, "CapgoUpdater")
             XCTAssertEqual((error as NSError).code, 1)
         }
@@ -133,7 +133,7 @@ final class SessionKeyRequiredTests: XCTestCase {
     func testDownloadRejectsWhenSessionKeyFormatInvalid() {
         let url = URL(string: "https://example.com/update.zip")!
 
-        XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "invalid-format")) { error in
+        XCTAssertThrowsError(try implementation.download(url: url, version: "1.0.0", sessionKey: "invalid-format", checksum: "")) { error in
             XCTAssertEqual((error as NSError).domain, "CapgoUpdater")
             XCTAssertEqual((error as NSError).code, 1)
         }

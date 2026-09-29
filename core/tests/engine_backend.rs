@@ -75,17 +75,20 @@ fn set_channel_persists_and_unset_reverts() {
         }
     });
     let t = engine_with(&server);
-    let result = t.call("setChannel", json!({ "channel": "beta", "persistKey": "CapacitorUpdater.defaultChannel", "configDefaultChannel": "prod" }));
+    let result = t.call(
+        "setChannel",
+        json!({ "channel": "beta", "persistKey": "CapacitorUpdater.defaultChannel", "configDefaultChannel": "prod" }),
+    );
     assert_eq!(result["status"], "ok");
     assert_eq!(t.kv("CapacitorUpdater.defaultChannel").unwrap(), "beta");
     assert_eq!(t.call("config", json!({}))["defaultChannel"], "beta");
-    t.call("setChannel", json!({ "channel": "public", "persistKey": "CapacitorUpdater.defaultChannel", "configDefaultChannel": "prod" }));
+    t.call(
+        "setChannel",
+        json!({ "channel": "public", "persistKey": "CapacitorUpdater.defaultChannel", "configDefaultChannel": "prod" }),
+    );
     assert!(t.kv("CapacitorUpdater.defaultChannel").is_none());
     assert_eq!(t.call("config", json!({}))["defaultChannel"], "prod");
-    let disabled = t.call(
-        "setChannel",
-        json!({ "channel": "x", "allowSetDefaultChannel": false }),
-    );
+    let disabled = t.call("setChannel", json!({ "channel": "x", "allowSetDefaultChannel": false }));
     assert_eq!(disabled["error"], "disabled_by_config");
 }
 
@@ -95,9 +98,7 @@ fn get_channel_uses_put_and_falls_back_to_default_channel() {
         assert_eq!(request.method, "PUT");
         (400, vec![], b"{\"error\":\"channel_not_found\"}".to_vec())
     });
-    let t = TestEngine::new(
-        json!({ "channelUrl": format!("{}/channel_self", server.url), "defaultChannel": "prod" }),
-    );
+    let t = TestEngine::new(json!({ "channelUrl": format!("{}/channel_self", server.url), "defaultChannel": "prod" }));
     let result = t.call("getChannel", json!({}));
     assert_eq!(result["channel"], "prod");
     assert_eq!(result["status"], "default");
@@ -163,13 +164,11 @@ fn stats_are_requeued_on_transient_failure_and_persisted() {
     assert_eq!(t.call("statsPendingCount", json!({}))["count"], 1);
     t.call("statsPersist", json!({}));
     let file = t.root().join("capgo_pending_stats.json");
-    let stored: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(stored.as_array().unwrap().len(), 1);
     // A new engine instance restores the queue.
-    let other = TestEngine::new(
-        json!({ "statsUrl": "http://127.0.0.1:1/stats", "storageRoot": t.root().to_string_lossy() }),
-    );
+    let other =
+        TestEngine::new(json!({ "statsUrl": "http://127.0.0.1:1/stats", "storageRoot": t.root().to_string_lossy() }));
     other.call("statsRestore", json!({}));
     assert_eq!(other.call("statsPendingCount", json!({}))["count"], 1);
 }
@@ -179,8 +178,7 @@ fn stats_skipped_in_preview_session_or_without_url() {
     let t = TestEngine::new(json!({}));
     t.call("statsSend", json!({ "action": "set" }));
     assert_eq!(t.call("statsPendingCount", json!({}))["count"], 0);
-    let t =
-        TestEngine::new(json!({ "statsUrl": "http://127.0.0.1:1/stats", "previewSession": true }));
+    let t = TestEngine::new(json!({ "statsUrl": "http://127.0.0.1:1/stats", "previewSession": true }));
     t.call("statsSend", json!({ "action": "set" }));
     assert_eq!(t.call("statsPendingCount", json!({}))["count"], 0);
 }
@@ -188,14 +186,35 @@ fn stats_skipped_in_preview_session_or_without_url() {
 #[test]
 fn bundle_size_falls_back_on_error() {
     let t = TestEngine::new(json!({ "updateUrl": "http://127.0.0.1:1/updates?x=1" }));
-    let result = t.call(
-        "bundleDownloadSize",
-        json!({ "manifest": [{ "file_name": "a.js" }] }),
-    );
+    let result = t.call("bundleDownloadSize", json!({ "manifest": [{ "file_name": "a.js" }] }));
     assert_eq!(result["unknownFiles"], 1);
     assert_eq!(result["files"][0]["error"], "response_error");
     assert_eq!(
         capgo_updater_core::engine::backend::manifest_size_url("https://x/updates?y=1"),
         "https://x/updates/manifest_size"
     );
+}
+
+#[test]
+fn set_channel_error_status_does_not_persist_default_channel() {
+    let server = FakeServer::start(|_| FakeServer::json(401, json!({ "status": "error", "message": "Unauthorized" })));
+    let t = engine_with(&server);
+    let result = t.call(
+        "setChannel",
+        json!({ "channel": "beta", "persistKey": "CapacitorUpdater.defaultChannel", "configDefaultChannel": "stable" }),
+    );
+    assert_eq!(result["error"], "response_error");
+    assert_eq!(result["message"], "Unauthorized");
+    assert!(t.kv("CapacitorUpdater.defaultChannel").is_none());
+}
+
+#[test]
+fn get_channel_persists_server_channel() {
+    let server = FakeServer::start(|_| {
+        FakeServer::json(200, json!({ "channel": "company-a", "status": "ok", "allowSet": true }))
+    });
+    let t = engine_with(&server);
+    let result = t.call("getChannel", json!({ "persistKey": "CapacitorUpdater.defaultChannel" }));
+    assert_eq!(result["channel"], "company-a");
+    assert_eq!(t.kv("CapacitorUpdater.defaultChannel").unwrap(), "company-a");
 }

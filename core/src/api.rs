@@ -21,9 +21,7 @@ fn opt_str<'a>(input: &'a Value, key: &str) -> CoreResult<Option<&'a str>> {
     match field(input, key) {
         None => Ok(None),
         Some(Value::String(value)) => Ok(Some(value)),
-        Some(_) => Err(CoreError::invalid_input(format!(
-            "`{key}` must be a string"
-        ))),
+        Some(_) => Err(CoreError::invalid_input(format!("`{key}` must be a string"))),
     }
 }
 
@@ -42,12 +40,7 @@ fn opt_i64(input: &Value, key: &str) -> CoreResult<Option<i64>> {
         None => Ok(None),
         Some(value) => value
             .as_i64()
-            .or_else(|| {
-                value
-                    .as_f64()
-                    .filter(|v| v.fract() == 0.0)
-                    .map(|v| v as i64)
-            })
+            .or_else(|| value.as_f64().filter(|v| v.fract() == 0.0).map(|v| v as i64))
             .map(Some)
             .ok_or_else(|| CoreError::invalid_input(format!("`{key}` must be an integer"))),
     }
@@ -220,9 +213,7 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
                 req_i64(input, "downloadedBytes")?,
                 opt_str(input, "contentRange")?,
             )
-            .map_err(|code| {
-                CoreError::new(code, "Content-Range does not continue the partial download")
-            })?;
+            .map_err(|code| CoreError::new(code, "Content-Range does not continue the partial download"))?;
             json!({ "responseCode": plan.response_code, "writeOffset": plan.write_offset })
         }
         "appendHttpBody" => json!({
@@ -314,9 +305,7 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
             let payload = (block.len() as i64 == block_size)
                 .then(|| crypto::rsa::unpad_type1(&block))
                 .flatten()
-                .ok_or_else(|| {
-                    CoreError::new("decrypt_failed", "Invalid PKCS#1 signature padding")
-                })?;
+                .ok_or_else(|| CoreError::new("decrypt_failed", "Invalid PKCS#1 signature padding"))?;
             json!({ "payloadHex": hex_encode(&payload) })
         }
 

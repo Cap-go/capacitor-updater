@@ -16,10 +16,7 @@ fn to_c_string(value: String) -> *mut c_char {
     // JSON output never contains interior NULs (serde escapes them), but stay total.
     CString::new(value)
         .unwrap_or_else(|_| {
-            CString::new(
-                "{\"ok\":false,\"error\":{\"code\":\"internal\",\"message\":\"NUL in output\"}}",
-            )
-            .unwrap()
+            CString::new("{\"ok\":false,\"error\":{\"code\":\"internal\",\"message\":\"NUL in output\"}}").unwrap()
         })
         .into_raw()
 }
@@ -39,10 +36,7 @@ unsafe fn read_str<'a>(value: *const c_char) -> Result<&'a str, CoreError> {
 /// # Safety
 /// `operation` and `input_json` must be NULL or valid NUL-terminated strings.
 #[no_mangle]
-pub unsafe extern "C" fn capgo_core_call(
-    operation: *const c_char,
-    input_json: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn capgo_core_call(operation: *const c_char, input_json: *const c_char) -> *mut c_char {
     let output = catch_unwind(AssertUnwindSafe(|| {
         let operation = match read_str(operation) {
             Ok(value) => value,
@@ -92,6 +86,10 @@ pub struct CapgoHostCallbacks {
     pub kv_keys: Option<unsafe extern "C" fn(*mut c_void) -> *mut c_char>,
     pub emit: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char)>,
     pub free_string: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
+    /// Optional platform hooks (`willSwitchBundle`, `cancelVersionDownload`,
+    /// `beforeDownload`, `cancelAllDownloads`, `sendStats`): hook name and JSON
+    /// payload in, JSON object reply (host allocated) or NULL out.
+    pub hook: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_char>,
     /// Called once when the engine is destroyed, to release `context`.
     pub release: Option<unsafe extern "C" fn(*mut c_void)>,
 }
@@ -119,13 +117,19 @@ impl CHost {
         if raw.is_null() {
             return None;
         }
-        let value = unsafe { CStr::from_ptr(raw) }
-            .to_string_lossy()
-            .into_owned();
+        let value = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
         if let Some(free_string) = self.0.free_string {
             unsafe { free_string(self.0.context, raw) };
         }
         Some(value)
+    }
+
+    fn hook(&self, name: &str, payload: serde_json::Value) -> Option<serde_json::Value> {
+        let hook = self.0.hook?;
+        let name = c_string(name);
+        let payload = c_string(&payload.to_string());
+        let raw = unsafe { hook(self.0.context, name.as_ptr(), payload.as_ptr()) };
+        self.take_string(raw).and_then(|json| serde_json::from_str(&json).ok())
     }
 }
 
@@ -141,8 +145,7 @@ impl Host for CHost {
         let kv_get = self.0.kv_get?;
         let key = c_string(key);
         let raw = unsafe { kv_get(self.0.context, key.as_ptr()) };
-        self.take_string(raw)
-            .or_else(|| default.map(str::to_string))
+        self.take_string(raw).or_else(|| default.map(str::to_string))
     }
 
     fn kv_set(&self, key: &str, value: Option<&str>) {
@@ -153,9 +156,7 @@ impl Host for CHost {
                 kv_set(
                     self.0.context,
                     key.as_ptr(),
-                    value
-                        .as_ref()
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    value.as_ref().map_or(std::ptr::null(), |value| value.as_ptr()),
                 )
             };
         }
@@ -178,6 +179,41 @@ impl Host for CHost {
             unsafe { emit(self.0.context, event.as_ptr(), payload.as_ptr()) };
         }
     }
+
+    fn will_switch_bundle(&self, path: &str) {
+        self.hook("willSwitchBundle", serde_json::json!({ "path": path }));
+    }
+
+    fn cancel_version_download(&self, version: &str) -> bool {
+        self.hook("cancelVersionDownload", serde_json::json!({ "version": version }))
+            .and_then(|reply| reply.get("cancelled").and_then(serde_json::Value::as_bool))
+            .unwrap_or(true)
+    }
+
+    fn before_download(&self) -> Result<(), String> {
+        match self.hook("beforeDownload", serde_json::json!({})).and_then(|reply| {
+            reply
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        }) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn cancel_all_downloads(&self) {
+        self.hook("cancelAllDownloads", serde_json::json!({}));
+    }
+
+    fn send_stats(&self, action: &str, version_name: &str, old_version_name: &str) -> bool {
+        self.hook(
+            "sendStats",
+            serde_json::json!({ "action": action, "versionName": version_name, "oldVersionName": old_version_name }),
+        )
+        .and_then(|reply| reply.get("handled").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+    }
 }
 
 /// Creates an engine. Returns NULL on invalid configuration (the error is logged to the host).
@@ -186,29 +222,22 @@ impl Host for CHost {
 /// `config_json` must be NULL or a valid NUL-terminated string; `host` callbacks must stay valid
 /// until `release` is called.
 #[no_mangle]
-pub unsafe extern "C" fn capgo_engine_new(
-    config_json: *const c_char,
-    host: CapgoHostCallbacks,
-) -> *mut Engine {
+pub unsafe extern "C" fn capgo_engine_new(config_json: *const c_char, host: CapgoHostCallbacks) -> *mut Engine {
     let host: Arc<dyn Host> = Arc::new(CHost(host));
     let result = catch_unwind(AssertUnwindSafe(|| {
         let config = read_str(config_json)?;
         let config: serde_json::Value = if config.trim().is_empty() {
             serde_json::Value::Null
         } else {
-            serde_json::from_str(config).map_err(|error| {
-                CoreError::invalid_input(format!("Invalid engine config: {error}"))
-            })?
+            serde_json::from_str(config)
+                .map_err(|error| CoreError::invalid_input(format!("Invalid engine config: {error}")))?
         };
         Engine::new(host.clone(), &config)
     }));
     match result {
         Ok(Ok(engine)) => std::sync::Arc::into_raw(engine) as *mut Engine,
         Ok(Err(error)) => {
-            host.log(
-                LogLevel::Error,
-                &format!("Capgo engine init failed: {error}"),
-            );
+            host.log(LogLevel::Error, &format!("Capgo engine init failed: {error}"));
             std::ptr::null_mut()
         }
         Err(_) => {
@@ -241,9 +270,7 @@ pub unsafe extern "C" fn capgo_engine_call(
             Err(error) => api::envelope(Err(error)),
         }
     }))
-    .unwrap_or_else(|_| {
-        api::envelope(Err(CoreError::new("internal", "Engine operation panicked")))
-    });
+    .unwrap_or_else(|_| api::envelope(Err(CoreError::new("internal", "Engine operation panicked"))));
     to_c_string(output)
 }
 

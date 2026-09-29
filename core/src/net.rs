@@ -109,10 +109,7 @@ fn classify_io(error: &std::io::Error) -> NetErrorKind {
             let text = error.to_string().to_ascii_lowercase();
             if text.contains("timed out") || text.contains("timeout") {
                 NetErrorKind::Timeout
-            } else if text.contains("certificate")
-                || text.contains("tls")
-                || text.contains("handshake")
-            {
+            } else if text.contains("certificate") || text.contains("tls") || text.contains("handshake") {
                 NetErrorKind::Tls
             } else {
                 NetErrorKind::Network
@@ -144,11 +141,7 @@ fn headers_of(response: &ureq::Response) -> Vec<(String, String)> {
     response
         .headers_names()
         .into_iter()
-        .filter_map(|name| {
-            response
-                .header(&name)
-                .map(|value| (name.clone(), value.to_string()))
-        })
+        .filter_map(|name| response.header(&name).map(|value| (name.clone(), value.to_string())))
         .collect()
 }
 
@@ -192,21 +185,12 @@ impl Http {
         }
         *current = timeout;
         *self.agent.write().unwrap() = build_agent(self.tls.clone(), timeout);
-        *self.download_agent.write().unwrap() =
-            build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
+        *self.download_agent.write().unwrap() = build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
     }
 
-    fn prepare(
-        &self,
-        agent: &RwLock<ureq::Agent>,
-        method: &str,
-        url: &str,
-        headers: &[(&str, &str)],
-    ) -> ureq::Request {
+    fn prepare(&self, agent: &RwLock<ureq::Agent>, method: &str, url: &str, headers: &[(&str, &str)]) -> ureq::Request {
         let agent = agent.read().unwrap().clone();
-        let mut request = agent
-            .request(method, url)
-            .set("User-Agent", &self.user_agent());
+        let mut request = agent.request(method, url).set("User-Agent", &self.user_agent());
         for (name, value) in headers {
             request = request.set(name, value);
         }
@@ -259,9 +243,7 @@ impl Http {
                 });
             }
             // 303 (and 301/302 for POST, like browsers) switch to GET without a body.
-            if status == 303
-                || ((status == 301 || status == 302) && method != "GET" && method != "HEAD")
-            {
+            if status == 303 || ((status == 301 || status == 302) && method != "GET" && method != "HEAD") {
                 method = "GET".into();
                 body = None;
             }
@@ -370,8 +352,7 @@ impl Http {
 
 /// A redirect may never downgrade HTTPS to plain HTTP unless explicitly allowed.
 pub fn redirect_allowed(from_scheme: &str, to_scheme: &str, allow_downgrade: bool) -> bool {
-    !(from_scheme.eq_ignore_ascii_case("https") && to_scheme.eq_ignore_ascii_case("http"))
-        || allow_downgrade
+    !(from_scheme.eq_ignore_ascii_case("https") && to_scheme.eq_ignore_ascii_case("http")) || allow_downgrade
 }
 
 /// Events of [`Http::download`].
@@ -466,16 +447,10 @@ impl ServerCertVerifier for HostVerifier {
             }
             Some(Err(message)) => Err(rustls::Error::General(message)),
             None => match &self.fallback {
-                Some(fallback) => fallback.verify_server_cert(
-                    end_entity,
-                    intermediates,
-                    server_name,
-                    ocsp_response,
-                    now,
-                ),
-                None => Err(rustls::Error::General(
-                    "No certificate verifier available".into(),
-                )),
+                Some(fallback) => {
+                    fallback.verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+                }
+                None => Err(rustls::Error::General("No certificate verifier available".into())),
             },
         }
     }
@@ -486,12 +461,7 @@ impl ServerCertVerifier for HostVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.provider.signature_verification_algorithms,
-        )
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
     }
 
     fn verify_tls13_signature(
@@ -500,17 +470,10 @@ impl ServerCertVerifier for HostVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.provider.signature_verification_algorithms,
-        )
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.provider
-            .signature_verification_algorithms
-            .supported_schemes()
+        self.provider.signature_verification_algorithms.supported_schemes()
     }
 }

@@ -132,7 +132,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         return currentBundleValue
     }
 
-    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+    override func download(url: URL, version: String, sessionKey: String, checksum: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         downloadCalls += 1
         onDownloadStart?()
         if let downloadedBundleValue {
@@ -215,14 +215,6 @@ private final class ResettingHealthStatsCapgoUpdater: HealthStatsCapgoUpdater {
 
     override func reset(isInternal _: Bool) {
         currentBundleValue = builtinBundle
-    }
-}
-
-private final class ChannelRequestCapgoUpdater: CapgoUpdater {
-    var requestResult: CapgoUpdater.RequestResult!
-
-    override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
-        requestResult
     }
 }
 
@@ -1024,32 +1016,6 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(decodedBundle.getStatus(), BundleStatus.SUCCESS.storedValue)
     }
 
-    func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
-        let updater = ChannelRequestCapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
-        updater.defaultChannel = "stable"
-
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
-        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
-        let responseData = try XCTUnwrap("""
-        {"status":"error","message":"Unauthorized"}
-        """.data(using: .utf8))
-        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
-
-        XCTAssertEqual(result.error, "response_error")
-        XCTAssertEqual(result.message, "Unauthorized")
-        XCTAssertEqual(updater.defaultChannel, "stable")
-        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
-    }
-
     func testUnsetChannelClearsOverrideWhenAllowed() {
         let updater = CapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
@@ -1400,32 +1366,8 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(resourceValues.isExcludedFromBackup, true)
     }
 
-    func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
-        let updater = ChannelRequestCapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
-
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
-        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
-        let responseData = try XCTUnwrap("""
-        {"channel":"company-a","status":"ok","allowSet":true}
-        """.data(using: .utf8))
-        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.getChannel(defaultChannelKey: defaultsKey)
-
-        XCTAssertEqual(result.channel, "company-a")
-        XCTAssertEqual(updater.defaultChannel, "company-a")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
-    }
-
     func testGetChannelDoesNotPersistBuiltinVersionNameAsDefaultChannel() {
-        let updater = ChannelRequestCapgoUpdater()
+        let updater = CapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
         updater.defaultChannel = "stable"
 

@@ -31,11 +31,7 @@ fn rate_limit_blocks_following_requests() {
     assert_eq!(second["error"], "too_many_requests");
     assert_eq!(second["message"], "slow");
     std::thread::sleep(Duration::from_millis(200));
-    let urls: Vec<String> = server
-        .requests()
-        .iter()
-        .map(|request| request.url.clone())
-        .collect();
+    let urls: Vec<String> = server.requests().iter().map(|request| request.url.clone()).collect();
     assert!(
         urls.iter().filter(|url| url.contains("updates")).count() == 1,
         "blocked request never sent: {urls:?}"

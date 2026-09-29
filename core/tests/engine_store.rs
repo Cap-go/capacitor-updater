@@ -23,10 +23,7 @@ fn corrupted_record_is_cleared_and_reported_as_error() {
         .lock()
         .unwrap()
         .insert("ABCDEFGHIJ_info".into(), "{not json".into());
-    assert_eq!(
-        t.call("bundleGet", json!({ "id": "ABCDEFGHIJ" }))["status"],
-        "error"
-    );
+    assert_eq!(t.call("bundleGet", json!({ "id": "ABCDEFGHIJ" }))["status"], "error");
     assert!(t.kv("ABCDEFGHIJ_info").is_none());
 }
 
@@ -44,11 +41,7 @@ fn builtin_records_are_never_saved() {
 fn list_raw_only_returns_ten_char_ids() {
     let t = TestEngine::new(json!({}));
     t.install_bundle("AAAAAAAAAA", "1.0.1", "success");
-    t.host
-        .store
-        .lock()
-        .unwrap()
-        .insert("short_info".into(), "{}".into());
+    t.host.store.lock().unwrap().insert("short_info".into(), "{}".into());
     let raw = t.call("bundleList", json!({ "raw": true }));
     assert_eq!(raw.as_array().unwrap().len(), 1);
     let disk = t.call("bundleList", json!({}));
@@ -57,19 +50,14 @@ fn list_raw_only_returns_ten_char_ids() {
         t.call("bundleGetByName", json!({ "version": "1.0.1" }))["id"],
         "AAAAAAAAAA"
     );
-    assert!(t
-        .call("bundleGetByName", json!({ "version": "9" }))
-        .is_null());
+    assert!(t.call("bundleGetByName", json!({ "version": "9" })).is_null());
 }
 
 #[test]
 fn set_switches_current_bundle_and_marks_pending() {
     let t = TestEngine::new(json!({}));
     let dir = t.install_bundle("AAAAAAAAAA", "1.0.1", "success");
-    assert_eq!(
-        t.call("bundleSet", json!({ "id": "AAAAAAAAAA" }))["set"],
-        true
-    );
+    assert_eq!(t.call("bundleSet", json!({ "id": "AAAAAAAAAA" }))["set"], true);
     assert_eq!(t.kv("serverBasePath").unwrap(), dir.to_string_lossy());
     let current = t.call("bundleCurrent", json!({}));
     assert_eq!(current["id"], "AAAAAAAAAA");
@@ -80,21 +68,13 @@ fn set_switches_current_bundle_and_marks_pending() {
 #[test]
 fn set_missing_bundle_fails_and_marks_error() {
     let t = TestEngine::new(json!({}));
-    t.call("bundleSave", json!({ "id": "BBBBBBBBBB", "bundle": { "id": "BBBBBBBBBB", "version": "2", "status": "pending" } }));
-    assert_eq!(
-        t.call("bundleSet", json!({ "id": "BBBBBBBBBB" }))["set"],
-        false
+    t.call(
+        "bundleSave",
+        json!({ "id": "BBBBBBBBBB", "bundle": { "id": "BBBBBBBBBB", "version": "2", "status": "pending" } }),
     );
-    assert_eq!(
-        t.call("bundleGet", json!({ "id": "BBBBBBBBBB" }))["status"],
-        "error"
-    );
-    assert!(
-        t.engine
-            .call("bundleSet", &json!({ "id": "../../etc" }))
-            .unwrap()["set"]
-            == false
-    );
+    assert_eq!(t.call("bundleSet", json!({ "id": "BBBBBBBBBB" }))["set"], false);
+    assert_eq!(t.call("bundleGet", json!({ "id": "BBBBBBBBBB" }))["status"], "error");
+    assert!(t.engine.call("bundleSet", &json!({ "id": "../../etc" })).unwrap()["set"] == false);
 }
 
 #[test]
@@ -136,22 +116,13 @@ fn delete_removes_folder_then_record() {
     let t = TestEngine::new(json!({}));
     let dir = t.install_bundle("AAAAAAAAAA", "1", "success");
     assert_eq!(
-        t.call(
-            "bundleDelete",
-            json!({ "id": "AAAAAAAAAA", "removeInfo": false })
-        )["deleted"],
+        t.call("bundleDelete", json!({ "id": "AAAAAAAAAA", "removeInfo": false }))["deleted"],
         true
     );
     assert!(!dir.exists());
-    assert_eq!(
-        t.call("bundleGet", json!({ "id": "AAAAAAAAAA" }))["status"],
-        "deleted"
-    );
+    assert_eq!(t.call("bundleGet", json!({ "id": "AAAAAAAAAA" }))["status"], "deleted");
     t.install_bundle("BBBBBBBBBB", "2", "success");
-    assert_eq!(
-        t.call("bundleDelete", json!({ "id": "BBBBBBBBBB" }))["deleted"],
-        true
-    );
+    assert_eq!(t.call("bundleDelete", json!({ "id": "BBBBBBBBBB" }))["deleted"], true);
     assert!(t.kv("BBBBBBBBBB_info").is_none());
 }
 
@@ -173,15 +144,9 @@ fn drain_resumes_deleting_records_and_queue() {
 #[test]
 fn set_next_requires_existing_bundle_and_emits_event() {
     let t = TestEngine::new(json!({}));
-    assert_eq!(
-        t.call("bundleSetNext", json!({ "id": "AAAAAAAAAA" }))["set"],
-        false
-    );
+    assert_eq!(t.call("bundleSetNext", json!({ "id": "AAAAAAAAAA" }))["set"], false);
     t.install_bundle("AAAAAAAAAA", "1", "success");
-    assert_eq!(
-        t.call("bundleSetNext", json!({ "id": "AAAAAAAAAA" }))["set"],
-        true
-    );
+    assert_eq!(t.call("bundleSetNext", json!({ "id": "AAAAAAAAAA" }))["set"], true);
     assert_eq!(t.kv("nextVersion").unwrap(), "AAAAAAAAAA");
     assert_eq!(t.call("bundleNext", json!({}))["status"], "pending");
     assert_eq!(t.host.events_named("setNext").len(), 1);
@@ -223,11 +188,7 @@ fn auto_reset_on_missing_folder_foreign_path_and_native_change() {
         .unwrap()
         .insert("serverBasePath".into(), "/somewhere/else/ZZZZZZZZZZ".into());
     t.call("bundleAutoReset", json!({ "nativeBuildVersion": "10" }));
-    assert_eq!(
-        t.call("bundleCurrent", json!({}))["isBuiltin"],
-        true,
-        "missing folder"
-    );
+    assert_eq!(t.call("bundleCurrent", json!({}))["isBuiltin"], true, "missing folder");
 
     let dir = t.install_bundle("AAAAAAAAAA", "1", "success");
     t.call("bundleSet", json!({ "id": "AAAAAAAAAA" }));
@@ -237,11 +198,7 @@ fn auto_reset_on_missing_folder_foreign_path_and_native_change() {
         .unwrap()
         .insert("LatestNativeBuildVersion".into(), "9".into());
     t.call("bundleAutoReset", json!({ "nativeBuildVersion": "10" }));
-    assert_eq!(
-        t.call("bundleCurrent", json!({}))["isBuiltin"],
-        true,
-        "native changed"
-    );
+    assert_eq!(t.call("bundleCurrent", json!({}))["isBuiltin"], true, "native changed");
 
     t.call("bundleSet", json!({ "id": "AAAAAAAAAA" }));
     t.call(
@@ -257,11 +214,7 @@ fn auto_reset_on_missing_folder_foreign_path_and_native_change() {
     // Folder exists but no record: foreign bundle.
     t.call("bundleSave", json!({ "id": "AAAAAAAAAA", "bundle": null }));
     t.call("bundleAutoReset", json!({ "nativeBuildVersion": "9" }));
-    assert_eq!(
-        t.call("bundleCurrent", json!({}))["isBuiltin"],
-        true,
-        "foreign"
-    );
+    assert_eq!(t.call("bundleCurrent", json!({}))["isBuiltin"], true, "foreign");
     assert!(dir.exists());
 }
 

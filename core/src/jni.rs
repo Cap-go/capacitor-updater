@@ -166,12 +166,7 @@ impl Host for JniHost {
     fn kv_keys(&self) -> Vec<String> {
         self.with_env(|env| {
             let keys = env
-                .call_method(
-                    self.host.as_obj(),
-                    "kvKeysJson",
-                    "()Ljava/lang/String;",
-                    &[],
-                )?
+                .call_method(self.host.as_obj(), "kvKeysJson", "()Ljava/lang/String;", &[])?
                 .l()?;
             if keys.is_null() {
                 return Ok(Vec::new());
@@ -225,7 +220,9 @@ impl Host for JniHost {
 
     fn before_download(&self) -> Result<(), String> {
         let error = self.with_env(|env| {
-            let value = env.call_method(self.host.as_obj(), "beforeDownload", "()Ljava/lang/String;", &[])?.l()?;
+            let value = env
+                .call_method(self.host.as_obj(), "beforeDownload", "()Ljava/lang/String;", &[])?
+                .l()?;
             if value.is_null() {
                 return Ok(None);
             }
@@ -245,15 +242,10 @@ impl Host for JniHost {
         });
     }
 
-    fn verify_server_certificate(
-        &self,
-        chain: &[&[u8]],
-        server_name: &str,
-    ) -> Option<Result<(), String>> {
+    fn verify_server_certificate(&self, chain: &[&[u8]], server_name: &str) -> Option<Result<(), String>> {
         let verdict = self.with_env(|env| {
             let byte_array_class = env.find_class("[B")?;
-            let certificates =
-                env.new_object_array(chain.len() as i32, byte_array_class, JObject::null())?;
+            let certificates = env.new_object_array(chain.len() as i32, byte_array_class, JObject::null())?;
             for (index, der) in chain.iter().enumerate() {
                 let bytes = env.byte_array_from_slice(der)?;
                 env.set_object_array_element(&certificates, index as i32, bytes)?;
@@ -294,10 +286,7 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineCr
     let config = match read(&mut env, &config_json) {
         Ok(config) => config,
         Err(error) => {
-            host.log(
-                LogLevel::Error,
-                &format!("Capgo engine init failed: {error}"),
-            );
+            host.log(LogLevel::Error, &format!("Capgo engine init failed: {error}"));
             return 0;
         }
     };
@@ -305,19 +294,15 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineCr
         let config: serde_json::Value = if config.trim().is_empty() {
             serde_json::Value::Null
         } else {
-            serde_json::from_str(&config).map_err(|error| {
-                CoreError::invalid_input(format!("Invalid engine config: {error}"))
-            })?
+            serde_json::from_str(&config)
+                .map_err(|error| CoreError::invalid_input(format!("Invalid engine config: {error}")))?
         };
         Engine::new(host.clone(), &config)
     }));
     match result {
         Ok(Ok(engine)) => Arc::into_raw(engine) as jlong,
         Ok(Err(error)) => {
-            host.log(
-                LogLevel::Error,
-                &format!("Capgo engine init failed: {error}"),
-            );
+            host.log(LogLevel::Error, &format!("Capgo engine init failed: {error}"));
             0
         }
         Err(_) => 0,
@@ -346,9 +331,7 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineCa
             Err(error) => api::envelope(Err(error)),
         }
     }))
-    .unwrap_or_else(|_| {
-        api::envelope(Err(CoreError::new("internal", "Engine operation panicked")))
-    });
+    .unwrap_or_else(|_| api::envelope(Err(CoreError::new("internal", "Engine operation panicked"))));
     env.new_string(output)
         .map(|value| value.into_raw())
         .unwrap_or(std::ptr::null_mut())

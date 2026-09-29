@@ -48,13 +48,8 @@ fn is_stored_bundle_id(key: &str, suffix: &str) -> Option<String> {
 /// Resolves `id` inside `root`, rejecting traversal, and (when it exists)
 /// symlinks that point outside `root`.
 pub fn resolve_inside(root: &Path, relative: &str) -> CoreResult<PathBuf> {
-    let resolved = PathBuf::from(crate::paths::resolve_path_inside(
-        &root.to_string_lossy(),
-        relative,
-    )?);
-    if let (Ok(canonical_root), Ok(canonical_target)) =
-        (fs::canonicalize(root), fs::canonicalize(&resolved))
-    {
+    let resolved = PathBuf::from(crate::paths::resolve_path_inside(&root.to_string_lossy(), relative)?);
+    if let (Ok(canonical_root), Ok(canonical_target)) = (fs::canonicalize(root), fs::canonicalize(&resolved)) {
         if canonical_target == canonical_root || !canonical_target.starts_with(&canonical_root) {
             return Err(CoreError::new(
                 "escapes_base",
@@ -94,10 +89,7 @@ impl Engine {
     }
 
     pub fn has_stored_bundle_info(&self, id: &str) -> bool {
-        !id.is_empty()
-            && id != ID_BUILTIN
-            && id != VERSION_UNKNOWN
-            && self.host.kv_contains(&self.info_key(id))
+        !id.is_empty() && id != ID_BUILTIN && id != VERSION_UNKNOWN && self.host.kv_contains(&self.info_key(id))
     }
 
     pub fn get_bundle_info(&self, id: Option<&str>) -> BundleInfo {
@@ -117,9 +109,7 @@ impl Engine {
         }
         match Some(self.kv_or(&self.info_key(id), "")) {
             None => BundleInfo::new(id, None, BundleStatus::Pending, "", ""),
-            Some(stored) if stored.is_empty() => {
-                BundleInfo::new(id, None, BundleStatus::Pending, "", "")
-            }
+            Some(stored) if stored.is_empty() => BundleInfo::new(id, None, BundleStatus::Pending, "", ""),
             Some(stored) => match BundleInfo::from_stored_json(&stored) {
                 Some(bundle) => bundle,
                 None => {
@@ -135,8 +125,7 @@ impl Engine {
     pub fn save_bundle_info(&self, id: &str, info: Option<&BundleInfo>) -> bool {
         if let Some(info) = info {
             if info.is_builtin() || info.is_unknown() {
-                self.host
-                    .debug(format!("Not saving info for bundle: [{id}]"));
+                self.host.debug(format!("Not saving info for bundle: [{id}]"));
                 return false;
             }
         }
@@ -148,8 +137,7 @@ impl Engine {
             }
             Some(info) => {
                 let stored = info.with_id(id).to_stored_json();
-                self.host
-                    .debug(format!("Storing info for bundle [{id}] {stored}"));
+                self.host.debug(format!("Storing info for bundle [{id}] {stored}"));
                 self.kv_put(&key, Some(&stored));
             }
         }
@@ -158,10 +146,8 @@ impl Engine {
 
     pub fn set_bundle_status(&self, id: &str, status: BundleStatus) {
         let info = self.get_bundle_info(Some(id));
-        self.host.debug(format!(
-            "Setting status for bundle [{id}] to {}",
-            status.as_str()
-        ));
+        self.host
+            .debug(format!("Setting status for bundle [{id}] to {}", status.as_str()));
         self.save_bundle_info(id, Some(&info.with_status(status)));
     }
 
@@ -177,10 +163,7 @@ impl Engine {
                 .collect();
             ids.sort();
             ids.dedup();
-            return ids
-                .iter()
-                .map(|id| self.get_bundle_info(Some(id)))
-                .collect();
+            return ids.iter().map(|id| self.get_bundle_info(Some(id))).collect();
         }
         let root = self.config().bundle_root.clone();
         let Ok(entries) = fs::read_dir(&root) else {
@@ -194,9 +177,7 @@ impl Engine {
             .filter(|name| !name.starts_with('.'))
             .collect();
         ids.sort();
-        ids.iter()
-            .map(|id| self.get_bundle_info(Some(id)))
-            .collect()
+        ids.iter().map(|id| self.get_bundle_info(Some(id))).collect()
     }
 
     pub fn get_bundle_info_by_name(&self, version: &str) -> Option<BundleInfo> {
@@ -323,14 +304,8 @@ impl Engine {
         self.kv_put(&key, Some(next));
         self.set_bundle_status(next, BundleStatus::Pending);
         let current = self.current_bundle().version_name().to_string();
-        self.send_stats(
-            "set_next",
-            Some(bundle.version_name()),
-            Some(&current),
-            None,
-        );
-        self.host
-            .emit("setNext", &json!({ "bundle": bundle.to_js() }));
+        self.send_stats("set_next", Some(bundle.version_name()), Some(&current), None);
+        self.host.emit("setNext", &json!({ "bundle": bundle.to_js() }));
         true
     }
 
@@ -379,16 +354,12 @@ impl Engine {
     /// Deletes a bundle folder. Marks the record DELETING first so a kill mid-delete
     /// resumes on next launch; only drops the record once the folder is gone.
     pub fn delete_bundle(&self, id: &str, remove_info: bool, cancel_active_download: bool) -> bool {
-        let _guard = self
-            .delete_lock
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let _guard = self.delete_lock.lock().unwrap_or_else(|poison| poison.into_inner());
         let dir = match self.bundle_directory(id) {
             Ok(dir) => dir,
             Err(error) => {
                 self.host.error("Cannot delete bundle with invalid id");
-                self.host
-                    .debug(format!("Bundle ID: {id}, Error: {}", error.message));
+                self.host.debug(format!("Bundle ID: {id}, Error: {}", error.message));
                 return false;
             }
         };
@@ -400,10 +371,7 @@ impl Engine {
         }
         let protected = |bundle: Option<BundleInfo>| {
             bundle.is_some_and(|bundle| {
-                !bundle.is_deleted()
-                    && !bundle.is_error()
-                    && !bundle.is_deleting()
-                    && bundle.id() == id
+                !bundle.is_deleted() && !bundle.is_error() && !bundle.is_deleting() && bundle.id() == id
             })
         };
         if protected(self.preview_fallback_bundle()) {
@@ -421,22 +389,18 @@ impl Engine {
             self.host.debug(format!("Bundle ID: {id}"));
             return false;
         }
-        if !deleted.is_deleting()
-            && !self.save_bundle_info(id, Some(&deleted.with_status(BundleStatus::Deleting)))
-        {
+        if !deleted.is_deleting() && !self.save_bundle_info(id, Some(&deleted.with_status(BundleStatus::Deleting))) {
             self.host
                 .error("Failed to persist DELETING marker, aborting disk delete");
             return false;
         }
         if cancel_active_download && !self.host.cancel_version_download(deleted.version_name()) {
-            self.host
-                .error("Failed to cancel active download before delete");
+            self.host.error("Failed to cancel active download before delete");
             return false;
         }
         if dir.exists() {
             if let Err(error) = remove_path(&dir) {
-                self.host
-                    .error("Failed to delete bundle folder, will retry later");
+                self.host.error("Failed to delete bundle folder, will retry later");
                 self.host.debug(format!("Bundle ID: {id}, Error: {error}"));
                 return false;
             }
@@ -477,8 +441,7 @@ impl Engine {
             }
         }
         for id in ids {
-            self.host
-                .info(format!("Resuming pending delete for bundle: {id}"));
+            self.host.info(format!("Resuming pending delete for bundle: {id}"));
             if self.delete_bundle(&id, true, true) {
                 self.dequeue_pending_delete(&id);
             }
@@ -498,8 +461,7 @@ impl Engine {
             Ok(dir) => dir,
             Err(error) => {
                 self.host.error("Invalid bundle id");
-                self.host
-                    .debug(format!("Bundle ID: {id}, Error: {}", error.message));
+                self.host.debug(format!("Bundle ID: {id}, Error: {}", error.message));
                 self.set_bundle_status(id, BundleStatus::Error);
                 self.send_stats("set_fail", Some(bundle.version_name()), None, None);
                 return false;
@@ -548,12 +510,7 @@ impl Engine {
 
     pub fn finalize_pending_reload(&self, bundle: &BundleInfo, previous_bundle_name: &str) {
         if !bundle.is_builtin() {
-            self.send_stats(
-                "set",
-                Some(bundle.version_name()),
-                Some(previous_bundle_name),
-                None,
-            );
+            self.send_stats("set", Some(bundle.version_name()), Some(previous_bundle_name), None);
         }
     }
 
@@ -578,11 +535,7 @@ impl Engine {
             &state.fallback_bundle_id
         };
         self.kv_put(&self.config().keys.fallback, Some(fallback));
-        match state
-            .next_bundle_id
-            .as_deref()
-            .filter(|next| !next.is_empty())
-        {
+        match state.next_bundle_id.as_deref().filter(|next| !next.is_empty()) {
             Some(next) => self.kv_put(&self.config().keys.next, Some(next)),
             None => self.kv_put(&self.config().keys.next, None),
         }
@@ -620,11 +573,7 @@ impl Engine {
     }
 
     /// Resets to builtin when the current bundle is gone, foreign, or the native app changed.
-    pub fn auto_reset(
-        &self,
-        current_native_build_version: &str,
-        reset_when_native_version_changed: bool,
-    ) {
+    pub fn auto_reset(&self, current_native_build_version: &str, reset_when_native_version_changed: bool) {
         let current = self.current_bundle();
         if !current.is_builtin() && !self.bundle_exists(current.id()) {
             self.host
@@ -638,12 +587,9 @@ impl Engine {
         let foreign_path = bundle_path
             .as_deref()
             .filter(|path| *path != builtin_path && *path != "public");
-        if crate::policy::should_reset_for_foreign_bundle(
-            foreign_path,
-            current.is_builtin(),
-            has_info,
-        ) {
-            self.host.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
+        if crate::policy::should_reset_for_foreign_bundle(foreign_path, current.is_builtin(), has_info) {
+            self.host
+                .info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
             self.reset(false);
             return;
         }
@@ -669,28 +615,19 @@ impl Engine {
             .as_ref()
             .is_some_and(|preview| preview.id() == fallback.id());
         let bundle = self.get_bundle_info(Some(id));
-        self.host.info(format!(
-            "Version successfully loaded: {}",
-            bundle.version_name()
-        ));
+        self.host
+            .info(format!("Version successfully loaded: {}", bundle.version_name()));
         let previous_id = fallback.id().to_string();
         let previous_version = fallback.version_name().to_string();
         let previous_is_next = self.next_bundle().is_some_and(|next| {
-            next.id() == previous_id
-                && !next.is_deleted()
-                && !next.is_error()
-                && !next.is_deleting()
+            next.id() == previous_id && !next.is_deleted() && !next.is_error() && !next.is_deleting()
         });
         let delete_previous = auto_delete_previous
             && !fallback.is_builtin()
             && previous_id != id
             && !fallback_is_preview
             && !previous_is_next;
-        if delete_previous
-            && !self.save_bundle_info(
-                &previous_id,
-                Some(&fallback.with_status(BundleStatus::Deleting)),
-            )
+        if delete_previous && !self.save_bundle_info(&previous_id, Some(&fallback.with_status(BundleStatus::Deleting)))
         {
             self.host
                 .error("Failed to persist DELETING for previous bundle; queueing durable retry");
@@ -707,13 +644,11 @@ impl Engine {
                     return;
                 }
                 if engine.delete_bundle(&previous_id, true, false) {
+                    engine.host.info(format!("Deleted previous bundle: {previous_version}"));
+                } else {
                     engine
                         .host
-                        .info(format!("Deleted previous bundle: {previous_version}"));
-                } else {
-                    engine.host.debug(format!(
-                        "Previous bundle delete incomplete, will retry: {previous_id}"
-                    ));
+                        .debug(format!("Previous bundle delete incomplete, will retry: {previous_id}"));
                 }
             });
         }
@@ -751,11 +686,7 @@ impl Engine {
     }
 
     /// Deletes bundle folders that no record protects.
-    pub fn cleanup_download_directories(
-        &self,
-        allowed: &BTreeSet<String>,
-        cancelled: &dyn Fn() -> bool,
-    ) {
+    pub fn cleanup_download_directories(&self, allowed: &BTreeSet<String>, cancelled: &dyn Fn() -> bool) {
         let root = self.config().bundle_root.clone();
         let Ok(entries) = fs::read_dir(&root) else {
             return;
@@ -779,9 +710,7 @@ impl Engine {
                     self.host.info("Deleted orphan bundle directory");
                     self.host.debug(format!("Bundle ID: {id}"));
                 }
-                Ok(()) => self
-                    .host
-                    .error("Orphan bundle directory still present after delete"),
+                Ok(()) => self.host.error("Orphan bundle directory still present after delete"),
                 Err(error) => {
                     self.host.error("Failed to delete orphan bundle directory");
                     self.host.debug(format!("Bundle ID: {id}, Error: {error}"));

@@ -56,9 +56,7 @@ impl Engine {
             downloads: Mutex::new(Default::default()),
             weak: weak.clone(),
         });
-        engine
-            .http
-            .set_allow_https_to_http_redirect(allow_downgrade);
+        engine.http.set_allow_https_to_http_redirect(allow_downgrade);
         Ok(engine)
     }
 
@@ -67,15 +65,11 @@ impl Engine {
     }
 
     pub fn config(&self) -> RwLockReadGuard<'_, EngineConfig> {
-        self.config
-            .read()
-            .unwrap_or_else(|poison| poison.into_inner())
+        self.config.read().unwrap_or_else(|poison| poison.into_inner())
     }
 
     pub(crate) fn config_mut(&self) -> RwLockWriteGuard<'_, EngineConfig> {
-        self.config
-            .write()
-            .unwrap_or_else(|poison| poison.into_inner())
+        self.config.write().unwrap_or_else(|poison| poison.into_inner())
     }
 
     pub(crate) fn weak_self(&self) -> Weak<Engine> {
@@ -111,10 +105,7 @@ impl Engine {
             Some(result) => result,
             None => crate::api::call(operation, input).map_err(|error| {
                 if error.code == "unknown_operation" {
-                    CoreError::new(
-                        "unknown_operation",
-                        format!("Unknown engine operation: {operation}"),
-                    )
+                    CoreError::new("unknown_operation", format!("Unknown engine operation: {operation}"))
                 } else {
                     error
                 }

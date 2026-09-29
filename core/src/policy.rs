@@ -96,9 +96,7 @@ pub fn normalized_shake_menu_gesture(value: Option<&str>) -> &'static str {
 pub fn is_supported_shake_menu_gesture(value: Option<&str>) -> bool {
     match value.map(str::trim) {
         None => true,
-        Some(normalized) => {
-            normalized == SHAKE_GESTURE_SHAKE || normalized == SHAKE_GESTURE_THREE_FINGER_PINCH
-        }
+        Some(normalized) => normalized == SHAKE_GESTURE_SHAKE || normalized == SHAKE_GESTURE_THREE_FINGER_PINCH,
     }
 }
 
@@ -162,8 +160,7 @@ pub fn should_clear_persisted_default_channel(
     native_build_version_changed: bool,
     restored_reinstall: bool,
 ) -> bool {
-    !persist_default_channel_on_reinstall
-        && (restored_reinstall || (reset_when_update && native_build_version_changed))
+    !persist_default_channel_on_reinstall && (restored_reinstall || (reset_when_update && native_build_version_changed))
 }
 
 /// HTTP + decode share one pool: 2x cores, at least 8, at most 64.

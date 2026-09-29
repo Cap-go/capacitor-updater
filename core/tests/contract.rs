@@ -17,8 +17,7 @@ fn fixtures_dir() -> PathBuf {
 
 fn load(name: &str) -> Value {
     let path = fixtures_dir().join(name);
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let text = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
 }
 
@@ -26,9 +25,7 @@ fn load(name: &str) -> Value {
 fn expected_error(case: &Value) -> Option<&str> {
     case.get("error").and_then(Value::as_str).or_else(|| {
         let expect = case.get("expect")?.as_object()?;
-        (expect.len() == 1)
-            .then(|| expect.get("error")?.as_str())
-            .flatten()
+        (expect.len() == 1).then(|| expect.get("error")?.as_str()).flatten()
     })
 }
 
@@ -50,9 +47,8 @@ fn write_temp(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
 
 /// Adapts file-backed fixture groups (content in the fixture, path at runtime).
 fn run(group: &str, input: &Value, temp: &Path) -> Result<Value, String> {
-    let to_result = |result: Result<Value, capgo_updater_core::CoreError>| {
-        result.map_err(|error| error.code.to_string())
-    };
+    let to_result =
+        |result: Result<Value, capgo_updater_core::CoreError>| result.map_err(|error| error.code.to_string());
     match group {
         "checksumFile" => {
             let content = hex_decode(input["contentHex"].as_str().unwrap()).unwrap();
@@ -79,13 +75,7 @@ struct Report {
 }
 
 impl Report {
-    fn check(
-        &mut self,
-        id: &str,
-        actual: Result<Value, String>,
-        expect: Option<&Value>,
-        error: Option<&str>,
-    ) {
+    fn check(&mut self, id: &str, actual: Result<Value, String>, expect: Option<&Value>, error: Option<&str>) {
         let ok = match (&actual, error, expect) {
             (Err(code), Some(expected), _) => code == expected,
             (Ok(value), None, Some(expected)) => value == expected,
@@ -143,12 +133,7 @@ fn rust_core_matches_shared_contract() {
             &json!({ "publicKey": pem, "ciphertextHex": case["input"]["ciphertextHex"] }),
         )
         .map_err(|error| error.code.to_string());
-        report.check(
-            case["id"].as_str().unwrap(),
-            actual,
-            Some(&case["expect"]),
-            None,
-        );
+        report.check(case["id"].as_str().unwrap(), actual, Some(&case["expect"]), None);
     }
     for case in cases("decryptChecksum") {
         let actual = api::call(
@@ -157,39 +142,18 @@ fn rust_core_matches_shared_contract() {
         )
         .map(|value| json!({ "decryptedHex": value["checksum"] }))
         .map_err(|error| error.code.to_string());
-        report.check(
-            case["id"].as_str().unwrap(),
-            actual,
-            Some(&case["expect"]),
-            None,
-        );
+        report.check(case["id"].as_str().unwrap(), actual, Some(&case["expect"]), None);
     }
     for case in cases("calcKeyId") {
-        let actual = api::call(
-            "keyId",
-            &json!({ "publicKey": case["input"]["publicKeyPem"] }),
-        )
-        .map_err(|error| error.code.to_string());
-        report.check(
-            case["id"].as_str().unwrap(),
-            actual,
-            Some(&case["expect"]),
-            None,
-        );
+        let actual = api::call("keyId", &json!({ "publicKey": case["input"]["publicKeyPem"] }))
+            .map_err(|error| error.code.to_string());
+        report.check(case["id"].as_str().unwrap(), actual, Some(&case["expect"]), None);
     }
     for case in cases("rsaPublicKeyLoad") {
-        let actual = api::call(
-            "publicKeyValid",
-            &json!({ "publicKey": case["input"]["publicKeyPem"] }),
-        )
-        .map(|value| json!({ "loads": value["valid"] }))
-        .map_err(|error| error.code.to_string());
-        report.check(
-            case["id"].as_str().unwrap(),
-            actual,
-            Some(&case["expect"]),
-            None,
-        );
+        let actual = api::call("publicKeyValid", &json!({ "publicKey": case["input"]["publicKeyPem"] }))
+            .map(|value| json!({ "loads": value["valid"] }))
+            .map_err(|error| error.code.to_string());
+        report.check(case["id"].as_str().unwrap(), actual, Some(&case["expect"]), None);
     }
     for case in cases("decryptChecksumInvalid") {
         let actual = api::call(

@@ -85,8 +85,7 @@ impl Engine {
             return;
         }
         if self.config().preview_session {
-            self.host
-                .debug("Skipping sendStats during preview session.");
+            self.host.debug("Skipping sendStats during preview session.");
             return;
         }
         if self.config().stats_url.is_empty() {
@@ -98,10 +97,7 @@ impl Engine {
         };
         let mut event = self.info_object(None);
         event.insert("version_name".into(), json!(version_name));
-        event.insert(
-            "old_version_name".into(),
-            json!(old_version_name.unwrap_or_default()),
-        );
+        event.insert("old_version_name".into(), json!(old_version_name.unwrap_or_default()));
         event.insert("action".into(), json!(action));
         event.insert("timestamp".into(), json!(millis_now()));
         if let Some(metadata) = metadata.filter(|metadata| !metadata.is_empty()) {
@@ -128,9 +124,7 @@ impl Engine {
     }
 
     fn ensure_stats_timer(&self) {
-        if self.stats.stopped.load(Ordering::SeqCst)
-            || self.stats.timer_started.swap(true, Ordering::SeqCst)
-        {
+        if self.stats.stopped.load(Ordering::SeqCst) || self.stats.timer_started.swap(true, Ordering::SeqCst) {
             return;
         }
         let weak: Weak<Engine> = self.weak_self();
@@ -151,14 +145,12 @@ impl Engine {
 
     /// Sends queued events now (also called by the 1 s timer).
     pub fn flush_stats(&self) {
-        if self.stats.stopped.load(Ordering::SeqCst) || self.stats.queue.lock().unwrap().is_empty()
-        {
+        if self.stats.stopped.load(Ordering::SeqCst) || self.stats.queue.lock().unwrap().is_empty() {
             return;
         }
         // While Retry-After is active, keep stats queued and skip the network call.
         if self.is_remote_blocked() {
-            self.host
-                .debug("Deferring stats flush until Retry-After expires.");
+            self.host.debug("Deferring stats flush until Retry-After expires.");
             return;
         }
         let stats_url = self.config().stats_url.clone();
@@ -202,27 +194,19 @@ impl Engine {
                     self.persist_stats(false);
                     self.host.info("Stats batch sent successfully");
                     self.host.debug(format!("Sent {} events", events.len()));
-                    for callback_id in events
-                        .iter()
-                        .filter_map(|queued| queued.callback_id.clone())
-                    {
-                        self.host
-                            .emit("statsSent", &json!({ "callbackId": callback_id }));
+                    for callback_id in events.iter().filter_map(|queued| queued.callback_id.clone()) {
+                        self.host.emit("statsSent", &json!({ "callbackId": callback_id }));
                     }
                 } else if crate::http::is_retryable_http_status(response.status as i64) {
                     self.requeue_stats(events);
                     self.host.error("Error sending stats batch");
-                    self.host.debug(format!(
-                        "Retrying later, response code: {}",
-                        response.status
-                    ));
+                    self.host
+                        .debug(format!("Retrying later, response code: {}", response.status));
                 } else {
                     self.stats.in_flight.lock().unwrap().clear();
                     self.persist_stats(false);
-                    self.host
-                        .error("Dropping stats batch after permanent error");
-                    self.host
-                        .debug(format!("Response code: {}", response.status));
+                    self.host.error("Dropping stats batch after permanent error");
+                    self.host.debug(format!("Response code: {}", response.status));
                 }
             }
         }
@@ -305,8 +289,7 @@ impl Engine {
         };
         let _ = fs::remove_file(&backup);
         if restored > 0 {
-            self.host
-                .info(format!("Restored {restored} pending stats events"));
+            self.host.info(format!("Restored {restored} pending stats events"));
             self.ensure_stats_timer();
         }
     }

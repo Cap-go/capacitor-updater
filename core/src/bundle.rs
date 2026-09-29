@@ -6,14 +6,7 @@ pub const ID_BUILTIN: &str = "builtin";
 pub const VERSION_UNKNOWN: &str = "unknown";
 pub const DOWNLOADED_BUILTIN: &str = "1970-01-01T00:00:00.000Z";
 
-pub const STATUSES: [&str; 6] = [
-    "success",
-    "error",
-    "pending",
-    "deleted",
-    "deleting",
-    "downloading",
-];
+pub const STATUSES: [&str; 6] = ["success", "error", "pending", "deleted", "deleting", "downloading"];
 
 /// Parses a stored bundle status. Surrounding whitespace and case are ignored,
 /// an empty value means `pending`, unknown values are rejected (`None`).
@@ -22,10 +15,7 @@ pub fn parse_bundle_status(value: Option<&str>) -> Option<&'static str> {
     if normalized.is_empty() {
         return Some("pending");
     }
-    STATUSES
-        .iter()
-        .copied()
-        .find(|status| *status == normalized)
+    STATUSES.iter().copied().find(|status| *status == normalized)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,10 +149,7 @@ impl BundleInfo {
     }
 
     pub fn with_status(&self, status: BundleStatus) -> Self {
-        Self {
-            status,
-            ..self.clone()
-        }
+        Self { status, ..self.clone() }
     }
 
     pub fn with_id(&self, id: &str) -> Self {
@@ -183,11 +170,7 @@ impl BundleInfo {
         if let Some(link) = self.link.as_deref().filter(|link| !link.is_empty()) {
             out.insert("link".into(), json!(link));
         }
-        if let Some(comment) = self
-            .comment
-            .as_deref()
-            .filter(|comment| !comment.is_empty())
-        {
+        if let Some(comment) = self.comment.as_deref().filter(|comment| !comment.is_empty()) {
             out.insert("comment".into(), json!(comment));
         }
         Value::Object(out)
@@ -215,8 +198,7 @@ impl BundleInfo {
             version: text("version"),
             downloaded: text("downloaded").unwrap_or_default().trim().to_string(),
             checksum: text("checksum").unwrap_or_default(),
-            status: BundleStatus::parse(object.get("status").and_then(Value::as_str))
-                .unwrap_or(BundleStatus::Error),
+            status: BundleStatus::parse(object.get("status").and_then(Value::as_str)).unwrap_or(BundleStatus::Error),
             link: text("link"),
             comment: text("comment"),
         })
@@ -228,11 +210,7 @@ impl BundleInfo {
         if let Some(object) = value.as_object_mut() {
             object.insert(
                 "id".into(),
-                json!(if self.is_builtin() {
-                    ID_BUILTIN
-                } else {
-                    &self.id
-                }),
+                json!(if self.is_builtin() { ID_BUILTIN } else { &self.id }),
             );
         }
         value.to_string()
@@ -302,10 +280,7 @@ mod tests {
     #[test]
     fn formats_iso_dates() {
         assert_eq!(iso8601_from_millis(0), DOWNLOADED_BUILTIN);
-        assert_eq!(
-            iso8601_from_millis(1_700_000_000_123),
-            "2023-11-14T22:13:20.123Z"
-        );
+        assert_eq!(iso8601_from_millis(1_700_000_000_123), "2023-11-14T22:13:20.123Z");
     }
 
     #[test]

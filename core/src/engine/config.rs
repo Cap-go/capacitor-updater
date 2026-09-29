@@ -79,11 +79,7 @@ pub struct EngineConfig {
 }
 
 fn text(object: &Map<String, Value>, key: &str) -> String {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
+    object.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
 fn flag(object: &Map<String, Value>, key: &str, default: bool) -> bool {
@@ -97,10 +93,7 @@ impl EngineConfig {
         let path = |key: &str| PathBuf::from(text(object, key));
         let mut config = Self {
             platform: text(object, "platform"),
-            timeout_ms: object
-                .get("timeoutMs")
-                .and_then(Value::as_u64)
-                .unwrap_or(20_000),
+            timeout_ms: object.get("timeoutMs").and_then(Value::as_u64).unwrap_or(20_000),
             is_prod: flag(object, "isProd", true),
             bundle_root: path("bundleRoot"),
             storage_root: path("storageRoot"),
@@ -117,11 +110,7 @@ impl EngineConfig {
             return Err(CoreError::invalid_input("bundleRoot is required"));
         }
         if config.storage_root.as_os_str().is_empty() {
-            config.storage_root = config
-                .bundle_root
-                .parent()
-                .map(PathBuf::from)
-                .unwrap_or_default();
+            config.storage_root = config.bundle_root.parent().map(PathBuf::from).unwrap_or_default();
         }
         if config.stats_dir.as_os_str().is_empty() {
             config.stats_dir = config.storage_root.clone();
@@ -172,10 +161,7 @@ impl EngineConfig {
         if let Some(value) = object.get("previewSession").and_then(Value::as_bool) {
             self.preview_session = value;
         }
-        if let Some(value) = object
-            .get("allowHttpsToHttpRedirect")
-            .and_then(Value::as_bool)
-        {
+        if let Some(value) = object.get("allowHttpsToHttpRedirect").and_then(Value::as_bool) {
             self.allow_https_to_http_redirect = value;
         }
         if let Some(value) = object.get("timeoutMs").and_then(Value::as_u64) {

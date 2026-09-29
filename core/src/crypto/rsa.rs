@@ -28,12 +28,8 @@ fn invalid_key(message: &str) -> CoreError {
 
 /// Reads one DER TLV at `input[0..]`, returns (tag, content, rest).
 fn read_tlv(input: &[u8]) -> CoreResult<(u8, &[u8], &[u8])> {
-    let (&tag, rest) = input
-        .split_first()
-        .ok_or_else(|| invalid_key("Truncated DER"))?;
-    let (&first_len, mut rest) = rest
-        .split_first()
-        .ok_or_else(|| invalid_key("Truncated DER length"))?;
+    let (&tag, rest) = input.split_first().ok_or_else(|| invalid_key("Truncated DER"))?;
+    let (&first_len, mut rest) = rest.split_first().ok_or_else(|| invalid_key("Truncated DER length"))?;
     let len = if first_len & 0x80 == 0 {
         first_len as usize
     } else {
@@ -71,8 +67,7 @@ impl RsaPublicKey {
             .replace("-----END PUBLIC KEY-----", "")
             // Keys pasted into JSON config sometimes keep literal "\n" sequences.
             .replace("\\n", "");
-        let der =
-            base64_decode(&body).ok_or_else(|| invalid_key("Public key is not valid base64"))?;
+        let der = base64_decode(&body).ok_or_else(|| invalid_key("Public key is not valid base64"))?;
         Self::from_der(&der)
     }
 
@@ -90,9 +85,7 @@ impl RsaPublicKey {
                 return Err(invalid_key("Public key is not an RSA key"));
             }
             let (bits, _) = expect_tlv(rest, TAG_BIT_STRING)?;
-            let (&unused_bits, pkcs1) = bits
-                .split_first()
-                .ok_or_else(|| invalid_key("Empty key bit string"))?;
+            let (&unused_bits, pkcs1) = bits.split_first().ok_or_else(|| invalid_key("Empty key bit string"))?;
             if unused_bits != 0 {
                 return Err(invalid_key("Unexpected key bit string padding"));
             }
@@ -165,11 +158,7 @@ fn der(tag: u8, content: &[u8]) -> Vec<u8> {
     if len < 0x80 {
         out.push(len as u8);
     } else {
-        let bytes: Vec<u8> = len
-            .to_be_bytes()
-            .into_iter()
-            .skip_while(|byte| *byte == 0)
-            .collect();
+        let bytes: Vec<u8> = len.to_be_bytes().into_iter().skip_while(|byte| *byte == 0).collect();
         out.push(0x80 | bytes.len() as u8);
         out.extend(bytes);
     }
@@ -178,11 +167,7 @@ fn der(tag: u8, content: &[u8]) -> Vec<u8> {
 }
 
 fn der_unsigned_integer(big_endian: &[u8]) -> Vec<u8> {
-    let trimmed: Vec<u8> = big_endian
-        .iter()
-        .copied()
-        .skip_while(|byte| *byte == 0)
-        .collect();
+    let trimmed: Vec<u8> = big_endian.iter().copied().skip_while(|byte| *byte == 0).collect();
     let mut content = Vec::with_capacity(trimmed.len() + 1);
     if trimmed.first().map_or(true, |byte| byte & 0x80 != 0) {
         content.push(0);

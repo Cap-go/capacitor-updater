@@ -82,10 +82,8 @@ pub fn extract_zip(
         ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
     };
     let file = File::open(zip_path).map_err(|error| failed(&error))?;
-    let mut archive =
-        zip::ZipArchive::new(io::BufReader::new(file)).map_err(|error| failed(&error))?;
-    fs::create_dir_all(destination)
-        .map_err(|_| ExtractError::Directory(destination.display().to_string()))?;
+    let mut archive = zip::ZipArchive::new(io::BufReader::new(file)).map_err(|error| failed(&error))?;
+    fs::create_dir_all(destination).map_err(|_| ExtractError::Directory(destination.display().to_string()))?;
     let total = archive.len();
     let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
     for index in 0..total {
@@ -96,22 +94,18 @@ pub fn extract_zip(
         let name = entry.name().to_string();
         let target = resolve_entry(destination, &name)?;
         if entry.is_dir() {
-            fs::create_dir_all(&target)
-                .map_err(|_| ExtractError::Directory(target.display().to_string()))?;
+            fs::create_dir_all(&target).map_err(|_| ExtractError::Directory(target.display().to_string()))?;
             progress(index + 1, total);
             continue;
         }
         let parent = target.parent().unwrap_or(destination).to_path_buf();
-        fs::create_dir_all(&parent)
-            .map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
+        fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
         if fs::symlink_metadata(&target).is_ok() {
             super::store::remove_path(&target).map_err(|error| failed(&error))?;
         }
         if entry.is_symlink() {
             let mut link = String::new();
-            entry
-                .read_to_string(&mut link)
-                .map_err(|error| failed(&error))?;
+            entry.read_to_string(&mut link).map_err(|error| failed(&error))?;
             // The link must stay inside its own directory (lexically).
             let resolved = if Path::new(&link).is_absolute() {
                 PathBuf::from(&link)
@@ -128,16 +122,28 @@ pub fn extract_zip(
             #[cfg(not(unix))]
             return Err(failed(&"symlinks are not supported on this platform"));
         } else {
+            let declared = entry.size();
             let mut output = File::create(&target).map_err(|error| failed(&error))?;
+            let mut written: u64 = 0;
             loop {
                 // zip verifies the CRC-32 when the entry is fully read.
                 let read = entry.read(&mut buffer).map_err(|error| failed(&error))?;
                 if read == 0 {
                     break;
                 }
-                output
-                    .write_all(&buffer[..read])
-                    .map_err(|error| failed(&error))?;
+                written += read as u64;
+                // Never inflate past the size the central directory declares (zip bombs).
+                if written > declared {
+                    return Err(ExtractError::Failed(format!(
+                        "Entry {name} inflates beyond its declared size"
+                    )));
+                }
+                output.write_all(&buffer[..read]).map_err(|error| failed(&error))?;
+            }
+            if written != declared {
+                return Err(ExtractError::Failed(format!(
+                    "Entry {name} size {written} does not match declared {declared}"
+                )));
             }
         }
         progress(index + 1, total);
@@ -163,23 +169,18 @@ fn visible_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
 /// unwrapped (`dist/index.html` zips).
 pub fn install_extracted(source: &Path, destination: &Path) -> CoreResult<()> {
     let io_error = |context: &str, error: io::Error| CoreError::io(context, error);
-    let entries =
-        visible_entries(source).map_err(|error| io_error("Cannot list extracted bundle", error))?;
+    let entries = visible_entries(source).map_err(|error| io_error("Cannot list extracted bundle", error))?;
     if entries.is_empty() {
         return Err(CoreError::new(
             "unzip_fail",
-            format!(
-                "Source file was not a directory or was empty: {}",
-                source.display()
-            ),
+            format!("Source file was not a directory or was empty: {}", source.display()),
         ));
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| io_error("Cannot create bundle root", error))?;
     }
     if destination.exists() {
-        super::store::remove_path(destination)
-            .map_err(|error| io_error("Cannot replace bundle folder", error))?;
+        super::store::remove_path(destination).map_err(|error| io_error("Cannot replace bundle folder", error))?;
     }
     let unwrap = entries.len() == 1 && entries[0].is_dir() && !source.join("index.html").exists();
     let from = if unwrap {

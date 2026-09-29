@@ -25,15 +25,10 @@ fn plain_http_round_trip_sends_user_agent_and_returns_non_2xx() {
             .map(|h| h.value.to_string())
             .unwrap_or_default();
         request
-            .respond(
-                tiny_http::Response::from_string(format!("{{\"ua\":\"{agent}\"}}"))
-                    .with_status_code(429),
-            )
+            .respond(tiny_http::Response::from_string(format!("{{\"ua\":\"{agent}\"}}")).with_status_code(429))
             .unwrap();
     });
-    let response = http()
-        .get(&format!("http://127.0.0.1:{port}/check"))
-        .unwrap();
+    let response = http().get(&format!("http://127.0.0.1:{port}/check")).unwrap();
     handle.join().unwrap();
     assert_eq!(response.status, 429);
     assert_eq!(response.json().unwrap()["ua"], "CapacitorUpdater/test");

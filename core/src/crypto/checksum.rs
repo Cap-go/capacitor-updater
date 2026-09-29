@@ -16,8 +16,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Lowercase hex SHA-256 of a file, streamed.
 pub fn sha256_file(path: &Path) -> CoreResult<String> {
-    let mut file =
-        File::open(path).map_err(|error| CoreError::io("Cannot open file for checksum", error))?;
+    let mut file = File::open(path).map_err(|error| CoreError::io("Cannot open file for checksum", error))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; IO_BUFFER_BYTES];
     loop {
