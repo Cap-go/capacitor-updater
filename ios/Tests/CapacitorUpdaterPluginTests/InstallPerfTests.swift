@@ -1,7 +1,6 @@
 import Foundation
 import XCTest
 @testable import CapacitorUpdaterPlugin
-import ZIPFoundation
 
 final class InstallPerfTests: XCTestCase {
     private let zipFiles = 512
@@ -133,23 +132,14 @@ final class InstallPerfTests: XCTestCase {
     }
 
     private func writeStoredZip(to zipURL: URL, fileCount: Int, fileBytes: Int) throws {
-        let archive = try Archive(url: zipURL, accessMode: .create)
-        for i in 0..<fileCount {
-            var payload = Data(repeating: UInt8(i & 0xff), count: fileBytes)
-            payload[0] = UInt8(i & 0xff)
-            payload[1] = UInt8((i >> 8) & 0xff)
-            try archive.addEntry(
-                with: "www/f\(i).js",
-                type: .file,
-                uncompressedSize: Int64(payload.count),
-                compressionMethod: .none,
-                bufferSize: CryptoCipher.ioBufferBytes(),
-                provider: { position, size in
-                    let start = Int(position)
-                    return payload.subdata(in: start..<(start + size))
-                }
-            )
+        var writer = TestZipWriter()
+        for index in 0..<fileCount {
+            var payload = Data(repeating: UInt8(index & 0xff), count: fileBytes)
+            payload[0] = UInt8(index & 0xff)
+            payload[1] = UInt8((index >> 8) & 0xff)
+            writer.addFile("www/f\(index).js", payload)
         }
+        try writer.write(to: zipURL)
     }
 
     private func countFiles(in dir: URL) throws -> Int {

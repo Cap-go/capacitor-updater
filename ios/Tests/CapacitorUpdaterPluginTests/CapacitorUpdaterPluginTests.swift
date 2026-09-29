@@ -1,7 +1,6 @@
 import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
-import Version
 
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
@@ -586,7 +585,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
         let logger = Logger(withTag: "TestLogger")
-        let version = try Version("1.0.0")
+        let version = try CapgoSemanticVersion("1.0.0")
         return DelayUpdateUtils(currentVersionNative: version, logger: logger)
     }
 
@@ -3293,6 +3292,17 @@ class CapacitorUpdaterTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+    }
+
+    func testReadyCallFromPreviousPageIsRejected() {
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: false, expectedGeneration: 1, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: nil))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 1))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 2))
+        let script = CapacitorUpdaterPlugin.readyGenerationScript(2)
+        XCTAssertTrue(script.contains("window.__CAPGO_READY_GEN=2"))
+        XCTAssertTrue(script.contains("cap.nativePromise"))
+        XCTAssertFalse(script.contains("plugin.notifyAppReady="))
     }
 
 }

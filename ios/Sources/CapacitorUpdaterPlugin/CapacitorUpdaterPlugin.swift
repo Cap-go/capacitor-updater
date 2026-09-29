@@ -8,7 +8,6 @@ import Foundation
 import Capacitor
 import UIKit
 import WebKit
-import Version
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -147,7 +146,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
-    private var currentVersionNative: Version = "0.0.0"
+    private var currentVersionNative = CapgoSemanticVersion(major: 0, minor: 0, patch: 0)
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
@@ -219,6 +218,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Best-effort flag: set before we expect notifyAppReady (load/reload).
     // No lock — never held across waits; a rare race only mis-times one wait.
     private var pendingNotifyAppReady = false
+    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    // A call from the previous page has no matching generation and must not mark the new bundle successful.
+    private var readyGuardArmed = false
+    private var readyGeneration = 0
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
 
@@ -264,7 +267,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Cannot get version name")
         }
         do {
-            currentVersionNative = try Version(versionName)
+            currentVersionNative = try CapgoSemanticVersion(versionName)
         } catch {
             logger.error("Cannot parse versionName \(versionName)")
         }
@@ -288,6 +291,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
+        implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -1718,6 +1722,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.logger.error("Cannot get capBridge")
             return false
         }
+        self.armReadyGuard(webView: vc.webView)
         if self.keepUrlPathAfterReload {
             if let currentURL = vc.webView?.url {
                 capBridge.setServerBasePath(dest.path)
@@ -2707,12 +2712,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var response: URLResponse?
         var responseError: Error?
 
-        URLSession.shared.dataTask(with: request) { data, urlResponse, error in
+        self.implementation.startRawDataTask(request) { data, urlResponse, error in
             responseData = data
             response = urlResponse
             responseError = error
             semaphore.signal()
-        }.resume()
+        }
 
         if semaphore.wait(timeout: .now() + 60) == .timedOut {
             throw makePreviewError("Preview payload request timed out")
@@ -3327,7 +3332,65 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    static func shouldAcceptReadyCall(guardArmed: Bool, expectedGeneration: Int, reportedGeneration: Int?) -> Bool {
+        if !guardArmed {
+            return true
+        }
+        guard let reportedGeneration else {
+            return false
+        }
+        return reportedGeneration == expectedGeneration
+    }
+
+    static func readyGenerationScript(_ generation: Int) -> String {
+        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
+        // ignores assignments to notifyAppReady. Each document keeps its own generation.
+        return "(function(){window.__CAPGO_READY_GEN=\(generation);if(window.__capgoReadyBridge)return;function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;var orig=cap.nativePromise.bind(cap);cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();"
+    }
+
+    private func armReadyGuard(webView: WKWebView?) {
+        let generation = self.readyGeneration + 1
+        guard let webView else {
+            logger.warn("Cannot stamp notifyAppReady generation without a webview")
+            self.readyGuardArmed = false
+            return
+        }
+        let userScript = WKUserScript(
+            source: CapacitorUpdaterPlugin.readyGenerationScript(generation),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        webView.configuration.userContentController.addUserScript(userScript)
+        self.readyGeneration = generation
+        self.readyGuardArmed = true
+    }
+
+    private func reportedReadyGeneration(_ call: CAPPluginCall) -> Int? {
+        if let generation = call.getInt("loadGeneration") {
+            return generation
+        }
+        // The bridge often boxes JS numbers as NSNumber, which getInt does not cast.
+        if let number = call.getValue("loadGeneration") as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
+    private func acceptsReadyCall(_ call: CAPPluginCall) -> Bool {
+        let reported = self.readyGuardArmed ? self.reportedReadyGeneration(call) : nil
+        return CapacitorUpdaterPlugin.shouldAcceptReadyCall(
+            guardArmed: self.readyGuardArmed,
+            expectedGeneration: self.readyGeneration,
+            reportedGeneration: reported
+        )
+    }
+
     @objc func notifyAppReady(_ call: CAPPluginCall) {
+        if !self.acceptsReadyCall(call) {
+            logger.info("Ignoring notifyAppReady from a page that is no longer current")
+            call.resolve(["bundle": self.implementation.getCurrentBundle().toJSON()])
+            return
+        }
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
@@ -5023,8 +5086,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Determine update availability by comparing versions
                         if let availableVersion = availableVersion {
                             do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
+                                let currentVer = try CapgoSemanticVersion(currentVersionName)
+                                let availableVer = try CapgoSemanticVersion(availableVersion)
                                 if availableVer > currentVer {
                                     result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
                                 } else {

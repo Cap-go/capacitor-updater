@@ -17,7 +17,6 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.PluginHandle;
-import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -2674,6 +2673,67 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(0, semaphore.getRegisteredParties());
             verify(call).resolve(any(JSObject.class));
         }
+    }
+
+    @Test
+    public void testReadyCallFromPreviousPageDoesNotMarkBundleSuccess() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("incoming", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            setPrivateField(plugin, "readyGuardArmed", true);
+            setPrivateField(plugin, "readyGeneration", 2);
+
+            plugin.notifyAppReady(call);
+
+            verify(updater, never()).setSuccess(any(BundleInfo.class), any());
+            verify(call).resolve(any(JSObject.class));
+            assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+        }
+    }
+
+    @Test
+    public void testReadyCallWithMatchingGenerationMarksBundleSuccess() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final PluginCall call = mock(PluginCall.class);
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("incoming", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            final JSObject data = new JSObject();
+            data.put("loadGeneration", 2);
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+            when(call.getData()).thenReturn(data);
+            setPrivateField(plugin, "readyGuardArmed", true);
+            setPrivateField(plugin, "readyGeneration", 2);
+
+            plugin.notifyAppReady(call);
+
+            verify(updater).setSuccess(bundle, true);
+        }
+    }
+
+    @Test
+    public void testShouldAcceptReadyCallOnlyMatchesStampedGeneration() {
+        assertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(false, 1, false, 0));
+        assertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, false, 0));
+        assertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, true, 1));
+        assertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(true, 2, true, 2));
+        final String script = CapacitorUpdaterPlugin.readyGenerationScript(2);
+        assertTrue(script.contains("window.__CAPGO_READY_GEN=2"));
+        assertTrue(script.contains("cap.nativePromise"));
+        assertFalse(script.contains("plugin.notifyAppReady="));
     }
 
     @Test

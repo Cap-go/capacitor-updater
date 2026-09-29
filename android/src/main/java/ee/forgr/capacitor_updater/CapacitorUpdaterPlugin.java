@@ -48,12 +48,10 @@ import com.google.android.play.core.install.InstallStateUpdatedListener;
 import com.google.android.play.core.install.model.AppUpdateType;
 import com.google.android.play.core.install.model.InstallStatus;
 import com.google.android.play.core.install.model.UpdateAvailability;
-import io.github.g00fy2.versioncompare.Version;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -75,7 +73,11 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-// Removed OkHttpClient and Protocol imports - using shared client in DownloadService instead
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -222,6 +224,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile Thread appReadyCheck;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
+    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    private final Object readyGuardLock = new Object();
+    private volatile int readyGeneration = 0;
+    private volatile boolean readyGuardArmed = false;
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
@@ -732,7 +738,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
             this.implementation.pluginVersion = this.pluginVersion;
             this.implementation.versionCode = this.getVersionCode(pInfo);
-            // Removed unused OkHttpClient creation - using shared client in DownloadService instead
             this.currentVersionNative = new Version(this.getConfig().getString("version", pInfo.versionName));
             this.currentBuildVersion = this.getVersionCode(pInfo);
             this.delayUpdateUtils = new DelayUpdateUtils(this.prefs, this.editor, this.currentVersionNative, logger);
@@ -891,6 +896,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         long responseTimeoutMillis = responseTimeoutSeconds > 0 ? (long) responseTimeoutSeconds * 1000L : 20_000L;
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
         DownloadService.applyHttpTimeouts(this.implementation.timeout);
+        DownloadService.setAllowHttpsToHttpRedirect(this.getConfig().getBoolean("allowHttpsToHttpRedirect", false));
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
@@ -2901,6 +2907,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void applyCurrentBundleToBridge() {
+        this.stampReadyGenerationBeforeReload();
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
         if (this.keepUrlPathAfterReload) {
@@ -3838,17 +3845,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private JSONObject fetchPreviewPayload(final String payloadUrl) throws IOException, JSONException {
-        final HttpURLConnection connection = (HttpURLConnection) new URL(payloadUrl).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setConnectTimeout(30000);
-        connection.setReadTimeout(60000);
+        final HttpUrl url = payloadUrl != null ? HttpUrl.parse(payloadUrl) : null;
+        if (url == null) {
+            throw new MalformedURLException("Expected an http or https preview payload URL");
+        }
+        // Shared client: no cookies, Capgo User-Agent.
+        final OkHttpClient client = DownloadService.sharedClient
+            .newBuilder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build();
+        final Request request = new Request.Builder().url(url).get().header("Accept", "application/json").build();
 
-        try {
-            final int statusCode = connection.getResponseCode();
-            final String body = this.readResponseBody(
-                statusCode >= 200 && statusCode < 300 ? connection.getInputStream() : connection.getErrorStream()
-            );
+        try (Response response = client.newCall(request).execute()) {
+            final int statusCode = response.code();
+            final ResponseBody responseBody = response.body();
+            final String body = this.readResponseBody(responseBody != null ? responseBody.byteStream() : null);
             final JSONObject payload = new JSONObject(body);
             if (statusCode < 200 || statusCode >= 300) {
                 throw new IOException(
@@ -3856,8 +3868,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 );
             }
             return payload;
-        } finally {
-            connection.disconnect();
         }
     }
 
@@ -4466,10 +4476,120 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    static boolean shouldAcceptReadyCall(
+        final boolean guardArmed,
+        final int expectedGeneration,
+        final boolean hasGeneration,
+        final int reportedGeneration
+    ) {
+        if (!guardArmed) {
+            return true;
+        }
+        return hasGeneration && reportedGeneration == expectedGeneration;
+    }
+
+    static String readyGenerationScript(final int generation) {
+        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
+        // ignores assignments to notifyAppReady. Each document keeps its own generation.
+        return (
+            "(function(){window.__CAPGO_READY_GEN=" +
+            generation +
+            ";if(window.__capgoReadyBridge)return;" +
+            "function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;" +
+            "var orig=cap.nativePromise.bind(cap);" +
+            "cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){" +
+            "var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}" +
+            "next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};" +
+            "cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}" +
+            "if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}" +
+            "})();"
+        );
+    }
+
+    private int armReadyGuard() {
+        synchronized (this.readyGuardLock) {
+            this.readyGeneration = this.readyGeneration + 1;
+            this.readyGuardArmed = true;
+            return this.readyGeneration;
+        }
+    }
+
+    private void disarmReadyGuard(final int generation) {
+        synchronized (this.readyGuardLock) {
+            if (this.readyGeneration == generation) {
+                this.readyGuardArmed = false;
+                logger.warn("Could not stamp notifyAppReady for the next page. Readiness guard disabled for this reload.");
+            }
+        }
+    }
+
+    private void stampReadyGenerationBeforeReload() {
+        final int generation = this.armReadyGuard();
+        final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
+        if (webView == null) {
+            this.disarmReadyGuard(generation);
+            return;
+        }
+        webView.post(() -> {
+            if (!this.installReadyGenerationScript(webView, generation)) {
+                this.disarmReadyGuard(generation);
+            }
+        });
+    }
+
+    private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {
+        try {
+            final Class<?> webViewFeature = Class.forName("androidx.webkit.WebViewFeature");
+            final String feature = (String) webViewFeature.getField("DOCUMENT_START_SCRIPT").get(null);
+            final Boolean supported = (Boolean) webViewFeature.getMethod("isFeatureSupported", String.class).invoke(null, feature);
+            if (!Boolean.TRUE.equals(supported)) {
+                return false;
+            }
+            if (this.bridge == null || this.bridge.getAppUrl() == null) {
+                return false;
+            }
+            final String allowedOrigin = Uri.parse(this.bridge.getAppUrl())
+                .buildUpon()
+                .path(null)
+                .fragment(null)
+                .clearQuery()
+                .build()
+                .toString();
+            final Class<?> webViewCompat = Class.forName("androidx.webkit.WebViewCompat");
+            webViewCompat
+                .getMethod("addDocumentStartJavaScript", android.webkit.WebView.class, String.class, Set.class)
+                .invoke(null, webView, readyGenerationScript(generation), java.util.Collections.singleton(allowedOrigin));
+            return true;
+        } catch (final Exception e) {
+            logger.warn("Unable to stamp notifyAppReady generation: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean acceptsReadyCall(final PluginCall call) {
+        if (!this.readyGuardArmed) {
+            return true;
+        }
+        final JSObject data = call.getData();
+        final boolean hasGeneration = data != null && data.has("loadGeneration");
+        final int reported = hasGeneration ? data.optInt("loadGeneration", -1) : -1;
+        return shouldAcceptReadyCall(this.readyGuardArmed, this.readyGeneration, hasGeneration, reported);
+    }
+
     @PluginMethod
     public void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
         try {
+            if (!this.acceptsReadyCall(call)) {
+                logger.info("Ignoring notifyAppReady from a page that is no longer current");
+                final BundleInfo current = this.implementation.getCurrentBundle();
+                final JSObject ignored = new JSObject();
+                if (current != null) {
+                    ignored.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+                }
+                call.resolve(ignored);
+                return;
+            }
             final BundleInfo bundle = this.implementation.getCurrentBundle();
             this.implementation.setSuccess(bundle, this.autoDeletePrevious);
             this.reportAppLaunchReady(bundle);

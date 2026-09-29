@@ -5,8 +5,6 @@
  */
 
 import Foundation
-import ZIPFoundation
-import Alamofire
 import Compression
 import UIKit
 
@@ -105,7 +103,7 @@ import UIKit
         let timedOut: Bool
     }
 
-    private struct DownloadRequestResult {
+    struct DownloadRequestResult {
         let fileURL: URL?
         let response: HTTPURLResponse?
         let error: Error?
@@ -178,6 +176,9 @@ import UIKit
     }
 
     private func isTimedOutError(_ error: Error?) -> Bool {
+        if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
+            return isTimedOutError(underlying)
+        }
         guard let nsError = error as NSError? else {
             return false
         }
@@ -185,13 +186,49 @@ import UIKit
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
     }
 
+    /// Errors produced by the URLSession transport. Descriptions intentionally match the messages the
+    /// previous Alamofire transport surfaced so logs and JS-facing error strings stay the same.
+    enum NetworkError: LocalizedError {
+        case sessionTaskFailed(Error)
+        case emptyResponse
+        case invalidURL(String)
+        case bodyEncodingFailed(Error?)
+        case downloadedFileMoveFailed(Error, source: URL, destination: URL)
+
+        var errorDescription: String? {
+            switch self {
+            case let .sessionTaskFailed(error):
+                return "URLSessionTask failed with error: \(error.localizedDescription)"
+            case .emptyResponse:
+                return "Response could not be serialized, input data was nil or zero length."
+            case let .invalidURL(url):
+                return "URL is not valid: \(url)"
+            case let .bodyEncodingFailed(error):
+                return "JSON could not be encoded because of error:\n\(error?.localizedDescription ?? "Invalid JSON object provided for parameter or object encoding.")"
+            case let .downloadedFileMoveFailed(error, source, destination):
+                return "Moving downloaded file from: \(source) to: \(destination) failed with error: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Mirrors Alamofire's `responseData` serializer: an empty body is an error unless the status allows it.
+    static func emptyResponseError(data: Data?, response: HTTPURLResponse?, method: String?) -> Error? {
+        if let data, !data.isEmpty {
+            return nil
+        }
+        if method?.uppercased() == "HEAD" || [204, 205].contains(response?.statusCode ?? 0) {
+            return nil
+        }
+        return NetworkError.emptyResponse
+    }
+
     // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
-    private var _alamofireSession: Session?
-    private let alamofireSessionLock = NSLock()
-    private var alamofireSession: Session {
-        alamofireSessionLock.lock()
-        defer { alamofireSessionLock.unlock() }
-        if let session = _alamofireSession {
+    private var cachedUrlSession: URLSession?
+    private let urlSessionLock = NSLock()
+    private var urlSession: URLSession {
+        urlSessionLock.lock()
+        defer { urlSessionLock.unlock() }
+        if let session = cachedUrlSession {
             return session
         }
         let configuration = URLSessionConfiguration.ephemeral
@@ -201,9 +238,91 @@ import UIKit
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
-        let session = Session(configuration: configuration)
-        _alamofireSession = session
+        redirectPolicy.onBlockedRedirect = { [weak self] source, target in
+            self?.logger?.error("Blocked HTTPS to HTTP redirect; set allowHttpsToHttpRedirect to true to allow it")
+            self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
+        }
+        let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
+        cachedUrlSession = session
         return session
+    }
+
+    /// Owned separately from `CapgoUpdater` because URLSession retains its delegate strongly.
+    private let redirectPolicy = RedirectPolicyDelegate()
+
+    /// Follow redirects from HTTPS to plain HTTP. Off by default so a redirect can never downgrade updater traffic.
+    public var allowHttpsToHttpRedirect: Bool {
+        get { redirectPolicy.allowHttpsToHttpRedirect }
+        set { redirectPolicy.allowHttpsToHttpRedirect = newValue }
+    }
+
+    /// Runs a raw data task on the updater session (no cookies, no cache, redirect policy applied).
+    @discardableResult
+    func startRawDataTask(_ request: URLRequest, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionDataTask {
+        let task = self.urlSession.dataTask(with: request, completionHandler: completion)
+        task.resume()
+        return task
+    }
+
+    /// Runs a data task and reports `(data, response, error)` like Alamofire's `responseData` did:
+    /// `data` is nil when no bytes were received, transport errors are wrapped, and an empty body is an error
+    /// unless the status code is 204/205 (or the request is HEAD).
+    @discardableResult
+    private func startDataTask(
+        _ request: URLRequest,
+        completionQueue: DispatchQueue,
+        completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
+    ) -> URLSessionDataTask {
+        let task = self.urlSession.dataTask(with: request) { data, response, error in
+            let httpResponse = response as? HTTPURLResponse
+            let body = (data?.isEmpty ?? true) ? nil : data
+            let resultError: Error?
+            if let error {
+                resultError = NetworkError.sessionTaskFailed(error)
+            } else {
+                resultError = Self.emptyResponseError(data: body, response: httpResponse, method: request.httpMethod)
+            }
+            completionQueue.async {
+                completion(body, httpResponse, resultError)
+            }
+        }
+        task.resume()
+        return task
+    }
+
+    /// Builds a POST request with a JSON body (same headers as Alamofire's JSON encoders).
+    func makeJSONPostRequest(urlString: String, body: () throws -> Data) -> Result<URLRequest, Error> {
+        guard let url = URL(string: urlString) else {
+            return .failure(NetworkError.invalidURL(urlString))
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = self.timeout
+        do {
+            request.httpBody = try body()
+        } catch let error as NetworkError {
+            return .failure(error)
+        } catch {
+            return .failure(NetworkError.bodyEncodingFailed(error))
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return .success(request)
+    }
+
+    /// Fire-and-forget JSON POST whose completion runs on the main queue, like Alamofire's default `responseData`.
+    private func sendJSONPost(
+        urlString: String,
+        body: () throws -> Data,
+        completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
+    ) {
+        switch makeJSONPostRequest(urlString: urlString, body: body) {
+        case let .success(request):
+            self.startDataTask(request, completionQueue: .main, completion: completion)
+        case let .failure(error):
+            DispatchQueue.main.async {
+                completion(nil, nil, error)
+            }
+        }
     }
     private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
 
@@ -262,43 +381,69 @@ import UIKit
         var responseData: Data?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        let dataRequest = self.alamofireSession.request(request).responseData(queue: self.networkResponseQueue) { response in
-            responseData = response.data
-            httpResponse = response.response
-            requestError = response.error
+        let dataTask = self.startDataTask(request, completionQueue: self.networkResponseQueue) { data, response, error in
+            responseData = data
+            httpResponse = response
+            requestError = error
             semaphore.signal()
         }
-        dataRequest.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            dataRequest.cancel()
+            dataTask.cancel()
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
         }
 
-        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: false)
+        // URLSession can report its own timeout (NSURLErrorTimedOut) before the semaphore deadline.
+        let timedOut = isTimedOutError(requestError)
+        if timedOut {
+            logger.error("\(label) timed out after \(Int(request.timeoutInterval))s")
+        }
+        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
-    private func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+    func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let destination: DownloadRequest.Destination = { _, _ in
-            (temporaryDownloadURL, [.removePreviousFile, .createIntermediateDirectories])
+        let downloadTask = self.urlSession.downloadTask(with: request) { location, response, error in
+            // URLSession deletes `location` once this handler returns, so move it synchronously here.
+            var movedFileURL: URL?
+            var resultError: Error?
+            if let error {
+                resultError = NetworkError.sessionTaskFailed(error)
+            } else if let location {
+                do {
+                    let fileManager = FileManager.default
+                    try fileManager.createDirectory(
+                        at: temporaryDownloadURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true,
+                        attributes: nil
+                    )
+                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
+                        try fileManager.removeItem(at: temporaryDownloadURL)
+                    }
+                    try fileManager.moveItem(at: location, to: temporaryDownloadURL)
+                    movedFileURL = temporaryDownloadURL
+                } catch {
+                    resultError = NetworkError.downloadedFileMoveFailed(error, source: location, destination: temporaryDownloadURL)
+                }
+            }
+            let taskResponse = response as? HTTPURLResponse
+            self.networkResponseQueue.async {
+                tempFileURL = movedFileURL
+                httpResponse = taskResponse
+                requestError = resultError
+                semaphore.signal()
+            }
         }
-        let downloadRequest = self.alamofireSession.download(request, to: destination).response(queue: self.networkResponseQueue) { response in
-            tempFileURL = response.fileURL
-            httpResponse = response.response
-            requestError = response.error
-            semaphore.signal()
-        }
-        downloadRequest.resume()
+        downloadTask.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            downloadRequest.cancel()
+            downloadTask.cancel()
             logger.error("\(label) timed out after \(Int(waitTimeout))s")
             return DownloadRequestResult(
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
@@ -426,6 +571,8 @@ import UIKit
 
     deinit {
         shutdown()
+        // Alamofire's Session invalidated its URLSession on deinit; keep releasing the session the same way.
+        cachedUrlSession?.invalidateAndCancel()
     }
 
     public func shutdown() {
@@ -691,28 +838,27 @@ import UIKit
 
         // Send synchronously using semaphore (safe because we're on a background queue)
         let semaphore = DispatchSemaphore(value: 0)
-        self.alamofireSession.request(
-            self.statsUrl,
-            method: .post,
-            parameters: parameters.toParameters(),
-            encoding: JSONEncoding.default,
-            requestModifier: { $0.timeoutInterval = self.timeout }
-        ).responseData { response in
-            let statusCode = response.response?.statusCode
-            switch response.result {
-            case .success where (200...299).contains(statusCode ?? 0):
-                self.logger.info("Rate limit statistic sent")
-            case .success:
-                CapgoUpdater.releaseRateLimitStatisticClaim()
-                self.logger.error("Error sending rate limit statistic")
-                self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
-            case let .failure(error):
+        let parameterValues = parameters.toParameters()
+        self.sendJSONPost(urlString: self.statsUrl, body: {
+            guard JSONSerialization.isValidJSONObject(parameterValues) else {
+                throw NetworkError.bodyEncodingFailed(nil)
+            }
+            return try JSONSerialization.data(withJSONObject: parameterValues)
+        }, completion: { _, response, error in
+            let statusCode = response?.statusCode
+            if let error {
                 CapgoUpdater.releaseRateLimitStatisticClaim()
                 self.logger.error("Error sending rate limit statistic")
                 self.logger.debug("Error: \(error.localizedDescription)")
+            } else if (200...299).contains(statusCode ?? 0) {
+                self.logger.info("Rate limit statistic sent")
+            } else {
+                CapgoUpdater.releaseRateLimitStatisticClaim()
+                self.logger.error("Error sending rate limit statistic")
+                self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
             }
             semaphore.signal()
-        }
+        })
         semaphore.wait()
     }
 
@@ -804,7 +950,10 @@ import UIKit
         }
     }
 
-    private func extractZipEntry(_ archive: Archive, entry: Entry, to destPath: URL, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
+    // Symlink targets are paths; anything bigger than this is not a legitimate link.
+    private static let maxZipSymlinkTargetBytes = 64 * 1024
+
+    private func extractZipEntry(_ archive: ZipArchiveReader, entry: ZipEntry, to destPath: URL, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
         let fileManager = FileManager.default
 
         switch entry.type {
@@ -827,16 +976,13 @@ import UIKit
                 fileHandle.closeFile()
             }
 
-            _ = try archive.extract(entry, bufferSize: bufferSize, skipCRC32: true) { data in
+            try archive.extract(entry, bufferSize: bufferSize) { data in
                 if !data.isEmpty {
                     fileHandle.write(data)
                 }
             }
         case .symlink:
-            var linkData = Data()
-            _ = try archive.extract(entry, bufferSize: bufferSize, skipCRC32: true) { data in
-                linkData.append(data)
-            }
+            let linkData = try archive.readSmallEntry(entry, maxBytes: Self.maxZipSymlinkTargetBytes, bufferSize: bufferSize)
 
             guard let linkPath = String(data: linkData, encoding: .utf8) else {
                 throw CustomError.cannotUnzip
@@ -872,9 +1018,9 @@ import UIKit
         self.notifyDownload(id: id, percent: 75)
 
         // Open the archive
-        let archive: Archive
+        let archive: ZipArchiveReader
         do {
-            archive = try Archive(url: sourceZip, accessMode: .read)
+            archive = try ZipArchiveReader(url: sourceZip)
         } catch {
             self.sendStats(action: "unzip_fail")
             throw CustomError.cannotUnzip
@@ -884,11 +1030,11 @@ import UIKit
         try FileManager.default.createDirectory(at: destUnZip, withIntermediateDirectories: true, attributes: nil)
 
         // Count total entries for progress
-        let totalEntries = archive.reduce(0) { count, _ in count + 1 }
+        let totalEntries = archive.entries.count
         var processedEntries = 0
 
         do {
-            for entry in archive {
+            for entry in archive.entries {
                 let destPath = try resolveZipEntry(path: entry.path, destUnZip: destUnZip)
 
                 if entry.type == .directory {
@@ -2113,6 +2259,12 @@ import UIKit
         }
 
         let downloadResult = performDownloadRequest(request, label: "download \(version)")
+        // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
+        defer {
+            if let fileURL = downloadResult.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
 
         if downloadResult.timedOut {
             persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
@@ -3430,24 +3582,20 @@ import UIKit
 
         let operation = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
-            self.alamofireSession.request(
-                self.statsUrl,
-                method: .post,
-                parameters: eventsToSend,
-                encoder: JSONParameterEncoder.default,
-                requestModifier: { $0.timeoutInterval = self.timeout }
-            ).responseData { response in
+            self.sendJSONPost(urlString: self.statsUrl, body: {
+                try JSONEncoder().encode(eventsToSend)
+            }, completion: { responseData, httpResponse, responseError in
                 if self.abandonStoppedStatsFlush() {
                     semaphore.signal()
                     return
                 }
-                if self.checkAndHandleRateLimitResponse(statusCode: response.response?.statusCode, data: response.data, response: response.response).blocked {
+                if self.checkAndHandleRateLimitResponse(statusCode: httpResponse?.statusCode, data: responseData, response: httpResponse).blocked {
                     self.requeueStatsEvents(queuedEvents)
                     semaphore.signal()
                     return
                 }
 
-                if let statusCode = response.response?.statusCode, !(200...299).contains(statusCode) {
+                if let statusCode = httpResponse?.statusCode, !(200...299).contains(statusCode) {
                     if CapgoUpdater.isTransientStatsFailure(statusCode) {
                         self.requeueStatsEvents(queuedEvents)
                         self.logger.error("Error sending stats batch")
@@ -3461,19 +3609,18 @@ import UIKit
                     return
                 }
 
-                switch response.result {
-                case .success:
+                if let error = responseError {
+                    self.requeueStatsEvents(queuedEvents)
+                    self.logger.error("Error sending stats batch")
+                    self.logger.debug("Response: nil, Error: \(error.localizedDescription)")
+                } else {
                     self.clearStatsInFlight()
                     self.logger.info("Stats batch sent successfully")
                     self.logger.debug("Sent \(eventsToSend.count) events")
                     self.runStatsCallbacks(queuedEvents)
-                case let .failure(error):
-                    self.requeueStatsEvents(queuedEvents)
-                    self.logger.error("Error sending stats batch")
-                    self.logger.debug("Response: \(response.value?.debugDescription ?? "nil"), Error: \(error.localizedDescription)")
                 }
                 semaphore.signal()
-            }
+            })
             semaphore.wait()
             if !self.statsStopped {
                 self.persistStatsQueue()

@@ -10,10 +10,7 @@ let package = Package(
             targets: ["CapacitorUpdaterPlugin"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0"),
-        .package(url: "https://github.com/Alamofire/Alamofire.git", .upToNextMajor(from: "5.12.0")),
-        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.20"),
-        .package(url: "https://github.com/mrackwitz/Version.git", exact: "0.8.0")
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")
     ],
     targets: [
         // Shared Rust updater core (core/), built by scripts/build-core.sh ios.
@@ -25,18 +22,13 @@ let package = Package(
             dependencies: [
                 "CapgoUpdaterCore",
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
-                .product(name: "Cordova", package: "capacitor-swift-pm"),
-                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
-                .product(name: "Alamofire", package: "Alamofire"),
-                .product(name: "Version", package: "Version")
+                .product(name: "Cordova", package: "capacitor-swift-pm")
             ],
             path: "ios/Sources/CapacitorUpdaterPlugin"),
         .testTarget(
             name: "CapacitorUpdaterPluginTests",
             dependencies: [
-                "CapacitorUpdaterPlugin",
-                .product(name: "Version", package: "Version"),
-                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+                "CapacitorUpdaterPlugin"
             ],
             path: "ios/Tests/CapacitorUpdaterPluginTests")
     ],
