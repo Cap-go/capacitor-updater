@@ -711,6 +711,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
 
                 @Override
+                public void backgroundDownloadSettled(final BundleInfo bundle, final String status) {
+                    CapacitorUpdaterPlugin.this.emitLaunchDownloadReady(bundle, status);
+                }
+
+                @Override
                 public void notifyListeners(final String id, final Map<String, Object> res) {
                     if (activity != null) {
                         activity.runOnUiThread(() -> {
@@ -2334,6 +2339,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
         this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
+    }
+
+    void emitLaunchDownloadReady(final BundleInfo bundle, final String status) {
+        final BundleInfo readyBundle = bundle != null ? bundle : this.implementation.getCurrentBundle();
+        if (readyBundle == null) {
+            return;
+        }
+        this.endBackGroundTaskWithNotif(
+            status,
+            readyBundle.getVersionName(),
+            readyBundle,
+            false,
+            false,
+            "download_fail",
+            "downloadFailed",
+            false,
+            false
+        );
     }
 
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
