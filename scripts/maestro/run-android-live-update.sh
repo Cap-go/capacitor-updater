@@ -34,6 +34,12 @@ ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
+EDGE_CASE_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS:-150}"
+
+# shellcheck source=scripts/maestro/edge-cases.sh
+source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
+SCENARIO_SEQUENCE+=("${EDGE_CASE_IDS[@]}")
 
 if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
   export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS} ${MAESTRO_JAVA_TOOL_OPTIONS}"
@@ -420,9 +426,9 @@ load_scenario_config() {
   bun --eval "
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { exampleAppDir, getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+import { exampleAppDir, getScenario, resolveAppScenarioId } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
 
-const scenario = getScenario(process.argv[1]);
+const scenario = getScenario(resolveAppScenarioId(process.argv[1]));
 const buildGradle = readFileSync(path.join(exampleAppDir, 'android', 'app', 'build.gradle'), 'utf8');
 const versionLine = buildGradle
   .split(/\\r?\\n/)
@@ -523,6 +529,169 @@ run_manual_manifest_split_once() {
   return 0
 }
 
+force_kill_app() {
+  echo "Force-killing ${APP_ID}"
+  run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  return 0
+}
+
+cold_launch_app() {
+  force_kill_app
+  sleep 1
+  relaunch_android_app
+  return 0
+}
+
+# Recovery can need several lifecycle cycles on Android: a dropped download is retried by
+# WorkManager with backoff (30s+ on emulators), a download killed with the app resumes in a
+# worker nobody observes anymore, and only a later foreground check starts a fresh one. Each
+# cycle waits for the target state, then backgrounds and resumes (deferred: re-check or apply)
+# or cold launches (direct update).
+EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_CASE_RECOVERY_CYCLES:-5}"
+EDGE_CASE_RECOVERY_WAIT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_RECOVERY_WAIT_SECONDS:-45}"
+
+wait_for_edge_recovery() {
+  local description="$1"
+  local cycle_mode="$2"
+  shift 2
+  local cycle=1
+
+  while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
+    if wait_for_ui_state_with_timeout "$description (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+      "$EDGE_CASE_RECOVERY_WAIT_SECONDS" "$@"; then
+      return 0
+    fi
+
+    if [[ "$cycle_mode" == "cold-launch" ]]; then
+      cold_launch_app
+    else
+      background_and_resume_app
+    fi
+
+    cycle=$((cycle + 1))
+  done
+
+  wait_for_ui_state_with_timeout "$description (final)" "$EDGE_CASE_RECOVERY_WAIT_SECONDS" "$@"
+}
+
+# run_edge_case_once runs inside an if, where set -e is off, so every step must fail explicitly.
+run_edge_case_once() {
+  local edge_case_id="$1"
+  local app_scenario=""
+  local builtin_label=""
+  local builtin_version=""
+  local first_release=""
+  local direct_update_line=""
+  local cycle_mode="background"
+
+  app_scenario="$(edge_case_app_scenario "$edge_case_id")"
+  IFS=$'\t' read -r builtin_label builtin_version first_release _ <<<"$(load_scenario_config "$app_scenario")"
+
+  if [[ "$app_scenario" == "edge-direct" ]]; then
+    direct_update_line='Direct update mode: always'
+    cycle_mode="cold-launch"
+  else
+    direct_update_line='Direct update mode: false'
+  fi
+
+  control_server reset "$app_scenario" || return 1
+  apply_edge_case_fault "$edge_case_id" "$app_scenario" || return 1
+  prepare_scenario "$app_scenario" || return 1
+  configure_server_routing || return 1
+  launch_android_app || return 1
+
+  wait_for_edge_case_fault_hit "$edge_case_id" "$app_scenario" || return 1
+
+  case "$edge_case_id" in
+    edge-kill-download)
+      # Kill the app while the bundle is still streaming, then bring the network back.
+      force_kill_app
+      wait_for_server_condition "$app_scenario" 'server saw the killed download disconnect' 'downloads.aborted >= 1' 60 || return 1
+      set_server_fault "$app_scenario" bundle none || return 1
+      relaunch_android_app
+      ;;
+    edge-network-drop)
+      # Bring the network back right away: WorkManager keeps retrying the dropped download in
+      # the background and must resume it with a Range request once the server answers.
+      set_server_fault "$app_scenario" bundle none || return 1
+      wait_for_example_app_ui || return 1
+      wait_for_ui_state_with_timeout \
+        "${edge_case_id}: builtin bundle keeps running while the download is retried" \
+        "$EDGE_CASE_UI_TIMEOUT_SECONDS" \
+        "Build label: $builtin_label" \
+        "Scenario: $app_scenario" \
+        "$direct_update_line" \
+        'Current bundle source: builtin' \
+        "Current bundle version: $builtin_version" || return 1
+      ;;
+    *)
+      # The failed update must leave the builtin bundle running and usable.
+      wait_for_example_app_ui || return 1
+      wait_for_ui_state_with_timeout \
+        "${edge_case_id}: builtin bundle keeps running after the failure" \
+        "$EDGE_CASE_UI_TIMEOUT_SECONDS" \
+        "Build label: $builtin_label" \
+        "Scenario: $app_scenario" \
+        "$direct_update_line" \
+        'Current bundle source: builtin' \
+        "Current bundle version: $builtin_version" \
+        'Next bundle version: none' || return 1
+      set_server_fault "$app_scenario" bundle none || return 1
+      set_server_fault "$app_scenario" update none || return 1
+
+      if [[ "$cycle_mode" == "cold-launch" ]]; then
+        cold_launch_app
+      else
+        background_and_resume_app
+      fi
+      ;;
+  esac
+
+  wait_for_edge_recovery \
+    "${edge_case_id}: the release applies once the network is back" \
+    "$cycle_mode" \
+    "Build label: $first_release" \
+    "Scenario: $app_scenario" \
+    "$direct_update_line" \
+    'Current bundle source: downloaded' \
+    "Current bundle version: $first_release" || return 1
+
+  assert_edge_case_recovered "$edge_case_id" "$app_scenario" || return 1
+
+  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+    wait_for_server_condition "$app_scenario" 'the dropped download resumed with a Range request' 'downloads.ranged >= 1' 5 || return 1
+  fi
+
+  return 0
+}
+
+run_edge_case() {
+  local edge_case_id="$1"
+  local attempt=1
+
+  while [[ $attempt -le $EDGE_CASE_RETRIES ]]; do
+    echo "Running edge case: ${edge_case_id} (attempt ${attempt}/${EDGE_CASE_RETRIES})"
+
+    # A case cannot resume midway: every retry restarts from a clean install and fresh server state.
+    if run_edge_case_once "$edge_case_id"; then
+      return 0
+    fi
+
+    if [[ $attempt -lt $EDGE_CASE_RETRIES ]]; then
+      echo "Edge case ${edge_case_id} failed; retrying from a clean install." >&2
+      restart_adb_server
+      prepare_device_for_maestro || true
+      reset_adb_forwarding || true
+      sleep 5
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "Edge case ${edge_case_id} failed after ${EDGE_CASE_RETRIES} attempts." >&2
+  return 1
+}
+
 run_scenario() {
   local scenario_id="$1"
   local builtin_label=""
@@ -531,6 +700,14 @@ run_scenario() {
   local second_release=""
 
   ACTIVE_SCENARIO_ID="$scenario_id"
+
+  if is_edge_case "$scenario_id"; then
+    echo "=== Running Maestro edge case: $scenario_id ==="
+    run_edge_case "$scenario_id"
+    echo "=== Completed Maestro edge case: $scenario_id ==="
+    return 0
+  fi
+
   IFS=$'\t' read -r builtin_label builtin_version first_release second_release _ <<<"$(load_scenario_config "$scenario_id")"
   echo "=== Running Maestro scenario: $scenario_id ==="
 

@@ -23,6 +23,12 @@ MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
 DEBUG_LOG_FAILURE_PATTERN="fail|Fail|failure|Failure|error|Error|Exception|CommandFailed|Assertion is false|crash|Crash"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
+EDGE_CASE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_BACKGROUND_SETTLE_SECONDS:-5}"
+
+# shellcheck source=scripts/maestro/edge-cases.sh
+source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
+SCENARIO_SEQUENCE+=("${EDGE_CASE_IDS[@]}")
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
 readonly ASSERT_AUTO_UPDATE_AVAILABLE='Auto update available: true'
@@ -227,6 +233,10 @@ is_supported_scenario() {
       ;;
   esac
 
+  if is_edge_case "$1"; then
+    return 0
+  fi
+
   return 1
 }
 
@@ -357,9 +367,9 @@ load_scenario_config() {
   builtin_version="$(read_app_marketing_version)" || return $?
 
   bun --eval "
-import { getScenario } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
+import { getScenario, resolveAppScenarioId } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
 
-const scenario = getScenario(process.argv[1]);
+const scenario = getScenario(resolveAppScenarioId(process.argv[1]));
 const builtinVersion = process.argv[2];
 
 if (!builtinVersion) {
@@ -610,6 +620,157 @@ build_and_install_scenario() {
   reinstall_example_app
 }
 
+launch_example_app() {
+  xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+}
+
+kill_example_app() {
+  echo "Killing ${APP_ID} on the simulator"
+  run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
+}
+
+cold_launch_example_app() {
+  kill_example_app
+  sleep 1
+  launch_example_app
+}
+
+# Sends the app to the background (so deferred bundles get applied), then cold launches it.
+background_then_cold_launch_example_app() {
+  echo "Backgrounding ${APP_ID} for ${EDGE_CASE_BACKGROUND_SETTLE_SECONDS}s before a cold launch"
+  xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1 || true
+  sleep "$EDGE_CASE_BACKGROUND_SETTLE_SECONDS"
+  cold_launch_example_app
+}
+
+# Builds a Maestro regex over the pinned E2E summary line; fragments must follow its field order.
+edge_summary_pattern() {
+  local pattern='.*Harness: ready'
+  local fragment
+
+  for fragment in "$@"; do
+    pattern="${pattern}.*$(regex_escape_for_maestro "$fragment")"
+  done
+
+  printf '%s.*' "$pattern"
+}
+
+wait_for_edge_summary() {
+  local label="$1"
+  shift
+
+  run_flow "$label" "$ROOT_DIR/.maestro/ios/edge-case-wait-summary.yaml" \
+    "SUMMARY_PATTERN=$(edge_summary_pattern "$@")"
+}
+
+run_edge_case_once() {
+  local edge_case_id="$1"
+  local app_scenario=""
+  local scenario_config=""
+  local builtin_label=""
+  local builtin_version=""
+  local first_release=""
+  local direct_update_line=""
+
+  app_scenario="$(edge_case_app_scenario "$edge_case_id")"
+  scenario_config="$(load_scenario_config "$app_scenario")" || return 1
+  IFS=$'\t' read -r builtin_label builtin_version first_release _ <<<"$scenario_config"
+
+  if [[ "$app_scenario" == "edge-direct" ]]; then
+    direct_update_line='Direct update mode: always'
+  else
+    direct_update_line='Direct update mode: false'
+  fi
+
+  control_server reset "$app_scenario" || return 1
+  apply_edge_case_fault "$edge_case_id" "$app_scenario" || return 1
+  reinstall_example_app || return 1
+  launch_example_app || return 1
+
+  wait_for_edge_case_fault_hit "$edge_case_id" "$app_scenario" || return 1
+
+  if [[ "$edge_case_id" == "edge-kill-download" ]]; then
+    # Kill the app while the bundle is still streaming, then bring the network back.
+    kill_example_app
+    wait_for_server_condition "$app_scenario" 'server saw the killed download disconnect' 'downloads.aborted >= 1' 60 || return 1
+    set_server_fault "$app_scenario" bundle none || return 1
+    launch_example_app || return 1
+  else
+    # The failed update must leave the builtin bundle running and usable.
+    wait_for_edge_summary "${edge_case_id}-builtin-survives" \
+      "Build label: $builtin_label" \
+      "Scenario: $app_scenario" \
+      "$direct_update_line" \
+      "Notify app ready: ok ($builtin_version)" \
+      "$ASSERT_SOURCE_BUILTIN" \
+      "Current bundle version: $builtin_version" \
+      'Next bundle version: none' || return 1
+
+    set_server_fault "$app_scenario" bundle none || return 1
+    set_server_fault "$app_scenario" update none || return 1
+    cold_launch_example_app || return 1
+  fi
+
+  if [[ "$app_scenario" == "edge-direct" ]]; then
+    wait_for_edge_summary "${edge_case_id}-recovered" \
+      "Build label: $first_release" \
+      "Scenario: $app_scenario" \
+      "$direct_update_line" \
+      "Notify app ready: ok ($first_release)" \
+      "$ASSERT_SOURCE_DOWNLOADED" \
+      "Current bundle version: $first_release" || return 1
+  else
+    wait_for_edge_summary "${edge_case_id}-downloaded" \
+      "Build label: $builtin_label" \
+      "Scenario: $app_scenario" \
+      "$ASSERT_SOURCE_BUILTIN" \
+      "Next bundle version: $first_release" || return 1
+    background_then_cold_launch_example_app || return 1
+    wait_for_edge_summary "${edge_case_id}-applied" \
+      "Build label: $first_release" \
+      "Scenario: $app_scenario" \
+      "Notify app ready: ok ($first_release)" \
+      "$ASSERT_SOURCE_DOWNLOADED" \
+      "Current bundle version: $first_release" || return 1
+  fi
+
+  assert_edge_case_recovered "$edge_case_id" "$app_scenario" || return 1
+  return 0
+}
+
+run_edge_case() {
+  local edge_case_id="$1"
+  local attempt=1
+  local previous_retries="$MAESTRO_TEST_RETRIES"
+
+  # A case cannot resume midway, so flow-level retries (which reinstall the app) are disabled and
+  # every retry restarts the whole case from a clean install and fresh server state.
+  MAESTRO_TEST_RETRIES=1
+
+  while [[ $attempt -le $EDGE_CASE_RETRIES ]]; do
+    echo "Running iOS edge case: ${edge_case_id} (attempt ${attempt}/${EDGE_CASE_RETRIES})"
+
+    if run_edge_case_once "$edge_case_id"; then
+      MAESTRO_TEST_RETRIES="$previous_retries"
+      return 0
+    fi
+
+    if [[ $attempt -lt $EDGE_CASE_RETRIES ]]; then
+      echo "iOS edge case ${edge_case_id} failed; retrying from a clean install." >&2
+      kill_example_app
+      reset_ios_maestro_driver
+      boot_simulator || true
+      sleep 5
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  MAESTRO_TEST_RETRIES="$previous_retries"
+  echo "iOS edge case ${edge_case_id} failed after ${EDGE_CASE_RETRIES} attempts." >&2
+  return 1
+}
+
 run_scenario() {
   local scenario_id="$1"
   local scenario_config=""
@@ -621,6 +782,17 @@ run_scenario() {
   if ! is_supported_scenario "$scenario_id"; then
     echo "Unknown Maestro scenario selection: $scenario_id" >&2
     return 1
+  fi
+
+  if is_edge_case "$scenario_id"; then
+    echo "=== Running iOS Maestro edge case: $scenario_id ==="
+    # Each attempt reinstalls the app itself, so only build here.
+    if [[ "$SKIP_BUILD" != "1" ]]; then
+      build_and_install_scenario "$(edge_case_app_scenario "$scenario_id")"
+    fi
+    run_edge_case "$scenario_id"
+    echo "=== Completed iOS Maestro edge case: $scenario_id ==="
+    return 0
   fi
 
   scenario_config="$(load_scenario_config "$scenario_id")" || return $?
