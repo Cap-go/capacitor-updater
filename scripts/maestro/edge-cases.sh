@@ -25,6 +25,8 @@ is_edge_case() {
 }
 
 edge_case_app_scenario() {
+  local edge_case_id="$1"
+
   bun --eval "
 import { edgeCases } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
 
@@ -34,7 +36,8 @@ if (!app) {
   process.exit(1);
 }
 console.log(app);
-" "$1"
+" "$edge_case_id"
+  return $?
 }
 
 set_server_fault() {
@@ -45,6 +48,7 @@ set_server_fault() {
   curl --silent --show-error --fail -X POST \
     "$HOST_SERVER_URL/api/control/fault?scenario=$scenario&target=$target&mode=$mode" >/dev/null
   echo "Fake Capgo server fault for ${scenario}: ${target}=${mode}"
+  return 0
 }
 
 # Polls the fake server until a JS condition over its debug state holds. The condition can use
@@ -124,7 +128,12 @@ wait_for_edge_case_fault_hit() {
     edge-offline-check)
       wait_for_server_condition "$app_scenario" 'update check hit the dropped connection' 'debug.updateFaults >= 1'
       ;;
+    *)
+      echo "Unknown edge case: $edge_case_id" >&2
+      return 1
+      ;;
   esac
+  return $?
 }
 
 # Server-side proof that the app recovered with a full, clean download after the fault cleared.
@@ -144,7 +153,11 @@ assert_edge_case_recovered() {
     edge-offline-check)
       wait_for_server_condition "$app_scenario" 'the failed update check was reported' '(stats.download_fail ?? 0) >= 1' 5
       ;;
+    *)
+      return 0
+      ;;
   esac
+  return $?
 }
 
 # Server-side proof that the failure stayed contained; call it before the fault is cleared.
@@ -154,5 +167,8 @@ assert_edge_case_failure_contained() {
 
   if [[ "$edge_case_id" == "edge-offline-check" ]]; then
     wait_for_server_condition "$app_scenario" 'no bundle was requested while the update check failed' 'downloads.started === 0' 5
+    return $?
   fi
+
+  return 0
 }

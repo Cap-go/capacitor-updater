@@ -681,12 +681,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
+      # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:

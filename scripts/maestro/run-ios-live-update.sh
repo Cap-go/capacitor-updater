@@ -227,13 +227,15 @@ listening_pid_for_port() {
 }
 
 is_supported_scenario() {
-  case "$1" in
+  local scenario_id="$1"
+
+  case "$scenario_id" in
     deferred|always|legacy-true|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest)
       return 0
       ;;
   esac
 
-  if is_edge_case "$1"; then
+  if is_edge_case "$scenario_id"; then
     return 0
   fi
 

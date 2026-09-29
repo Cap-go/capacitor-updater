@@ -966,7 +966,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const hasBody = acceptsBody && chunks.length > 0;
-    const request = new Request(`http://${req.headers.host ?? '127.0.0.1'}${req.url}`, {
+    const request = new Request(new URL(req.url ?? '/', 'http://127.0.0.1'), {
       method: req.method,
       headers: toRequestHeaders(req.headers),
       body: hasBody ? Buffer.concat(chunks) : undefined,
