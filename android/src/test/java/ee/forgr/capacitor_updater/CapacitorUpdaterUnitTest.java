@@ -976,25 +976,6 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class AutoResetNativeVersionCapgoUpdater extends CapgoUpdater {
-
-        private boolean resetCalled = false;
-
-        AutoResetNativeVersionCapgoUpdater() {
-            super(mock(Logger.class));
-        }
-
-        @Override
-        public void reset() {
-            this.resetCalled = true;
-        }
-
-        @Override
-        public void reset(final boolean internal) {
-            this.resetCalled = true;
-        }
-    }
-
     private static final class FixedPathCapgoUpdater extends CapgoUpdater {
 
         private final String currentBundlePath;
@@ -1763,9 +1744,11 @@ public class CapacitorUpdaterUnitTest {
         final Path tempDir = createExistingBundleDirectory("capgo-autoreset", bundleId);
         final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
 
-        final AutoResetNativeVersionCapgoUpdater updater = new AutoResetNativeVersionCapgoUpdater();
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         final SharedPreferences prefs = mock(SharedPreferences.class);
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.putString(anyString(), anyString())).thenReturn(editor);
+        when(editor.remove(anyString())).thenReturn(editor);
         final BundleInfo storedBundle = new BundleInfo(bundleId, "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
 
         updater.documentsDir = tempDir.toFile();
@@ -1782,7 +1765,8 @@ public class CapacitorUpdaterUnitTest {
 
         updater.autoReset("8");
 
-        assertTrue(updater.resetCalled);
+        // Reset points the server path back to the builtin bundle.
+        verify(editor).putString("server-path", "public");
     }
 
     @Test
@@ -1791,13 +1775,15 @@ public class CapacitorUpdaterUnitTest {
         final Path tempDir = createExistingBundleDirectory("capgo-autoreset-disabled", bundleId);
         final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
 
-        final AutoResetNativeVersionCapgoUpdater updater = new AutoResetNativeVersionCapgoUpdater();
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         final BundleInfo storedBundle = new BundleInfo(bundleId, "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
 
         updater.documentsDir = tempDir.toFile();
         updater.CAP_SERVER_PATH = "server-path";
         updater.prefs = prefs;
+        updater.editor = editor;
 
         when(prefs.getString("server-path", "public")).thenReturn(bundleDir.toString());
         when(prefs.getString("server-path", null)).thenReturn(bundleDir.toString());
@@ -1808,7 +1794,7 @@ public class CapacitorUpdaterUnitTest {
 
         updater.autoReset("8", false);
 
-        assertFalse(updater.resetCalled);
+        verify(editor, never()).putString(eq("server-path"), anyString());
     }
 
     @Test

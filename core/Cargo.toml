@@ -21,13 +21,22 @@ jni = ["dep:jni"]
 [dependencies]
 aes = "0.8"
 base64 = "0.22"
+brotli-decompressor = "4"
 jni = { version = "0.21", default-features = false, optional = true }
 num-bigint = "0.4"
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
 sha2 = "0.10"
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rustls-platform-verifier = "0.5"
 
 [dev-dependencies]
 tempfile = "3"
+tiny_http = "0.12"
 
 [profile.release]
 codegen-units = 1

@@ -68,16 +68,9 @@ public class CapgoUpdater {
     private static final String AB = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final SecureRandom rnd = new SecureRandom();
 
-    private static final String INFO_SUFFIX = "_info";
 
-    private static final String FALLBACK_VERSION = "pastVersion";
-    private static final String NEXT_VERSION = "nextVersion";
-    private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
-    private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
-    private static final long DELETE_PACE_MS = 75L;
-    private final Object deleteLock = new Object();
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
@@ -111,42 +104,6 @@ public class CapgoUpdater {
 
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
-
-    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
-    // Guarded by rateLimitStateLock so concurrent 429s cannot shorten the window or mix metadata.
-    private static final Object rateLimitStateLock = new Object();
-    private static long rateLimitBlockedUntilMs = 0L;
-    private static String rateLimitBlockedError = "too_many_requests";
-    private static String rateLimitBlockedMessage = "Too many requests";
-
-    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop.
-    // Released again when the send fails, so a later 429 can retry it.
-    private static boolean rateLimitStatisticSent = false;
-
-    // A client-side 429 block is capped at one day by the core (see resolveRateLimitBlockedUntilMs).
-
-    // Stats batching - queue events and send max once per second
-    private final List<QueuedStatsEvent> statsQueue = new CopyOnWriteArrayList<>();
-    private final List<QueuedStatsEvent> statsInFlight = new ArrayList<>();
-    private final Object pendingStatsPersistLock = new Object();
-    private final ScheduledExecutorService statsScheduler = Executors.newSingleThreadScheduledExecutor();
-    private ScheduledFuture<?> statsFlushTask = null;
-    private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
-    private final AtomicBoolean statsStopped = new AtomicBoolean(false);
-    private static final long STATS_FLUSH_INTERVAL_MS = 1000;
-    private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
-    private static final int MAX_PENDING_STATS = 200;
-
-    private static final class QueuedStatsEvent {
-
-        private final JSONObject event;
-        private final Runnable onSent;
-
-        private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
-            this.event = event;
-            this.onSent = onSent;
-        }
-    }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -669,62 +626,6 @@ public class CapgoUpdater {
         return ret;
     }
 
-    private String manifestSizeUrl(final String updateUrl) {
-        HttpUrl parsed = HttpUrl.parse(updateUrl);
-        if (parsed == null) {
-            return updateUrl;
-        }
-        return parsed.newBuilder().addPathSegment("manifest_size").query(null).build().toString();
-    }
-
-    private JSONObject unavailableBundleSizeResult(final JSONArray manifest, final String error) throws JSONException {
-        final JSONObject ret = new JSONObject();
-        final JSONArray files = new JSONArray();
-        for (int i = 0; i < manifest.length(); i++) {
-            final JSONObject entry = new JSONObject(manifest.getJSONObject(i).toString());
-            entry.put("error", error);
-            files.put(entry);
-        }
-        ret.put("totalSize", 0);
-        ret.put("knownFiles", 0);
-        ret.put("unknownFiles", manifest.length());
-        ret.put("files", files);
-        return ret;
-    }
-
-    public JSONObject getBundleDownloadSize(final String updateUrl, final String version, final JSONArray manifest) throws JSONException {
-        if (manifest.length() == 0) {
-            final JSONObject ret = new JSONObject();
-            ret.put("totalSize", 0);
-            ret.put("knownFiles", 0);
-            ret.put("unknownFiles", 0);
-            ret.put("files", new JSONArray());
-            return ret;
-        }
-
-        final JSONObject json = this.createInfoObject();
-        json.put("version", version != null ? version : "");
-        json.put("manifest", manifest);
-
-        Request request = new Request.Builder()
-            .url(manifestSizeUrl(updateUrl))
-            .post(RequestBody.create(json.toString(), MediaType.get("application/json; charset=utf-8")))
-            .build();
-
-        try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
-            final ResponseBody responseBody = response.body();
-            final String responseData = responseBody != null ? responseBody.string() : "";
-            if (!response.isSuccessful() || responseData.isEmpty()) {
-                return unavailableBundleSizeResult(manifest, "response_error");
-            }
-            return new JSONObject(responseData);
-        } catch (IOException e) {
-            logger.error("Error getting bundle download size");
-            logger.debug("Error: " + e.getMessage());
-            return unavailableBundleSizeResult(manifest, "response_error");
-        }
-    }
-
     private void notifyLaunchDownloadReady(
         final boolean awaitedByCaller,
         final boolean success,
@@ -1050,17 +951,7 @@ public class CapgoUpdater {
             logger.warn("Activity is null, skipping delta cache cleanup");
             return;
         }
-        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
-        if (!cacheFolder.exists()) {
-            return;
-        }
-        try {
-            this.deleteDirectory(cacheFolder, threadToCheck);
-            logger.info("Cleaned up delta cache folder");
-        } catch (IOException e) {
-            logger.error("Failed to cleanup delta cache");
-            logger.debug("Error: " + e.getMessage());
-        }
+        this.call("bundleCleanupDeltaCache");
     }
 
     public void cleanupDownloadDirectories(final Set<String> allowedIds) {
@@ -1072,84 +963,22 @@ public class CapgoUpdater {
             logger.warn("Documents directory is null, skipping download cleanup");
             return;
         }
-
-        final File bundleRoot = new File(this.documentsDir, bundleDirectory);
-        if (!bundleRoot.exists() || !bundleRoot.isDirectory()) {
+        if (threadToCheck != null && threadToCheck.isInterrupted()) {
+            logger.warn("cleanupDownloadDirectories was cancelled");
             return;
         }
-
-        final File[] entries = bundleRoot.listFiles();
-        if (entries != null) {
-            for (final File entry : entries) {
-                // Check if thread was interrupted (cancelled)
-                if (threadToCheck != null && threadToCheck.isInterrupted()) {
-                    logger.warn("cleanupDownloadDirectories was cancelled");
-                    return;
-                }
-
-                if (!entry.isDirectory()) {
-                    continue;
-                }
-
-                final String id = entry.getName();
-
-                if (allowedIds != null && allowedIds.contains(id)) {
-                    continue;
-                }
-
-                try {
-                    this.deleteDirectory(entry, threadToCheck);
-                    if (entry.exists()) {
-                        logger.error("Orphan bundle directory still present after delete");
-                        logger.debug("Bundle ID: " + id);
-                        continue;
-                    }
-                    this.removeBundleInfo(id);
-                    logger.info("Deleted orphan bundle directory");
-                    logger.debug("Bundle ID: " + id);
-                } catch (IOException e) {
-                    logger.error("Failed to delete orphan bundle directory");
-                    logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
-                }
-            }
-        }
+        this.call("bundleCleanupDownloadDirectories", "allowedIds", allowedIds == null ? new JSONArray() : new JSONArray(allowedIds));
     }
 
     public Set<String> allowedBundleIdsForCleanup() {
-        final Set<String> allowedIds = new HashSet<>();
-        for (final BundleInfo info : this.list(true)) {
-            if (info == null || info.getId() == null || info.getId().isEmpty()) {
-                continue;
+        final Object ids = this.engine().callValueUnchecked("bundleAllowedIdsForCleanup", new JSONObject());
+        final Set<String> allowed = new HashSet<>();
+        if (ids instanceof JSONArray) {
+            for (int index = 0; index < ((JSONArray) ids).length(); index++) {
+                allowed.add(((JSONArray) ids).optString(index));
             }
-            // DELETED tombstones must not protect leftover folders.
-            // DELETING stays protected so drainPendingDeletes owns the removal.
-            if (info.isDeleted()) {
-                continue;
-            }
-            allowedIds.add(info.getId());
         }
-        final String currentId = this.getCurrentBundleId();
-        if (currentId != null && !currentId.isEmpty()) {
-            allowedIds.add(currentId);
-        }
-        final BundleInfo fallback = this.getFallbackBundle();
-        if (fallback != null && fallback.getId() != null && !fallback.getId().isEmpty() && !fallback.isDeleting()) {
-            allowedIds.add(fallback.getId());
-        }
-        final BundleInfo next = this.getNextBundle();
-        if (next != null && next.getId() != null && !next.getId().isEmpty() && !next.isDeleting()) {
-            allowedIds.add(next.getId());
-        }
-        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
-        if (
-            previewFallback != null &&
-            previewFallback.getId() != null &&
-            !previewFallback.getId().isEmpty() &&
-            !previewFallback.isDeleting()
-        ) {
-            allowedIds.add(previewFallback.getId());
-        }
-        return allowedIds;
+        return allowed;
     }
 
     public void cleanupOrphanedTempFolders(final Thread threadToCheck) {
@@ -1157,39 +986,11 @@ public class CapgoUpdater {
             logger.warn("Documents directory is null, skipping temp folder cleanup");
             return;
         }
-
-        final File[] entries = this.documentsDir.listFiles();
-        if (entries == null) {
+        if (threadToCheck != null && threadToCheck.isInterrupted()) {
+            logger.warn("cleanupOrphanedTempFolders was cancelled");
             return;
         }
-
-        for (final File entry : entries) {
-            // Check if thread was interrupted (cancelled)
-            if (threadToCheck != null && threadToCheck.isInterrupted()) {
-                logger.warn("cleanupOrphanedTempFolders was cancelled");
-                return;
-            }
-
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            final String folderName = entry.getName();
-
-            // Only delete folders with the temp unzip prefix
-            if (!folderName.startsWith(TEMP_UNZIP_PREFIX)) {
-                continue;
-            }
-
-            try {
-                this.deleteDirectory(entry, threadToCheck);
-                logger.info("Deleted orphaned temp unzip folder");
-                logger.debug("Folder: " + folderName);
-            } catch (IOException e) {
-                logger.error("Failed to delete orphaned temp folder");
-                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
-            }
-        }
+        this.call("bundleCleanupOrphanedTempFolders");
     }
 
     private void assertPathInsideDocumentsDir(final File target) throws IOException {
@@ -1231,13 +1032,6 @@ public class CapgoUpdater {
         } catch (IOException cleanupError) {
             logger.warn("Refusing unsafe delete for " + target.getAbsolutePath() + ": " + cleanupError.getMessage());
         }
-    }
-
-    private void setCurrentBundle(final File bundle) {
-        this.resetBackgroundRunnerWorkForBundleSwitch(bundle);
-        this.editor.putString(this.CAP_SERVER_PATH, bundle.getPath());
-        logger.info("Current bundle set to: " + bundle);
-        this.editor.commit();
     }
 
     static boolean shouldResetForForeignBundle(final String bundlePath, final boolean isBuiltin, final boolean hasStoredBundleInfo) {
@@ -1460,13 +1254,7 @@ public class CapgoUpdater {
     }
 
     private boolean hasStoredBundleInfo(final String id) {
-        return (
-            id != null &&
-            !id.isEmpty() &&
-            !BundleInfo.ID_BUILTIN.equals(id) &&
-            !BundleInfo.VERSION_UNKNOWN.equals(id) &&
-            this.prefs.contains(id + INFO_SUFFIX)
-        );
+        return id != null && this.call("bundleHasInfo", "id", id).optBoolean("stored", false);
     }
 
     private void runDownloadGate() throws IOException {
@@ -1649,31 +1437,262 @@ public class CapgoUpdater {
         }
     }
 
-    public List<BundleInfo> list(boolean rawList) {
-        if (!rawList) {
-            final List<BundleInfo> res = new ArrayList<>();
-            final File destHot = new File(this.documentsDir, bundleDirectory);
-            logger.debug("list File : " + destHot.getPath());
-            if (destHot.exists()) {
-                for (final File i : Objects.requireNonNull(destHot.listFiles())) {
-                    final String id = i.getName();
-                    res.add(this.getBundleInfo(id));
-                }
-            } else {
-                logger.info("No versions available to list" + destHot);
-            }
-            return res;
-        } else {
-            final List<BundleInfo> res = new ArrayList<>();
-            for (String value : this.prefs.getAll().keySet()) {
-                if (!value.matches("^[0-9A-Za-z]{10}_info$")) {
-                    continue;
-                }
+    // ------------------------------------------------------------------------------------------
+    // Engine (shared Rust core). Store, stats and backend logic live in core/src/engine; the
+    // methods below keep the historical Java API and only marshal arguments.
 
-                res.add(this.getBundleInfo(value.split("_")[0]));
+    private CapgoEngine engine;
+    private JSONObject engineConfigSnapshot;
+    private String engineBundleRoot;
+    private final Map<String, Runnable> statsCallbacks = new ConcurrentHashMap<>();
+    private final ExecutorService network = Executors.newCachedThreadPool();
+
+    private final CapgoEngineHost engineHost = new CapgoEngineHost() {
+        @Override
+        void log(final int level, final String message) {
+            if (logger == null) {
+                return;
             }
-            return res;
+            switch (level) {
+                case 0:
+                    logger.debug(message);
+                    break;
+                case 1:
+                    logger.info(message);
+                    break;
+                case 2:
+                    logger.warn(message);
+                    break;
+                default:
+                    logger.error(message);
+                    break;
+            }
         }
+
+        @Override
+        String kvGet(final String key, final String defaultValue) {
+            if (prefs == null) {
+                return defaultValue;
+            }
+            try {
+                return prefs.getString(key, defaultValue);
+            } catch (ClassCastException e) {
+                return defaultValue;
+            }
+        }
+
+        @Override
+        boolean kvContains(final String key) {
+            return prefs != null && prefs.contains(key);
+        }
+
+        @Override
+        boolean sendStats(final String action, final String versionName, final String oldVersionName) {
+            CapgoUpdater.this.sendStats(action, versionName, oldVersionName);
+            return true;
+        }
+
+        @Override
+        void kvSet(final String key, final String value) {
+            if (editor == null) {
+                return;
+            }
+            if (value == null) {
+                editor.remove(key);
+            } else {
+                editor.putString(key, value);
+            }
+            editor.commit();
+        }
+
+        @Override
+        String kvKeysJson() {
+            final JSONArray keys = new JSONArray();
+            if (prefs != null) {
+                final Map<String, ?> all = prefs.getAll();
+                if (all != null) {
+                    for (final String key : all.keySet()) {
+                        keys.put(key);
+                    }
+                }
+            }
+            return keys.toString();
+        }
+
+        @Override
+        void emit(final String event, final String payloadJson) {
+            onEngineEvent(event, payloadJson);
+        }
+
+        @Override
+        void willSwitchBundle(final String path) {
+            resetBackgroundRunnerWorkForBundleSwitch(new File(path));
+        }
+
+        @Override
+        boolean cancelVersionDownload(final String version) {
+            return activity == null || DownloadWorkerManager.cancelVersionDownloadAndAwait(activity, version);
+        }
+
+        @Override
+        void cancelAllDownloads() {
+            if (activity != null) {
+                DownloadWorkerManager.cancelAllDownloads(activity);
+            }
+        }
+    };
+
+    private void onEngineEvent(final String event, final String payloadJson) {
+        final Object parsed = CapgoEngine.parse(payloadJson);
+        final JSONObject payload = parsed instanceof JSONObject ? (JSONObject) parsed : new JSONObject();
+        if ("statsSent".equals(event)) {
+            final Runnable callback = this.statsCallbacks.remove(payload.optString("callbackId", ""));
+            if (callback != null) {
+                try {
+                    callback.run();
+                } catch (Exception e) {
+                    if (logger != null) {
+                        logger.error("Error running stats sent callback");
+                        logger.debug("Error: " + e.getMessage());
+                    }
+                }
+            }
+            return;
+        }
+        this.notifyListeners(event, jsonToMap(payload));
+    }
+
+    static Map<String, Object> jsonToMap(final JSONObject json) {
+        final Map<String, Object> map = new HashMap<>();
+        final Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            final String key = keys.next();
+            final Object value = json.opt(key);
+            map.put(key, value instanceof JSONObject ? jsonToMap((JSONObject) value) : value);
+        }
+        return map;
+    }
+
+    private static void put(final JSONObject json, final String key, final Object value) {
+        try {
+            json.put(key, value == null ? JSONObject.NULL : value);
+        } catch (JSONException ignored) {
+            // Keys are constants.
+        }
+    }
+
+    private JSONObject engineConfig() {
+        final JSONObject config = new JSONObject();
+        put(config, "platform", "android");
+        put(config, "appId", this.appId);
+        put(config, "pluginVersion", this.pluginVersion);
+        put(config, "versionBuild", this.versionBuild);
+        put(config, "versionCode", this.versionCode);
+        put(config, "versionOs", this.versionOs);
+        put(config, "deviceId", this.deviceID);
+        put(config, "customId", this.customId);
+        put(config, "defaultChannel", this.defaultChannel);
+        put(config, "isEmulator", this.isEmulator());
+        put(config, "isProd", this.isProd());
+        put(config, "installSource", this.getInstallSource());
+        put(config, "statsUrl", this.statsUrl == null ? "" : this.statsUrl);
+        put(config, "channelUrl", this.channelUrl == null ? "" : this.channelUrl);
+        put(config, "publicKey", this.publicKey == null ? "" : this.publicKey);
+        put(config, "previewSession", this.previewSession);
+        put(config, "timeoutMs", this.timeout);
+        return config;
+    }
+
+    /** The engine for the current fields; created lazily, re-created when storage moves, re-configured on change. */
+    synchronized CapgoEngine engine() {
+        final String bundleRoot = this.documentsDir == null ? "" : new File(this.documentsDir, bundleDirectory).getAbsolutePath();
+        final JSONObject config = this.engineConfig();
+        if (this.engine == null || !bundleRoot.equals(this.engineBundleRoot)) {
+            final JSONObject full = this.engineConfig();
+            put(full, "bundleRoot", bundleRoot.isEmpty() ? "/capgo-updater-uninitialized/versions" : bundleRoot);
+            put(full, "storageRoot", this.documentsDir == null ? "" : this.documentsDir.getAbsolutePath());
+            final File statsDir = this.noBackupDir != null ? this.noBackupDir : this.documentsDir;
+            put(full, "statsDir", statsDir == null ? "" : statsDir.getAbsolutePath());
+            put(
+                full,
+                "cacheDir",
+                this.activity == null ? "" : new File(this.activity.getCacheDir(), "capgo_downloads").getAbsolutePath()
+            );
+            put(full, "builtinServerPath", "public");
+            final JSONObject keys = new JSONObject();
+            put(keys, "serverPath", this.CAP_SERVER_PATH == null || this.CAP_SERVER_PATH.isEmpty() ? "serverBasePath" : this.CAP_SERVER_PATH);
+            put(full, "keys", keys);
+            this.engine = new CapgoEngine(full, this.engineHost);
+            this.engineBundleRoot = bundleRoot;
+            this.engineConfigSnapshot = config;
+            return this.engine;
+        }
+        if (!config.toString().equals(this.engineConfigSnapshot.toString())) {
+            try {
+                this.engine.call("configure", config);
+            } catch (CapgoCore.Failure e) {
+                if (logger != null) {
+                    logger.error("Failed to configure updater engine: " + e.getMessage());
+                }
+            }
+            this.engineConfigSnapshot = config;
+        }
+        return this.engine;
+    }
+
+    private JSONObject call(final String operation, final Object... keyValues) {
+        return this.engine().callUnchecked(operation, CapgoCore.input(keyValues));
+    }
+
+    private static BundleInfo bundleOrNull(final Object value) {
+        return value instanceof JSONObject ? BundleInfo.fromRawJson((JSONObject) value) : null;
+    }
+
+    private BundleInfo bundleCall(final String operation, final Object... keyValues) {
+        return bundleOrNull(this.engine().callValueUnchecked(operation, CapgoCore.input(keyValues)));
+    }
+
+    private static Map<String, Object> toResultMap(final JSONObject json) {
+        final Map<String, Object> map = new HashMap<>();
+        final Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            final String key = keys.next();
+            map.put(key, json.opt(key));
+        }
+        return map;
+    }
+
+    /** Runs a blocking backend call off the caller thread, like the previous async OkHttp calls. */
+    private void backend(final Callback callback, final String operation, final Object... keyValues) {
+        final CapgoEngine engine = this.engine();
+        final JSONObject input = CapgoCore.input(keyValues);
+        this.network.execute(() -> {
+            Map<String, Object> result;
+            try {
+                result = toResultMap(engine.call(operation, input));
+            } catch (CapgoCore.Failure e) {
+                result = new HashMap<>();
+                result.put("error", e.code);
+                result.put("message", e.getMessage());
+            }
+            callback.callback(result);
+        });
+    }
+
+    // ---- store -------------------------------------------------------------------------------
+
+    public List<BundleInfo> list(boolean rawList) {
+        final JSONArray bundles = this.engine().callValueUnchecked("bundleList", CapgoCore.input("raw", rawList)) instanceof JSONArray
+            ? (JSONArray) this.engine().callValueUnchecked("bundleList", CapgoCore.input("raw", rawList))
+            : new JSONArray();
+        final List<BundleInfo> res = new ArrayList<>();
+        for (int index = 0; index < bundles.length(); index++) {
+            final BundleInfo bundle = bundleOrNull(bundles.opt(index));
+            if (bundle != null) {
+                res.add(bundle);
+            }
+        }
+        return res;
     }
 
     public Boolean delete(final String id, final Boolean removeInfo) throws IOException {
@@ -1681,185 +1700,29 @@ public class CapgoUpdater {
     }
 
     public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
-        synchronized (this.deleteLock) {
-            final File bundle;
-            try {
-                bundle = this.getBundleDirectory(id);
-            } catch (IOException e) {
-                logger.error("Cannot delete bundle with invalid id");
-                logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
-                return false;
-            }
-            final BundleInfo deleted = this.getBundleInfo(id);
-            if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
-                logger.error("Cannot delete current or builtin bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-            final BundleInfo previewFallback = this.getPreviewFallbackBundle();
-            if (
-                previewFallback != null &&
-                !previewFallback.isDeleted() &&
-                !previewFallback.isErrorStatus() &&
-                !previewFallback.isDeleting() &&
-                previewFallback.getId().equals(id)
-            ) {
-                logger.error("Cannot delete the preview fallback bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-            final BundleInfo next = this.getNextBundle();
-            if (next != null && !next.isDeleted() && !next.isErrorStatus() && !next.isDeleting() && next.getId().equals(id)) {
-                logger.error("Cannot delete the next bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-
-            final boolean hadRegistry = this.hasStoredBundleInfo(id);
-            final boolean hadFolder = bundle.exists();
-            if (!hadRegistry && !hadFolder) {
-                logger.error("Cannot delete unknown bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-
-            // Persist DELETING before touching disk so kill/OOM can resume on next launch.
-            if (!deleted.isDeleting()) {
-                if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
-                    logger.error("Failed to persist DELETING marker, aborting disk delete");
-                    logger.debug("Bundle ID: " + id);
-                    return false;
-                }
-            }
-
-            // Cancel download for this version if active
-            if (cancelActiveDownload && this.activity != null) {
-                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName())) {
-                    logger.error("Failed to cancel active download before delete");
-                    return false;
-                }
-            }
-
-            if (bundle.exists()) {
-                try {
-                    this.deleteDirectory(bundle);
-                } catch (final IOException e) {
-                    logger.error("Failed to delete bundle folder, will retry later");
-                    logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
-                    return false;
-                }
-            }
-
-            // Only drop registry after the folder is confirmed gone.
-            if (bundle.exists()) {
-                logger.error("Bundle folder still present after delete, will retry later");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-
-            final boolean finalized;
-            if (Boolean.FALSE.equals(removeInfo)) {
-                finalized = this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
-            } else {
-                finalized = this.saveBundleInfo(id, null);
-            }
-            if (!finalized) {
-                logger.error("Failed to finalize delete registry update, will retry later");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-            this.sendStats("delete", deleted.getVersionName());
-            this.dequeuePendingDelete(id);
-            logger.info("Bundle deleted and confirmed gone");
-            logger.debug("Bundle ID: " + id);
-            return true;
-        }
+        return this.call(
+            "bundleDelete",
+            "id",
+            id,
+            "removeInfo",
+            !Boolean.FALSE.equals(removeInfo),
+            "cancelActiveDownload",
+            cancelActiveDownload
+        ).optBoolean("deleted", false);
     }
 
     public Boolean delete(final String id) {
         try {
             return this.delete(id, true);
         } catch (IOException e) {
-            e.printStackTrace();
-            logger.info("Failed to delete bundle (" + id + ")" + "\nError:\n" + e.toString());
+            logger.info("Failed to delete bundle (" + id + ")" + "\nError:\n" + e);
             return false;
         }
     }
 
-    /**
-     * Resume incomplete deletes one-by-one. Safe across app kill / OOM because
-     * delete() marks DELETING before disk work and only clears registry after confirm.
-     */
+    /** Resumes deletes interrupted by a kill / OOM (records left in DELETING). */
     public void drainPendingDeletes() {
-        final LinkedHashSet<String> pendingIds = new LinkedHashSet<>();
-        for (final BundleInfo info : this.list(true)) {
-            if (info != null && info.isDeleting() && info.getId() != null && !info.getId().isEmpty()) {
-                pendingIds.add(info.getId());
-            }
-        }
-        pendingIds.addAll(this.getPendingDeleteIds());
-        for (final String id : pendingIds) {
-            try {
-                logger.info("Resuming pending delete for bundle: " + id);
-                if (Boolean.TRUE.equals(this.delete(id, true))) {
-                    this.dequeuePendingDelete(id);
-                }
-            } catch (final Exception e) {
-                logger.error("Pending delete failed, will retry next launch");
-                logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
-            }
-            try {
-                Thread.sleep(DELETE_PACE_MS);
-            } catch (final InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-    }
-
-    private Set<String> getPendingDeleteIds() {
-        final Set<String> ids = new LinkedHashSet<>();
-        if (this.prefs == null) {
-            return ids;
-        }
-        final String raw = this.prefs.getString(PENDING_DELETE_IDS, "");
-        if (raw == null || raw.isEmpty()) {
-            return ids;
-        }
-        for (final String part : raw.split(",")) {
-            if (part != null && !part.isEmpty()) {
-                ids.add(part);
-            }
-        }
-        return ids;
-    }
-
-    private void enqueuePendingDelete(final String id) {
-        if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
-            return;
-        }
-        final Set<String> ids = this.getPendingDeleteIds();
-        if (!ids.add(id)) {
-            return;
-        }
-        this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
-        this.editor.commit();
-    }
-
-    private void dequeuePendingDelete(final String id) {
-        if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
-            return;
-        }
-        final Set<String> ids = this.getPendingDeleteIds();
-        if (!ids.remove(id)) {
-            return;
-        }
-        if (ids.isEmpty()) {
-            this.editor.remove(PENDING_DELETE_IDS);
-        } else {
-            this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
-        }
-        this.editor.commit();
+        this.call("bundleDrainPendingDeletes");
     }
 
     private File getBundleDirectory(final String id) throws IOException {
@@ -1867,20 +1730,7 @@ public class CapgoUpdater {
     }
 
     private boolean bundleExists(final String id) {
-        final File bundle;
-        try {
-            bundle = this.getBundleDirectory(id);
-        } catch (IOException e) {
-            return false;
-        }
-        final BundleInfo bundleInfo = this.getBundleInfo(id);
-        return (
-            bundle.isDirectory() &&
-            bundle.exists() &&
-            new File(bundle.getPath(), "/index.html").exists() &&
-            !bundleInfo.isDeleted() &&
-            !bundleInfo.isDeleting()
-        );
+        return this.call("bundleExists", "id", id).optBoolean("exists", false);
     }
 
     static final class ResetState {
@@ -1897,46 +1747,36 @@ public class CapgoUpdater {
     }
 
     ResetState captureResetState() {
+        final JSONObject state = this.call("bundleCaptureResetState");
         return new ResetState(
-            this.getCurrentBundlePath(),
-            this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN),
-            this.prefs.getString(NEXT_VERSION, null)
+            state.optString("currentBundlePath", "public"),
+            state.optString("fallbackBundleId", BundleInfo.ID_BUILTIN),
+            state.isNull("nextBundleId") ? null : state.optString("nextBundleId", null)
         );
     }
 
     void restoreResetState(final ResetState state) {
-        final String currentBundlePath =
-            state.currentBundlePath == null || state.currentBundlePath.trim().isEmpty() ? "public" : state.currentBundlePath;
-        final String fallbackBundleId =
-            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
-
-        this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
-        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
-        if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
-            this.editor.remove(NEXT_VERSION);
-        } else {
-            this.editor.putString(NEXT_VERSION, state.nextBundleId);
-        }
-        this.editor.commit();
+        this.call(
+            "bundleRestoreResetState",
+            "currentBundlePath",
+            state.currentBundlePath,
+            "fallbackBundleId",
+            state.fallbackBundleId,
+            "nextBundleId",
+            state.nextBundleId
+        );
     }
 
     void prepareResetStateForTransition() {
-        this.setCurrentBundle(new File("public"));
-        this.setFallbackBundle(null);
-        this.setNextBundle(null);
+        this.call("bundlePrepareResetTransition");
     }
 
     void finalizeResetTransition(final String previousBundleName, final boolean internal) {
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelAllDownloads(this.activity);
-        }
-        if (!internal) {
-            this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
-        }
+        this.call("bundleFinalizeResetTransition", "previousBundleName", previousBundleName, "internal", internal);
     }
 
     boolean canSet(final BundleInfo bundle) {
-        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+        return bundle != null && this.call("bundleCanSet", "id", bundle.getId(), "bundle", bundle.toRawJson()).optBoolean("canSet", false);
     }
 
     public Boolean set(final BundleInfo bundle) {
@@ -1944,70 +1784,36 @@ public class CapgoUpdater {
     }
 
     public Boolean set(final String id) {
-        final BundleInfo newBundle = this.getBundleInfo(id);
-        if (newBundle.isBuiltin()) {
-            this.reset();
-            return true;
-        }
-        final File bundle;
-        try {
-            bundle = this.getBundleDirectory(id);
-        } catch (IOException e) {
-            logger.error("Invalid bundle id");
-            logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
-            this.setBundleStatus(id, BundleStatus.ERROR);
-            this.sendStats("set_fail", newBundle.getVersionName());
-            return false;
-        }
-        logger.info("Setting next active bundle: " + id);
-        if (this.bundleExists(id)) {
-            var currentBundleName = this.getCurrentBundle().getVersionName();
-            this.setCurrentBundle(bundle);
-            this.setBundleStatus(id, BundleStatus.PENDING);
-            this.sendStats("set", newBundle.getVersionName(), currentBundleName);
-            return true;
-        }
-        this.setBundleStatus(id, BundleStatus.ERROR);
-        this.sendStats("set_fail", newBundle.getVersionName());
-        return false;
+        return this.call("bundleSet", "id", id).optBoolean("set", false);
     }
 
     boolean stagePendingReload(final BundleInfo bundle) {
-        if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
-            return false;
-        }
-        try {
-            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        return (
+            bundle != null &&
+            this.call("bundleStagePendingReload", "id", bundle.getId(), "bundle", bundle.toRawJson()).optBoolean("staged", false)
+        );
     }
 
     boolean stagePreviewFallbackReload(final BundleInfo bundle) {
-        if (bundle == null || bundle.isErrorStatus()) {
-            return false;
-        }
-        if (bundle.isBuiltin()) {
-            this.setCurrentBundle(new File("public"));
-            return true;
-        }
-        if (!this.bundleExists(bundle.getId())) {
-            return false;
-        }
-        try {
-            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        return (
+            bundle != null &&
+            this.call("bundleStagePreviewFallbackReload", "id", bundle.getId(), "bundle", bundle.toRawJson()).optBoolean("staged", false)
+        );
     }
 
     void finalizePendingReload(final BundleInfo bundle, final String previousBundleName) {
-        if (bundle == null || bundle.isBuiltin()) {
+        if (bundle == null) {
             return;
         }
-        this.sendStats("set", bundle.getVersionName(), previousBundleName);
+        this.call(
+            "bundleFinalizePendingReload",
+            "id",
+            bundle.getId(),
+            "bundle",
+            bundle.toRawJson(),
+            "previousBundleName",
+            previousBundleName
+        );
     }
 
     @Deprecated
@@ -2020,46 +1826,13 @@ public class CapgoUpdater {
     }
 
     public void autoReset(final String currentNativeBuildVersion, final boolean resetWhenNativeVersionChanged) {
-        final BundleInfo currentBundle = this.getCurrentBundle();
-        if (!currentBundle.isBuiltin() && !this.bundleExists(currentBundle.getId())) {
-            logger.info("Folder at bundle path does not exist. Triggering reset.");
-            this.reset();
-            return;
-        }
-        String bundlePath = this.prefs.getString(this.CAP_SERVER_PATH, null);
-        if (shouldResetForForeignBundle(bundlePath, currentBundle.isBuiltin(), this.hasStoredBundleInfo(currentBundle.getId()))) {
-            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.");
-            this.reset();
-            return;
-        }
-        final String previousNativeBuildVersion = this.getStoredNativeBuildVersion();
-        if (
-            resetWhenNativeVersionChanged &&
-            !previousNativeBuildVersion.isEmpty() &&
-            currentNativeBuildVersion != null &&
-            !currentNativeBuildVersion.isEmpty() &&
-            !Objects.equals(previousNativeBuildVersion, currentNativeBuildVersion)
-        ) {
-            logger.info(
-                "Stored native build version " +
-                    previousNativeBuildVersion +
-                    " does not match current native build version " +
-                    currentNativeBuildVersion +
-                    ". Triggering reset."
-            );
-            this.reset();
-        }
-    }
-
-    private String getStoredNativeBuildVersion() {
-        if (this.prefs == null) {
-            return "";
-        }
-        String previousNativeBuildVersion = this.prefs.getString("LatestNativeBuildVersion", "");
-        if (previousNativeBuildVersion == null || previousNativeBuildVersion.isEmpty()) {
-            previousNativeBuildVersion = this.prefs.getString("LatestVersionNative", "");
-        }
-        return previousNativeBuildVersion == null ? "" : previousNativeBuildVersion;
+        this.call(
+            "bundleAutoReset",
+            "nativeBuildVersion",
+            currentNativeBuildVersion == null ? "" : currentNativeBuildVersion,
+            "resetWhenNativeVersionChanged",
+            resetWhenNativeVersionChanged
+        );
     }
 
     public void reset() {
@@ -2067,443 +1840,91 @@ public class CapgoUpdater {
     }
 
     public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
-        this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
-        final BundleInfo fallback = this.getFallbackBundle();
-        final BundleInfo previewFallback = this.getPreviewFallbackBundle();
-        final boolean fallbackIsPreviewFallback = previewFallback != null && previewFallback.getId().equals(fallback.getId());
-        logger.debug("Fallback bundle is: " + fallback);
-        logger.info("Version successfully loaded: " + bundle.getVersionName());
-        // Only attempt to delete when the fallback is a different bundle than the
-        // currently loaded one. Otherwise we spam logs with "Cannot delete <id>"
-        // because delete() protects the current bundle from removal.
-        final String previousFallbackId = fallback.getId();
-        final String previousFallbackVersion = fallback.getVersionName();
-        final BundleInfo nextBundle = this.getNextBundle();
-        final boolean previousIsNext =
-            nextBundle != null &&
-            previousFallbackId != null &&
-            previousFallbackId.equals(nextBundle.getId()) &&
-            !nextBundle.isDeleted() &&
-            !nextBundle.isErrorStatus() &&
-            !nextBundle.isDeleting();
-        final boolean shouldDeletePrevious =
-            Boolean.TRUE.equals(autoDeletePrevious) &&
-            !fallback.isBuiltin() &&
-            previousFallbackId != null &&
-            !previousFallbackId.equals(bundle.getId()) &&
-            !fallbackIsPreviewFallback &&
-            !previousIsNext;
-        if (shouldDeletePrevious) {
-            if (!this.saveBundleInfo(previousFallbackId, fallback.setStatus(BundleStatus.DELETING))) {
-                logger.error("Failed to persist DELETING for previous bundle; queueing durable retry");
-                logger.debug("Bundle ID: " + previousFallbackId);
-                this.enqueuePendingDelete(previousFallbackId);
-            }
-        }
-        boolean deletePreviousAsync = shouldDeletePrevious;
-        this.setFallbackBundle(bundle);
-        if (deletePreviousAsync) {
-            final String asyncPreviousFallbackId = previousFallbackId;
-            final String asyncPreviousFallbackVersion = previousFallbackVersion;
-            io.execute(() -> {
-                if (this.activity != null) {
-                    if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, asyncPreviousFallbackVersion)) {
-                        logger.error("Failed to cancel previous version download before delete");
-                        return;
-                    }
-                }
-                try {
-                    final Boolean res = this.delete(asyncPreviousFallbackId, true, false);
-                    if (Boolean.TRUE.equals(res)) {
-                        logger.info("Deleted previous bundle: " + asyncPreviousFallbackVersion);
-                    } else {
-                        logger.debug("Previous bundle delete incomplete, will retry: " + asyncPreviousFallbackId);
-                    }
-                } catch (final IOException e) {
-                    logger.error("Failed to delete previous bundle: " + asyncPreviousFallbackId + " " + e.getMessage());
-                }
-            });
-        }
+        this.call("bundleSetSuccess", "id", bundle.getId(), "autoDeletePrevious", Boolean.TRUE.equals(autoDeletePrevious));
     }
 
     public void setError(final BundleInfo bundle) {
-        this.setBundleStatus(bundle.getId(), BundleStatus.ERROR);
+        this.call("bundleSetError", "id", bundle.getId());
     }
 
     public void reset(final boolean internal) {
-        logger.debug("reset: " + internal);
-        final String currentBundleName = this.getCurrentBundle().getVersionName();
-        this.prepareResetStateForTransition();
-        this.finalizeResetTransition(currentBundleName, internal);
+        this.call("bundleReset", "internal", internal);
     }
 
-    private JSONObject createInfoObject() throws JSONException {
-        return this.createInfoObject(null);
+    public BundleInfo getBundleInfo(final String id) {
+        return this.bundleCall("bundleGet", "id", id);
     }
 
-    private JSONObject createInfoObject(final String appIdOverride) throws JSONException {
-        JSONObject json = new JSONObject();
-        json.put("platform", "android");
-        json.put("device_id", this.deviceID);
-        json.put("app_id", appIdOverride == null || appIdOverride.trim().isEmpty() ? this.appId : appIdOverride);
-        json.put("custom_id", this.customId);
-        json.put("version_build", this.versionBuild);
-        json.put("version_code", this.versionCode);
-        json.put("version_os", this.versionOs);
-        json.put("version_name", this.getCurrentBundle().getVersionName());
-        json.put("plugin_version", this.pluginVersion);
-        json.put("is_emulator", this.isEmulator());
-        json.put("is_prod", this.isProd());
-        json.put("install_source", this.getInstallSource());
-        json.put("defaultChannel", this.defaultChannel);
+    public BundleInfo getBundleInfoByName(final String versionName) {
+        return this.bundleCall("bundleGetByName", "version", versionName);
+    }
 
-        // Add encryption key ID if encryption is enabled (use cached value)
-        if (!this.cachedKeyId.isEmpty()) {
-            json.put("key_id", this.cachedKeyId);
+    private void removeBundleInfo(final String id) {
+        this.saveBundleInfo(id, null);
+    }
+
+    public boolean saveBundleInfo(final String id, final BundleInfo info) {
+        if (id == null) {
+            return false;
         }
-
-        return json;
+        return this.call("bundleSave", "id", id, "bundle", info == null ? null : info.toRawJson()).optBoolean("saved", false);
     }
 
-    private static final class RemoteBlockResult {
-
-        final boolean blocked;
-        final String error;
-        final String message;
-
-        RemoteBlockResult(final boolean blocked, final String error, final String message) {
-            this.blocked = blocked;
-            this.error = error;
-            this.message = message;
+    private void setBundleStatus(final String id, final BundleStatus status) {
+        if (id != null && status != null) {
+            this.call("bundleSetStatus", "id", id, "status", status.toString());
         }
     }
 
-    /**
-     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
-     * All 429s use the same temporary client block — no sticky latch until restart.
-     */
-    private RemoteBlockResult checkAndHandleRateLimitResponse(Response response, String responseData) {
-        if (response == null || response.code() != 429) {
-            return new RemoteBlockResult(false, "", "");
-        }
-
-        final String parsedError = parseRemoteError(responseData);
-        final String parsedMessage = parseRemoteMessage(responseData);
-        final String errorCode = parsedError.isEmpty() ? "too_many_requests" : parsedError;
-        final String message = parsedMessage.isEmpty() ? "Too many requests" : parsedMessage;
-
-        final long retryUntilMs = resolveRateLimitBlockedUntilMs(response, responseData);
-        synchronized (rateLimitStateLock) {
-            if (retryUntilMs > rateLimitBlockedUntilMs) {
-                rateLimitBlockedUntilMs = retryUntilMs;
-                rateLimitBlockedError = errorCode;
-                rateLimitBlockedMessage = message;
-            } else if (rateLimitBlockedUntilMs <= 0L) {
-                rateLimitBlockedError = errorCode;
-                rateLimitBlockedMessage = message;
-            }
-        }
-
-        // Claim last, and only when there is somewhere to send it, so a 429 burst with no
-        // stats URL does not claim and release the latch once per response.
-        if ("too_many_requests".equals(errorCode) && !this.previewSession && this.hasStatsUrl() && claimRateLimitStatistic()) {
-            sendRateLimitStatistic();
-        }
-
-        final long nowMs = System.currentTimeMillis();
-        final long retryAfter = Math.max(0L, (Math.max(retryUntilMs, nowMs) - nowMs + 999L) / 1000L);
-        logger.warn("Received 429 (" + errorCode + "). Honouring Retry-After: " + retryAfter + "s.");
-        return new RemoteBlockResult(true, errorCode, message);
+    private String getCurrentBundleId() {
+        return this.call("bundleCurrent").optString("id", BundleInfo.ID_BUILTIN);
     }
 
-    static String parseRemoteError(final String responseData) {
-        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "error", "");
+    public BundleInfo getCurrentBundle() {
+        return this.getBundleInfo(this.getCurrentBundleId());
     }
 
-    static String parseRemoteMessage(final String responseData) {
-        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "message", "");
+    public String getCurrentBundlePath() {
+        final String path = this.call("bundleCurrent").optString("path", "public");
+        return path.trim().isEmpty() ? "public" : path;
     }
 
-    private long resolveRateLimitBlockedUntilMs(final Response response, final String responseData) {
-        return resolveRateLimitBlockedUntilMs(response.header("Retry-After"), responseData, System.currentTimeMillis());
+    public Boolean isUsingBuiltin() {
+        return this.call("bundleCurrent").optBoolean("isBuiltin", true);
     }
 
-    /**
-     * Epoch ms until which requests stay blocked after a 429 (0 = no block). Honours Retry-After, then
-     * retryAfterSeconds, then rateLimitResetAt, capped at one day (shared core rule).
-     */
-    static long resolveRateLimitBlockedUntilMs(final String retryAfterHeader, final String responseData, final long nowMs) {
-        return CapgoCore.number(
-            "rateLimitDeadline",
-            CapgoCore.input("retryAfter", retryAfterHeader, "body", responseData, "nowMs", nowMs),
-            "blockedUntilMs",
-            0L
-        );
+    public BundleInfo getFallbackBundle() {
+        return this.bundleCall("bundleFallback");
     }
 
-    private static boolean claimRateLimitStatistic() {
-        synchronized (rateLimitStateLock) {
-            if (rateLimitStatisticSent) {
-                return false;
-            }
-            rateLimitStatisticSent = true;
-            return true;
-        }
+    public BundleInfo getNextBundle() {
+        return this.bundleCall("bundleNext");
     }
 
-    /**
-     * Give the claim back when the statistic never made it out, so a later 429 can retry it.
-     */
-    private static void releaseRateLimitStatisticClaim() {
-        synchronized (rateLimitStateLock) {
-            rateLimitStatisticSent = false;
-        }
+    public BundleInfo getPreviewFallbackBundle() {
+        return this.bundleCall("bundlePreviewFallback");
     }
 
-    private boolean hasStatsUrl() {
-        final String url = this.statsUrl;
-        return url != null && !url.isEmpty();
+    public boolean setPreviewFallbackBundle(final String fallback) {
+        return this.call("bundleSetPreviewFallback", "id", fallback).optBoolean("set", false);
     }
 
-    private boolean isRemoteBlocked() {
-        synchronized (rateLimitStateLock) {
-            if (rateLimitBlockedUntilMs <= 0L) {
-                return false;
-            }
-            if (System.currentTimeMillis() >= rateLimitBlockedUntilMs) {
-                rateLimitBlockedUntilMs = 0L;
-                return false;
-            }
-            return true;
-        }
+    public boolean setNextBundle(final String next) {
+        return this.call("bundleSetNext", "id", next).optBoolean("set", false);
     }
 
-    private RemoteBlockResult remoteBlockedClientError() {
-        synchronized (rateLimitStateLock) {
-            return new RemoteBlockResult(true, rateLimitBlockedError, rateLimitBlockedMessage);
-        }
-    }
-
-    /**
-     * Send a statistic about rate limiting.
-     * Dispatched through OkHttp so no caller thread waits on the request.
-     */
-    private void sendRateLimitStatistic() {
-        String statsUrl = this.statsUrl;
-        if (statsUrl == null || statsUrl.isEmpty()) {
-            // The URL was cleared after the claim was taken; nothing went out, so hand it back.
-            releaseRateLimitStatisticClaim();
-            return;
-        }
-
-        try {
-            BundleInfo current = this.getCurrentBundle();
-            JSONObject json = this.createInfoObject();
-            json.put("version_name", current.getVersionName());
-            json.put("old_version_name", "");
-            json.put("action", "rate_limit_reached");
-
-            Request request = new Request.Builder()
-                .url(statsUrl)
-                .post(RequestBody.create(json.toString(), MediaType.get("application/json")))
-                .build();
-
-            // User-Agent header is automatically added by DownloadService.sharedClient interceptor
-            DownloadService.sharedClient.newCall(request).enqueue(
-                new okhttp3.Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        releaseRateLimitStatisticClaim();
-                        logger.error("Failed to send rate limit statistic");
-                        logger.debug("Error: " + e.getMessage());
-                    }
-
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        // The body is unused here; closing the Response closes it.
-                        try (response) {
-                            if (response.isSuccessful()) {
-                                logger.info("Rate limit statistic sent");
-                            } else {
-                                releaseRateLimitStatisticClaim();
-                                logger.error("Error sending rate limit statistic");
-                                logger.debug("Response code: " + response.code());
-                            }
-                        }
-                    }
-                }
-            );
-        } catch (final Exception e) {
-            releaseRateLimitStatisticClaim();
-            logger.error("Failed to send rate limit statistic");
-            logger.debug("Error: " + e.getMessage());
-        }
-    }
-
-    private void makeJsonRequest(String url, JSONObject jsonBody, Callback callback) {
-        MediaType JSON = MediaType.get("application/json; charset=utf-8");
-        RequestBody body = RequestBody.create(jsonBody.toString(), JSON);
-
-        Request request = new Request.Builder().url(url).post(body).build();
-
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    retError.put("kind", "failed");
-                    callback.callback(retError);
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final int statusCode = response.code();
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        JSONObject jsonResponse = null;
-                        if (!responseData.isEmpty()) {
-                            try {
-                                jsonResponse = new JSONObject(responseData);
-                            } catch (JSONException ignored) {
-                                // Non-JSON responses are handled as response or parse errors below.
-                            }
-                        }
-
-                        if (jsonResponse != null && (jsonResponse.has("error") || jsonResponse.has("kind"))) {
-                            if (statusCode == 429) {
-                                final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put(
-                                    "error",
-                                    rateLimit.error.isEmpty() ? jsonResponse.optString("error", "too_many_requests") : rateLimit.error
-                                );
-                                retError.put(
-                                    "message",
-                                    rateLimit.message.isEmpty() ? jsonResponse.optString("message", "Too many requests") : rateLimit.message
-                                );
-                                if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
-                                    retError.put("kind", jsonResponse.getString("kind"));
-                                } else {
-                                    retError.put("kind", "failed");
-                                }
-                                if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
-                                    retError.put("version", jsonResponse.getString("version"));
-                                }
-                                retError.put("statusCode", statusCode);
-                                callback.callback(retError);
-                                return;
-                            }
-                            Map<String, Object> retError = new HashMap<>();
-                            if (jsonResponse.has("error") && !jsonResponse.isNull("error")) {
-                                retError.put("error", jsonResponse.getString("error"));
-                            }
-                            if (jsonResponse.has("kind") && !jsonResponse.isNull("kind")) {
-                                retError.put("kind", jsonResponse.getString("kind"));
-                            }
-                            if (jsonResponse.has("message") && !jsonResponse.isNull("message")) {
-                                retError.put("message", jsonResponse.getString("message"));
-                            } else {
-                                retError.put("message", "server did not provide a message");
-                            }
-                            if (jsonResponse.has("version") && !jsonResponse.isNull("version")) {
-                                retError.put("version", jsonResponse.getString("version"));
-                            }
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        // Check for 429 rate limit without JSON body
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            retError.put("kind", "failed");
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            retError.put("kind", "failed");
-                            retError.put("statusCode", statusCode);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (jsonResponse == null) {
-                            throw new JSONException("Response is not a JSON object");
-                        }
-
-                        Map<String, Object> ret = new HashMap<>();
-                        ret.put("statusCode", statusCode);
-
-                        Iterator<String> keys = jsonResponse.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (jsonResponse.has(key)) {
-                                if ("session_key".equals(key)) {
-                                    ret.put("sessionKey", jsonResponse.get(key));
-                                } else {
-                                    ret.put(key, jsonResponse.get(key));
-                                }
-                            }
-                        }
-                        callback.callback(ret);
-                    } catch (JSONException e) {
-                        Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "JSON parse error: " + e.getMessage());
-                        retError.put("error", "parse_error");
-                        retError.put("kind", "failed");
-                        callback.callback(retError);
-                    }
-                }
-            }
-        );
-    }
+    // ---- backend -----------------------------------------------------------------------------
 
     public void getLatest(final String updateUrl, final String channel, final Callback callback) {
         this.getLatest(updateUrl, channel, null, callback);
     }
 
     public void getLatest(final String updateUrl, final String channel, final String appIdOverride, final Callback callback) {
-        if (isRemoteBlocked()) {
-            final RemoteBlockResult blocked = remoteBlockedClientError();
-            logger.debug("Skipping getLatest due to remote block (" + blocked.error + ").");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", blocked.message);
-            retError.put("error", blocked.error);
-            retError.put("kind", "failed");
-            callback.callback(retError);
-            return;
-        }
-        JSONObject json;
-        try {
-            json = this.createInfoObject(appIdOverride);
-            if (channel != null && json != null) {
-                json.put("defaultChannel", channel);
-            }
-        } catch (JSONException e) {
-            logger.error("Error getting latest version");
-            logger.debug("JSONException: " + e.getMessage());
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Cannot get info: " + e);
-            retError.put("error", "json_error");
-            callback.callback(retError);
-            return;
-        }
+        this.backend(callback, "getLatest", "updateUrl", updateUrl, "channel", channel, "appId", appIdOverride);
+    }
 
-        if (logger != null) {
-            logger.info("Auto-update parameters: " + json);
-        }
-
-        makeJsonRequest(updateUrl, json, callback);
+    public JSONObject getBundleDownloadSize(final String updateUrl, final String version, final JSONArray manifest) throws JSONException {
+        return this.call("bundleDownloadSize", "updateUrl", updateUrl, "version", version, "manifest", manifest);
     }
 
     public void unsetChannel(
@@ -2513,25 +1934,19 @@ public class CapgoUpdater {
         final boolean allowSetDefaultChannel,
         final Callback callback
     ) {
-        if (!allowSetDefaultChannel) {
-            logger.error("unsetChannel is disabled by allowSetDefaultChannel config");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "unsetChannel is disabled by configuration");
-            retError.put("error", "disabled_by_config");
-            callback.callback(retError);
-            return;
+        final JSONObject result = this.call(
+            "unsetChannel",
+            "configDefaultChannel",
+            configDefaultChannel,
+            "allowSetDefaultChannel",
+            allowSetDefaultChannel
+        );
+        if (!result.has("error")) {
+            this.defaultChannel = configDefaultChannel;
+            editor.remove(defaultChannelKey);
+            editor.apply();
         }
-
-        // Clear persisted defaultChannel and revert to config value
-        editor.remove(defaultChannelKey);
-        editor.apply();
-        this.defaultChannel = configDefaultChannel;
-        logger.info("Persisted defaultChannel cleared, reverted to config value: " + configDefaultChannel);
-
-        Map<String, Object> ret = new HashMap<>();
-        ret.put("status", "ok");
-        ret.put("message", "Channel override removed");
-        callback.callback(ret);
+        callback.callback(toResultMap(result));
     }
 
     public void setChannel(
@@ -2552,68 +1967,28 @@ public class CapgoUpdater {
         final String configDefaultChannel,
         final Callback callback
     ) {
-        // Check if setting defaultChannel is allowed
-        if (!allowSetDefaultChannel) {
-            logger.error("setChannel is disabled by allowSetDefaultChannel config");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "setChannel is disabled by configuration");
-            retError.put("error", "disabled_by_config");
-            callback.callback(retError);
-            return;
-        }
-
-        if (isRemoteBlocked()) {
-            final RemoteBlockResult blocked = remoteBlockedClientError();
-            logger.debug("Skipping setChannel due to remote block (" + blocked.error + ").");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", blocked.message);
-            retError.put("error", blocked.error);
-            callback.callback(retError);
-            return;
-        }
-
-        String channelUrl = this.channelUrl;
-        if (channelUrl == null || channelUrl.isEmpty()) {
-            logger.error("Channel URL is not set");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "channelUrl missing");
-            retError.put("error", "missing_config");
-            callback.callback(retError);
-            return;
-        }
-        JSONObject json;
-        try {
-            json = this.createInfoObject();
-            json.put("channel", channel);
-        } catch (JSONException e) {
-            logger.error("Error setting channel");
-            logger.debug("JSONException: " + e.getMessage());
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Cannot get info: " + e);
-            retError.put("error", "json_error");
-            callback.callback(retError);
-            return;
-        }
-
-        makeJsonRequest(channelUrl, json, (res) -> {
-            if (res.containsKey("error")) {
+        this.backend(
+            (res) -> {
+                if (!res.containsKey("error")) {
+                    if (Boolean.TRUE.equals(res.get("unset"))) {
+                        this.defaultChannel = configDefaultChannel;
+                        editor.remove(defaultChannelKey);
+                    } else {
+                        this.defaultChannel = channel;
+                        editor.putString(defaultChannelKey, channel);
+                    }
+                    editor.apply();
+                }
                 callback.callback(res);
-            } else if (Boolean.TRUE.equals(res.get("unset"))) {
-                // Server requested to unset channel (public channel was requested)
-                // Clear persisted defaultChannel and revert to config value
-                editor.remove(defaultChannelKey);
-                editor.apply();
-                this.defaultChannel = configDefaultChannel;
-                logger.info("Public channel requested, channel override removed");
-                callback.callback(res);
-            } else {
-                this.defaultChannel = channel;
-                editor.putString(defaultChannelKey, channel);
-                editor.apply();
-                logger.info("defaultChannel persisted locally: " + channel);
-                callback.callback(res);
-            }
-        });
+            },
+            "setChannel",
+            "channel",
+            channel,
+            "allowSetDefaultChannel",
+            allowSetDefaultChannel,
+            "configDefaultChannel",
+            configDefaultChannel
+        );
     }
 
     public void getChannel(final Callback callback) {
@@ -2621,127 +1996,14 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
-        if (isRemoteBlocked()) {
-            final RemoteBlockResult blocked = remoteBlockedClientError();
-            logger.debug("Skipping getChannel due to remote block (" + blocked.error + ").");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", blocked.message);
-            retError.put("error", blocked.error);
-            callback.callback(retError);
-            return;
-        }
-
-        String channelUrl = this.channelUrl;
-        if (channelUrl == null || channelUrl.isEmpty()) {
-            logger.error("Channel URL is not set");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Channel URL is not set");
-            retError.put("error", "missing_config");
-            callback.callback(retError);
-            return;
-        }
-        JSONObject json;
-        try {
-            json = this.createInfoObject();
-        } catch (JSONException e) {
-            logger.error("Error getting channel");
-            logger.debug("JSONException: " + e.getMessage());
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Cannot get info: " + e);
-            retError.put("error", "json_error");
-            callback.callback(retError);
-            return;
-        }
-
-        Request request = new Request.Builder()
-            .url(channelUrl)
-            .put(RequestBody.create(json.toString(), MediaType.get("application/json")))
-            .build();
-
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    callback.callback(retError);
+        this.backend(
+            (res) -> {
+                if (!res.containsKey("error") && !"default".equals(res.get("status"))) {
+                    persistDefaultChannelFromResponse(res.get("channel"), editor, defaultChannelKey);
                 }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, responseData);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (response.code() == 400) {
-                            if (responseData.contains("channel_not_found") && !defaultChannel.isEmpty()) {
-                                Map<String, Object> ret = new HashMap<>();
-                                ret.put("channel", defaultChannel);
-                                ret.put("status", "default");
-                                logger.info("Channel get to \"" + ret);
-                                callback.callback(ret);
-                                return;
-                            }
-                        }
-
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (responseData.isEmpty()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Empty response body");
-                            retError.put("error", "no_response_body");
-                            callback.callback(retError);
-                            return;
-                        }
-                        JSONObject jsonResponse = new JSONObject(responseData);
-
-                        // Check for server-side errors first
-                        if (jsonResponse.has("error")) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("error", jsonResponse.getString("error"));
-                            if (jsonResponse.has("message")) {
-                                retError.put("message", jsonResponse.getString("message"));
-                            } else {
-                                retError.put("message", "server did not provide a message");
-                            }
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        Map<String, Object> ret = new HashMap<>();
-
-                        Iterator<String> keys = jsonResponse.keys();
-                        while (keys.hasNext()) {
-                            String key = keys.next();
-                            if (jsonResponse.has(key)) {
-                                ret.put(key, jsonResponse.get(key));
-                            }
-                        }
-                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
-                        logger.info("Channel get to \"" + ret);
-                        callback.callback(ret);
-                    } catch (JSONException e) {
-                        Map<String, Object> retError = new HashMap<>();
-                        retError.put("message", "JSON parse error: " + e.getMessage());
-                        retError.put("error", "parse_error");
-                        callback.callback(retError);
-                    }
-                }
-            }
+                callback.callback(res);
+            },
+            "getChannel"
         );
     }
 
@@ -2749,12 +2011,10 @@ public class CapgoUpdater {
         if (!(channel instanceof String)) {
             return;
         }
-
         final String channelName = ((String) channel).trim();
         if (channelName.isEmpty() || BundleInfo.ID_BUILTIN.equals(channelName)) {
             return;
         }
-
         this.defaultChannel = channelName;
         if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
             editor.putString(defaultChannelKey, channelName);
@@ -2764,140 +2024,12 @@ public class CapgoUpdater {
     }
 
     public void listChannels(final Callback callback) {
-        if (isRemoteBlocked()) {
-            final RemoteBlockResult blocked = remoteBlockedClientError();
-            logger.debug("Skipping listChannels due to remote block (" + blocked.error + ").");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", blocked.message);
-            retError.put("error", blocked.error);
-            callback.callback(retError);
-            return;
-        }
-
-        String channelUrl = this.channelUrl;
-        if (channelUrl == null || channelUrl.isEmpty()) {
-            logger.error("Channel URL is not set");
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Channel URL is not set");
-            retError.put("error", "missing_config");
-            callback.callback(retError);
-            return;
-        }
-
-        JSONObject json;
-        try {
-            json = this.createInfoObject();
-        } catch (JSONException e) {
-            logger.error("Error creating info object");
-            logger.debug("JSONException: " + e.getMessage());
-            final Map<String, Object> retError = new HashMap<>();
-            retError.put("message", "Cannot get info: " + e);
-            retError.put("error", "json_error");
-            callback.callback(retError);
-            return;
-        }
-
-        // Build URL with query parameters from JSON
-        HttpUrl.Builder urlBuilder = HttpUrl.parse(channelUrl).newBuilder();
-        try {
-            Iterator<String> keys = json.keys();
-            while (keys.hasNext()) {
-                String key = keys.next();
-                Object value = json.get(key);
-                if (value != null) {
-                    urlBuilder.addQueryParameter(key, value.toString());
-                }
-            }
-        } catch (JSONException e) {
-            logger.error("Error adding query parameters");
-            logger.debug("JSONException: " + e.getMessage());
-        }
-
-        Request request = new Request.Builder().url(urlBuilder.build()).get().build();
-
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    Map<String, Object> retError = new HashMap<>();
-                    retError.put("message", "Request failed: " + e.getMessage());
-                    retError.put("error", "network_error");
-                    callback.callback(retError);
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        final String data = responseBody != null ? responseBody.string() : "";
-                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, data);
-                        if (rateLimit.blocked) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", rateLimit.message);
-                            retError.put("error", rateLimit.error);
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (!response.isSuccessful()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Server error: " + response.code());
-                            retError.put("error", "response_error");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        if (data.isEmpty()) {
-                            Map<String, Object> retError = new HashMap<>();
-                            retError.put("message", "Empty response body");
-                            retError.put("error", "no_response_body");
-                            callback.callback(retError);
-                            return;
-                        }
-
-                        try {
-                            Map<String, Object> ret = parseListChannelsResponse(data);
-
-                            logger.info("Channels listed successfully");
-                            callback.callback(ret);
-                        } catch (JSONException arrayException) {
-                            // If not an array, try to parse as error object
-                            try {
-                                JSONObject json = new JSONObject(data);
-                                if (json.has("error")) {
-                                    Map<String, Object> retError = new HashMap<>();
-                                    retError.put("error", json.getString("error"));
-                                    if (json.has("message")) {
-                                        retError.put("message", json.getString("message"));
-                                    } else {
-                                        retError.put("message", "server did not provide a message");
-                                    }
-                                    callback.callback(retError);
-                                    return;
-                                }
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "Unexpected channels response format");
-                                retError.put("error", "parse_error");
-                                callback.callback(retError);
-                                return;
-                            } catch (JSONException objException) {
-                                // If neither array nor object, throw parse error
-                                arrayException.addSuppressed(objException);
-                                Map<String, Object> retError = new HashMap<>();
-                                retError.put("message", "JSON parse error: " + arrayException.getMessage());
-                                retError.put("error", "parse_error");
-                                callback.callback(retError);
-                            }
-                        }
-                    }
-                }
-            }
-        );
+        this.backend(callback, "listChannels");
     }
 
     static Map<String, Object> parseListChannelsResponse(final String data) throws JSONException {
         JSONArray channelsJson = new JSONArray(data);
         List<Map<String, Object>> channelsList = new ArrayList<>();
-
         for (int i = 0; i < channelsJson.length(); i++) {
             JSONObject channelJson = channelsJson.getJSONObject(i);
             Object channelId = channelJson.get("id");
@@ -2911,11 +2043,33 @@ public class CapgoUpdater {
             channel.put("allow_self_set", channelJson.optBoolean("allow_self_set", false));
             channelsList.add(channel);
         }
-
         Map<String, Object> ret = new HashMap<>();
         ret.put("channels", channelsList);
         return ret;
     }
+
+    static String parseRemoteError(final String responseData) {
+        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "error", "");
+    }
+
+    static String parseRemoteMessage(final String responseData) {
+        return CapgoCore.string("remoteError", CapgoCore.input("body", responseData), "message", "");
+    }
+
+    /**
+     * Epoch ms until which requests stay blocked after a 429 (0 = no block). Honours Retry-After, then
+     * retryAfterSeconds, then rateLimitResetAt, capped at one day (shared core rule).
+     */
+    static long resolveRateLimitBlockedUntilMs(final String retryAfterHeader, final String responseData, final long nowMs) {
+        return CapgoCore.number(
+            "rateLimitDeadline",
+            CapgoCore.input("retryAfter", retryAfterHeader, "body", responseData, "nowMs", nowMs),
+            "blockedUntilMs",
+            0L
+        );
+    }
+
+    // ---- stats -------------------------------------------------------------------------------
 
     public void sendStats(final String action) {
         this.sendStats(action, this.getCurrentBundle().getVersionName());
@@ -2940,580 +2094,45 @@ public class CapgoUpdater {
         final Map<String, String> metadata,
         final Runnable onSent
     ) {
-        if (statsStopped.get()) {
-            return;
+        String callbackId = null;
+        if (onSent != null) {
+            callbackId = this.randomString();
+            this.statsCallbacks.put(callbackId, onSent);
         }
-
-        if (this.previewSession) {
-            if (logger != null) {
-                logger.debug("Skipping sendStats during preview session.");
-            }
-            return;
-        }
-
-        String statsUrl = this.statsUrl;
-        if (statsUrl == null || statsUrl.isEmpty()) {
-            return;
-        }
-
-        JSONObject json;
-        try {
-            json = this.createInfoObject();
-            json.put("version_name", versionName);
-            json.put("old_version_name", oldVersionName);
-            json.put("action", action);
-            json.put("timestamp", System.currentTimeMillis());
-            if (metadata != null && !metadata.isEmpty()) {
-                json.put("metadata", new JSONObject(metadata));
-            }
-        } catch (JSONException e) {
-            if (logger != null) {
-                logger.error("Error preparing stats");
-                logger.debug("JSONException: " + e.getMessage());
-            }
-            return;
-        }
-
-        synchronized (statsQueue) {
-            if (statsStopped.get()) {
-                return;
-            }
-            while (statsQueue.size() >= MAX_PENDING_STATS) {
-                statsQueue.remove(0);
-            }
-            statsQueue.add(new QueuedStatsEvent(json, onSent));
-        }
-        ensureStatsTimerStarted();
-    }
-
-    public void restorePendingStats() {
-        File file = pendingStatsFile();
-        if (file == null) {
-            return;
-        }
-        File backup = new File(file.getAbsolutePath() + ".bak");
-        if (!file.exists() && backup.exists() && !backup.renameTo(file)) {
-            if (logger != null) {
-                logger.error("Failed to restore stats backup");
-            }
-            return;
-        }
-        if (!file.exists()) {
-            return;
-        }
-        try {
-            String raw = readFileUtf8(file);
-            JSONArray arr = new JSONArray(raw);
-            synchronized (statsQueue) {
-                for (int i = 0; i < arr.length(); i++) {
-                    if (statsQueue.size() >= MAX_PENDING_STATS) {
-                        break;
-                    }
-                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
-                }
-            }
-            if (backup.exists() && !backup.delete()) {
-                if (logger != null) {
-                    logger.error("Failed to delete stats backup");
-                }
-            }
-            if (!statsQueue.isEmpty()) {
-                if (logger != null) {
-                    logger.info("Restored " + statsQueue.size() + " pending stats events");
-                }
-                ensureStatsTimerStarted();
-            }
-        } catch (Exception e) {
-            if (logger != null) {
-                logger.error("Failed to restore pending stats");
-                logger.debug("Error: " + e.getMessage());
-            }
-        }
-    }
-
-    int pendingStatsCount() {
-        return statsQueue.size();
-    }
-
-    public void persistPendingStats() {
-        persistStatsQueue();
-    }
-
-    private File pendingStatsFile() {
-        final File dir = this.noBackupDir != null ? this.noBackupDir : this.documentsDir;
-        if (dir == null) {
-            return null;
-        }
-        return new File(dir, PENDING_STATS_FILE);
-    }
-
-    private void persistStatsQueue() {
-        persistStatsQueue(false);
-    }
-
-    private void persistStatsQueue(final boolean force) {
-        File file = pendingStatsFile();
-        if (file == null) {
-            return;
-        }
-        synchronized (pendingStatsPersistLock) {
-            if (statsStopped.get() && !force) {
-                return;
-            }
-            JSONArray arr = new JSONArray();
-            synchronized (statsQueue) {
-                final List<QueuedStatsEvent> combined = new ArrayList<>(statsInFlight.size() + statsQueue.size());
-                combined.addAll(statsInFlight);
-                combined.addAll(statsQueue);
-                final int start = Math.max(0, combined.size() - MAX_PENDING_STATS);
-                for (int i = start; i < combined.size(); i++) {
-                    arr.put(combined.get(i).event);
-                }
-            }
-            try {
-                if (arr.length() == 0) {
-                    writeFileAtomically(file, "[]".getBytes(StandardCharsets.UTF_8));
-                    File backup = new File(file.getAbsolutePath() + ".bak");
-                    if (backup.exists() && !backup.delete()) {
-                        if (logger != null) {
-                            logger.error("Failed to delete empty stats backup");
-                        }
-                    }
-                    return;
-                }
-                writeFileAtomically(file, arr.toString().getBytes(StandardCharsets.UTF_8));
-            } catch (Exception e) {
-                if (logger != null) {
-                    logger.error("Failed to persist stats queue");
-                    logger.debug("Error: " + e.getMessage());
-                }
-            }
-        }
-    }
-
-    private static String readFileUtf8(final File file) throws IOException {
-        final long length = file.length();
-        final byte[] buf = new byte[length > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) length];
-        try (FileInputStream in = new FileInputStream(file)) {
-            int offset = 0;
-            while (offset < buf.length) {
-                final int read = in.read(buf, offset, buf.length - offset);
-                if (read < 0) {
-                    break;
-                }
-                offset += read;
-            }
-            return new String(buf, 0, offset, StandardCharsets.UTF_8);
-        }
-    }
-
-    private void writeFileAtomically(final File file, final byte[] bytes) throws IOException {
-        final File tmp = new File(file.getAbsolutePath() + ".tmp");
-        File backup = null;
-        try {
-            try (FileOutputStream out = new FileOutputStream(tmp)) {
-                out.write(bytes);
-                out.flush();
-            }
-            if (tmp.renameTo(file)) {
-                return;
-            }
-            if (file.exists()) {
-                backup = new File(file.getAbsolutePath() + ".bak");
-                if (backup.exists() && !backup.delete()) {
-                    throw new IOException("Failed to replace " + file.getAbsolutePath());
-                }
-                if (!file.renameTo(backup)) {
-                    throw new IOException("Failed to replace " + file.getAbsolutePath());
-                }
-            }
-            if (tmp.renameTo(file)) {
-                if (backup != null && backup.exists() && !backup.delete()) {
-                    if (logger != null) {
-                        logger.error("Failed to delete stats backup");
-                    }
-                }
-                backup = null;
-                return;
-            }
-            throw new IOException("Failed to persist " + file.getAbsolutePath());
-        } finally {
-            if (backup != null && !file.exists()) {
-                backup.renameTo(file);
-            }
-            if (tmp.exists() && !tmp.delete()) {
-                tmp.deleteOnExit();
-            }
-        }
-    }
-
-    private synchronized void ensureStatsTimerStarted() {
-        if (statsStopped.get()) {
-            return;
-        }
-        if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
-            statsFlushTask = statsScheduler.scheduleAtFixedRate(
-                this::flushStatsQueue,
-                STATS_FLUSH_INTERVAL_MS,
-                STATS_FLUSH_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-            );
-        }
-    }
-
-    private void flushStatsQueue() {
-        if (statsStopped.get()) {
-            return;
-        }
-        if (statsQueue.isEmpty()) {
-            return;
-        }
-
-        // While Retry-After is active, keep stats queued and skip the network call.
-        if (isRemoteBlocked()) {
-            logger.debug("Deferring stats flush until Retry-After expires.");
-            return;
-        }
-
-        String statsUrl = this.statsUrl;
-        if (statsUrl == null || statsUrl.isEmpty()) {
-            synchronized (statsQueue) {
-                statsQueue.clear();
-                statsInFlight.clear();
-            }
-            persistStatsQueue();
-            return;
-        }
-
-        if (!statsFlushInFlight.compareAndSet(false, true)) {
-            return;
-        }
-
-        final List<QueuedStatsEvent> eventsToSend;
-        synchronized (statsQueue) {
-            if (statsQueue.isEmpty()) {
-                statsFlushInFlight.set(false);
-                return;
-            }
-            eventsToSend = new ArrayList<>(statsQueue);
-            statsQueue.clear();
-            statsInFlight.clear();
-            statsInFlight.addAll(eventsToSend);
-        }
-        persistStatsQueue();
-
-        JSONArray jsonArray = new JSONArray();
-        for (QueuedStatsEvent queuedEvent : eventsToSend) {
-            jsonArray.put(queuedEvent.event);
-        }
-
-        Request request = new Request.Builder()
-            .url(statsUrl)
-            .post(RequestBody.create(jsonArray.toString(), MediaType.get("application/json")))
-            .build();
-
-        final int eventCount = eventsToSend.size();
-        DownloadService.sharedClient.newCall(request).enqueue(
-            new okhttp3.Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    if (abandonStoppedStatsFlush()) {
-                        return;
-                    }
-                    requeueStatsEvents(eventsToSend);
-                    if (logger != null) {
-                        logger.error("Failed to send stats batch");
-                        logger.debug("Error: " + e.getMessage());
-                    }
-                    statsFlushInFlight.set(false);
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    try (ResponseBody responseBody = response.body()) {
-                        if (abandonStoppedStatsFlush()) {
-                            return;
-                        }
-                        final String responseData = responseBody != null ? responseBody.string() : "";
-                        if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
-                            requeueStatsEvents(eventsToSend);
-                            return;
-                        }
-
-                        if (response.isSuccessful()) {
-                            synchronized (statsQueue) {
-                                statsInFlight.clear();
-                            }
-                            persistStatsQueue();
-                            if (logger != null) {
-                                logger.info("Stats batch sent successfully");
-                                logger.debug("Sent " + eventCount + " events");
-                            }
-                            runStatsCallbacks(eventsToSend);
-                        } else if (isTransientStatsFailure(response.code())) {
-                            requeueStatsEvents(eventsToSend);
-                            if (logger != null) {
-                                logger.error("Error sending stats batch");
-                                logger.debug("Retrying later, response code: " + response.code());
-                            }
-                        } else {
-                            synchronized (statsQueue) {
-                                statsInFlight.clear();
-                            }
-                            persistStatsQueue();
-                            if (logger != null) {
-                                logger.error("Dropping stats batch after permanent error");
-                                logger.debug("Response code: " + response.code());
-                            }
-                        }
-                    } finally {
-                        statsFlushInFlight.set(false);
-                    }
-                }
-            }
+        this.call(
+            "statsSend",
+            "action",
+            action,
+            "versionName",
+            versionName,
+            "oldVersionName",
+            oldVersionName,
+            "metadata",
+            metadata == null ? null : new JSONObject(metadata),
+            "callbackId",
+            callbackId
         );
     }
 
-    private boolean abandonStoppedStatsFlush() {
-        if (!statsStopped.get()) {
-            return false;
-        }
-        statsFlushInFlight.set(false);
-        return true;
+    public void restorePendingStats() {
+        this.call("statsRestore");
+    }
+
+    int pendingStatsCount() {
+        return this.call("statsPendingCount").optInt("count", 0);
+    }
+
+    public void persistPendingStats() {
+        this.call("statsPersist");
     }
 
     /**
-     * Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
-     */
-    private static boolean isTransientStatsFailure(final int statusCode) {
-        return statusCode == 429 || statusCode == 408 || statusCode >= 500;
-    }
-
-    private void requeueStatsEvents(final List<QueuedStatsEvent> events) {
-        if (statsStopped.get() || events == null || events.isEmpty()) {
-            return;
-        }
-        synchronized (statsQueue) {
-            statsInFlight.clear();
-            statsQueue.addAll(0, events);
-            while (statsQueue.size() > MAX_PENDING_STATS) {
-                statsQueue.remove(0);
-            }
-        }
-        persistStatsQueue();
-        ensureStatsTimerStarted();
-    }
-
-    private void runStatsCallbacks(final List<QueuedStatsEvent> sentEvents) {
-        for (final QueuedStatsEvent sentEvent : sentEvents) {
-            if (sentEvent.onSent == null) {
-                continue;
-            }
-
-            try {
-                sentEvent.onSent.run();
-            } catch (Exception e) {
-                if (logger != null) {
-                    logger.error("Error running stats sent callback");
-                    logger.debug("Error: " + e.getMessage());
-                }
-            }
-        }
-    }
-
-    public BundleInfo getBundleInfo(final String id) {
-        String trueId = BundleInfo.VERSION_UNKNOWN;
-        if (id != null) {
-            trueId = id;
-        }
-        BundleInfo result;
-        if (BundleInfo.ID_BUILTIN.equals(trueId)) {
-            result = new BundleInfo(
-                trueId,
-                this.versionBuild == null || this.versionBuild.isEmpty() ? null : this.versionBuild,
-                BundleStatus.SUCCESS,
-                "",
-                ""
-            );
-        } else if (BundleInfo.VERSION_UNKNOWN.equals(trueId)) {
-            result = new BundleInfo(trueId, null, BundleStatus.ERROR, "", "");
-        } else {
-            try {
-                String stored = this.prefs.getString(trueId + INFO_SUFFIX, "");
-                if (stored.isEmpty()) {
-                    result = new BundleInfo(trueId, null, BundleStatus.PENDING, "", "");
-                } else {
-                    result = BundleInfo.fromJSON(stored);
-                }
-            } catch (JSONException e) {
-                logger.error("Failed to parse bundle info");
-                logger.debug("Bundle ID: " + trueId + ", Error: " + e.getMessage());
-                // Clear corrupted data
-                this.editor.remove(trueId + INFO_SUFFIX);
-                this.editor.commit();
-                result = new BundleInfo(trueId, null, BundleStatus.ERROR, "", "");
-            }
-        }
-        return result;
-    }
-
-    public BundleInfo getBundleInfoByName(final String versionName) {
-        final List<BundleInfo> installed = this.list(false);
-        for (final BundleInfo i : installed) {
-            if (i.getVersionName().equals(versionName)) {
-                return i;
-            }
-        }
-        return null;
-    }
-
-    private void removeBundleInfo(final String id) {
-        this.saveBundleInfo(id, null);
-    }
-
-    public boolean saveBundleInfo(final String id, final BundleInfo info) {
-        if (id == null || (info != null && (info.isBuiltin() || info.isUnknown()))) {
-            logger.debug("Not saving info for bundle: [" + id + "] " + info);
-            return false;
-        }
-
-        if (info == null) {
-            logger.debug("Removing info for bundle [" + id + "]");
-            this.editor.remove(id + INFO_SUFFIX);
-        } else {
-            final BundleInfo update = info.setId(id);
-            String jsonString = update.toString();
-            logger.debug("Storing info for bundle [" + id + "] " + update.getClass().getName() + " -> " + jsonString);
-            this.editor.putString(id + INFO_SUFFIX, jsonString);
-        }
-        return this.editor.commit();
-    }
-
-    private void setBundleStatus(final String id, final BundleStatus status) {
-        if (id != null && status != null) {
-            BundleInfo info = this.getBundleInfo(id);
-            logger.debug("Setting status for bundle [" + id + "] to " + status);
-            this.saveBundleInfo(id, info.setStatus(status));
-        }
-    }
-
-    private String getCurrentBundleId() {
-        if (this.isUsingBuiltin()) {
-            return BundleInfo.ID_BUILTIN;
-        } else {
-            final String path = this.getCurrentBundlePath();
-            return path.substring(path.lastIndexOf('/') + 1);
-        }
-    }
-
-    public BundleInfo getCurrentBundle() {
-        return this.getBundleInfo(this.getCurrentBundleId());
-    }
-
-    public String getCurrentBundlePath() {
-        String path = this.prefs.getString(this.CAP_SERVER_PATH, "public");
-        if (path.trim().isEmpty()) {
-            return "public";
-        }
-        return path;
-    }
-
-    public Boolean isUsingBuiltin() {
-        return this.getCurrentBundlePath().equals("public");
-    }
-
-    public BundleInfo getFallbackBundle() {
-        final String id = this.prefs.getString(FALLBACK_VERSION, BundleInfo.ID_BUILTIN);
-        return this.getBundleInfo(id);
-    }
-
-    private void setFallbackBundle(final BundleInfo fallback) {
-        this.editor.putString(FALLBACK_VERSION, fallback == null ? BundleInfo.ID_BUILTIN : fallback.getId());
-        this.editor.commit();
-    }
-
-    public BundleInfo getNextBundle() {
-        final String id = this.prefs.getString(NEXT_VERSION, null);
-        if (id == null) return null;
-        return this.getBundleInfo(id);
-    }
-
-    public BundleInfo getPreviewFallbackBundle() {
-        final String id = this.prefs.getString(PREVIEW_FALLBACK_VERSION, null);
-        if (id == null) return null;
-        final BundleInfo bundle = this.getBundleInfo(id);
-        if (bundle.isErrorStatus() || (!bundle.isBuiltin() && !this.bundleExists(id))) {
-            this.setPreviewFallbackBundle(null);
-            return null;
-        }
-        return bundle;
-    }
-
-    public boolean setPreviewFallbackBundle(final String fallback) {
-        if (fallback == null) {
-            this.editor.remove(PREVIEW_FALLBACK_VERSION);
-        } else {
-            final BundleInfo newBundle = this.getBundleInfo(fallback);
-            if (newBundle.isErrorStatus() || (!newBundle.isBuiltin() && !this.bundleExists(fallback))) {
-                return false;
-            }
-            this.editor.putString(PREVIEW_FALLBACK_VERSION, fallback);
-        }
-        this.editor.commit();
-        return true;
-    }
-
-    public boolean setNextBundle(final String next) {
-        BundleInfo bundleToNotify = null;
-        if (next == null) {
-            this.editor.remove(NEXT_VERSION);
-        } else {
-            final BundleInfo newBundle = this.getBundleInfo(next);
-            if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
-                return false;
-            }
-            if (next.equals(this.getCurrentBundleId()) && BundleStatus.SUCCESS == newBundle.getStatus()) {
-                logger.info("Bundle " + next + " is already the current successful bundle. Skip next().");
-                return true;
-            }
-            this.editor.putString(NEXT_VERSION, next);
-            this.setBundleStatus(next, BundleStatus.PENDING);
-            bundleToNotify = newBundle;
-        }
-        this.editor.commit();
-        if (bundleToNotify != null) {
-            this.sendStats("set_next", bundleToNotify.getVersionName(), this.getCurrentBundle().getVersionName());
-            final Map<String, Object> payload = new HashMap<>();
-            payload.put("bundle", bundleToNotify.toJSONMap());
-            this.notifyListeners("setNext", payload);
-        }
-        return true;
-    }
-
-    /**
-     * Shuts down the stats scheduler and flushes any pending stats.
-     * Should be called when the plugin is destroyed to prevent resource leaks.
+     * Stops stats batching and persists pending stats. Call when the plugin is destroyed.
      */
     public void shutdown() {
-        statsStopped.set(true);
-        // Cancel the scheduled task
-        if (statsFlushTask != null) {
-            statsFlushTask.cancel(false);
-            statsFlushTask = null;
+        if (this.engine != null) {
+            this.call("statsShutdown");
         }
-
-        // Write once, then ignore later callbacks so they cannot delete a newer instance's file.
-        persistStatsQueue(true);
-
-        // Shutdown the scheduler
-        statsScheduler.shutdown();
-        try {
-            if (!statsScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
-                statsScheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            statsScheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        this.network.shutdown();
     }
 }

@@ -17,11 +17,14 @@
 pub mod api;
 pub mod bundle;
 pub mod crypto;
+pub mod engine;
 pub mod error;
 pub mod ffi;
+pub mod host;
 pub mod http;
 #[cfg(feature = "jni")]
 pub mod jni;
+pub mod net;
 pub mod paths;
 pub mod policy;
 pub mod text;

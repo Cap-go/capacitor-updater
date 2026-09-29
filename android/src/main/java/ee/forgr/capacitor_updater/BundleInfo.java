@@ -174,6 +174,37 @@ public class BundleInfo {
         );
     }
 
+    /** Raw fields for the Rust engine (nullable version, unnormalized values). */
+    org.json.JSONObject toRawJson() {
+        final org.json.JSONObject json = new org.json.JSONObject();
+        try {
+            json.put("id", this.id);
+            json.put("version", this.version == null ? org.json.JSONObject.NULL : this.version);
+            json.put("downloaded", this.downloaded == null ? "" : this.downloaded);
+            json.put("checksum", this.checksum == null ? "" : this.checksum);
+            json.put("status", (this.status == null ? BundleStatus.ERROR : this.status).toString());
+            json.put("link", this.link == null ? org.json.JSONObject.NULL : this.link);
+            json.put("comment", this.comment == null ? org.json.JSONObject.NULL : this.comment);
+        } catch (JSONException ignored) {
+            // Keys and values are always valid.
+        }
+        return json;
+    }
+
+    /** Inverse of {@link #toRawJson()}. */
+    static BundleInfo fromRawJson(final org.json.JSONObject json) {
+        final BundleStatus status = BundleStatus.fromString(json.optString("status", ""));
+        return new BundleInfo(
+            json.optString("id", ""),
+            json.isNull("version") ? null : json.optString("version", null),
+            status,
+            json.optString("downloaded", ""),
+            json.optString("checksum", ""),
+            json.isNull("link") ? null : json.optString("link", null),
+            json.isNull("comment") ? null : json.optString("comment", null)
+        );
+    }
+
     public Map<String, Object> toJSONMap() {
         final Map<String, Object> result = new HashMap<>();
         result.put("id", this.getId());

@@ -31,6 +31,14 @@ final class CapgoCoreNative {
     /** Runs a core operation; returns the JSON envelope {"ok":...}. Never null. */
     static native String call(String operation, String inputJson);
 
+    /** Creates an updater engine; 0 when the configuration is invalid (reported through host.log). */
+    static native long engineCreate(String configJson, CapgoEngineHost host);
+
+    /** Runs an engine operation; returns the JSON envelope {"ok":...}. Blocking. */
+    static native String engineCall(long engine, String operation, String inputJson);
+
+    static native void engineDestroy(long engine);
+
     /**
      * Robolectric runs each SDK sandbox in its own class loader, and the JVM refuses to bind one native library to
      * two class loaders, so every loader gets its own copy.

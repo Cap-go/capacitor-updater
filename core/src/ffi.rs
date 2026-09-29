@@ -67,3 +67,193 @@ pub unsafe extern "C" fn capgo_core_free(value: *mut c_char) {
         drop(CString::from_raw(value));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Engine handle with host callbacks.
+
+use std::ffi::c_void;
+use std::sync::Arc;
+
+use crate::engine::Engine;
+use crate::host::{Host, LogLevel};
+
+/// Host services provided by a C-ABI host (iOS, or any other runtime).
+///
+/// All callbacks may be invoked from any thread. Strings passed to the host
+/// are only valid during the call. `kv_get` returns a string allocated by the
+/// host (or NULL) that the engine releases with `free_string`.
+#[repr(C)]
+pub struct CapgoHostCallbacks {
+    pub context: *mut c_void,
+    pub log: Option<unsafe extern "C" fn(*mut c_void, i32, *const c_char)>,
+    pub kv_get: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>,
+    pub kv_set: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char)>,
+    /// Returns every persisted key as a JSON array string (host allocated, released with `free_string`).
+    pub kv_keys: Option<unsafe extern "C" fn(*mut c_void) -> *mut c_char>,
+    pub emit: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char)>,
+    pub free_string: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
+    /// Called once when the engine is destroyed, to release `context`.
+    pub release: Option<unsafe extern "C" fn(*mut c_void)>,
+}
+
+struct CHost(CapgoHostCallbacks);
+
+// The host contract requires thread-safe callbacks.
+unsafe impl Send for CHost {}
+unsafe impl Sync for CHost {}
+
+impl Drop for CHost {
+    fn drop(&mut self) {
+        if let Some(release) = self.0.release {
+            unsafe { release(self.0.context) };
+        }
+    }
+}
+
+fn c_string(value: &str) -> CString {
+    CString::new(value.replace('\0', "")).unwrap_or_default()
+}
+
+impl CHost {
+    fn take_string(&self, raw: *mut c_char) -> Option<String> {
+        if raw.is_null() {
+            return None;
+        }
+        let value = unsafe { CStr::from_ptr(raw) }
+            .to_string_lossy()
+            .into_owned();
+        if let Some(free_string) = self.0.free_string {
+            unsafe { free_string(self.0.context, raw) };
+        }
+        Some(value)
+    }
+}
+
+impl Host for CHost {
+    fn log(&self, level: LogLevel, message: &str) {
+        if let Some(log) = self.0.log {
+            let message = c_string(message);
+            unsafe { log(self.0.context, level as i32, message.as_ptr()) };
+        }
+    }
+
+    fn kv_get(&self, key: &str, default: Option<&str>) -> Option<String> {
+        let kv_get = self.0.kv_get?;
+        let key = c_string(key);
+        let raw = unsafe { kv_get(self.0.context, key.as_ptr()) };
+        self.take_string(raw)
+            .or_else(|| default.map(str::to_string))
+    }
+
+    fn kv_set(&self, key: &str, value: Option<&str>) {
+        if let Some(kv_set) = self.0.kv_set {
+            let key = c_string(key);
+            let value = value.map(c_string);
+            unsafe {
+                kv_set(
+                    self.0.context,
+                    key.as_ptr(),
+                    value
+                        .as_ref()
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                )
+            };
+        }
+    }
+
+    fn kv_keys(&self) -> Vec<String> {
+        let Some(kv_keys) = self.0.kv_keys else {
+            return Vec::new();
+        };
+        let raw = unsafe { kv_keys(self.0.context) };
+        self.take_string(raw)
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default()
+    }
+
+    fn emit(&self, event: &str, payload: &serde_json::Value) {
+        if let Some(emit) = self.0.emit {
+            let event = c_string(event);
+            let payload = c_string(&payload.to_string());
+            unsafe { emit(self.0.context, event.as_ptr(), payload.as_ptr()) };
+        }
+    }
+}
+
+/// Creates an engine. Returns NULL on invalid configuration (the error is logged to the host).
+///
+/// # Safety
+/// `config_json` must be NULL or a valid NUL-terminated string; `host` callbacks must stay valid
+/// until `release` is called.
+#[no_mangle]
+pub unsafe extern "C" fn capgo_engine_new(
+    config_json: *const c_char,
+    host: CapgoHostCallbacks,
+) -> *mut Engine {
+    let host: Arc<dyn Host> = Arc::new(CHost(host));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let config = read_str(config_json)?;
+        let config: serde_json::Value = if config.trim().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(config).map_err(|error| {
+                CoreError::invalid_input(format!("Invalid engine config: {error}"))
+            })?
+        };
+        Engine::new(host.clone(), &config)
+    }));
+    match result {
+        Ok(Ok(engine)) => std::sync::Arc::into_raw(engine) as *mut Engine,
+        Ok(Err(error)) => {
+            host.log(
+                LogLevel::Error,
+                &format!("Capgo engine init failed: {error}"),
+            );
+            std::ptr::null_mut()
+        }
+        Err(_) => {
+            host.log(LogLevel::Error, "Capgo engine init panicked");
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Runs an engine operation; same envelope and ownership rules as [`capgo_core_call`].
+///
+/// # Safety
+/// `engine` must come from [`capgo_engine_new`] and not be freed.
+#[no_mangle]
+pub unsafe extern "C" fn capgo_engine_call(
+    engine: *const Engine,
+    operation: *const c_char,
+    input_json: *const c_char,
+) -> *mut c_char {
+    let output = catch_unwind(AssertUnwindSafe(|| {
+        let Some(engine) = engine.as_ref() else {
+            return api::envelope(Err(CoreError::invalid_input("Engine handle is NULL")));
+        };
+        let operation = match read_str(operation) {
+            Ok(value) => value,
+            Err(error) => return api::envelope(Err(error)),
+        };
+        match read_str(input_json) {
+            Ok(input) => engine.call_json(operation, input),
+            Err(error) => api::envelope(Err(error)),
+        }
+    }))
+    .unwrap_or_else(|_| {
+        api::envelope(Err(CoreError::new("internal", "Engine operation panicked")))
+    });
+    to_c_string(output)
+}
+
+/// Destroys an engine and releases the host context.
+///
+/// # Safety
+/// `engine` must come from [`capgo_engine_new`]; no call may be in flight.
+#[no_mangle]
+pub unsafe extern "C" fn capgo_engine_free(engine: *mut Engine) {
+    if !engine.is_null() {
+        drop(std::sync::Arc::from_raw(engine as *const Engine));
+    }
+}
