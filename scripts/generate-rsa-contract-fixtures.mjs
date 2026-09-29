@@ -35,6 +35,29 @@ const checksumPlaintext = Buffer.from(
   'hex',
 );
 
+// Version-bound signed checksum (must match the Capgo CLI):
+// payload = SHA-256(content) || SHA-256(binding context)
+const signedBindingDomain = 'capgo-signed-checksum-v1';
+
+function bundleBindingContext(version) {
+  return `${signedBindingDomain}\0bundle\0${version}`;
+}
+
+function manifestFileBindingContext(version, fileName) {
+  const name = fileName.endsWith('.br') ? fileName.slice(0, -3) : fileName;
+  return `${signedBindingDomain}\0file\0${version}\0${name}`;
+}
+
+function boundChecksum(bindingContext) {
+  const bindingHash = crypto.createHash('sha256').update(bindingContext, 'utf8').digest();
+  return privateEncrypt(Buffer.concat([checksumPlaintext, bindingHash]));
+}
+
+const signedVersion = '1.0.0';
+const signedFileName = 'assets/index.js';
+const boundBundleCiphertext = boundChecksum(bundleBindingContext(signedVersion));
+const boundFileCiphertext = boundChecksum(manifestFileBindingContext(signedVersion, signedFileName));
+
 const sessionKeyCiphertext = privateEncrypt(sessionKeyPlaintext);
 const checksumCiphertext = privateEncrypt(checksumPlaintext);
 
@@ -70,6 +93,11 @@ const fixture = {
       input: { checksumHex: toHex(checksumCiphertext) },
       expect: { decryptedHex: toHex(checksumPlaintext) },
     },
+    {
+      id: 'bound-payload-returns-content-hash',
+      input: { checksumHex: toHex(boundBundleCiphertext) },
+      expect: { decryptedHex: toHex(checksumPlaintext) },
+    },
   ],
   calcKeyId: [
     {
@@ -88,6 +116,89 @@ const fixture = {
       id: 'invalid-pem',
       input: { publicKeyPem: 'not-a-key' },
       expect: { loads: false },
+    },
+  ],
+  bindingContext: [
+    {
+      id: 'bundle',
+      input: { kind: 'bundle', version: signedVersion },
+      expect: { contextHex: toHex(Buffer.from(bundleBindingContext(signedVersion), 'utf8')) },
+    },
+    {
+      id: 'manifest-file',
+      input: { kind: 'file', version: signedVersion, fileName: signedFileName },
+      expect: { contextHex: toHex(Buffer.from(manifestFileBindingContext(signedVersion, signedFileName), 'utf8')) },
+    },
+    {
+      id: 'manifest-file-brotli-suffix-stripped',
+      input: { kind: 'file', version: signedVersion, fileName: `${signedFileName}.br` },
+      expect: { contextHex: toHex(Buffer.from(manifestFileBindingContext(signedVersion, signedFileName), 'utf8')) },
+    },
+  ],
+  decryptBoundChecksum: [
+    {
+      id: 'bundle-bound-matching-version',
+      input: { checksumHex: toHex(boundBundleCiphertext), kind: 'bundle', version: signedVersion, requireBinding: true },
+      expect: { throws: false, decryptedHex: toHex(checksumPlaintext) },
+    },
+    {
+      id: 'bundle-bound-replayed-under-other-version',
+      input: { checksumHex: toHex(boundBundleCiphertext), kind: 'bundle', version: '3.0.0', requireBinding: false },
+      expect: { throws: true },
+    },
+    {
+      id: 'bundle-bound-used-as-manifest-file',
+      input: {
+        checksumHex: toHex(boundBundleCiphertext),
+        kind: 'file',
+        version: signedVersion,
+        fileName: signedFileName,
+        requireBinding: false,
+      },
+      expect: { throws: true },
+    },
+    {
+      id: 'file-bound-matching-version-and-brotli-name',
+      input: {
+        checksumHex: toHex(boundFileCiphertext),
+        kind: 'file',
+        version: signedVersion,
+        fileName: `${signedFileName}.br`,
+        requireBinding: true,
+      },
+      expect: { throws: false, decryptedHex: toHex(checksumPlaintext) },
+    },
+    {
+      id: 'file-bound-other-file-name',
+      input: {
+        checksumHex: toHex(boundFileCiphertext),
+        kind: 'file',
+        version: signedVersion,
+        fileName: 'assets/other.js',
+        requireBinding: false,
+      },
+      expect: { throws: true },
+    },
+    {
+      id: 'file-bound-replayed-under-other-version',
+      input: {
+        checksumHex: toHex(boundFileCiphertext),
+        kind: 'file',
+        version: '3.0.0',
+        fileName: signedFileName,
+        requireBinding: false,
+      },
+      expect: { throws: true },
+    },
+    {
+      id: 'legacy-unbound-accepted-by-default',
+      input: { checksumHex: toHex(checksumCiphertext), kind: 'bundle', version: '3.0.0', requireBinding: false },
+      expect: { throws: false, decryptedHex: toHex(checksumPlaintext) },
+    },
+    {
+      id: 'legacy-unbound-rejected-when-required',
+      input: { checksumHex: toHex(checksumCiphertext), kind: 'bundle', version: '3.0.0', requireBinding: true },
+      expect: { throws: true },
     },
   ],
   decryptChecksumInvalid: [

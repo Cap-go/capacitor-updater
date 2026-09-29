@@ -306,6 +306,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
+        implementation.requireSignedVersion = getConfig().getBoolean("requireSignedVersion", false)
+        if implementation.requireSignedVersion && implementation.publicKey.isEmpty {
+            logger.warn("requireSignedVersion has no effect without publicKey")
+        }
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
             let emit = {
@@ -1632,7 +1636,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         if manifestEntries == nil {
-            checksum = try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.implementation.publicKey)
+            checksum = try CryptoCipher.decryptChecksum(
+                checksum: checksum,
+                publicKey: self.implementation.publicKey,
+                bindingContext: CryptoCipher.bundleBindingContext(version: version),
+                requireBinding: self.implementation.requireSignedVersion
+            )
             CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
             CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: checksum)
             if next.getChecksum() != checksum {
@@ -4614,7 +4623,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     if res.manifest == nil {
-                        res.checksum = try CryptoCipher.decryptChecksum(checksum: res.checksum, publicKey: self.implementation.publicKey)
+                        res.checksum = try CryptoCipher.decryptChecksum(
+                            checksum: res.checksum,
+                            publicKey: self.implementation.publicKey,
+                            bindingContext: CryptoCipher.bundleBindingContext(version: latestVersionName),
+                            requireBinding: self.implementation.requireSignedVersion
+                        )
                         CryptoCipher.logChecksumInfo(label: "Bundle checksum", hexChecksum: next.getChecksum())
                         CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: res.checksum)
                         if next.getChecksum() != res.checksum {

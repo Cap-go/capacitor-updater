@@ -152,6 +152,58 @@ final class RsaContractTests: XCTestCase {
         }
     }
 
+    private func bindingContext(_ input: [String: Any], id: String) throws -> String {
+        let kind = try string(input, "kind", id: id)
+        let version = try string(input, "version", id: id)
+        if kind == "bundle" {
+            return CryptoCipher.bundleBindingContext(version: version)
+        }
+        return CryptoCipher.manifestFileBindingContext(version: version, fileName: try string(input, "fileName", id: id))
+    }
+
+    func testBindingContextMatchesNativeContract() throws {
+        for testCase in try contractCases("bindingContext") {
+            let id = try string(testCase, "id", id: "bindingContext")
+            let input = try dictionary(testCase, "input", id: id)
+            let expect = try dictionary(testCase, "expect", id: id)
+            let context = try bindingContext(input, id: id)
+            XCTAssertEqual(dataToHex(Data(context.utf8)), try string(expect, "contextHex", id: id), id)
+        }
+    }
+
+    func testDecryptBoundChecksumMatchesNativeContract() throws {
+        let publicKey = try fixturePublicKey()
+
+        for testCase in try contractCases("decryptBoundChecksum") {
+            let id = try string(testCase, "id", id: "decryptBoundChecksum")
+            let input = try dictionary(testCase, "input", id: id)
+            let expect = try dictionary(testCase, "expect", id: id)
+            let checksumHex = try string(input, "checksumHex", id: id)
+            let context = try bindingContext(input, id: id)
+            let requireBinding = try bool(input, "requireBinding", id: id)
+
+            if try bool(expect, "throws", id: id) {
+                XCTAssertThrowsError(
+                    try CryptoCipher.decryptChecksum(
+                        checksum: checksumHex,
+                        publicKey: publicKey,
+                        bindingContext: context,
+                        requireBinding: requireBinding
+                    ),
+                    id
+                )
+            } else {
+                let result = try CryptoCipher.decryptChecksum(
+                    checksum: checksumHex,
+                    publicKey: publicKey,
+                    bindingContext: context,
+                    requireBinding: requireBinding
+                )
+                XCTAssertEqual(result, try string(expect, "decryptedHex", id: id), id)
+            }
+        }
+    }
+
     func testDecryptChecksumInvalidMatchesNativeContract() throws {
         let publicKey = try fixturePublicKey()
 

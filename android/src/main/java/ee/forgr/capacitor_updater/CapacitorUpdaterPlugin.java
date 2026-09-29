@@ -771,6 +771,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.persistDefaultChannelOnReinstall = this.getConfig().getBoolean("persistDefaultChannelOnReinstall", true);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
         this.implementation.setPublicKey(this.getConfig().getString("publicKey", ""));
+        this.implementation.requireSignedVersion = this.getConfig().getBoolean("requireSignedVersion", false);
+        if (this.implementation.requireSignedVersion && this.implementation.publicKey.isEmpty()) {
+            logger.warn("requireSignedVersion has no effect without publicKey");
+        }
         // Log public key prefix if encryption is enabled
         String keyId = this.implementation.getKeyId();
         if (keyId != null && !keyId.isEmpty()) {

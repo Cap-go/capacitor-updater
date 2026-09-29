@@ -17,6 +17,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -26,6 +27,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -252,7 +254,87 @@ public class CryptoCipher {
         return data;
     }
 
+    // Signed checksum payload that binds the content hash to the release metadata:
+    // SHA-256(content) (32 bytes) || SHA-256(binding context) (32 bytes).
+    static final String SIGNED_BINDING_DOMAIN = "capgo-signed-checksum-v1";
+    static final int SHA256_BYTES = 32;
+    static final int BOUND_CHECKSUM_BYTES = SHA256_BYTES * 2;
+
+    /**
+     * Binding context for a full bundle zip. Must match the Capgo CLI byte for byte.
+     */
+    public static String bundleBindingContext(final String version) {
+        return SIGNED_BINDING_DOMAIN + "\0bundle\0" + nullToEmpty(version);
+    }
+
+    /**
+     * Binding context for one manifest (delta) file. The ".br" transport suffix is stripped so the
+     * context matches the original bundle path signed by the Capgo CLI.
+     */
+    public static String manifestFileBindingContext(final String version, final String fileName) {
+        String name = nullToEmpty(fileName);
+        if (name.endsWith(".br")) {
+            name = name.substring(0, name.length() - 3);
+        }
+        return SIGNED_BINDING_DOMAIN + "\0file\0" + nullToEmpty(version) + "\0" + name;
+    }
+
+    private static String nullToEmpty(final String value) {
+        return value == null ? "" : value;
+    }
+
+    /**
+     * Returns the content hash carried by a decrypted signed checksum payload, verifying that the
+     * payload is bound to {@code bindingContext} when it carries a binding.
+     *
+     * @param decrypted RSA-decrypted payload
+     * @param bindingContext expected binding context, or null to skip the binding check (cache lookups only)
+     * @param requireBinding reject legacy payloads that carry no binding
+     */
+    static byte[] extractBoundContentHash(final byte[] decrypted, final String bindingContext, final boolean requireBinding)
+        throws IOException {
+        if (decrypted.length == BOUND_CHECKSUM_BYTES) {
+            final byte[] contentHash = Arrays.copyOfRange(decrypted, 0, SHA256_BYTES);
+            if (bindingContext != null) {
+                final byte[] signedBinding = Arrays.copyOfRange(decrypted, SHA256_BYTES, BOUND_CHECKSUM_BYTES);
+                final byte[] expectedBinding;
+                try {
+                    expectedBinding = MessageDigest.getInstance("SHA-256").digest(bindingContext.getBytes(StandardCharsets.UTF_8));
+                } catch (NoSuchAlgorithmException e) {
+                    throw new IOException("SHA-256 algorithm not available", e);
+                }
+                if (!MessageDigest.isEqual(signedBinding, expectedBinding)) {
+                    if (logger != null) {
+                        logger.error("Signed checksum is bound to a different version or file");
+                    }
+                    throw new IOException("Signed checksum does not match the bundle version or file name");
+                }
+            }
+            return contentHash;
+        }
+        if (requireBinding) {
+            if (logger != null) {
+                logger.error("Signed checksum is not bound to the bundle version (requireSignedVersion is enabled)");
+            }
+            throw new IOException("Signed checksum is not bound to the bundle version. Re-upload the bundle with a recent Capgo CLI.");
+        }
+        return decrypted;
+    }
+
+    /**
+     * Decrypts a signed checksum and returns the content hash without checking its release binding.
+     * Only use this for cache lookups; install paths must use the binding-aware overload.
+     */
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
+        return decryptChecksum(checksum, publicKey, null, false);
+    }
+
+    /**
+     * Decrypts a signed checksum, verifies it is bound to {@code bindingContext} when the payload carries a
+     * binding, and returns the content hash as hex.
+     */
+    public static String decryptChecksum(String checksum, String publicKey, String bindingContext, boolean requireBinding)
+        throws IOException {
         if (publicKey.isEmpty()) {
             logger.error("No encryption set (public key) ignored");
             return checksum;
@@ -295,7 +377,11 @@ public class CryptoCipher {
             }
 
             PublicKey pKey = CryptoCipher.stringToPublicKey(publicKey);
-            byte[] decryptedChecksum = CryptoCipher.decryptRSA(checksumBytes, pKey);
+            byte[] decryptedChecksum = extractBoundContentHash(
+                CryptoCipher.decryptRSA(checksumBytes, pKey),
+                bindingContext,
+                requireBinding
+            );
             // Return as hex string to match calcChecksum output format
             StringBuilder hexString = new StringBuilder();
             for (byte b : decryptedChecksum) {
@@ -431,7 +517,7 @@ public class CryptoCipher {
     static String shortPathKey(String fileName) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update((fileName == null ? "" : fileName).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update((fileName == null ? "" : fileName).getBytes(StandardCharsets.UTF_8));
             return digestToHex(digest).substring(0, 16);
         } catch (java.security.NoSuchAlgorithmException e) {
             return Integer.toHexString((fileName == null ? "" : fileName).hashCode());

@@ -104,6 +104,8 @@ public class CapgoUpdater {
     public String channelUrl = "";
     public String defaultChannel = "";
     public String appId = "";
+    // Reject signed checksums that are not bound to the bundle version (see requireSignedVersion config).
+    public boolean requireSignedVersion = false;
     public volatile boolean previewSession = false;
     public String publicKey = "";
     public String deviceID = "";
@@ -845,6 +847,7 @@ public class CapgoUpdater {
             sessionKey,
             checksum,
             this.publicKey,
+            this.requireSignedVersion,
             manifest != null,
             this.isEmulator(),
             this.appId,
@@ -885,7 +888,12 @@ public class CapgoUpdater {
 
                 if (CryptoCipher.isValidSessionKey(sessionKey)) {
                     CryptoCipher.decryptFile(downloaded, publicKey, sessionKey);
-                    expectedChecksum = CryptoCipher.decryptChecksum(checksumRes, publicKey);
+                    expectedChecksum = CryptoCipher.decryptChecksum(
+                        checksumRes,
+                        publicKey,
+                        CryptoCipher.bundleBindingContext(version),
+                        this.requireSignedVersion
+                    );
                 }
                 checksum = CryptoCipher.calcChecksum(downloaded);
                 CryptoCipher.logChecksumInfo("Calculated checksum", checksum);

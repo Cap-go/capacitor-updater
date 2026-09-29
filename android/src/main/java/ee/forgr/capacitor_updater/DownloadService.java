@@ -101,6 +101,7 @@ public class DownloadService extends Worker {
     public static final String SESSIONKEY = "sessionkey";
     public static final String CHECKSUM = "checksum";
     public static final String PUBLIC_KEY = "publickey";
+    public static final String REQUIRE_SIGNED_VERSION = "require_signed_version";
     public static final String IS_MANIFEST = "is_manifest";
     public static final String APP_ID = "app_id";
     public static final String pluginVersion = "plugin_version";
@@ -596,7 +597,12 @@ public class DownloadService extends Worker {
                         continue;
                     }
                     try {
-                        fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
+                        fileHash = CryptoCipher.decryptChecksum(
+                            fileHash,
+                            publicKey,
+                            CryptoCipher.manifestFileBindingContext(version, fileName),
+                            getInputData().getBoolean(REQUIRE_SIGNED_VERSION, false)
+                        );
                     } catch (Exception e) {
                         logger.error("Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
                         hasError.set(true);

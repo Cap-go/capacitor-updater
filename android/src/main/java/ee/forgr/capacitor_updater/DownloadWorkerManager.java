@@ -69,6 +69,7 @@ public class DownloadWorkerManager {
         String sessionKey,
         String checksum,
         String publicKey,
+        boolean requireSignedVersion,
         boolean isManifest,
         boolean isEmulator,
         String appId,
@@ -99,6 +100,7 @@ public class DownloadWorkerManager {
             .putString(DownloadService.CHECKSUM, checksum)
             .putBoolean(DownloadService.IS_MANIFEST, isManifest)
             .putString(DownloadService.PUBLIC_KEY, publicKey)
+            .putBoolean(DownloadService.REQUIRE_SIGNED_VERSION, requireSignedVersion)
             .putString(DownloadService.APP_ID, appId)
             .putString(DownloadService.pluginVersion, pluginVersion)
             .putString(DownloadService.INSTALL_SOURCE, installSource)

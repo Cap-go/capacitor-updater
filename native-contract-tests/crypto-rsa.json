@@ -1,12 +1,12 @@
 {
   "version": 1,
   "description": "RSA public-decrypt contract vectors generated with crypto.privateEncrypt (PKCS#1), matching Capgo CLI encryption.",
-  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----",
+  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA1epAnOoEivfXdKCj7NHz18LTpUY88XGfErMOzMmQ6X6TnOD0VxJ+\n9/OMi6TYYoQfLBmDe8sv1tMt67l+TZig4S58HxX9yTgoWoY1apmdapyfy2IEzJ/U\nt/TNtDq+TFn2g6ks7IOKs+klX/suW0g7XBGSWzNkYwqyTFKWXue9dqoThyopZIML\nUHF1UwQdC2ET3xPu7rVRr04qEYZ5Lv4ZLg18jqq8e8ACRro7/pc01swTnH+htYaX\ngTAkX4lk5MmhxLCj2tE3tdXTQ9tBaNj95m5VS6FlHgMaAap2Z2Wgm094LJQzvvRg\nLd+Vc/Bq0ngAzxsCJu0hpLGNUHykkYXHCwIDAQAB\n-----END RSA PUBLIC KEY-----",
   "rsaPublicDecrypt": [
     {
       "id": "session-key-16-bytes",
       "input": {
-        "ciphertextHex": "371cabdcb9827ffbc75fa978701d4bb5751fbdbddc0f46b6670c10f4529a0d212ecebd1460b5aecda16fe3a13f14cfbc48da3768db978b93acc1e707fa7eab54ffc13062601eb2bce6a8f17bd0faa042cc44660f8f7235451c96860977abb57bfe031e01a21787d21fcc2f9bdf9f9fba07a8ab089db417bd0443633accbdad56d4a8ec0a1d3d35c7aafd163bd5f1b96fd94791911b2fe7f4561038dd9350ad703839281da43f07b06c78418e6af3530dc78d1fb9d4467ab2c83d745f01f051431cfbd70c8cad6db2f3153759e5bed6045a7e1b316d18a6aa06a1af38277e1daca559c5f1dc887268c1ff19b51199a51e948fcc9cb9de8be0a05d2fd90c1d1988"
+        "ciphertextHex": "2bbf014920bee948ca24132c00a3468092676dac37185e87fc7387c475949e29e584401642fbb3a133480ed1b74ae9f082ef4b4bb94a672be2c13d1cec6703f773fb731f3b91bbe11456cd40b6e05b4fe7f008f8d640ea163f75a25202c962c640fd9432590b69fd91a379b2eb68f8ce2d214302c1c3ca94c6ae75ed1cc165b95fbb8a8550e742e0fb8b87cd2ccaae802047c8e15ae0d5b5e59d1ba9c46ba866dfc4fad4e8c5b0373ee3123cc039ccc8aa81167a76850d2c23f6b2d72f96d23ae660c8e4ec3fe733d196ab94bc6716dd736dffe24d280aa4863713e359c20f237c6afae37fe131c76d16629e423e0ab45067ea0839a9b279a42168b45f46c593"
       },
       "expect": {
         "plaintextHex": "abababababababababababababababab"
@@ -15,7 +15,7 @@
     {
       "id": "checksum-sha256-32-bytes",
       "input": {
-        "ciphertextHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+        "ciphertextHex": "6be761c8bb84699fbfb4c14ee2b1f8ed1e0efa9d13ec5724bbfbe530fb8a8890ecbe0775735890655fb53af93febc03dc6f8d77c540a16758f38b19d576f01a2d8de60ab108f92a07acda125ad9493852646aba595098841fb4f2e3d88e3d62cd93ffb213932ecbd562bdec9847b3416f98e09c9c59216c7217bbd3e6a5a51ba36f0e1228a8a23f819e50e03ba54638c70008a56f2155b3b28070ece880240f38aa0d63eac018145cd01907befde56a7094d98577537c0b4dc41e4f2438763aa87acfd027ed6fe6aa700f05d9fa8b23c9d58e7d3dd6948642fbc20e2f9e1c7bdae537224ddaeab5dc3251e837a594ed1c635933912d9be8394ae7cb693f2ad23"
       },
       "expect": {
         "plaintextHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -26,7 +26,16 @@
     {
       "id": "hex-encoded-rsa-ciphertext",
       "input": {
-        "checksumHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+        "checksumHex": "6be761c8bb84699fbfb4c14ee2b1f8ed1e0efa9d13ec5724bbfbe530fb8a8890ecbe0775735890655fb53af93febc03dc6f8d77c540a16758f38b19d576f01a2d8de60ab108f92a07acda125ad9493852646aba595098841fb4f2e3d88e3d62cd93ffb213932ecbd562bdec9847b3416f98e09c9c59216c7217bbd3e6a5a51ba36f0e1228a8a23f819e50e03ba54638c70008a56f2155b3b28070ece880240f38aa0d63eac018145cd01907befde56a7094d98577537c0b4dc41e4f2438763aa87acfd027ed6fe6aa700f05d9fa8b23c9d58e7d3dd6948642fbc20e2f9e1c7bdae537224ddaeab5dc3251e837a594ed1c635933912d9be8394ae7cb693f2ad23"
+      },
+      "expect": {
+        "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "bound-payload-returns-content-hash",
+      "input": {
+        "checksumHex": "24c16d30d81c327fb1c78edb778a1cb59001dc71647984ae633582297ef928c2706981160b65c97aa42f4bc35f1fe3ba96002280c441ff9620f535701aede0904baaa45bc090699e078861542a7fd42c943a4954d98aa6159984596587d8f480188991b7bff57bdba527ce8e9328b18261212fdb5854d8804197e5d6ef507ae6ba7eab39c5013bcaa7d9ffeef572a8e949f4227f405bc951ee38de793b90950380b7dac5f79892da8e88d724a16db01c4f1471f041a381c4f6f23376f1b234a9a869c480ef3e744661e9fb011164ec8a249839ca13ed8fb4bdaf3e5899b76a4356afce1e9708a6b430c29144a40c95c888aa586cb7aad68ed1c756fd3488228d"
       },
       "expect": {
         "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -37,10 +46,10 @@
     {
       "id": "fixture-public-key",
       "input": {
-        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA1epAnOoEivfXdKCj7NHz18LTpUY88XGfErMOzMmQ6X6TnOD0VxJ+\n9/OMi6TYYoQfLBmDe8sv1tMt67l+TZig4S58HxX9yTgoWoY1apmdapyfy2IEzJ/U\nt/TNtDq+TFn2g6ks7IOKs+klX/suW0g7XBGSWzNkYwqyTFKWXue9dqoThyopZIML\nUHF1UwQdC2ET3xPu7rVRr04qEYZ5Lv4ZLg18jqq8e8ACRro7/pc01swTnH+htYaX\ngTAkX4lk5MmhxLCj2tE3tdXTQ9tBaNj95m5VS6FlHgMaAap2Z2Wgm094LJQzvvRg\nLd+Vc/Bq0ngAzxsCJu0hpLGNUHykkYXHCwIDAQAB\n-----END RSA PUBLIC KEY-----"
       },
       "expect": {
-        "keyId": "MIIBCgKCAQEAqJikYizo"
+        "keyId": "MIIBCgKCAQEA1epAnOoE"
       }
     }
   ],
@@ -48,7 +57,7 @@
     {
       "id": "valid-pkcs1-pem",
       "input": {
-        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA1epAnOoEivfXdKCj7NHz18LTpUY88XGfErMOzMmQ6X6TnOD0VxJ+\n9/OMi6TYYoQfLBmDe8sv1tMt67l+TZig4S58HxX9yTgoWoY1apmdapyfy2IEzJ/U\nt/TNtDq+TFn2g6ks7IOKs+klX/suW0g7XBGSWzNkYwqyTFKWXue9dqoThyopZIML\nUHF1UwQdC2ET3xPu7rVRr04qEYZ5Lv4ZLg18jqq8e8ACRro7/pc01swTnH+htYaX\ngTAkX4lk5MmhxLCj2tE3tdXTQ9tBaNj95m5VS6FlHgMaAap2Z2Wgm094LJQzvvRg\nLd+Vc/Bq0ngAzxsCJu0hpLGNUHykkYXHCwIDAQAB\n-----END RSA PUBLIC KEY-----"
       },
       "expect": {
         "loads": true
@@ -61,6 +70,145 @@
       },
       "expect": {
         "loads": false
+      }
+    }
+  ],
+  "bindingContext": [
+    {
+      "id": "bundle",
+      "input": {
+        "kind": "bundle",
+        "version": "1.0.0"
+      },
+      "expect": {
+        "contextHex": "636170676f2d7369676e65642d636865636b73756d2d76310062756e646c6500312e302e30"
+      }
+    },
+    {
+      "id": "manifest-file",
+      "input": {
+        "kind": "file",
+        "version": "1.0.0",
+        "fileName": "assets/index.js"
+      },
+      "expect": {
+        "contextHex": "636170676f2d7369676e65642d636865636b73756d2d76310066696c6500312e302e30006173736574732f696e6465782e6a73"
+      }
+    },
+    {
+      "id": "manifest-file-brotli-suffix-stripped",
+      "input": {
+        "kind": "file",
+        "version": "1.0.0",
+        "fileName": "assets/index.js.br"
+      },
+      "expect": {
+        "contextHex": "636170676f2d7369676e65642d636865636b73756d2d76310066696c6500312e302e30006173736574732f696e6465782e6a73"
+      }
+    }
+  ],
+  "decryptBoundChecksum": [
+    {
+      "id": "bundle-bound-matching-version",
+      "input": {
+        "checksumHex": "24c16d30d81c327fb1c78edb778a1cb59001dc71647984ae633582297ef928c2706981160b65c97aa42f4bc35f1fe3ba96002280c441ff9620f535701aede0904baaa45bc090699e078861542a7fd42c943a4954d98aa6159984596587d8f480188991b7bff57bdba527ce8e9328b18261212fdb5854d8804197e5d6ef507ae6ba7eab39c5013bcaa7d9ffeef572a8e949f4227f405bc951ee38de793b90950380b7dac5f79892da8e88d724a16db01c4f1471f041a381c4f6f23376f1b234a9a869c480ef3e744661e9fb011164ec8a249839ca13ed8fb4bdaf3e5899b76a4356afce1e9708a6b430c29144a40c95c888aa586cb7aad68ed1c756fd3488228d",
+        "kind": "bundle",
+        "version": "1.0.0",
+        "requireBinding": true
+      },
+      "expect": {
+        "throws": false,
+        "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "bundle-bound-replayed-under-other-version",
+      "input": {
+        "checksumHex": "24c16d30d81c327fb1c78edb778a1cb59001dc71647984ae633582297ef928c2706981160b65c97aa42f4bc35f1fe3ba96002280c441ff9620f535701aede0904baaa45bc090699e078861542a7fd42c943a4954d98aa6159984596587d8f480188991b7bff57bdba527ce8e9328b18261212fdb5854d8804197e5d6ef507ae6ba7eab39c5013bcaa7d9ffeef572a8e949f4227f405bc951ee38de793b90950380b7dac5f79892da8e88d724a16db01c4f1471f041a381c4f6f23376f1b234a9a869c480ef3e744661e9fb011164ec8a249839ca13ed8fb4bdaf3e5899b76a4356afce1e9708a6b430c29144a40c95c888aa586cb7aad68ed1c756fd3488228d",
+        "kind": "bundle",
+        "version": "3.0.0",
+        "requireBinding": false
+      },
+      "expect": {
+        "throws": true
+      }
+    },
+    {
+      "id": "bundle-bound-used-as-manifest-file",
+      "input": {
+        "checksumHex": "24c16d30d81c327fb1c78edb778a1cb59001dc71647984ae633582297ef928c2706981160b65c97aa42f4bc35f1fe3ba96002280c441ff9620f535701aede0904baaa45bc090699e078861542a7fd42c943a4954d98aa6159984596587d8f480188991b7bff57bdba527ce8e9328b18261212fdb5854d8804197e5d6ef507ae6ba7eab39c5013bcaa7d9ffeef572a8e949f4227f405bc951ee38de793b90950380b7dac5f79892da8e88d724a16db01c4f1471f041a381c4f6f23376f1b234a9a869c480ef3e744661e9fb011164ec8a249839ca13ed8fb4bdaf3e5899b76a4356afce1e9708a6b430c29144a40c95c888aa586cb7aad68ed1c756fd3488228d",
+        "kind": "file",
+        "version": "1.0.0",
+        "fileName": "assets/index.js",
+        "requireBinding": false
+      },
+      "expect": {
+        "throws": true
+      }
+    },
+    {
+      "id": "file-bound-matching-version-and-brotli-name",
+      "input": {
+        "checksumHex": "1869a5a4e2cd9b704817a438eab9a4e5d4cd1f5f81856c9803a23b6272090539272532e0c660e4ebb84e64e2a5e3f83f1e820ea66220d0643d583c3ea35b11aee2e5fa3f9b9065f2bda0dc0297ccd45a4ef8bf2cd36f4df72611e39259ad7b178e83ada45a42fd710bcec004a2c61c809a7c38aedafd15f583c5b64ec0852cf9643c0efd3e4346785b3ff1ecbc7f61bdf7c2e28ca6da46e659b4cd7ff7b3e932ef7fd03e075fff971e4638204c34cecc1c1320da3381743a730e80f5be8d76e567a68115a59b8219a28a4f614c5b78dc66252c4c9b83de22276f91b7b466831c96c8e75c8b187ade2cc7a5f87a807edb7c4cfc1d36840dc6d551ac2fc0101bfe",
+        "kind": "file",
+        "version": "1.0.0",
+        "fileName": "assets/index.js.br",
+        "requireBinding": true
+      },
+      "expect": {
+        "throws": false,
+        "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "file-bound-other-file-name",
+      "input": {
+        "checksumHex": "1869a5a4e2cd9b704817a438eab9a4e5d4cd1f5f81856c9803a23b6272090539272532e0c660e4ebb84e64e2a5e3f83f1e820ea66220d0643d583c3ea35b11aee2e5fa3f9b9065f2bda0dc0297ccd45a4ef8bf2cd36f4df72611e39259ad7b178e83ada45a42fd710bcec004a2c61c809a7c38aedafd15f583c5b64ec0852cf9643c0efd3e4346785b3ff1ecbc7f61bdf7c2e28ca6da46e659b4cd7ff7b3e932ef7fd03e075fff971e4638204c34cecc1c1320da3381743a730e80f5be8d76e567a68115a59b8219a28a4f614c5b78dc66252c4c9b83de22276f91b7b466831c96c8e75c8b187ade2cc7a5f87a807edb7c4cfc1d36840dc6d551ac2fc0101bfe",
+        "kind": "file",
+        "version": "1.0.0",
+        "fileName": "assets/other.js",
+        "requireBinding": false
+      },
+      "expect": {
+        "throws": true
+      }
+    },
+    {
+      "id": "file-bound-replayed-under-other-version",
+      "input": {
+        "checksumHex": "1869a5a4e2cd9b704817a438eab9a4e5d4cd1f5f81856c9803a23b6272090539272532e0c660e4ebb84e64e2a5e3f83f1e820ea66220d0643d583c3ea35b11aee2e5fa3f9b9065f2bda0dc0297ccd45a4ef8bf2cd36f4df72611e39259ad7b178e83ada45a42fd710bcec004a2c61c809a7c38aedafd15f583c5b64ec0852cf9643c0efd3e4346785b3ff1ecbc7f61bdf7c2e28ca6da46e659b4cd7ff7b3e932ef7fd03e075fff971e4638204c34cecc1c1320da3381743a730e80f5be8d76e567a68115a59b8219a28a4f614c5b78dc66252c4c9b83de22276f91b7b466831c96c8e75c8b187ade2cc7a5f87a807edb7c4cfc1d36840dc6d551ac2fc0101bfe",
+        "kind": "file",
+        "version": "3.0.0",
+        "fileName": "assets/index.js",
+        "requireBinding": false
+      },
+      "expect": {
+        "throws": true
+      }
+    },
+    {
+      "id": "legacy-unbound-accepted-by-default",
+      "input": {
+        "checksumHex": "6be761c8bb84699fbfb4c14ee2b1f8ed1e0efa9d13ec5724bbfbe530fb8a8890ecbe0775735890655fb53af93febc03dc6f8d77c540a16758f38b19d576f01a2d8de60ab108f92a07acda125ad9493852646aba595098841fb4f2e3d88e3d62cd93ffb213932ecbd562bdec9847b3416f98e09c9c59216c7217bbd3e6a5a51ba36f0e1228a8a23f819e50e03ba54638c70008a56f2155b3b28070ece880240f38aa0d63eac018145cd01907befde56a7094d98577537c0b4dc41e4f2438763aa87acfd027ed6fe6aa700f05d9fa8b23c9d58e7d3dd6948642fbc20e2f9e1c7bdae537224ddaeab5dc3251e837a594ed1c635933912d9be8394ae7cb693f2ad23",
+        "kind": "bundle",
+        "version": "3.0.0",
+        "requireBinding": false
+      },
+      "expect": {
+        "throws": false,
+        "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "legacy-unbound-rejected-when-required",
+      "input": {
+        "checksumHex": "6be761c8bb84699fbfb4c14ee2b1f8ed1e0efa9d13ec5724bbfbe530fb8a8890ecbe0775735890655fb53af93febc03dc6f8d77c540a16758f38b19d576f01a2d8de60ab108f92a07acda125ad9493852646aba595098841fb4f2e3d88e3d62cd93ffb213932ecbd562bdec9847b3416f98e09c9c59216c7217bbd3e6a5a51ba36f0e1228a8a23f819e50e03ba54638c70008a56f2155b3b28070ece880240f38aa0d63eac018145cd01907befde56a7094d98577537c0b4dc41e4f2438763aa87acfd027ed6fe6aa700f05d9fa8b23c9d58e7d3dd6948642fbc20e2f9e1c7bdae537224ddaeab5dc3251e837a594ed1c635933912d9be8394ae7cb693f2ad23",
+        "kind": "bundle",
+        "version": "3.0.0",
+        "requireBinding": true
+      },
+      "expect": {
+        "throws": true
       }
     }
   ],

@@ -106,6 +106,56 @@ public class RsaContractTest {
         }
     }
 
+    private static String bindingContextFor(JSONObject input) throws Exception {
+        String kind = input.getString("kind");
+        String version = input.getString("version");
+        if ("bundle".equals(kind)) {
+            return CryptoCipher.bundleBindingContext(version);
+        }
+        return CryptoCipher.manifestFileBindingContext(version, input.getString("fileName"));
+    }
+
+    @Test
+    public void bindingContextMatchesNativeContract() throws Exception {
+        JSONArray cases = contract().getJSONArray("bindingContext");
+
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            String context = bindingContextFor(testCase.getJSONObject("input"));
+            String expectedHex = testCase.getJSONObject("expect").getString("contextHex");
+            assertEquals(id, expectedHex, bytesToHex(context.getBytes(StandardCharsets.UTF_8)));
+        }
+    }
+
+    @Test
+    public void decryptBoundChecksumMatchesNativeContract() throws Exception {
+        String publicKeyPem = fixturePublicKey();
+        JSONArray cases = contract().getJSONArray("decryptBoundChecksum");
+
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            JSONObject input = testCase.getJSONObject("input");
+            JSONObject expect = testCase.getJSONObject("expect");
+            String checksumHex = input.getString("checksumHex");
+            String context = bindingContextFor(input);
+            boolean requireBinding = input.getBoolean("requireBinding");
+
+            if (expect.getBoolean("throws")) {
+                try {
+                    CryptoCipher.decryptChecksum(checksumHex, publicKeyPem, context, requireBinding);
+                    fail(id + ": expected decryptChecksum to throw");
+                } catch (IOException ignored) {
+                    // expected
+                }
+            } else {
+                String result = CryptoCipher.decryptChecksum(checksumHex, publicKeyPem, context, requireBinding);
+                assertEquals(id, expect.getString("decryptedHex"), result);
+            }
+        }
+    }
+
     @Test
     public void decryptChecksumInvalidMatchesNativeContract() throws Exception {
         String publicKeyPem = fixturePublicKey();

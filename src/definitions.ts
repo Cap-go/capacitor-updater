@@ -142,6 +142,28 @@ declare module '@capacitor/cli' {
       publicKey?: string;
 
       /**
+       * Require every signed bundle checksum to be bound to the bundle version.
+       *
+       * When {@link publicKey} is set, recent Capgo CLI versions sign the bundle checksum (and each delta
+       * manifest file hash) together with the bundle version name (and file path). The plugin always
+       * verifies that binding when it is present, so a signed bundle cannot be installed under another
+       * version name. Legacy signatures without a binding are still accepted by default so bundles
+       * uploaded with older CLI versions keep working.
+       *
+       * Set this to `true` once all bundles you serve were uploaded with a CLI that binds the version, to
+       * reject legacy unbound signatures and prevent older signed bundles from being replayed under a new
+       * version name. Has no effect without {@link publicKey}.
+       *
+       * Candidate to default to `true` in the next major version.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.52.0
+       */
+      requireSignedVersion?: boolean;
+
+      /**
        * Configure the current version of the app. This will be used for the first update request.
        * If not set, the plugin will get the version from the native code.
        *

@@ -52,6 +52,8 @@ import UIKit
     public var deviceID = ""
     public var previewSession = false
     public var publicKey: String = ""
+    /// Reject signed checksums that are not bound to the bundle version (see requireSignedVersion config).
+    public var requireSignedVersion = false
 
     // Cached key ID calculated once from publicKey
     private var cachedKeyId: String?
@@ -1527,7 +1529,12 @@ import UIKit
                     continue
                 }
                 do {
-                    fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+                    fileHash = try CryptoCipher.decryptChecksum(
+                        checksum: fileHash,
+                        publicKey: self.publicKey,
+                        bindingContext: CryptoCipher.manifestFileBindingContext(version: version, fileName: fileName),
+                        requireBinding: self.requireSignedVersion
+                    )
                 } catch {
                     errorLock.lock()
                     downloadError = error

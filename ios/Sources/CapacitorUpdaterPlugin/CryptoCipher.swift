@@ -31,7 +31,69 @@ public struct CryptoCipher {
         return str.unicodeScalars.allSatisfy { hexCharacterSet.contains($0) }
     }
 
+    // Signed checksum payload that binds the content hash to the release metadata:
+    // SHA-256(content) (32 bytes) || SHA-256(binding context) (32 bytes).
+    static let signedBindingDomain = "capgo-signed-checksum-v1"
+    static let sha256Bytes = 32
+    static let boundChecksumBytes = sha256Bytes * 2
+
+    /// Binding context for a full bundle zip. Must match the Capgo CLI byte for byte.
+    public static func bundleBindingContext(version: String) -> String {
+        return "\(signedBindingDomain)\0bundle\0\(version)"
+    }
+
+    /// Binding context for one manifest (delta) file. The ".br" transport suffix is stripped so the
+    /// context matches the original bundle path signed by the Capgo CLI.
+    public static func manifestFileBindingContext(version: String, fileName: String) -> String {
+        let name = fileName.hasSuffix(".br") ? String(fileName.dropLast(3)) : fileName
+        return "\(signedBindingDomain)\0file\0\(version)\0\(name)"
+    }
+
+    /// Returns the content hash carried by a decrypted signed checksum payload, verifying that the
+    /// payload is bound to `bindingContext` when it carries a binding.
+    /// - Parameters:
+    ///   - bindingContext: expected binding context, or nil to skip the binding check (cache lookups only)
+    ///   - requireBinding: reject legacy payloads that carry no binding
+    static func extractBoundContentHash(_ decrypted: Data, bindingContext: String?, requireBinding: Bool) throws -> Data {
+        if decrypted.count == boundChecksumBytes {
+            let contentHash = decrypted.prefix(sha256Bytes)
+            if let bindingContext = bindingContext {
+                let signedBinding = Data(decrypted.suffix(sha256Bytes))
+                let expectedBinding = Data(SHA256.hash(data: Data(bindingContext.utf8)))
+                if !constantTimeEquals(signedBinding, expectedBinding) {
+                    logger.error("Signed checksum is bound to a different version or file")
+                    throw CustomError.cannotDecode
+                }
+            }
+            return Data(contentHash)
+        }
+        if requireBinding {
+            logger.error("Signed checksum is not bound to the bundle version (requireSignedVersion is enabled)")
+            throw CustomError.cannotDecode
+        }
+        return decrypted
+    }
+
+    private static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else {
+            return false
+        }
+        var diff: UInt8 = 0
+        for (left, right) in zip(lhs, rhs) {
+            diff |= left ^ right
+        }
+        return diff == 0
+    }
+
+    /// Decrypts a signed checksum and returns the content hash without checking its release binding.
+    /// Only use this for cache lookups; install paths must pass a `bindingContext`.
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
+        return try decryptChecksum(checksum: checksum, publicKey: publicKey, bindingContext: nil, requireBinding: false)
+    }
+
+    /// Decrypts a signed checksum, verifies it is bound to `bindingContext` when the payload carries a
+    /// binding, and returns the content hash as hex.
+    public static func decryptChecksum(checksum: String, publicKey: String, bindingContext: String?, requireBinding: Bool) throws -> String {
         if publicKey.isEmpty {
             logger.info("No encryption set (public key) ignored")
             return checksum
@@ -82,10 +144,15 @@ public struct CryptoCipher {
                 throw CustomError.cannotDecode
             }
 
-            guard let decryptedChecksum = rsaPublicKey.decrypt(data: checksumBytes) else {
+            guard let decryptedPayload = rsaPublicKey.decrypt(data: checksumBytes) else {
                 logger.error("decryptChecksum fail")
                 throw NSError(domain: "Failed to decrypt session key data", code: 2, userInfo: nil)
             }
+            let decryptedChecksum = try extractBoundContentHash(
+                decryptedPayload,
+                bindingContext: bindingContext,
+                requireBinding: requireBinding
+            )
 
             // Return as hex string to match calcChecksum output format
             let result = decryptedChecksum.map { String(format: "%02x", $0) }.joined()
