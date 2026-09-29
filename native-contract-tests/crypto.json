@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "description": "Session-key, checksum and AES-128-CBC bundle decryption vectors. Ciphertexts are produced like the Capgo CLI: AES key RSA privateEncrypt (PKCS#1 v1.5), bundle AES-128-CBC with PKCS#7 padding. `publicKeyPem: null` in an input means \"use the fixture key\".",
+  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAtITiB7/jysdzu1KWHSQt88e50JAu9+SmEEeiTUiKJWCK5dfC7B+A\nahPOlVHxs/Q3vflJACUrEad7bVvflPzjllnG+ZJko+S8w96FU/pADY51WX6vW84r\norNQ0dTT1f4DHaqtHa6lkcM3QX7u9sKdu3/W5EOpY8vUvJyctgucROHUfTd0G9BG\nJvy3OaSEFgihWJJUrsiDq8iCm5x+OODumiz+n4nMoIegmswMDkOw/pb+9q/QRRO2\nUIvRbFiAogMzhLak/OOVothHdvNnKBZMAHJHsneNcjjvTAo5WecfZariLkX0tpft\nqy5r9jinLUO+FVL4yZ0qJjHcF9OuAo8eWwIDAQAB\n-----END RSA PUBLIC KEY-----",
+  "sessionKeyValid": [
+    {
+      "id": "session-key.valid",
+      "input": {
+        "sessionKey": "aXY=:a2V5"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "session-key.empty",
+      "input": {
+        "sessionKey": ""
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "session-key.colon-only",
+      "input": {
+        "sessionKey": ":"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "session-key.missing-key",
+      "input": {
+        "sessionKey": "aXY=:"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "session-key.missing-iv",
+      "input": {
+        "sessionKey": ":a2V5"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "session-key.three-parts",
+      "input": {
+        "sessionKey": "a:b:c"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "session-key.no-separator",
+      "input": {
+        "sessionKey": "abc"
+      },
+      "expect": {
+        "valid": false
+      }
+    }
+  ],
+  "keyId": [
+    {
+      "id": "key-id.fixture",
+      "input": {
+        "publicKey": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAtITiB7/jysdzu1KWHSQt88e50JAu9+SmEEeiTUiKJWCK5dfC7B+A\nahPOlVHxs/Q3vflJACUrEad7bVvflPzjllnG+ZJko+S8w96FU/pADY51WX6vW84r\norNQ0dTT1f4DHaqtHa6lkcM3QX7u9sKdu3/W5EOpY8vUvJyctgucROHUfTd0G9BG\nJvy3OaSEFgihWJJUrsiDq8iCm5x+OODumiz+n4nMoIegmswMDkOw/pb+9q/QRRO2\nUIvRbFiAogMzhLak/OOVothHdvNnKBZMAHJHsneNcjjvTAo5WecfZariLkX0tpft\nqy5r9jinLUO+FVL4yZ0qJjHcF9OuAo8eWwIDAQAB\n-----END RSA PUBLIC KEY-----"
+      },
+      "expect": {
+        "keyId": "MIIBCgKCAQEAtITiB7/j"
+      }
+    },
+    {
+      "id": "key-id.empty",
+      "input": {
+        "publicKey": ""
+      },
+      "expect": {
+        "keyId": ""
+      }
+    },
+    {
+      "id": "key-id.short",
+      "input": {
+        "publicKey": "abc"
+      },
+      "expect": {
+        "keyId": "abc"
+      }
+    },
+    {
+      "id": "key-id.crlf-and-spaces",
+      "input": {
+        "publicKey": "-----BEGIN RSA PUBLIC KEY-----\r\nMIIB CgKC\r\nAQEAqJikYizowR4jGct5\r\n-----END RSA PUBLIC KEY-----"
+      },
+      "expect": {
+        "keyId": "MIIBCgKCAQEAqJikYizo"
+      }
+    }
+  ],
+  "publicKeyValid": [
+    {
+      "id": "public-key.fixture",
+      "input": {
+        "publicKey": null
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "public-key.garbage",
+      "input": {
+        "publicKey": "-----BEGIN RSA PUBLIC KEY-----\nnot-base64!!\n-----END RSA PUBLIC KEY-----"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "public-key.not-a-key",
+      "input": {
+        "publicKey": "not-a-key"
+      },
+      "expect": {
+        "valid": false
+      }
+    }
+  ],
+  "checksumAlgorithm": [
+    {
+      "id": "checksum-algorithm.empty",
+      "input": {
+        "checksum": ""
+      },
+      "expect": {
+        "algorithm": "empty"
+      }
+    },
+    {
+      "id": "checksum-algorithm.sha256",
+      "input": {
+        "checksum": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
+      },
+      "expect": {
+        "algorithm": "SHA-256"
+      }
+    },
+    {
+      "id": "checksum-algorithm.crc32",
+      "input": {
+        "checksum": "deadbeef"
+      },
+      "expect": {
+        "algorithm": "CRC32 (deprecated)"
+      }
+    },
+    {
+      "id": "checksum-algorithm.unknown",
+      "input": {
+        "checksum": "0123456789"
+      },
+      "expect": {
+        "algorithm": "unknown (10 hex chars)"
+      }
+    }
+  ],
+  "checksumFile": [
+    {
+      "id": "checksum-file.empty",
+      "input": {
+        "contentHex": "",
+        "repeat": 1
+      },
+      "expect": {
+        "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "checksum-file.abc",
+      "input": {
+        "contentHex": "616263",
+        "repeat": 1
+      },
+      "expect": {
+        "checksum": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "id": "checksum-file.one-mebibyte-plus-one",
+      "input": {
+        "contentHex": "61",
+        "repeat": 1048577
+      },
+      "expect": {
+        "checksum": "4a3f0c0c213adea174f9a3d4c13177315b588bdb2e9c1012d3d0bf0453ca0f6a"
+      }
+    }
+  ],
+  "decryptChecksum": [
+    {
+      "id": "decrypt-checksum.hex-sha256",
+      "input": {
+        "publicKey": null,
+        "checksum": "15d278bc703f78e601a3243c94f49084bd9bd9e1f2324c0cdd366e69a53efe30200334dd9969636402b9570b5e4f8473696f0ea7f520d378b86b892886e0a410f4c83932bb6d3aa0dd7e65a99aff88c8a6592945b1eaac0344ba859738985d7509c5ccde8acde8c3472dcb8b3e2a4b924638e5222cfb24db5cca791d96c79c713c0b2e5c00559e3bd4dc28cbee698eee28a0732fc509f075986bd6e3bf86ac07a71115691a01c9f63fc4439e7c64ad1f89a886be55f20075bc2308b396da2c9e9cb360c19937d57a4c85f298e92206461cc3708ab19701199a1e1a5c232e169f854ec7e1f644b718bf8378786300a57f800515796b2eff98169be2555b6a733c"
+      },
+      "expect": {
+        "checksum": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
+      }
+    },
+    {
+      "id": "decrypt-checksum.base64-legacy",
+      "input": {
+        "publicKey": null,
+        "checksum": "FdJ4vHA/eOYBoyQ8lPSQhL2b2eHyMkwM3TZuaaU+/jAgAzTdmWljZAK5VwteT4RzaW8Op/Ug03i4a4kohuCkEPTIOTK7bTqg3X5lqZr/iMimWSlFseqsA0S6hZc4mF11CcXM3orN6MNHLcuLPipLkkY45SIs+yTbXMp5HZbHnHE8Cy5cAFWeO9TcKMvuaY7uKKBzL8UJ8HWYa9bjv4asB6cRFWkaAcn2P8RDnnxkrR+JqIa+VfIAdbwjCLOW2iyenLNgwZk31XpMhfKY6SIGRhzDcIqxlwEZmh4aXCMuFp+FTsfh9kS3GL+DeHhjAKV/gAUVeWsu/5gWm+JVW2pzPA=="
+      },
+      "expect": {
+        "checksum": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
+      }
+    },
+    {
+      "id": "decrypt-checksum.crc32-payload",
+      "input": {
+        "publicKey": null,
+        "checksum": "7f293472c5bd0432755562c765f9e14d22b8cdfd084ccf38e74756f4d8d1a833244565db9444874ac96ed34c5b3de3d4084f73b17af303008d0139646978e93d97d27de61826960f00cb51b7c83557cad8364bb2bbac1aa02b491ab4460352dbb4c953c5571bada42d8c43cbfb287c337f5e11b5923fc2e73cf78c5a181ba1070eeceb21125be941cfc60163f653a3579af8ab83ba99b29d93168e1ff406fa60bcffc3c26b3f8acbb89351b94ce7f097c08a8055986d877d9c0afa3e8890cf919c670eab34fe3e20e79e62b550349ddd0b8294624f743c3c5bf5b77c0fbba4ee2a69430beb3cab6ddf521067369acd0b6334e554ac311589df8e74967638dfea"
+      },
+      "expect": {
+        "checksum": "deadbeef"
+      }
+    },
+    {
+      "id": "decrypt-checksum.no-public-key-passthrough",
+      "input": {
+        "publicKey": "",
+        "checksum": "not-encrypted"
+      },
+      "expect": {
+        "checksum": "not-encrypted"
+      }
+    },
+    {
+      "id": "decrypt-checksum.wrong-size",
+      "input": {
+        "publicKey": null,
+        "checksum": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "error": "checksum_not_encrypted"
+      }
+    },
+    {
+      "id": "decrypt-checksum.not-rsa-block",
+      "input": {
+        "publicKey": null,
+        "checksum": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expect": {
+        "error": "decrypt_failed"
+      }
+    }
+  ],
+  "decryptFile": [
+    {
+      "id": "decrypt-file.small",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "plaintextHex": "68656c6c6f20636170676f"
+      }
+    },
+    {
+      "id": "decrypt-file.multi-block",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "5580eaf48c486370ed5481c9d9b7afaba57fe0be55cad6c53b85b2498c7a72e10b1085656b4e0d7b6d2909e9817787128c430816ab1977fbd0b65838523d53d96711794023be4a86ddcbb780cb559e1743da4e269055b7db9463827e327666b708e5067aee525be66e3a898d4446a03d5b5a2412cd47008ca8cfcc44acf2d1a86db9dd95a5e30b3c68a3788887ff408f21eee2346dd1aa2acf805b98bba341a80fc126e3f34f97dcf6df54cb80dc8d76d3ba1c8f4b8145c7dfcd4d85ff6b0f5413023a0e5bfadc6daf451ed668fd94804bbc1c7f25a68c71a0bd1be87b120e5e0591a3639e4b8391915dea4284f93f68735d211149a44ad3950c6b53b02aa7104164fce278255d3975029025bf434fc8e30d768f4886c7a667b4c110320a4278f94832768eea4262cb3c84e73dcbaa048ef5f8c77ee95d9e7884f3b5f92eb21f483bc9b3f313f13c280c190dd6ee3655c498e88b49ff17803e912ebb54ce63f11889d94178d268bc8ab6ee5f1cf11b543e0085f970a1a583a2316cf6a84551d9761a09cf86320f3c807373c9718f1da63b1e0f7285d39c859dd91cd68977200e5edd8f605cf32b5cd7c805790f40411f0946a6d764a7d552ad8cda1394996622c5f0c482fa56644cb5546d8e467c2a2fb48a62bfb128af0370a43433524882ee90dcd6368a2afc161bbffacb202a5dd147c01ac7369d331e3abf022751aef06fbc63269be743f900d892218460139555864c43a761d7cff18273f29bb8679d1582463fb40e97535e413e8d2d6f268d637e2d2189ba360e823b730c2d595d8c78a86d0802a7704fe9c36da1c6a3dabf9f2e8b92f2b0e364db57ab9a84cef5c10f6ffd7255ea94bee41171d6086ee2e4556a0046a87d0864ca6d68277721dc0f74a4b09355d4ae19ce346cd24acae978e905f1dac5e4f318f36f89cfcdb30b0e69ee5b0c998bc1d9318b68606264f565054edef47ceef7d72488474b8b6c179d490ee979da09813ae8ceca99800384d8b72a2947cd57d96bc2ae4328b7dfeb80186958f49f4e14f6f5f7f3c2465bacc105228f92a440e55c89876f1401673d760c62f4810cfa75666d75f68ad4cb739d980778a9887e06f0ce35fd9a6457be0523bf3425ad7cd9ebc4e74033e226555f3555ae8dcf73ac39738ae396ef926e1076512ca6f2b56d044d5585be58cb2d67c71ed7cc89ee34bdde82a8b5f1fb5ad2419e259ccb90ffa0046bed9a3ac558e54f766dbdeb8e02d8673eeb26dce851122adc6b3eb297f205196fcfa71536b64636d8596cc89a9f9c6c97110eb543c1d60f383a7d0d3a1b987a2c1fcf4a585f659649f7c36594df34577df9911df870165bfcb8b7a94f04571292593bc0325ca6898d261de07f7482fdbc31c03a108068f2de7697a13db7e49dd84034822423a774"
+      },
+      "expect": {
+        "plaintextHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6"
+      }
+    },
+    {
+      "id": "decrypt-file.no-public-key-noop",
+      "input": {
+        "publicKey": "",
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "plaintextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      }
+    },
+    {
+      "id": "decrypt-file.no-session-key-noop",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "plaintextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      }
+    },
+    {
+      "id": "decrypt-file.invalid-session-key-noop",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "nocolon",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "plaintextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      }
+    },
+    {
+      "id": "decrypt-file.spki-public-key-noop",
+      "input": {
+        "publicKey": "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----",
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "plaintextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      }
+    },
+    {
+      "id": "decrypt-file.short-iv",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "AQEBAQEBAQE=:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "error": "invalid_iv"
+      }
+    },
+    {
+      "id": "decrypt-file.garbage-session-key",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:Kcc6vLSe5pa+aajC9n4t+8JnpuGA5pV6ouK7SE6slXMPAZL9gI/TvxQA4WiYsG9Aw92h2GHTLO5qFRMJdYfp5T9jCOD6JeiAQ9iZKwBZVMWRXV/eba2mpMzovSVrbFnJbwg0hVl9gn1pnICN0zHFPgIgbR2p/qAyYJ71fYT4Ld7KrLXw7gp3Q7a5iieBWmekFbj4WmnH6yhcR9dT4LtYfrnvrUV+AqqlalXVOiZUSgYecuiraEpIbU8jCxSvfpZZWEOub5bMLicpd5Kx4fZ9B3AFfP+KP7mjbYGhxbcQJHyaLXMVF+ukhQXaxivni1T+W1uORMEv4A2wThZzGLYzMA==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "error": "session_key_decrypt_failed"
+      }
+    },
+    {
+      "id": "decrypt-file.session-key-too-long",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:E2jxINeMJwXdFhx2WOjmSb5Eshr4JHtaEw6++rDXC0CbIMX0xtyMr7Uk9C/mTM/+T689lmS3SqSRR3eDtWopXacAnmVN9bdnzvhQRa73m9xn2/fHGrolHDT8vG3S32nAptn5s6tuRLZKEe8l374Ox98deWdxD6RdtQ+OWH3+e4GvWuyb8PmOOKC9OxTqXZLe6eSmUBaqAC6HCi4CYlCE3OvC+dgV4EGq06VUXFWG6YOZTdCRxJLd2+yy3TrFTo/BclQWsdpCEjTXg2svfdkOzCLvR624JbLsP1HYgdIhPcK7GU8sp7PtlsCX7n3svvWiwy1da92DOJLAeRV7G1J4DQ==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f29"
+      },
+      "expect": {
+        "error": "invalid_session_key"
+      }
+    },
+    {
+      "id": "decrypt-file.bad-padding",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2fd6"
+      },
+      "expect": {
+        "error": "decrypt_failed"
+      }
+    },
+    {
+      "id": "decrypt-file.not-block-aligned",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": "53c70de3fe81651a1970fd18cb7f2f"
+      },
+      "expect": {
+        "error": "decrypt_failed"
+      }
+    },
+    {
+      "id": "decrypt-file.empty-ciphertext",
+      "input": {
+        "publicKey": null,
+        "sessionKey": "8ODQwLCgkIBwYFBAMCAQAA==:P3r4I9mwU+hJ1WW6eLYigDtkr5uMouPYLpb+9xT9HqEpxWgIpyRBb8UrNXxMUgBrB2c4PlaRhXdsW33U0jMYFDvP9EU+SDeJ3utpWmBMzY15CfLIqmeBH7nPZSaCJ2tVxwpBk273DapUecxivr8VLxKFnP64KSYI2PSsMpzv30B56uI9UyQ4kRKGE0GeOIiWHAed4ezbJRnFtK+XC9nOKojvV10SRJwuh9szb2PxjWtBLumhJC1rCVn+cwZfLa/KMtuELBK2Pi4h0kpwgk+BEMQKP8ekdqjhrRtA/vFTy+hhy76/zI/7AMLs5IErngTtwaaV6rFx3ezvEEssg+FP5A==",
+        "ciphertextHex": ""
+      },
+      "expect": {
+        "error": "empty_input"
+      }
+    }
+  ]
+}

@@ -2217,7 +2217,7 @@ public class CapgoUpdater {
         return new RemoteBlockResult(true, errorCode, message);
     }
 
-    private String parseRemoteError(final String responseData) {
+    static String parseRemoteError(final String responseData) {
         if (responseData == null || responseData.isEmpty()) {
             return "";
         }
@@ -2229,7 +2229,7 @@ public class CapgoUpdater {
         }
     }
 
-    private String parseRemoteMessage(final String responseData) {
+    static String parseRemoteMessage(final String responseData) {
         if (responseData == null || responseData.isEmpty()) {
             return "";
         }
@@ -2242,8 +2242,11 @@ public class CapgoUpdater {
     }
 
     private long resolveRateLimitBlockedUntilMs(final Response response, final String responseData) {
-        final long nowMs = System.currentTimeMillis();
-        final double candidate = rawRateLimitDeadlineMs(response, responseData, nowMs);
+        return resolveRateLimitBlockedUntilMs(response.header("Retry-After"), responseData, System.currentTimeMillis());
+    }
+
+    static long resolveRateLimitBlockedUntilMs(final String retryAfterHeader, final String responseData, final long nowMs) {
+        final double candidate = rawRateLimitDeadlineMs(retryAfterHeader, responseData, nowMs);
         // NaN and past deadlines mean "no client-side block"; anything further out is capped.
         if (!(candidate > nowMs)) {
             return 0L;
@@ -2251,8 +2254,7 @@ public class CapgoUpdater {
         return (long) Math.min(candidate, (double) nowMs + MAX_RATE_LIMIT_WINDOW_MS);
     }
 
-    private double rawRateLimitDeadlineMs(final Response response, final String responseData, final long nowMs) {
-        final String header = response.header("Retry-After");
+    static double rawRateLimitDeadlineMs(final String header, final String responseData, final long nowMs) {
         if (header != null) {
             try {
                 final double seconds = Double.parseDouble(header.trim());

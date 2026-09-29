@@ -637,6 +637,10 @@ import UIKit
     }
 
     private func parseRemoteError(from data: Data?) -> (error: String, message: String) {
+        Self.parseRemoteError(data: data)
+    }
+
+    static func parseRemoteError(data: Data?) -> (error: String, message: String) {
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return ("", "")
@@ -647,8 +651,15 @@ import UIKit
     }
 
     private func resolveRateLimitBlockedUntilMs(data: Data?, response: HTTPURLResponse?) -> Double {
-        let nowMs = Date().timeIntervalSince1970 * 1000
-        let candidate = rawRateLimitDeadlineMs(data: data, response: response, nowMs: nowMs)
+        Self.resolveRateLimitBlockedUntilMs(
+            retryAfterHeader: response?.value(forHTTPHeaderField: "Retry-After"),
+            data: data,
+            nowMs: Date().timeIntervalSince1970 * 1000
+        )
+    }
+
+    static func resolveRateLimitBlockedUntilMs(retryAfterHeader: String?, data: Data?, nowMs: Double) -> Double {
+        let candidate = rawRateLimitDeadlineMs(retryAfterHeader: retryAfterHeader, data: data, nowMs: nowMs)
         // NaN and past deadlines mean "no client-side block"; anything further out is capped.
         guard candidate > nowMs else {
             return 0
@@ -656,8 +667,8 @@ import UIKit
         return min(candidate, nowMs + CapgoUpdater.maxRateLimitWindowMs)
     }
 
-    private func rawRateLimitDeadlineMs(data: Data?, response: HTTPURLResponse?, nowMs: Double) -> Double {
-        if let header = response?.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
+    private static func rawRateLimitDeadlineMs(retryAfterHeader: String?, data: Data?, nowMs: Double) -> Double {
+        if let header = retryAfterHeader?.trimmingCharacters(in: .whitespacesAndNewlines),
            let seconds = Double(header), seconds >= 0 {
             return nowMs + seconds * 1000
         }
@@ -1327,6 +1338,10 @@ import UIKit
     /// enough for non-empty files; empty files are reused only for the empty SHA-256.
     /// CRC32 (8 hex) is too collision-prone to trust without a re-read.
     private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
+        Self.isReusableCacheFile(url, expectedHash: expectedHash)
+    }
+
+    static func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
         guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
             return false
         }
@@ -3524,7 +3539,7 @@ import UIKit
     }
 
     /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
-    private static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
+    static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
         return statusCode == 429 || statusCode == 408 || statusCode >= 500
     }
 
