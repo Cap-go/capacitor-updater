@@ -629,6 +629,35 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// GETs a JSON document (preview payloads). Non-2xx bodies become the error message.
+    pub fn fetch_json(&self, url: &str) -> crate::error::CoreResult<Value> {
+        use crate::error::CoreError;
+        let parsed = url::Url::parse(url).map_err(|_| CoreError::new("invalid_url", "Expected an http or https URL"))?;
+        if parsed.scheme() != "http" && parsed.scheme() != "https" {
+            return Err(CoreError::new("invalid_url", "Expected an http or https URL"));
+        }
+        let response = self
+            .http
+            .send("GET", url, &[("Accept", "application/json")], None)
+            .map_err(|error| CoreError::new("network_error", error.message))?;
+        let json = response.json().unwrap_or(Value::Null);
+        if !response.is_success() {
+            let message = json
+                .get("message")
+                .or_else(|| json.get("error"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Request failed with HTTP {}", response.status));
+            return Err(CoreError::new("response_error", message));
+        }
+        if !json.is_object() {
+            return Err(CoreError::new("parse_error", "Response is not a JSON object"));
+        }
+        Ok(json)
+    }
+}
+
 /// `<updateUrl>/manifest_size`, dropping the query string.
 pub fn manifest_size_url(update_url: &str) -> String {
     let without_query = update_url.split(['?', '#']).next().unwrap_or(update_url);

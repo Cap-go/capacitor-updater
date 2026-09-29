@@ -1,5 +1,6 @@
 package ee.forgr.capacitor_updater;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -49,6 +50,11 @@ public class ChecksumRequiredTest {
 
         @Override
         public void sendStats(final String action) {
+            this.sentStatsActions.add(action);
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
             this.sentStatsActions.add(action);
         }
 
@@ -130,59 +136,59 @@ public class ChecksumRequiredTest {
     }
 
     @Test
-    public void finishDownloadRejectsZipWhenChecksumMissing() throws Exception {
+    public void downloadRejectsZipWhenChecksumMissingBeforeTouchingNetwork() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
-        final Path tempDir = Files.createTempDirectory("capgo-checksum-missing");
-        updater.documentsDir = tempDir.toFile();
-        final String dest = "bundle.zip";
-        Files.write(tempDir.resolve(dest), "plaintext".getBytes(StandardCharsets.UTF_8));
-
-        final boolean success = updater.finishDownload("bundle-id", dest, "1.0.0", "", "", false, false);
-
-        assertFalse(success);
-        assertTrue(updater.getSentStatsActions().contains("checksum_required"));
+        updater.documentsDir = Files.createTempDirectory("capgo-checksum-missing").toFile();
+        final TestHttpServer server = new TestHttpServer("plaintext".getBytes(StandardCharsets.UTF_8));
+        try {
+            updater.download(server.url("/bundle.zip"), "1.0.0", "", "");
+            fail("Expected IOException when checksum is missing");
+        } catch (java.io.IOException expected) {
+            assertTrue(updater.getSentStatsActions().contains("checksum_required"));
+        } finally {
+            server.close();
+        }
     }
 
     @Test
-    public void finishDownloadRejectsZipWhenChecksumMismatch() throws Exception {
+    public void downloadRejectsZipWhenChecksumMismatch() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
-        final Path tempDir = Files.createTempDirectory("capgo-checksum-mismatch");
-        updater.documentsDir = tempDir.toFile();
-        final String dest = "bundle.zip";
-        Files.write(tempDir.resolve(dest), "plaintext".getBytes(StandardCharsets.UTF_8));
-
-        final boolean success = updater.finishDownload(
-            "bundle-id",
-            dest,
-            "1.0.0",
-            "",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            false,
-            false
-        );
-
-        assertFalse(success);
-        assertTrue(updater.getSentStatsActions().contains("checksum_fail"));
+        updater.documentsDir = Files.createTempDirectory("capgo-checksum-mismatch").toFile();
+        final TestHttpServer server = new TestHttpServer(Files.readAllBytes(createZipWithEntry("index.html")));
+        try {
+            updater.download(server.url("/bundle.zip"), "1.0.0", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+            fail("Expected IOException on checksum mismatch");
+        } catch (java.io.IOException expected) {
+            assertTrue(updater.getSentStatsActions().contains("checksum_fail"));
+            assertFalse(
+                "nothing is extracted before the checksum passes",
+                new java.io.File(updater.documentsDir, "versions").exists() &&
+                    java.util.Objects.requireNonNull(new java.io.File(updater.documentsDir, "versions").list()).length > 0
+            );
+        } finally {
+            server.close();
+        }
     }
 
     @Test
-    public void finishDownloadAcceptsZipWhenChecksumMatches() throws Exception {
+    public void downloadAcceptsZipWhenChecksumMatches() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
-        final Path tempDir = Files.createTempDirectory("capgo-checksum-valid");
-        updater.documentsDir = tempDir.toFile();
+        updater.documentsDir = Files.createTempDirectory("capgo-checksum-valid").toFile();
         final Path zipPath = createZipWithEntry("index.html");
-        final String dest = "bundle.zip";
-        Files.copy(zipPath, tempDir.resolve(dest));
-        final String expectedChecksum = CryptoCipher.calcChecksum(tempDir.resolve(dest).toFile());
-
-        final boolean success = updater.finishDownload("bundle-id", dest, "1.0.0", "", expectedChecksum, false, false);
-
-        assertTrue(success);
-        assertFalse(updater.getSentStatsActions().contains("checksum_required"));
-        assertFalse(updater.getSentStatsActions().contains("checksum_fail"));
+        final String expectedChecksum = CryptoCipher.calcChecksum(zipPath.toFile());
+        final TestHttpServer server = new TestHttpServer(Files.readAllBytes(zipPath));
+        try {
+            final BundleInfo installed = updater.download(server.url("/bundle.zip"), "1.0.0", "", expectedChecksum);
+            assertEquals(BundleStatus.PENDING, installed.getStatus());
+            assertTrue(new java.io.File(updater.documentsDir, "versions/" + installed.getId() + "/index.html").exists());
+            assertFalse(updater.getSentStatsActions().contains("checksum_required"));
+            assertFalse(updater.getSentStatsActions().contains("checksum_fail"));
+        } finally {
+            server.close();
+        }
     }
 
     @Test

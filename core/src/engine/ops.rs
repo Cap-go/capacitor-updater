@@ -306,6 +306,15 @@ impl Engine {
                     };
                     bundle(installed)
                 }
+                "downloadPreflight" => {
+                    let version = opt_str(input, "version").unwrap_or_default();
+                    self.require_session_key(opt_str(input, "sessionKey").unwrap_or_default(), version)?;
+                    if !flag(input, "isManifest", false) {
+                        self.require_checksum(opt_str(input, "checksum").unwrap_or_default(), version)?;
+                    }
+                    json!({})
+                }
+                "fetchJson" => self.fetch_json(req_str(input, "url")?)?,
                 "cancelDownload" => {
                     json!({ "cancelled": self.cancel_download(req_str(input, "version")?) })
                 }

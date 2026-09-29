@@ -73,11 +73,6 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import okhttp3.HttpUrl;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -3845,30 +3840,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private JSONObject fetchPreviewPayload(final String payloadUrl) throws IOException, JSONException {
-        final HttpUrl url = payloadUrl != null ? HttpUrl.parse(payloadUrl) : null;
-        if (url == null) {
+        if (payloadUrl == null || !(payloadUrl.startsWith("http://") || payloadUrl.startsWith("https://"))) {
             throw new MalformedURLException("Expected an http or https preview payload URL");
         }
-        // Shared client: no cookies, Capgo User-Agent.
-        final OkHttpClient client = DownloadService.sharedClient
-            .newBuilder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build();
-        final Request request = new Request.Builder().url(url).get().header("Accept", "application/json").build();
-
-        try (Response response = client.newCall(request).execute()) {
-            final int statusCode = response.code();
-            final ResponseBody responseBody = response.body();
-            final String body = this.readResponseBody(responseBody != null ? responseBody.byteStream() : null);
-            final JSONObject payload = new JSONObject(body);
-            if (statusCode < 200 || statusCode >= 300) {
-                throw new IOException(
-                    payload.optString("message", payload.optString("error", "Preview payload request failed with HTTP " + statusCode))
-                );
-            }
-            return payload;
-        }
+        // Engine HTTP client: no cookies, Capgo User-Agent, HTTPS downgrade guard.
+        return this.implementation.fetchJson(payloadUrl);
     }
 
     private BundleInfo downloadPreviewPayloadBundle(final JSONObject payload) throws IOException, JSONException {

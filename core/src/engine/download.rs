@@ -27,6 +27,9 @@ const MAX_ZIP_ATTEMPTS: u32 = 3;
 /// What to do with the bundle once it is installed (PENDING).
 #[derive(Debug, Clone, Default)]
 pub struct DownloadRequest {
+    /// Existing DOWNLOADING record to fill (hosts that schedule downloads
+    /// themselves create it up front); a new id is generated otherwise.
+    pub id: Option<String>,
     pub url: String,
     pub version: String,
     pub session_key: String,
@@ -54,6 +57,7 @@ impl DownloadRequest {
             return Err(CoreError::invalid_input("Download called without version"));
         }
         Ok(Self {
+            id: input.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()).map(str::to_string),
             url: text("url"),
             version,
             session_key: text("sessionKey"),
@@ -127,7 +131,7 @@ impl Engine {
         Ok(())
     }
 
-    fn require_checksum(&self, checksum: &str, version: &str) -> CoreResult<()> {
+    pub(crate) fn require_checksum(&self, checksum: &str, version: &str) -> CoreResult<()> {
         if checksum.is_empty() {
             self.host.error("No checksum provided");
             self.send_stats("checksum_required", Some(version), None, None);
@@ -178,7 +182,7 @@ impl Engine {
     }
 
     pub(crate) fn start_record(&self, request: &DownloadRequest) -> BundleInfo {
-        let id = random_id();
+        let id = request.id.clone().unwrap_or_else(random_id);
         let mut info = BundleInfo::new(
             id.clone(),
             Some(request.version.clone()),

@@ -36,6 +36,11 @@ abstract class CapgoEngineHost {
 
     abstract void emit(String event, String payloadJson);
 
+    /** Gate before a download touches disk; null to proceed, else the reason to refuse. */
+    String beforeDownload() {
+        return null;
+    }
+
     void willSwitchBundle(String path) {}
 
     boolean cancelVersionDownload(String version) {

@@ -69,6 +69,11 @@ public class SessionKeyRequiredTest {
             this.sentStatsActions.add(action);
         }
 
+        @Override
+        public void sendStats(final String action, final String versionName, final String oldVersionName) {
+            this.sentStatsActions.add(action);
+        }
+
         List<String> getSentStatsActions() {
             return this.sentStatsActions;
         }
@@ -157,32 +162,34 @@ public class SessionKeyRequiredTest {
     }
 
     @Test
-    public void finishDownloadRejectsManifestWhenSessionKeyMissing() throws Exception {
+    public void downloadManifestRejectsWhenSessionKeyMissingBeforeTouchingNetwork() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
         updater.setPublicKey(fixturePublicKey);
         updater.documentsDir = Files.createTempDirectory("capgo-session-key-manifest").toFile();
-
-        final boolean success = updater.finishDownload("bundle-id", "dest", "1.0.0", "", "checksum", false, true);
-
-        assertFalse(success);
-        assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+        final JSONArray manifest = new JSONArray(
+            "[{\"file_name\":\"index.html\",\"file_hash\":\"abc\",\"download_url\":\"http://127.0.0.1:1/index.html\"}]"
+        );
+        try {
+            updater.downloadManifest("", "1.0.0", "", "checksum", manifest);
+            fail("Expected IOException when session key is missing");
+        } catch (java.io.IOException expected) {
+            assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+        }
     }
 
     @Test
-    public void finishDownloadRejectsZipWhenSessionKeyMissing() throws Exception {
+    public void downloadZipRejectsWhenSessionKeyMissingBeforeTouchingNetwork() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
         updater.setPublicKey(fixturePublicKey);
-        final Path tempDir = Files.createTempDirectory("capgo-session-key-zip");
-        updater.documentsDir = tempDir.toFile();
-        final String dest = "bundle.zip";
-        Files.write(tempDir.resolve(dest), "plaintext".getBytes(StandardCharsets.UTF_8));
-
-        final boolean success = updater.finishDownload("bundle-id", dest, "1.0.0", "", "checksum", false, false);
-
-        assertFalse(success);
-        assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+        updater.documentsDir = Files.createTempDirectory("capgo-session-key-zip").toFile();
+        try {
+            updater.download("http://127.0.0.1:1/bundle.zip", "1.0.0", "", "checksum");
+            fail("Expected IOException when session key is missing");
+        } catch (java.io.IOException expected) {
+            assertTrue(updater.getSentStatsActions().contains("session_key_required"));
+        }
     }
 
     @Test

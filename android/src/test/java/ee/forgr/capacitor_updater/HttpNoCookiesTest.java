@@ -2,8 +2,8 @@ package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -25,19 +25,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.CookieJar;
-import okhttp3.HttpUrl;
-import okhttp3.MediaType;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 /**
+ * Updater traffic runs in the Rust engine (its own HTTP stack), so it can never see the process-wide
+ * {@link CookieHandler}. This keeps that guarantee under test end to end.
+ *
  * Capacitor installs its WebView cookie manager as the process-wide {@link CookieHandler}. Plugin traffic to Capgo
  * endpoints must never read cookies from it nor write Set-Cookie responses into it.
  */
@@ -84,7 +79,7 @@ public class HttpNoCookiesTest {
     private final List<Recorded> recorded = new CopyOnWriteArrayList<>();
     private ServerSocket serverSocket;
     private ExecutorService serverPool;
-    private HttpUrl base;
+    private String base;
     private CookieHandler previousHandler;
     private RecordingCookieHandler cookieHandler;
 
@@ -106,7 +101,7 @@ public class HttpNoCookiesTest {
                 }
             }
         });
-        base = HttpUrl.get("http://127.0.0.1:" + serverSocket.getLocalPort() + "/");
+        base = "http://127.0.0.1:" + serverSocket.getLocalPort();
     }
 
     @After
@@ -181,7 +176,7 @@ public class HttpNoCookiesTest {
     /** Control: java.net.HttpURLConnection does pick up the default CookieHandler, which is why it is not used. */
     @Test
     public void controlHttpUrlConnectionWouldLeakCookies() throws Exception {
-        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) base.resolve("/control").url().openConnection();
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(base + "/control").openConnection();
         try {
             assertEquals(200, conn.getResponseCode());
             conn.getInputStream().readAllBytes();
@@ -193,69 +188,51 @@ public class HttpNoCookiesTest {
         assertEquals(1, cookieHandler.puts.size());
     }
 
-    @Test
-    public void sharedClientUsesNoCookieJarAcrossTimeoutChanges() {
-        final int original = DownloadService.httpTimeoutMs();
-        try {
-            assertSame(CookieJar.NO_COOKIES, DownloadService.sharedClient.cookieJar());
-            DownloadService.applyHttpTimeouts(original + 1_000);
-            assertSame(CookieJar.NO_COOKIES, DownloadService.sharedClient.cookieJar());
-            assertSame(CookieJar.NO_COOKIES, DownloadService.sharedClient.newBuilder().build().cookieJar());
-        } finally {
-            DownloadService.applyHttpTimeouts(original);
-        }
+    private CapgoUpdater updater() throws IOException {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = java.nio.file.Files.createTempDirectory("capgo-no-cookies").toFile();
+        updater.statsUrl = "";
+        updater.channelUrl = base + "/channel_self";
+        updater.appId = "app.capgo.test";
+        updater.pluginVersion = "8.0.0";
+        return updater;
+    }
+
+    private static Map<String, Object> await(final java.util.function.Consumer<Callback> call) throws InterruptedException {
+        final CountDownLatch done = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicReference<Map<String, Object>> result = new java.util.concurrent.atomic.AtomicReference<>();
+        call.accept((res) -> {
+            result.set(res);
+            done.countDown();
+        });
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        return result.get();
     }
 
     @Test
     public void apiCallsNeverSendOrStoreWebViewCookies() throws Exception {
+        final CapgoUpdater updater = this.updater();
         for (int i = 0; i < 2; i++) {
-            Request request = new Request.Builder()
-                .url(base.resolve("/updates"))
-                .post(RequestBody.create("{}", MediaType.get("application/json")))
-                .build();
-            try (Response response = DownloadService.sharedClient.newCall(request).execute()) {
-                assertEquals(200, response.code());
-                assertEquals("{\"ok\":true}", response.body().string());
-            }
+            final Map<String, Object> latest = await((callback) -> updater.getLatest(base + "/updates", null, callback));
+            assertEquals(true, latest.get("ok"));
         }
-
-        CountDownLatch done = new CountDownLatch(1);
-        DownloadService.sharedClient.newCall(new Request.Builder().url(base.resolve("/channel_self")).get().build()).enqueue(
-            new Callback() {
-                @Override
-                public void onFailure(Call call, IOException e) {
-                    done.countDown();
-                }
-
-                @Override
-                public void onResponse(Call call, Response response) {
-                    response.close();
-                    done.countDown();
-                }
-            }
-        );
-        assertTrue(done.await(10, TimeUnit.SECONDS));
+        await(updater::listChannels);
 
         assertNoCookieTraffic(3);
-        assertTrue(recorded.get(0).header("User-Agent").startsWith("CapacitorUpdater/"));
+        assertTrue(recorded.get(0).header("User-Agent").startsWith("CapacitorUpdater/8.0.0 (app.capgo.test) android/"));
     }
 
     @Test
-    public void zipDownloadUsesSharedClientWithRangeAndNoCookies() throws Exception {
-        try (Response response = DownloadService.executeZipRequest(base.resolve("/bundle.zip"), 0)) {
-            assertEquals(200, response.code());
-            assertEquals(11, response.body().contentLength());
-            assertEquals("{\"ok\":true}", response.body().string());
+    public void zipDownloadNeverSendsWebViewCookies() throws Exception {
+        final CapgoUpdater updater = this.updater();
+        try {
+            updater.download(base + "/bundle.zip", "1.0.0", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        } catch (IOException expected) {
+            // The body is not the expected zip; only the request headers matter here.
         }
-        try (Response response = DownloadService.executeZipRequest(base.resolve("/bundle.zip"), 5)) {
-            assertEquals(206, response.code());
-            assertEquals("bytes 5-15/16", response.header("Content-Range"));
-            assertEquals("{\"ok\":true}", new String(response.body().byteStream().readAllBytes(), StandardCharsets.UTF_8));
-        }
-
+        assertTrue(recorded.size() >= 1);
         assertNull(recorded.get(0).header("Range"));
-        assertEquals("bytes=5-", recorded.get(1).header("Range"));
-        assertTrue(recorded.get(1).header("User-Agent").startsWith("CapacitorUpdater/"));
-        assertNoCookieTraffic(2);
+        assertTrue(recorded.get(0).header("User-Agent").startsWith("CapacitorUpdater/"));
+        assertNoCookieTraffic(recorded.size());
     }
 }

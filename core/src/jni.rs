@@ -223,6 +223,21 @@ impl Host for JniHost {
         .unwrap_or(false)
     }
 
+    fn before_download(&self) -> Result<(), String> {
+        let error = self.with_env(|env| {
+            let value = env.call_method(self.host.as_obj(), "beforeDownload", "()Ljava/lang/String;", &[])?.l()?;
+            if value.is_null() {
+                return Ok(None);
+            }
+            Ok(Some(env.get_string(&JString::from(value))?.into()))
+        });
+        match error {
+            Some(None) => Ok(()),
+            Some(Some(message)) => Err(message),
+            None => Err("Download gate failed".to_string()),
+        }
+    }
+
     fn cancel_all_downloads(&self) {
         self.with_env(|env| {
             env.call_method(self.host.as_obj(), "cancelAllDownloads", "()V", &[])?;

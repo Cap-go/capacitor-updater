@@ -39,7 +39,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -1037,23 +1036,6 @@ public class CapacitorUpdaterUnitTest {
             zip.closeEntry();
         }
         return zipPath;
-    }
-
-    private static File invokeUnzip(final CapgoUpdater updater, final String id, final Path zipPath, final String dest) throws Exception {
-        final Method method = CapgoUpdater.class.getDeclaredMethod("unzip", String.class, File.class, String.class);
-        method.setAccessible(true);
-        try {
-            return (File) method.invoke(updater, id, zipPath.toFile(), dest);
-        } catch (InvocationTargetException e) {
-            final Throwable cause = e.getCause();
-            if (cause instanceof IOException) {
-                throw (IOException) cause;
-            }
-            if (cause instanceof RuntimeException) {
-                throw (RuntimeException) cause;
-            }
-            throw e;
-        }
     }
 
     private static void invokeBackgroundDownload(final CapacitorUpdaterPlugin plugin) throws Exception {
@@ -3448,8 +3430,11 @@ public class CapacitorUpdaterUnitTest {
 
         final CapgoUpdater updater = new StatsIgnoringCapgoUpdater();
         updater.documentsDir = documentsDir.toFile();
+        final String checksum = CryptoCipher.calcChecksum(zipPath.toFile());
 
-        assertThrows(IOException.class, () -> invokeUnzip(updater, "bundle-id", zipPath, "bundle"));
+        try (TestHttpServer server = new TestHttpServer(Files.readAllBytes(zipPath))) {
+            assertThrows(IOException.class, () -> updater.download(server.url("/bundle.zip"), "1.0.0", "", checksum));
+        }
         assertFalse(Files.exists(escapedPath));
     }
 
@@ -3475,114 +3460,6 @@ public class CapacitorUpdaterUnitTest {
     public void testBuiltinAssetPathRejectsPathTraversal() {
         assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("../secret.js"));
         assertThrows(IOException.class, () -> DownloadService.resolveBuiltinAssetPath("assets/../../secret.js"));
-    }
-
-    @Test
-    public void testCopyStreamIfChecksumMatchesReusesMatchingBuiltinBytes() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path destDir = Files.createTempDirectory("capgo-builtin-copy");
-        destDir.toFile().deleteOnExit();
-        final File dest = destDir.resolve("index.js").toFile();
-        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
-        final File hashSource = destDir.resolve("source.js").toFile();
-        Files.write(hashSource.toPath(), content);
-        final String hash = CryptoCipher.calcChecksum(hashSource);
-
-        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
-        assertEquals("store builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertEquals(0, leftoverAssetTemps(dest));
-    }
-
-    @Test
-    public void testCopyStreamIfChecksumMatchesAcceptsOneCharacterDestName() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path destDir = Files.createTempDirectory("capgo-builtin-short");
-        destDir.toFile().deleteOnExit();
-        final File dest = destDir.resolve("a").toFile();
-        final byte[] content = "short name".getBytes(StandardCharsets.UTF_8);
-        final File hashSource = destDir.resolve("source").toFile();
-        Files.write(hashSource.toPath(), content);
-        final String hash = CryptoCipher.calcChecksum(hashSource);
-
-        assertTrue(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, hash));
-        assertEquals("short name", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertEquals(0, leftoverAssetTemps(dest));
-    }
-
-    @Test
-    public void testCopyStreamIfChecksumMatchesLeavesMissingDestOnMismatch() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path destDir = Files.createTempDirectory("capgo-builtin-mismatch");
-        destDir.toFile().deleteOnExit();
-        final File dest = destDir.resolve("index.js").toFile();
-        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
-
-        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
-        assertFalse(dest.exists());
-        assertEquals(0, leftoverAssetTemps(dest));
-    }
-
-    @Test
-    public void testCopyStreamIfChecksumMatchesKeepsExistingDestOnMismatch() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path destDir = Files.createTempDirectory("capgo-builtin-keep");
-        destDir.toFile().deleteOnExit();
-        final File dest = destDir.resolve("index.js").toFile();
-        Files.write(dest.toPath(), "already downloaded".getBytes(StandardCharsets.UTF_8));
-        final byte[] content = "store builtin js".getBytes(StandardCharsets.UTF_8);
-
-        assertFalse(DownloadService.copyStreamIfChecksumMatches(new ByteArrayInputStream(content), dest, "deadbeef"));
-        assertEquals("already downloaded", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertEquals(0, leftoverAssetTemps(dest));
-    }
-
-    @Test
-    public void testTryCopyBuiltinFileCopiesWhenChecksumMatches() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path destDir = Files.createTempDirectory("capgo-builtin-file");
-        destDir.toFile().deleteOnExit();
-        final File source = destDir.resolve("source.js").toFile();
-        final File dest = destDir.resolve("index.js").toFile();
-        final byte[] content = "disk builtin js".getBytes(StandardCharsets.UTF_8);
-        Files.write(source.toPath(), content);
-        final String hash = CryptoCipher.calcChecksum(source);
-
-        assertTrue(DownloadService.tryCopyBuiltinFile(source, dest, hash));
-        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertFalse(DownloadService.tryCopyBuiltinFile(source, dest, "deadbeef"));
-        assertEquals("disk builtin js", new String(Files.readAllBytes(dest.toPath()), StandardCharsets.UTF_8));
-        assertFalse(DownloadService.tryCopyBuiltinFile(destDir.resolve("missing.js").toFile(), dest, hash));
-    }
-
-    @Test
-    public void applyHttpTimeoutsUpdatesSharedClientAndIgnoresNoops() {
-        final int original = DownloadService.httpTimeoutMs();
-        try {
-            DownloadService.applyHttpTimeouts(15_000);
-            assertEquals(15_000, DownloadService.httpTimeoutMs());
-            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
-            assertEquals(15_000, DownloadService.sharedClient.readTimeoutMillis());
-            assertEquals(15_000, DownloadService.sharedClient.writeTimeoutMillis());
-            final OkHttpClient beforeNoop = DownloadService.sharedClient;
-            DownloadService.applyHttpTimeouts(15_000);
-            assertSame(beforeNoop, DownloadService.sharedClient);
-            assertEquals(15_000, DownloadService.sharedClient.connectTimeoutMillis());
-        } finally {
-            DownloadService.applyHttpTimeouts(original);
-        }
-    }
-
-    @Test
-    public void testManifestRejectsPlainAndBrotliTargetCollision() throws Exception {
-        final Path destFolder = Files.createTempDirectory("capgo-manifest-dup");
-        destFolder.toFile().deleteOnExit();
-        final HashSet<String> seen = new HashSet<>();
-        final File plain = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js");
-        final File brotli = DownloadService.resolveManifestTargetFile(destFolder.toFile(), "assets/app.js.br");
-
-        assertEquals(plain.getCanonicalFile(), brotli.getCanonicalFile());
-        assertTrue(DownloadService.rememberManifestTarget(seen, plain));
-        assertFalse(DownloadService.rememberManifestTarget(seen, brotli));
     }
 
     @Test
@@ -4021,57 +3898,6 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void cacheBundleFilesSkipsFilesAlreadyAvailableFromBuiltin() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path docsDir = Files.createTempDirectory("capgo-delta-docs");
-        final File filesDir = Files.createTempDirectory("capgo-delta-files").toFile();
-        final File cacheDir = Files.createTempDirectory("capgo-delta-cache").toFile();
-
-        final String id = "deltaCacheBundle";
-        final Path bundleDir = docsDir.resolve("versions").resolve(id);
-        Files.createDirectories(bundleDir);
-        final byte[] shared = "<html>shared builtin content</html>".getBytes(StandardCharsets.UTF_8);
-        final File sharedFile = bundleDir.resolve("index.html").toFile();
-        Files.write(sharedFile.toPath(), shared);
-
-        // Same relative path and byte-identical content in the built-in bundle.
-        final Path builtinDir = filesDir.toPath().resolve("public");
-        Files.createDirectories(builtinDir);
-        Files.write(builtinDir.resolve("index.html"), shared);
-
-        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
-        updater.cacheBundleFiles(id);
-
-        final String checksum = CryptoCipher.calcChecksum(sharedFile);
-        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_index.html");
-        assertFalse("Builtin-origin file must not be duplicated into the delta cache", cacheFile.exists());
-    }
-
-    @Test
-    public void cacheBundleFilesStillCachesFilesNotPresentInBuiltin() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        final Path docsDir = Files.createTempDirectory("capgo-delta-docs2");
-        final File filesDir = Files.createTempDirectory("capgo-delta-files2").toFile();
-        final File cacheDir = Files.createTempDirectory("capgo-delta-cache2").toFile();
-
-        final String id = "deltaCacheBundle2";
-        final Path bundleDir = docsDir.resolve("versions").resolve(id);
-        Files.createDirectories(bundleDir);
-        final File newFile = bundleDir.resolve("new.js").toFile();
-        Files.write(newFile.toPath(), "only in this bundle".getBytes(StandardCharsets.UTF_8));
-
-        // Built-in exists but does not contain this file.
-        Files.createDirectories(filesDir.toPath().resolve("public"));
-
-        final CapgoUpdater updater = newDeltaCacheUpdater(docsDir, filesDir, cacheDir);
-        updater.cacheBundleFiles(id);
-
-        final String checksum = CryptoCipher.calcChecksum(newFile);
-        final File cacheFile = new File(new File(cacheDir, "capgo_downloads"), checksum + "_new.js");
-        assertTrue("Non-builtin file must be copied into the delta cache", cacheFile.exists());
-    }
-
-    @Test
     public void getMissingBundleFilesTreatsHashNamedCacheAsReusable() throws Exception {
         CryptoCipher.setLogger(mock(Logger.class));
         final Path docsDir = Files.createTempDirectory("capgo-missing-docs");
@@ -4318,134 +4144,6 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void decompressBrotliStreamsEmptyWrapperAndRealPayload() throws Exception {
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-brotli");
-        File emptyOut = dir.resolve("empty.txt").toFile();
-        File emptyIn = dir.resolve("empty.br").toFile();
-        Files.write(emptyIn.toPath(), new byte[] { 0x1B, 0x00, 0x06 });
-        DownloadService.decompressBrotli(emptyIn, emptyOut, "empty.br");
-        assertEquals(0, emptyOut.length());
-
-        File wrappedIn = dir.resolve("hello.br").toFile();
-        File wrappedOut = dir.resolve("hello.txt").toFile();
-        byte[] wrapped = new byte[] { 0x0b, 0x02, (byte) 0x80, 'h', 'e', 'l', 'l', 'o', 0x03 };
-        Files.write(wrappedIn.toPath(), wrapped);
-        DownloadService.decompressBrotli(wrappedIn, wrappedOut, "hello.br");
-        assertEquals("hello", new String(Files.readAllBytes(wrappedOut.toPath()), StandardCharsets.UTF_8));
-
-        File realIn = dir.resolve("payload.br").toFile();
-        File realOut = dir.resolve("payload.txt").toFile();
-        Files.write(
-            realIn.toPath(),
-            hexToBytes("1ba702f88d94abed6831a46e4b75213df69d8b08871d5db158a9b062f007672bc101c92bf781d73386bfc50a00")
-        );
-        DownloadService.decompressBrotli(realIn, realOut, "payload.br");
-        String expected = "Capgo stream brotli test payload. ".repeat(20);
-        assertEquals(expected, new String(Files.readAllBytes(realOut.toPath()), StandardCharsets.UTF_8));
-    }
-
-    @Test
-    public void writeFileAtomicHashesDuringWrite() throws Exception {
-        CryptoCipher.setLogger(mock(Logger.class));
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-hash-write");
-        byte[] payload = "hash-while-write-payload".repeat(1000).getBytes(StandardCharsets.UTF_8);
-        String expected = CryptoCipher.calcChecksum(new ByteArrayInputStream(payload));
-        File dest = dir.resolve("dest.bin").toFile();
-        DownloadService.writeFileAtomic(dest, new ByteArrayInputStream(payload), expected);
-        assertArrayEquals(payload, Files.readAllBytes(dest.toPath()));
-        assertEquals(expected, CryptoCipher.calcChecksum(dest));
-
-        File bad = dir.resolve("bad.bin").toFile();
-        try {
-            DownloadService.writeFileAtomic(
-                bad,
-                new ByteArrayInputStream(payload),
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            );
-            fail("expected checksum mismatch");
-        } catch (IOException e) {
-            assertTrue(e.getMessage().contains("Checksum verification failed"));
-            assertFalse(bad.exists());
-        }
-
-        File existing = dir.resolve("existing.bin").toFile();
-        Files.write(existing.toPath(), "keep-me".getBytes(StandardCharsets.UTF_8));
-        try {
-            DownloadService.writeFileAtomic(
-                existing,
-                new ByteArrayInputStream(payload),
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            );
-            fail("expected checksum mismatch");
-        } catch (IOException e) {
-            assertTrue(e.getMessage().contains("Checksum verification failed"));
-            assertEquals("keep-me", new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8));
-        }
-    }
-
-    @Test
-    public void writeHttpBodyReplacesOn200AndAppendsOn206() throws Exception {
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-range-merge");
-        byte[] full = new byte[64 * 1024];
-        for (int i = 0; i < full.length; i++) {
-            full[i] = (byte) i;
-        }
-        byte[] first = Arrays.copyOfRange(full, 0, 24 * 1024);
-        byte[] second = Arrays.copyOfRange(full, 24 * 1024, full.length);
-        File dest = dir.resolve("partial.bin").toFile();
-
-        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(first), 200, 0);
-        assertArrayEquals(first, Files.readAllBytes(dest.toPath()));
-
-        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(second), 206, first.length);
-        assertArrayEquals(full, Files.readAllBytes(dest.toPath()));
-
-        byte[] other = "replaced-full-body".getBytes(StandardCharsets.UTF_8);
-        DownloadService.writeHttpBody(dest, new ByteArrayInputStream(other), 200, dest.length());
-        assertArrayEquals(other, Files.readAllBytes(dest.toPath()));
-
-        assertFalse(DownloadService.shouldAppendHttpBody(200, 100));
-        assertTrue(DownloadService.shouldAppendHttpBody(206, 100));
-        assertFalse(DownloadService.shouldAppendHttpBody(206, 0));
-    }
-
-    @Test
-    public void writeHttpBodyHonorsStopSignalAndKeepsPartial() throws Exception {
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-stop-partial");
-        File dest = dir.resolve("partial.bin").toFile();
-        byte[] first = "partial-body".getBytes(StandardCharsets.UTF_8);
-        Files.write(dest.toPath(), first);
-
-        BooleanSupplier stopAfterFirstChunk = new BooleanSupplier() {
-            private int calls;
-
-            @Override
-            public boolean getAsBoolean() {
-                // Pre-open, before read, after read, then stop before the next read.
-                return ++calls > 3;
-            }
-        };
-
-        byte[] resumeData = new byte[CryptoCipher.ioBufferBytes() + 1024];
-        Arrays.fill(resumeData, (byte) 'x');
-
-        try {
-            DownloadService.writeHttpBody(dest, new ByteArrayInputStream(resumeData), 206, first.length, stopAfterFirstChunk, null);
-            fail("expected stop to abort write");
-        } catch (IOException e) {
-            assertEquals("download_stopped", e.getMessage());
-        }
-
-        byte[] kept = Files.readAllBytes(dest.toPath());
-        assertTrue(kept.length > first.length);
-        assertArrayEquals(first, Arrays.copyOf(kept, first.length));
-    }
-
-    @Test
     public void planZipResumeWriteAppendsOnlyOnMatching206() {
         DownloadService.ZipWritePlan append = DownloadService.planZipResumeWrite(206, 1024, "bytes 1024-2047/4096");
         assertEquals(206, append.statusCode);
@@ -4461,31 +4159,6 @@ public class CapacitorUpdaterUnitTest {
         } catch (DownloadService.DownloadRetryException e) {
             assertEquals("invalid_content_range", e.getMessage());
         }
-    }
-
-    @Test
-    public void writeHttpBodyStopsBeforeTruncatingOn200() throws Exception {
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-stop-before-truncate");
-        File dest = dir.resolve("partial.bin").toFile();
-        byte[] existing = "keep-this-partial".getBytes(StandardCharsets.UTF_8);
-        Files.write(dest.toPath(), existing);
-
-        try {
-            DownloadService.writeHttpBody(
-                dest,
-                new ByteArrayInputStream("replacement".getBytes(StandardCharsets.UTF_8)),
-                200,
-                dest.length(),
-                () -> true,
-                null
-            );
-            fail("expected stop before truncate");
-        } catch (IOException e) {
-            assertEquals("download_stopped", e.getMessage());
-        }
-
-        assertArrayEquals(existing, Files.readAllBytes(dest.toPath()));
     }
 
     @Test
@@ -4506,58 +4179,6 @@ public class CapacitorUpdaterUnitTest {
         DownloadService.ContentRangeInfo unknown = DownloadService.parseContentRange("bytes 0-1023/*");
         assertNotNull(unknown);
         assertEquals(-1, unknown.total);
-    }
-
-    @Test
-    public void validateZipDownloadCompleteAcceptsMatching206() throws Exception {
-        final Path dir = Files.createTempDirectory("capgo-zip-complete");
-        File dest = dir.resolve("bundle.zip").toFile();
-        byte[] payload = new byte[4096];
-        Files.write(dest.toPath(), payload);
-        DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-4095/4096", 0, payload.length);
-    }
-
-    @Test
-    public void validateZipDownloadCompleteRetriesIncomplete206() throws Exception {
-        final Path dir = Files.createTempDirectory("capgo-zip-incomplete");
-        File dest = dir.resolve("bundle.zip").toFile();
-        Files.write(dest.toPath(), new byte[2048]);
-        try {
-            DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-2047/4096", 0, 2048);
-            fail("expected incomplete download retry");
-        } catch (DownloadService.DownloadRetryException e) {
-            assertEquals("incomplete_download", e.getMessage());
-        }
-    }
-
-    @Test
-    public void validateZipDownloadCompleteRetriesUnknownTotal() throws Exception {
-        final Path dir = Files.createTempDirectory("capgo-zip-unknown-total");
-        File dest = dir.resolve("bundle.zip").toFile();
-        Files.write(dest.toPath(), new byte[1024]);
-        try {
-            DownloadService.validateZipDownloadComplete(dest, 206, "bytes 0-1023/*", 0, 1024);
-            fail("expected unknown total retry");
-        } catch (DownloadService.DownloadRetryException e) {
-            assertEquals("unknown_content_range_total", e.getMessage());
-        }
-    }
-
-    @Test
-    public void writeHttpBodyStopsAfterEofReadBeforeSuccess() throws Exception {
-        DownloadService.setLogger(mock(Logger.class));
-        final Path dir = Files.createTempDirectory("capgo-stop-after-eof");
-        File dest = dir.resolve("partial.bin").toFile();
-        final int[] calls = { 0 };
-
-        try {
-            DownloadService.writeHttpBody(dest, new ByteArrayInputStream(new byte[] { 1 }), 200, 0, () -> ++calls[0] > 4, null);
-            fail("expected stop after eof read");
-        } catch (IOException e) {
-            assertEquals("download_stopped", e.getMessage());
-        }
-
-        assertEquals(1, dest.length());
     }
 
     @Test
