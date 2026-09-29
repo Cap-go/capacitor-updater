@@ -8,7 +8,6 @@ import Foundation
 import Capacitor
 import UIKit
 import WebKit
-import Version
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -96,7 +95,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit {
         implementation.shutdown()
     }
-    private let pluginVersion: String = "6.51.25"
+    private let pluginVersion: String = "8.52.0"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -147,7 +146,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Note: DELAY_CONDITION_PREFERENCES is now defined in DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
     private var updateUrl = ""
     private var backgroundTaskID: UIBackgroundTaskIdentifier = UIBackgroundTaskIdentifier.invalid
-    private var currentVersionNative: Version = "0.0.0"
+    private var currentVersionNative = CapgoSemanticVersion(major: 0, minor: 0, patch: 0)
     private var currentBuildVersion: String = "0"
     private var autoUpdate = false
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
@@ -219,6 +218,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Best-effort flag: set before we expect notifyAppReady (load/reload).
     // No lock — never held across waits; a rare race only mis-times one wait.
     private var pendingNotifyAppReady = false
+    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    // A call from the previous page has no matching generation and must not mark the new bundle successful.
+    private var readyGuardArmed = false
+    private var readyGeneration = 0
     private let semaphoreWaitTestingLock = NSLock()
     private var didEnterSemaphoreWaitForTesting = false
 
@@ -264,7 +267,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Cannot get version name")
         }
         do {
-            currentVersionNative = try Version(versionName)
+            currentVersionNative = try CapgoSemanticVersion(versionName)
         } catch {
             logger.error("Cannot parse versionName \(versionName)")
         }
@@ -288,6 +291,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         configureAutoUpdateModeFromConfig()
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
+        implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -308,16 +312,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
         implementation.notifyDownloadRaw = notifyDownload
         implementation.notifyListeners = { [weak self] eventName, data in
-            let emit = {
-                self?.notifyListeners(eventName, data: data)
-            }
-            if Thread.isMainThread {
-                emit()
-            } else {
-                DispatchQueue.main.async {
-                    emit()
-                }
-            }
+            self?.notifyListenersOnMain(eventName, data: data)
         }
         implementation.pluginVersion = self.pluginVersion
 
@@ -1244,9 +1239,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.keepAlive = true
     }
 
-    private func notifyListenersOnMain(_ eventName: String, data: JSObject) {
+    /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
+    /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
+    private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
-            self.notifyListeners(eventName, data: data)
+            self.notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
         }
 
         if Thread.isMainThread {
@@ -1716,6 +1713,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.logger.error("Cannot get capBridge")
             return false
         }
+        self.armReadyGuard(webView: vc.webView)
         if self.keepUrlPathAfterReload {
             if let currentURL = vc.webView?.url {
                 capBridge.setServerBasePath(dest.path)
@@ -1767,7 +1765,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return false
             }
             self.checkAppReady()
-            self.notifyListeners("appReloaded", data: [:])
+            self.notifyListenersOnMain("appReloaded", data: [:])
             return true
         }
 
@@ -1790,7 +1788,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return false
             }
             self.checkAppReady()
-            self.notifyListeners("appReloaded", data: [:])
+            self.notifyListenersOnMain("appReloaded", data: [:])
             return true
         }
 
@@ -2705,12 +2703,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var response: URLResponse?
         var responseError: Error?
 
-        URLSession.shared.dataTask(with: request) { data, urlResponse, error in
+        self.implementation.startRawDataTask(request) { data, urlResponse, error in
             responseData = data
             response = urlResponse
             responseError = error
             semaphore.signal()
-        }.resume()
+        }
 
         if semaphore.wait(timeout: .now() + 60) == .timedOut {
             throw makePreviewError("Preview payload request timed out")
@@ -3325,7 +3323,65 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    static func shouldAcceptReadyCall(guardArmed: Bool, expectedGeneration: Int, reportedGeneration: Int?) -> Bool {
+        if !guardArmed {
+            return true
+        }
+        guard let reportedGeneration else {
+            return false
+        }
+        return reportedGeneration == expectedGeneration
+    }
+
+    static func readyGenerationScript(_ generation: Int) -> String {
+        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
+        // ignores assignments to notifyAppReady. Each document keeps its own generation.
+        return "(function(){window.__CAPGO_READY_GEN=\(generation);if(window.__capgoReadyBridge)return;function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;var orig=cap.nativePromise.bind(cap);cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();"
+    }
+
+    private func armReadyGuard(webView: WKWebView?) {
+        let generation = self.readyGeneration + 1
+        guard let webView else {
+            logger.warn("Cannot stamp notifyAppReady generation without a webview")
+            self.readyGuardArmed = false
+            return
+        }
+        let userScript = WKUserScript(
+            source: CapacitorUpdaterPlugin.readyGenerationScript(generation),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        webView.configuration.userContentController.addUserScript(userScript)
+        self.readyGeneration = generation
+        self.readyGuardArmed = true
+    }
+
+    private func reportedReadyGeneration(_ call: CAPPluginCall) -> Int? {
+        if let generation = call.getInt("loadGeneration") {
+            return generation
+        }
+        // The bridge often boxes JS numbers as NSNumber, which getInt does not cast.
+        if let number = call.getValue("loadGeneration") as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
+    private func acceptsReadyCall(_ call: CAPPluginCall) -> Bool {
+        let reported = self.readyGuardArmed ? self.reportedReadyGeneration(call) : nil
+        return CapacitorUpdaterPlugin.shouldAcceptReadyCall(
+            guardArmed: self.readyGuardArmed,
+            expectedGeneration: self.readyGeneration,
+            reportedGeneration: reported
+        )
+    }
+
     @objc func notifyAppReady(_ call: CAPPluginCall) {
+        if !self.acceptsReadyCall(call) {
+            logger.info("Ignoring notifyAppReady from a page that is no longer current")
+            call.resolve(["bundle": self.implementation.getCurrentBundle().toJSON()])
+            return
+        }
         self.semaphoreDown()
         let bundle = self.implementation.getCurrentBundle()
         self.implementation.setSuccess(bundle: bundle, autoDeletePrevious: self.autoDeletePrevious)
@@ -3433,7 +3489,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if BundleStatus.SUCCESS.storedValue != current.getStatus() {
             logger.error("notifyAppReady was not called, roll back current bundle: \(current.toString())")
             logger.error("Did you forget to call 'notifyAppReady()' in your Capacitor App code?")
-            self.notifyListeners("updateFailed", data: [
+            self.notifyListenersOnMain("updateFailed", data: [
                 "bundle": current.toJSON()
             ])
             self.persistLastFailedBundle(current)
@@ -3475,7 +3531,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func notifyBundleSet(_ bundle: BundleInfo) {
-        self.notifyListeners("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
+        self.notifyListenersOnMain("set", data: ["bundle": bundle.toJSON()], retainUntilConsumed: true)
     }
 
     func sendReadyToJs(current: BundleInfo, msg: String) {
@@ -3487,7 +3543,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if self.consumePendingNotifyAppReady() {
                 self.semaphoreWait(waitTime: self.appReadyTimeout)
             }
-            self.notifyListeners("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
+            self.notifyListenersOnMain("appReady", data: ["bundle": current.toJSON(), "status": msg], retainUntilConsumed: true)
 
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
@@ -4288,8 +4344,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let payload: [String: Any] = ["version": version]
-        self.notifyListeners("breakingAvailable", data: payload)
-        self.notifyListeners("majorAvailable", data: payload)
+        self.notifyListenersOnMain("breakingAvailable", data: payload)
+        self.notifyListenersOnMain("majorAvailable", data: payload)
     }
 
     private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
@@ -4329,7 +4385,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         let responseMessage = res.message?.isEmpty == false ? res.message : nil
         let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
         let latestVersionName = res.version.isEmpty ? current.getVersionName() : res.version
-        self.notifyListeners("updateCheckResult", data: [
+        self.notifyListenersOnMain("updateCheckResult", data: [
             "kind": responseKind,
             "error": backendError,
             "message": message,
@@ -4382,10 +4438,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if sendStats {
                 self.implementation.sendStats(action: failureAction, versionName: current.getVersionName())
             }
-            self.notifyListeners(failureEvent, data: ["version": latestVersionName])
+            self.notifyListenersOnMain(failureEvent, data: ["version": latestVersionName])
         }
         if notifyNoNeedUpdate {
-            self.notifyListeners("noNeedUpdate", data: ["bundle": current.toJSON()])
+            self.notifyListenersOnMain("noNeedUpdate", data: ["bundle": current.toJSON()])
         }
         self.sendReadyToJs(current: current, msg: msg)
         logger.info("endBackGroundTaskWithNotif \(msg) current: \(current.getVersionName()) latestVersionName: \(latestVersionName)")
@@ -4542,7 +4598,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     let builtinUpdateAvailable = !current.isBuiltin()
                     if builtinUpdateAvailable {
                         let builtinBundle = self.implementation.getBundleInfo(id: BundleInfo.ID_BUILTIN)
-                        self.notifyListeners("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
+                        self.notifyListenersOnMain("updateAvailable", data: ["bundle": builtinBundle.toJSON()], retainUntilConsumed: true)
                     }
                     self.endBackGroundTaskWithNotif(
                         msg: "Latest version is builtin, autoUpdate onlyDownload",
@@ -4693,7 +4749,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
                         } else if self.queueBundleForNextBackgroundInstall(next) {
-                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "Direct update reload failed, update will install next background",
                                 latestVersionName: latestVersionName,
@@ -4714,7 +4770,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.logger.info("Direct update skipped because splashscreen timeout occurred. Update will install on next app background.")
                         }
                         if self.queueBundleForNextBackgroundInstall(next) {
-                            self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
                             self.endBackGroundTaskWithNotif(
                                 msg: "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
@@ -4732,7 +4788,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                     } else {
                         self.logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle")
-                        self.notifyListeners("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
+                        self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()], retainUntilConsumed: true)
                         self.endBackGroundTaskWithNotif(
                             msg: "update downloaded, autoUpdate onlyDownload",
                             latestVersionName: latestVersionName,
@@ -5077,8 +5133,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Determine update availability by comparing versions
                         if let availableVersion = availableVersion {
                             do {
-                                let currentVer = try Version(currentVersionName)
-                                let availableVer = try Version(availableVersion)
+                                let currentVer = try CapgoSemanticVersion(currentVersionName)
+                                let availableVer = try CapgoSemanticVersion(availableVersion)
                                 if availableVer > currentVer {
                                     result["updateAvailability"] = AppUpdateAvailability.updateAvailable.rawValue
                                 } else {
