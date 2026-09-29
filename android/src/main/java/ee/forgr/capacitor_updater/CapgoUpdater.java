@@ -255,7 +255,35 @@ public class CapgoUpdater {
 
     void directUpdateFinish(final BundleInfo latest) {}
 
+    /** Launch downloads have no waiter. The plugin emits appReady from here when WorkManager settles. */
+    void backgroundDownloadSettled(final BundleInfo bundle, final String status) {}
+
     void notifyListeners(final String id, final Map<String, Object> res) {}
+
+    static boolean shouldNotifyLaunchDownloadReady(
+        final boolean awaitedByCaller,
+        final boolean success,
+        final boolean directInstall,
+        final boolean previewSession
+    ) {
+        if (awaitedByCaller) {
+            return false;
+        }
+        if (!success) {
+            return true;
+        }
+        return !directInstall && !previewSession;
+    }
+
+    static String launchDownloadReadyStatus(final boolean success, final boolean setNext) {
+        if (!success) {
+            return "Error downloading file";
+        }
+        if (setNext) {
+            return "update downloaded, will install next background";
+        }
+        return "update downloaded, autoUpdate onlyDownload";
+    }
 
     public String randomString() {
         final StringBuilder sb = new StringBuilder(10);
@@ -703,12 +731,28 @@ public class CapgoUpdater {
         }
     }
 
+    private void notifyLaunchDownloadReady(
+        final boolean awaitedByCaller,
+        final boolean success,
+        final boolean directInstall,
+        final boolean previewSession,
+        final boolean setNext,
+        final BundleInfo bundle
+    ) {
+        if (!shouldNotifyLaunchDownloadReady(awaitedByCaller, success, directInstall, previewSession)) {
+            return;
+        }
+        final BundleInfo readyBundle = bundle != null ? bundle : this.getCurrentBundle();
+        this.backgroundDownloadSettled(readyBundle, launchDownloadReadyStatus(success, setNext));
+    }
+
     private void observeWorkProgress(Context context, String id, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
             return;
         }
 
+        final AtomicBoolean terminalHandled = new AtomicBoolean(false);
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(id)
@@ -724,6 +768,7 @@ public class CapgoUpdater {
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
@@ -733,6 +778,10 @@ public class CapgoUpdater {
                             boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                             io.execute(() -> {
+                                // finishDownload clears directUpdate, so read the install plan first.
+                                final boolean directInstall =
+                                    setNext && Boolean.TRUE.equals(CapgoUpdater.this.directUpdate) && !CapgoUpdater.this.previewSession;
+                                final boolean previewSession = CapgoUpdater.this.previewSession;
                                 boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
                                 BundleInfo resultBundle;
                                 if (!success) {
@@ -759,14 +808,18 @@ public class CapgoUpdater {
                                     resultBundle = getBundleInfo(id);
                                 }
 
-                                // Complete the future if it exists
+                                // Complete the future if it exists. download() waits on it.
+                                // downloadBackground does not, so the launch check must emit appReady here.
                                 CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
                                 if (future != null) {
                                     future.complete(resultBundle);
                                 }
+                                final BundleInfo readyBundle = success && setNext ? resultBundle : null;
+                                notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
                             });
                             break;
                         case FAILED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed");
@@ -801,9 +854,11 @@ public class CapgoUpdater {
                                 if (failedFuture != null) {
                                     failedFuture.complete(failedBundle);
                                 }
+                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
                             });
                             break;
                         case CANCELLED:
+                            if (!terminalHandled.compareAndSet(false, true)) break;
                             DataManager.getInstance().clearManifest(id);
                             CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                             if (cancelledFuture != null) {
@@ -3468,6 +3523,10 @@ public class CapgoUpdater {
             final BundleInfo newBundle = this.getBundleInfo(next);
             if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
                 return false;
+            }
+            if (next.equals(this.getCurrentBundleId()) && BundleStatus.SUCCESS == newBundle.getStatus()) {
+                logger.info("Bundle " + next + " is already the current successful bundle. Skip next().");
+                return true;
             }
             this.editor.putString(NEXT_VERSION, next);
             this.setBundleStatus(next, BundleStatus.PENDING);
