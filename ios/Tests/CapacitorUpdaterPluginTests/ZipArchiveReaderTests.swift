@@ -238,6 +238,29 @@ final class ZipArchiveReaderTests: XCTestCase {
         XCTAssertThrowsError(try readAll(reader, reader.entries[0]))
     }
 
+    func testRejectsStoredEntryWhoseSizesDiffer() throws {
+        var writer = TestZipWriter()
+        writer.addFile("first.txt", Data("hello".utf8))
+        writer.addFile("second.txt", Data("world".utf8))
+        var data = writer.build()
+        // Grow the first entry's declared uncompressed size (offset 24 in the central header) so a naive
+        // stored read would run into the next local header.
+        let signature = Data([0x50, 0x4B, 0x01, 0x02])
+        guard let range = data.range(of: signature) else {
+            return XCTFail("central directory not found")
+        }
+        var littleEndian = UInt32(40).littleEndian
+        data.replaceSubrange((range.lowerBound + 24)..<(range.lowerBound + 28), with: Data(bytes: &littleEndian, count: 4))
+        let url = root.appendingPathComponent("stored-size.zip")
+        try data.write(to: url)
+
+        let reader = try ZipArchiveReader(url: url)
+        let first = try XCTUnwrap(reader.entries.first { $0.path == "first.txt" })
+        XCTAssertThrowsError(try readAll(reader, first)) { error in
+            XCTAssertEqual(error as? ZipError, .corruptedEntryData)
+        }
+    }
+
     func testRejectsDeflatedOutputThatDiffersFromDeclaredSize() throws {
         let payload = compressibleData(count: 100_000)
         for declaredSize: UInt32 in [10, 200_000] {

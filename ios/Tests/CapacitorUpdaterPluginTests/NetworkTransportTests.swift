@@ -215,6 +215,20 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertTrue(description.hasPrefix("URLSessionTask failed with error: "), description)
     }
 
+    func testPerformRequestClassifiesURLSessionTimeouts() {
+        server.respond { _ in
+            Thread.sleep(forTimeInterval: 3)
+            return .init(status: 200, body: Data("late".utf8))
+        }
+        var slowRequest = request("slow")
+        slowRequest.timeoutInterval = 1
+
+        let result = makeUpdater().performRequest(slowRequest, label: "test")
+
+        XCTAssertTrue(result.timedOut, "a wrapped NSURLErrorTimedOut must be reported as a timeout")
+        XCTAssertNotNil(result.error)
+    }
+
     func testPerformDownloadRequestMovesBodyToTemporaryFile() throws {
         let payload = Data((0..<200_000).map { UInt8($0 % 251) })
         server.respond { _ in .init(status: 200, body: payload) }

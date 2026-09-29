@@ -60,7 +60,7 @@ public class RedirectPolicyTest {
     @Test
     public void blocksHttpsToHttpRedirectByDefault() {
         Response downgrade = response("https://api.capgo.app/a", 302, "http://evil.example/bundle.zip");
-        IOException error = assertThrows(IOException.class, () -> runNetworkInterceptor(downgrade));
+        IOException error = assertThrows(DownloadService.BlockedRedirectException.class, () -> runNetworkInterceptor(downgrade));
         assertTrue(error.getMessage().contains("allowHttpsToHttpRedirect"));
     }
 

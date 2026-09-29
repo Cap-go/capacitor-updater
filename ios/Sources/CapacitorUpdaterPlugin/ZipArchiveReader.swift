@@ -116,6 +116,10 @@ final class ZipArchiveReader {
         // while sizes come from the central directory.
         switch localMethod {
         case Self.compressionMethodStored:
+            // A stored entry's payload is its content; a size mismatch would read past it into the next records.
+            guard entry.compressedSize == entry.uncompressedSize else {
+                throw ZipError.corruptedEntryData
+            }
             try readStored(from: dataOffset, size: entry.uncompressedSize, bufferSize: bufferSize, consumer: consumer)
         case Self.compressionMethodDeflate:
             if entry.compressedSize == 0 && entry.uncompressedSize == 0 {

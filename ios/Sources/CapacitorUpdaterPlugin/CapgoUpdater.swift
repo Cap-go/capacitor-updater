@@ -192,6 +192,9 @@ import UIKit
     }
 
     private func isTimedOutError(_ error: Error?) -> Bool {
+        if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
+            return isTimedOutError(underlying)
+        }
         guard let nsError = error as NSError? else {
             return false
         }
@@ -407,7 +410,12 @@ import UIKit
             return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
         }
 
-        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: false)
+        // URLSession can report its own timeout (NSURLErrorTimedOut) before the semaphore deadline.
+        let timedOut = isTimedOutError(requestError)
+        if timedOut {
+            logger.error("\(label) timed out after \(Int(request.timeoutInterval))s")
+        }
+        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
     func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
@@ -2288,6 +2296,12 @@ import UIKit
         }
 
         let downloadResult = performDownloadRequest(request, label: "download \(version)")
+        // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
+        defer {
+            if let fileURL = downloadResult.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
 
         if downloadResult.timedOut {
             persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
