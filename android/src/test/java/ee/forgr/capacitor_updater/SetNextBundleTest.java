@@ -50,7 +50,7 @@ public class SetNextBundleTest {
         }
         if (this.tempDir != null && Files.exists(this.tempDir)) {
             try (Stream<Path> paths = Files.walk(this.tempDir)) {
-                paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+                paths.sorted(Comparator.reverseOrder()).forEach((path) -> path.toFile().delete());
             }
         }
     }

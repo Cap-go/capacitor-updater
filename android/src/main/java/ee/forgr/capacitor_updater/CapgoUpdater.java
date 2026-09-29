@@ -3464,6 +3464,8 @@ public class CapgoUpdater {
         BundleInfo bundleToNotify = null;
         if (next == null) {
             this.editor.remove(NEXT_VERSION);
+        } else if (next.equals(this.getCurrentBundleId())) {
+            return true;
         } else {
             final BundleInfo newBundle = this.getBundleInfo(next);
             if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
