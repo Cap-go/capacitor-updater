@@ -145,7 +145,7 @@ impl Engine {
                 self.host
                     .error(format!("Failed to download from: {url} {}", error.message));
                 self.host.emit("downloadFailed", &json!({ "version": version }));
-                self.send_stats("download_fail", Some(self.current_bundle().version_name()), None, None);
+                self.send_stats("download_fail", Some(version), None, None);
                 Err(Rejection::new(format!(
                     "Failed to download from: {url} - {}",
                     error.message

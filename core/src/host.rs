@@ -57,7 +57,8 @@ pub trait Host: Send + Sync + 'static {
     }
 
     /// Whether plain HTTP to `host` is allowed by the app (Android network
-    /// security config, iOS App Transport Security). `None`: no policy.
+    /// security config, iOS App Transport Security). `None` (no answer) is
+    /// treated as "not allowed".
     fn cleartext_permitted(&self, host: &str) -> Option<bool> {
         self.hook("cleartextPermitted", &serde_json::json!({ "host": host }))
             .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
@@ -194,5 +195,15 @@ impl Host for MemoryHost {
     fn hook(&self, name: &str, payload: &Value) -> Option<Value> {
         self.hooks.lock().unwrap().push((name.to_string(), payload.clone()));
         self.hook_replies.lock().unwrap().get(name).cloned()
+    }
+
+    /// Tests talk to local plain-HTTP servers: allowed unless a reply says otherwise.
+    fn cleartext_permitted(&self, host: &str) -> Option<bool> {
+        let reply = self.hook("cleartextPermitted", &serde_json::json!({ "host": host }));
+        Some(
+            reply
+                .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
+                .unwrap_or(true),
+        )
     }
 }

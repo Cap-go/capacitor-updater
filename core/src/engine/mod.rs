@@ -33,7 +33,9 @@ pub struct Engine {
     config: RwLock<EngineConfig>,
     pub(crate) stats: stats::StatsState,
     pub(crate) delete_lock: Mutex<()>,
-    pub(crate) downloads: Mutex<std::collections::HashMap<String, download::Cancel>>,
+    /// In-flight downloads per version (the same version can download twice at once,
+    /// e.g. `download()` overlapping the update cycle).
+    pub(crate) downloads: Mutex<std::collections::HashMap<String, Vec<download::Cancel>>>,
     pub(crate) plugin: plugin::Plugin,
     weak: Weak<Engine>,
 }

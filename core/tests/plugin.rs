@@ -1043,3 +1043,58 @@ fn android_background_install_does_not_wait_for_the_frozen_page() {
     p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
     assert_eq!(p.current()["status"], "success");
 }
+
+/// Resuming before the rollback deadline arms a fresh wait: the check scheduled
+/// before the background never fires on thaw.
+#[test]
+fn background_resets_the_rollback_deadline() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("set", json!({ "id": id }));
+    let set_at = Instant::now();
+    std::thread::sleep(Duration::from_millis(300));
+    p.background();
+    std::thread::sleep(Duration::from_millis(200));
+    p.t.engine.plugin_foreground_for_tests();
+    let resumed_at = Instant::now();
+    // The first deadline (set + 1 s) passes without a rollback.
+    std::thread::sleep(Duration::from_millis(1100).saturating_sub(set_at.elapsed()));
+    assert!(p.events("updateFailed").is_empty(), "old check invalidated");
+    // The fresh one (resume + 1 s) still rolls back an unconfirmed bundle.
+    p.wait_for_event("updateFailed", 1);
+    assert!(resumed_at.elapsed() >= Duration::from_millis(950));
+}
+
+#[test]
+fn a_failed_download_is_one_stat_on_the_failed_version() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    let bundle = web_bundle("v2");
+    *p.backend.bundle.lock().unwrap() = bundle;
+    let url = format!("{}/b.zip", p.backend.server.url);
+    p.reject(
+        "download",
+        json!({ "url": url, "version": "9.9.9", "checksum": sha256(b"wrong") }),
+    );
+    let actions = p.stats_actions();
+    assert_eq!(
+        actions.iter().filter(|action| *action == "download_fail").count(),
+        1,
+        "{actions:?}"
+    );
+    let body = p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with("/stats"))
+        .map(|request| request.json())
+        .flat_map(|body| match body {
+            Value::Array(events) => events,
+            other => vec![other],
+        })
+        .find(|event| event["action"] == "download_fail")
+        .unwrap();
+    assert_eq!(body["version_name"], "9.9.9");
+    assert_eq!(p.events("downloadFailed").len(), 1);
+}

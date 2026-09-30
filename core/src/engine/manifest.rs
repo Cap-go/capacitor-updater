@@ -336,7 +336,7 @@ impl Engine {
         let record = self.start_record(request);
         self.progress(record.id(), 0);
         let result = self.download_manifest_inner(request, &manifest, &record, &cancel);
-        self.unregister_download_token(&request.version);
+        self.unregister_download_token(&request.version, &cancel);
         match result {
             Ok(installed) => Ok(installed),
             Err(error) => {
@@ -742,14 +742,50 @@ impl Engine {
         self.downloads
             .lock()
             .unwrap()
-            .insert(version.to_string(), token.clone());
+            .entry(version.to_string())
+            .or_default()
+            .push(token.clone());
         token
     }
 
-    pub(crate) fn unregister_download_token(&self, version: &str) {
-        self.downloads.lock().unwrap().remove(version);
+    /// Removes this download's token only (another download of the version may still run).
+    pub(crate) fn unregister_download_token(&self, version: &str, token: &Cancel) {
+        let mut downloads = self.downloads.lock().unwrap();
+        if let Some(tokens) = downloads.get_mut(version) {
+            tokens.retain(|other| !std::sync::Arc::ptr_eq(&other.0, &token.0));
+            if tokens.is_empty() {
+                downloads.remove(version);
+            }
+        }
     }
 }
 
 #[allow(dead_code)]
 const _UNUSED: Duration = Duration::from_secs(0);
+
+#[cfg(test)]
+mod token_tests {
+    use crate::engine::Engine;
+    use crate::host::MemoryHost;
+    use serde_json::json;
+
+    /// Two downloads of one version: finishing one keeps the other cancellable.
+    #[test]
+    fn overlapping_downloads_keep_their_own_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::new(
+            std::sync::Arc::new(MemoryHost::default()),
+            &json!({ "bundleRoot": dir.path().join("versions").to_string_lossy() }),
+        )
+        .unwrap();
+        let first = engine.register_download_token("2.0.0");
+        let second = engine.register_download_token("2.0.0");
+        engine.unregister_download_token("2.0.0", &first);
+        assert!(engine.is_downloading("2.0.0"));
+        assert!(engine.cancel_download("2.0.0"));
+        assert!(second.is_cancelled());
+        assert!(!first.is_cancelled());
+        engine.unregister_download_token("2.0.0", &second);
+        assert!(!engine.is_downloading("2.0.0"));
+    }
+}

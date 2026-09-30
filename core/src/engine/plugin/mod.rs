@@ -61,6 +61,8 @@ pub mod hooks {
     pub const BACKGROUND_TASK: &str = "backgroundTask";
     /// `{ path }`: exclude a file from device backups.
     pub const EXCLUDE_FROM_BACKUP: &str = "excludeFromBackup";
+    /// `{ host }` -> `{ permitted }`: plain HTTP allowed by the app's policy. No answer = refused.
+    pub const CLEARTEXT_PERMITTED: &str = "cleartextPermitted";
 }
 
 /// Persisted keys owned by the plugin layer (names kept from every previous version).

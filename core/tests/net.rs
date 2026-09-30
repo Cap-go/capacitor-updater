@@ -48,3 +48,23 @@ fn https_uses_platform_trust_store() {
     assert!(response.status < 500);
     assert!(http().get("https://self-signed.badssl.com/").is_err());
 }
+
+/// A host without a cleartext policy answer (no hook, hook error): plain HTTP is refused.
+#[test]
+fn cleartext_without_a_policy_answer_is_refused() {
+    struct NoPolicy;
+    impl capgo_updater_core::host::Host for NoPolicy {
+        fn log(&self, _: capgo_updater_core::host::LogLevel, _: &str) {}
+        fn kv_get(&self, _: &str, default: Option<&str>) -> Option<String> {
+            default.map(str::to_string)
+        }
+        fn kv_set(&self, _: &str, _: Option<&str>) {}
+        fn kv_keys(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn emit(&self, _: &str, _: &serde_json::Value) {}
+    }
+    let http = Http::new(Arc::new(NoPolicy), "test".into(), Duration::from_secs(5));
+    let error = http.get("http://127.0.0.1:1/").unwrap_err();
+    assert!(error.message.contains("Cleartext HTTP traffic"), "{error:?}");
+}

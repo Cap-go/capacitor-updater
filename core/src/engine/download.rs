@@ -90,16 +90,22 @@ impl Engine {
     /// Cancels an in-flight download of `version` (returns whether one was running).
     pub fn cancel_download(&self, version: &str) -> bool {
         match self.downloads.lock().unwrap().get(version) {
-            Some(token) => {
-                token.0.store(true, Ordering::SeqCst);
+            Some(tokens) if !tokens.is_empty() => {
+                for token in tokens {
+                    token.0.store(true, Ordering::SeqCst);
+                }
                 true
             }
-            None => false,
+            _ => false,
         }
     }
 
     pub fn is_downloading(&self, version: &str) -> bool {
-        self.downloads.lock().unwrap().contains_key(version)
+        self.downloads
+            .lock()
+            .unwrap()
+            .get(version)
+            .is_some_and(|tokens| !tokens.is_empty())
     }
 
     /// Refuses unencrypted delivery when a public key is configured.
@@ -183,13 +189,15 @@ impl Engine {
     pub(crate) fn fail_download(&self, record: &BundleInfo, error: &CoreError, emit_events: bool) {
         self.host.error(format!("Download failed: {}", error.message));
         self.save_bundle_info(record.id(), Some(&record.with_status(BundleStatus::Error)));
+        // Callers that report failures themselves (plugin methods, the update cycle)
+        // send the event and the stat once.
         if emit_events {
             self.host.emit(
                 "downloadFailed",
                 &json!({ "version": record.version_name(), "error": error.code }),
             );
+            self.send_stats("download_fail", Some(record.version_name()), None, None);
         }
-        self.send_stats("download_fail", Some(record.version_name()), None, None);
     }
 
     /// Final step shared by zip and manifest downloads.
@@ -236,7 +244,7 @@ impl Engine {
         self.progress(record.id(), 0);
         self.progress(record.id(), 5);
         let result = self.download_zip_inner(request, &record, &cancel);
-        self.unregister_download_token(&request.version);
+        self.unregister_download_token(&request.version, &cancel);
         match result {
             Ok(installed) => Ok(installed),
             Err(error) => {

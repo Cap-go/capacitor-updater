@@ -183,11 +183,14 @@ impl Http {
         let cached = self.cleartext.lock().unwrap().get(&host).copied();
         let permitted = match cached {
             Some(permitted) => permitted,
-            None => {
-                let permitted = self.host.cleartext_permitted(&host).unwrap_or(true);
-                self.cleartext.lock().unwrap().insert(host.clone(), permitted);
-                permitted
-            }
+            // No answer (no policy hook, hook error): fail closed, as the OS HTTP stacks do.
+            None => match self.host.cleartext_permitted(&host) {
+                Some(permitted) => {
+                    self.cleartext.lock().unwrap().insert(host.clone(), permitted);
+                    permitted
+                }
+                None => false,
+            },
         };
         if permitted {
             Ok(())

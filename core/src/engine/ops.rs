@@ -69,6 +69,7 @@ impl Engine {
                     self.plugin_method(req_str(input, "name")?, input.get("args").unwrap_or(&Value::Null))
                 }
                 "appForeground" => {
+                    self.invalidate_app_ready_check();
                     self.plugin_state().in_background = false;
                     self.spawn_plugin_task(|engine| engine.app_moved_to_foreground());
                     json!({})

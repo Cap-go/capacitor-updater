@@ -21,6 +21,8 @@ pub(crate) struct CycleEnd<'a> {
     pub planned_direct_update: bool,
     pub send_stats: bool,
     pub notify_no_need_update: bool,
+    /// Version the failure stat is about (defaults to the current bundle).
+    pub stat_version: Option<&'a str>,
 }
 
 impl<'a> CycleEnd<'a> {
@@ -33,6 +35,7 @@ impl<'a> CycleEnd<'a> {
             planned_direct_update: planned,
             send_stats: true,
             notify_no_need_update: true,
+            stat_version: None,
         }
     }
 }
@@ -263,6 +266,9 @@ impl Engine {
     // ---- lifecycle ---------------------------------------------------------------------------
 
     pub(crate) fn app_moved_to_foreground(&self) {
+        // A check armed before or during the background must not fire on thaw: this
+        // foreground arms a fresh one below.
+        self.invalidate_app_ready_check();
         self.plugin_state().in_background = false;
         self.mark_session_foreground(true);
         let current = self.current_bundle();
@@ -290,6 +296,8 @@ impl Engine {
     /// splash screen is up before the OS snapshots the app.
     pub(crate) fn background_splash(&self) {
         self.plugin_state().in_background = true;
+        // The page is paused: its readiness is checked again from the next foreground.
+        self.invalidate_app_ready_check();
         self.mark_session_foreground(false);
         self.plugin_state().auto_splashscreen_timed_out = false;
         let config = self.plugin_config();
@@ -484,7 +492,8 @@ impl Engine {
                 end.latest_version
             ));
             if end.send_stats {
-                self.send_stats("download_fail", Some(end.current.version_name()), None, None);
+                let version = end.stat_version.unwrap_or(end.current.version_name());
+                self.send_stats("download_fail", Some(version), None, None);
             }
             self.host
                 .emit("downloadFailed", &json!({ "version": end.latest_version }));
@@ -654,7 +663,8 @@ impl Engine {
                             _ => "Error downloading file",
                         };
                         let current = self.current_bundle();
-                        let end = CycleEnd::new(message, &latest_version, &current, true, planned);
+                        let mut end = CycleEnd::new(message, &latest_version, &current, true, planned);
+                        end.stat_version = Some(&latest_version);
                         self.end_update_cycle(end);
                         return;
                     }

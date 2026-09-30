@@ -109,7 +109,11 @@ final class CapgoEngine {
         guard let inputJson = String(bytes: inputData, encoding: .utf8) else {
             throw CapgoCore.Failure(code: "invalid_input", message: "Input is not UTF-8 JSON")
         }
-        guard let raw = capgo_engine_call(handle, operation, inputJson) else {
+        // Keep this wrapper alive for the whole native call: its deinit frees the engine.
+        let result: UnsafeMutablePointer<CChar>? = withExtendedLifetime(self) {
+            capgo_engine_call(handle, operation, inputJson)
+        }
+        guard let raw = result else {
             throw CapgoCore.Failure(code: "internal", message: "Engine returned no result")
         }
         defer {

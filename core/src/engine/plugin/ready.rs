@@ -134,6 +134,13 @@ impl Engine {
         });
     }
 
+    /// Drops the pending `notifyAppReady` check without arming a new one.
+    pub(crate) fn invalidate_app_ready_check(&self) {
+        self.plugin
+            .app_ready_check
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Rolls back the current bundle when `notifyAppReady` never confirmed it.
     pub(crate) fn check_revert(&self) {
         let current = self.current_bundle();
