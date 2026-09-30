@@ -197,81 +197,71 @@ final class BundleHardeningTests: XCTestCase {
     private let key = Data((0..<16).map { UInt8($0 * 7 & 0xff) })
     private let iv = Data((0..<16).map { UInt8($0 + 3) })
 
-    /// Encrypts like the Capgo CLI (AES-128-CBC with PKCS#7) through the streaming CommonCrypto API.
-    private func aesEncrypt(_ plain: Data) -> Data {
-        var cryptor: CCCryptorRef?
-        let keyBytes = [UInt8](key)
-        let ivBytes = [UInt8](iv)
-        let createStatus = CCCryptorCreate(
-            CCOperation(kCCEncrypt),
-            CCAlgorithm(kCCAlgorithmAES),
-            CCOptions(kCCOptionPKCS7Padding),
-            keyBytes,
-            keyBytes.count,
-            ivBytes,
-            &cryptor
-        )
-        guard createStatus == kCCSuccess, let cryptor else {
-            XCTFail("cannot create AES encryptor")
-            return Data()
-        }
-        defer { CCCryptorRelease(cryptor) }
-        let input = [UInt8](plain)
-        var out = [UInt8](repeating: 0, count: input.count + kCCBlockSizeAES128)
-        var updateMoved = 0
-        XCTAssertEqual(CCCryptorUpdate(cryptor, input, input.count, &out, out.count, &updateMoved), CCCryptorStatus(kCCSuccess))
-        var finalMoved = 0
-        let finalStatus = out.withUnsafeMutableBufferPointer { buffer in
-            CCCryptorFinal(cryptor, buffer.baseAddress?.advanced(by: updateMoved), buffer.count - updateMoved, &finalMoved)
-        }
-        XCTAssertEqual(finalStatus, CCCryptorStatus(kCCSuccess))
-        return Data(out.prefix(updateMoved + finalMoved))
-    }
-
-    /// CBC encryption of a single 16-byte block with no padding: it is the first block of its padded encryption.
-    private func aesEncryptRawBlock(_ block: [UInt8]) -> Data {
-        XCTAssertEqual(block.count, kCCBlockSizeAES128)
-        return aesEncrypt(Data(block)).prefix(kCCBlockSizeAES128)
-    }
-
     private var aesKey: AES128Key {
         AES128Key(iv: iv, aes128Key: key, logger: Logger(withTag: "hardening-tests", options: Logger.Options(level: .silent)))
     }
 
-    private func badPaddingCiphertext() -> Data {
-        // Claims 4 bytes of padding but the padding bytes differ.
-        var block = [UInt8](repeating: 0x41, count: 16)
-        block[12] = 1
-        block[13] = 4
-        block[14] = 4
-        block[15] = 4
-        return aesEncryptRawBlock(block)
+    /// Reference AES-128-CBC decryption without any padding handling.
+    private func rawCbcDecrypt(_ ciphertext: Data, iv chainingValue: Data) -> Data {
+        var cryptor: CCCryptorRef?
+        let keyBytes = [UInt8](key)
+        let ivBytes = [UInt8](chainingValue)
+        let createStatus = CCCryptorCreate(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), 0, keyBytes, keyBytes.count, ivBytes, &cryptor)
+        guard createStatus == kCCSuccess, let cryptor else {
+            XCTFail("cannot create AES decryptor")
+            return Data()
+        }
+        defer { CCCryptorRelease(cryptor) }
+        let input = [UInt8](ciphertext)
+        var out = [UInt8](repeating: 0, count: input.count)
+        var moved = 0
+        XCTAssertEqual(CCCryptorUpdate(cryptor, input, input.count, &out, out.count, &moved), CCCryptorStatus(kCCSuccess))
+        return Data(out.prefix(moved))
+    }
+
+    /// Builds a `blocks`-long CBC ciphertext whose last block decrypts to `lastPlainBlock`, by choosing the
+    /// previous ciphertext block (CBC: P[n] = D(C[n]) xor C[n-1]). No encryption is involved.
+    private func makeCiphertext(blocks: Int, lastPlainBlock: [UInt8]) -> Data {
+        precondition(blocks >= 2 && lastPlainBlock.count == kCCBlockSizeAES128)
+        let blockSize = kCCBlockSizeAES128
+        var bytes = (0..<(blocks * blockSize)).map { UInt8(($0 * 37 + 11) & 0xff) }
+        let lastBlock = Data(bytes.suffix(blockSize))
+        let decryptedLast = [UInt8](rawCbcDecrypt(lastBlock, iv: Data(count: blockSize)))
+        for index in 0..<blockSize {
+            bytes[(blocks - 2) * blockSize + index] = decryptedLast[index] ^ lastPlainBlock[index]
+        }
+        return Data(bytes)
+    }
+
+    private func block(filler: UInt8 = 0x41, tail: [UInt8]) -> [UInt8] {
+        [UInt8](repeating: filler, count: kCCBlockSizeAES128 - tail.count) + tail
     }
 
     func testAesFileDecryptionRoundTripsAcrossChunks() throws {
-        let plain = Data((0..<(CryptoCipher.ioBufferBytes() * 2 + 5)).map { UInt8($0 * 31 & 0xff) })
+        // Larger than two I/O buffers so the held-back padding block crosses chunk boundaries.
+        let blocks = (CryptoCipher.ioBufferBytes() * 2) / kCCBlockSizeAES128 + 3
+        let ciphertext = makeCiphertext(blocks: blocks, lastPlainBlock: block(tail: [UInt8](repeating: 5, count: 5)))
+        let expected = rawCbcDecrypt(ciphertext, iv: iv).dropLast(5)
         let file = root.appendingPathComponent("round-trip.bin")
-        try aesEncrypt(plain).write(to: file)
+        try ciphertext.write(to: file)
 
         try aesKey.decrypt(from: file, to: file)
 
-        XCTAssertEqual(try Data(contentsOf: file), plain)
-        XCTAssertEqual(aesKey.decrypt(data: aesEncrypt(Data("short".utf8))), Data("short".utf8))
+        XCTAssertEqual(try Data(contentsOf: file), Data(expected))
+        let fullPadding = makeCiphertext(blocks: 2, lastPlainBlock: [UInt8](repeating: 16, count: 16))
+        XCTAssertEqual(aesKey.decrypt(data: fullPadding), rawCbcDecrypt(fullPadding, iv: iv).prefix(16))
     }
 
     func testAesFileDecryptionRejectsCorruptedCiphertext() throws {
-        let valid = aesEncrypt(Data("capgo-strict-aes".utf8))
-        var zeroPadding = [UInt8](repeating: 0x41, count: 16)
-        zeroPadding[15] = 0
-        var oversizedPadding = [UInt8](repeating: 0x41, count: 16)
-        oversizedPadding[15] = 17
+        let valid = makeCiphertext(blocks: 2, lastPlainBlock: block(tail: [3, 3, 3]))
         let cases: [(String, Data)] = [
-            ("bad padding", badPaddingCiphertext()),
-            ("zero padding", aesEncryptRawBlock(zeroPadding)),
-            ("padding > block", aesEncryptRawBlock(oversizedPadding)),
+            ("bad padding", makeCiphertext(blocks: 2, lastPlainBlock: block(tail: [1, 4, 4, 4]))),
+            ("zero padding", makeCiphertext(blocks: 2, lastPlainBlock: block(tail: [0]))),
+            ("padding > block", makeCiphertext(blocks: 2, lastPlainBlock: block(tail: [17]))),
             ("not block aligned", valid + Data([1, 2, 3])),
             ("truncated", valid.prefix(10))
         ]
+        XCTAssertNotNil(aesKey.decrypt(data: valid), "the reference ciphertext is valid")
         for (name, ciphertext) in cases {
             let file = root.appendingPathComponent("corrupt-\(UUID().uuidString).bin")
             try ciphertext.write(to: file)
@@ -283,7 +273,7 @@ final class BundleHardeningTests: XCTestCase {
 
     func testDecryptFileFailsWhenPublicKeyIsUnusable() throws {
         let file = root.appendingPathComponent("encrypted.bin")
-        let ciphertext = aesEncrypt(Data("encrypted bundle".utf8))
+        let ciphertext = makeCiphertext(blocks: 2, lastPlainBlock: block(tail: [1]))
         try ciphertext.write(to: file)
 
         XCTAssertThrowsError(
