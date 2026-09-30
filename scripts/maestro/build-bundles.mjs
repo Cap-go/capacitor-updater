@@ -12,6 +12,7 @@ import {
   getBundleZipPath,
   manifestArtifactDir,
   repoRoot,
+  resolveAppScenarioId,
   scenarios,
 } from './scenarios.mjs';
 import { runCommand } from './command.mjs';
@@ -20,7 +21,7 @@ const scenarioSelection = process.argv[2]?.trim() || 'all';
 const selectedScenarios =
   scenarioSelection === 'all'
     ? Object.values(scenarios)
-    : [findScenario(scenarioSelection)].filter(Boolean);
+    : [findScenario(resolveAppScenarioId(scenarioSelection))].filter(Boolean);
 
 if (!selectedScenarios.length) {
   throw new Error(`Unknown Maestro scenario selection: ${scenarioSelection}`);

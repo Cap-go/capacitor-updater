@@ -1869,6 +1869,25 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDownloadOrphanedByAKilledProcessIsRestarted() {
+        assertTrue(CapgoUpdater.shouldRestartOrphanedDownload(false));
+        assertFalse(CapgoUpdater.shouldRestartOrphanedDownload(true));
+    }
+
+    @Test
+    public void testRetryingDirectLaunchDownloadReleasesTheLaunch() {
+        assertTrue(CapgoUpdater.shouldReleaseLaunchWhileRetrying(false, true, true, false));
+    }
+
+    @Test
+    public void testRetryingDownloadKeepsWaitingOutsideDirectLaunchInstalls() {
+        assertFalse(CapgoUpdater.shouldReleaseLaunchWhileRetrying(true, true, true, false));
+        assertFalse(CapgoUpdater.shouldReleaseLaunchWhileRetrying(false, false, true, false));
+        assertFalse(CapgoUpdater.shouldReleaseLaunchWhileRetrying(false, true, false, false));
+        assertFalse(CapgoUpdater.shouldReleaseLaunchWhileRetrying(false, true, true, true));
+    }
+
+    @Test
     public void testPeriodCheckDelayZeroDisablesPeriodicChecks() {
         assertEquals(0, CapacitorUpdaterPlugin.normalizedPeriodCheckDelayMs(0));
     }
