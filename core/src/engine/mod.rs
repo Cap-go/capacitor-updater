@@ -12,6 +12,7 @@ pub mod download;
 pub mod fsutil;
 pub mod manifest;
 mod ops;
+pub mod plugin;
 pub mod stats;
 pub mod store;
 
@@ -33,6 +34,7 @@ pub struct Engine {
     pub(crate) stats: stats::StatsState,
     pub(crate) delete_lock: Mutex<()>,
     pub(crate) downloads: Mutex<std::collections::HashMap<String, download::Cancel>>,
+    pub(crate) plugin: plugin::Plugin,
     weak: Weak<Engine>,
 }
 
@@ -54,6 +56,7 @@ impl Engine {
             stats: stats::StatsState::default(),
             delete_lock: Mutex::new(()),
             downloads: Mutex::new(Default::default()),
+            plugin: plugin::Plugin::default(),
             weak: weak.clone(),
         });
         engine.http.set_allow_https_to_http_redirect(allow_downgrade);

@@ -63,6 +63,54 @@ impl Engine {
                     })
                 }
 
+                // ---- plugin layer (Capacitor glue calls these)
+                "pluginLoad" => self.plugin_load(input)?,
+                "pluginMethod" => {
+                    self.plugin_method(req_str(input, "name")?, input.get("args").unwrap_or(&Value::Null))
+                }
+                "appForeground" => {
+                    self.spawn_plugin_task(|engine| engine.app_moved_to_foreground());
+                    json!({})
+                }
+                "appBackground" => {
+                    self.spawn_plugin_task(|engine| engine.app_moved_to_background());
+                    json!({})
+                }
+                "appTerminate" => {
+                    self.app_terminated();
+                    json!({})
+                }
+                "openUrl" => json!({ "leavingPreview": self.handle_open_url(req_str(input, "url")?) }),
+                "readyGuardDisarm" => {
+                    self.disarm_ready_guard(input.get("generation").and_then(Value::as_i64).unwrap_or(-1));
+                    json!({})
+                }
+                "reportMemoryWarning" => {
+                    self.report_memory_warning();
+                    json!({})
+                }
+                "reportRenderProcessGone" => {
+                    self.persist_render_process_gone(input.get("metadata").unwrap_or(&Value::Null));
+                    json!({})
+                }
+                "reportWebViewStats" => {
+                    let metadata = input
+                        .get("metadata")
+                        .and_then(Value::as_object)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.report_webview_stats(req_str(input, "action")?, &metadata);
+                    json!({})
+                }
+                "previewMenuPreviews" => Value::Array(self.list_preview_infos(true)),
+                "previewMenuSet" => {
+                    json!({ "ok": self.set_preview(req_str(input, "id")?, "set-preview-menu").is_ok() })
+                }
+                "previewMenuLeave" => json!({ "ok": self.leave_preview_session() }),
+                "previewMenuReload" => json!({ "ok": self.reload_preview_session() }),
+                "previewSessionActive" => json!({ "active": self.plugin_state().preview_session_enabled }),
+                "pluginMethods" => json!(super::plugin::ENGINE_METHODS),
+
                 // ---- store
                 "bundleGet" => bundle(self.get_bundle_info(opt_str(input, "id"))),
                 "bundleGetByName" => optional_bundle(self.get_bundle_info_by_name(req_str(input, "version")?)),

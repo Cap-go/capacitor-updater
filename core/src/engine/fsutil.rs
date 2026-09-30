@@ -51,6 +51,20 @@ pub fn copy_atomically(source: &Path, destination: &Path) -> io::Result<()> {
     result
 }
 
+/// Writes `data` to `destination` through a sibling temp file + rename.
+pub fn write_atomically(destination: &Path, data: &[u8]) -> io::Result<()> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| io::Error::other("destination has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let temp = unique_temp(parent, "capgo-", ".tmp");
+    let result = fs::write(&temp, data).and_then(|_| fs::rename(&temp, destination));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
 /// Streams `reader` into `destination` (temp + rename) and returns its SHA-256.
 /// With `expected`, the file is only put in place when the hash matches
 /// (case-insensitive); otherwise `Ok(None)` is returned and nothing is written.

@@ -85,10 +85,7 @@ impl Cancel {
 
 impl Engine {
     pub(crate) fn progress(&self, id: &str, percent: i64) {
-        self.host.emit(
-            "downloadProgress",
-            &json!({ "id": id, "percent": percent.clamp(0, 100) }),
-        );
+        self.notify_download(id, percent.clamp(0, 100));
     }
 
     /// Cancels an in-flight download of `version` (returns whether one was running).

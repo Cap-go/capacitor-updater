@@ -123,14 +123,6 @@ impl CHost {
         }
         Some(value)
     }
-
-    fn hook(&self, name: &str, payload: serde_json::Value) -> Option<serde_json::Value> {
-        let hook = self.0.hook?;
-        let name = c_string(name);
-        let payload = c_string(&payload.to_string());
-        let raw = unsafe { hook(self.0.context, name.as_ptr(), payload.as_ptr()) };
-        self.take_string(raw).and_then(|json| serde_json::from_str(&json).ok())
-    }
 }
 
 impl Host for CHost {
@@ -180,18 +172,26 @@ impl Host for CHost {
         }
     }
 
+    fn hook(&self, name: &str, payload: &serde_json::Value) -> Option<serde_json::Value> {
+        let hook = self.0.hook?;
+        let name = c_string(name);
+        let payload = c_string(&payload.to_string());
+        let raw = unsafe { hook(self.0.context, name.as_ptr(), payload.as_ptr()) };
+        self.take_string(raw).and_then(|json| serde_json::from_str(&json).ok())
+    }
+
     fn will_switch_bundle(&self, path: &str) {
-        self.hook("willSwitchBundle", serde_json::json!({ "path": path }));
+        self.hook("willSwitchBundle", &serde_json::json!({ "path": path }));
     }
 
     fn cancel_version_download(&self, version: &str) -> bool {
-        self.hook("cancelVersionDownload", serde_json::json!({ "version": version }))
+        self.hook("cancelVersionDownload", &serde_json::json!({ "version": version }))
             .and_then(|reply| reply.get("cancelled").and_then(serde_json::Value::as_bool))
             .unwrap_or(true)
     }
 
     fn before_download(&self) -> Result<(), String> {
-        match self.hook("beforeDownload", serde_json::json!({})).and_then(|reply| {
+        match self.hook("beforeDownload", &serde_json::json!({})).and_then(|reply| {
             reply
                 .get("error")
                 .and_then(serde_json::Value::as_str)
@@ -203,13 +203,13 @@ impl Host for CHost {
     }
 
     fn cancel_all_downloads(&self) {
-        self.hook("cancelAllDownloads", serde_json::json!({}));
+        self.hook("cancelAllDownloads", &serde_json::json!({}));
     }
 
     fn send_stats(&self, action: &str, version_name: &str, old_version_name: &str) -> bool {
         self.hook(
             "sendStats",
-            serde_json::json!({ "action": action, "versionName": version_name, "oldVersionName": old_version_name }),
+            &serde_json::json!({ "action": action, "versionName": version_name, "oldVersionName": old_version_name }),
         )
         .and_then(|reply| reply.get("handled").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)

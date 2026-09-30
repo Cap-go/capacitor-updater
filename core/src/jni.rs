@@ -191,6 +191,27 @@ impl Host for JniHost {
         });
     }
 
+    fn hook(&self, name: &str, payload: &serde_json::Value) -> Option<serde_json::Value> {
+        self.with_env(|env| {
+            let name = Self::string_arg(env, name)?;
+            let payload = Self::string_arg(env, &payload.to_string())?;
+            let value = env
+                .call_method(
+                    self.host.as_obj(),
+                    "hook",
+                    "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                    &[JValue::Object(&name), JValue::Object(&payload)],
+                )?
+                .l()?;
+            if value.is_null() {
+                return Ok(None);
+            }
+            let reply: String = env.get_string(&JString::from(value))?.into();
+            Ok(serde_json::from_str(&reply).ok())
+        })
+        .flatten()
+    }
+
     fn will_switch_bundle(&self, path: &str) {
         self.with_env(|env| {
             let path = Self::string_arg(env, path)?;

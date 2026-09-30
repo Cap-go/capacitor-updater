@@ -50,6 +50,12 @@ pub trait Host: Send + Sync + 'static {
     /// Delivers an event (`download`, `updateAvailable`, ...) to the app.
     fn emit(&self, event: &str, payload: &Value);
 
+    /// Platform hook by name (see [`crate::engine::plugin::hooks`]): WebView,
+    /// splash screen, loaders, alerts. `None` means "not handled".
+    fn hook(&self, _name: &str, _payload: &Value) -> Option<Value> {
+        None
+    }
+
     /// Called right before the current bundle path changes (Android reschedules
     /// Background Runner work here).
     fn will_switch_bundle(&self, _path: &str) {}
@@ -112,6 +118,10 @@ pub struct MemoryHost {
     pub store: std::sync::Mutex<std::collections::BTreeMap<String, String>>,
     pub events: std::sync::Mutex<Vec<(String, Value)>>,
     pub logs: std::sync::Mutex<Vec<(LogLevel, String)>>,
+    /// Hooks the engine called, in order.
+    pub hooks: std::sync::Mutex<Vec<(String, Value)>>,
+    /// Scripted hook replies by name.
+    pub hook_replies: std::sync::Mutex<std::collections::BTreeMap<String, Value>>,
 }
 
 impl MemoryHost {
@@ -123,6 +133,20 @@ impl MemoryHost {
             .filter(|(event, _)| event == name)
             .map(|(_, payload)| payload.clone())
             .collect()
+    }
+
+    pub fn hooks_named(&self, name: &str) -> Vec<Value> {
+        self.hooks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(hook, _)| hook == name)
+            .map(|(_, payload)| payload.clone())
+            .collect()
+    }
+
+    pub fn reply_to_hook(&self, name: &str, reply: Value) {
+        self.hook_replies.lock().unwrap().insert(name.to_string(), reply);
     }
 }
 
@@ -158,5 +182,10 @@ impl Host for MemoryHost {
 
     fn emit(&self, event: &str, payload: &Value) {
         self.events.lock().unwrap().push((event.to_string(), payload.clone()));
+    }
+
+    fn hook(&self, name: &str, payload: &Value) -> Option<Value> {
+        self.hooks.lock().unwrap().push((name.to_string(), payload.clone()));
+        self.hook_replies.lock().unwrap().get(name).cloned()
     }
 }

@@ -24,6 +24,9 @@ pub(crate) struct QueuedEvent {
     pub callback_id: Option<String>,
 }
 
+/// Key/value writes (`None` removes the key).
+pub(crate) type KvWrites = Vec<(String, Option<String>)>;
+
 #[derive(Default)]
 pub(crate) struct StatsState {
     pub queue: Mutex<Vec<QueuedEvent>>,
@@ -32,6 +35,9 @@ pub(crate) struct StatsState {
     pub flush_in_flight: AtomicBool,
     pub stopped: AtomicBool,
     pub timer_started: AtomicBool,
+    /// Engine-owned acknowledgements: persisted key/value writes applied once the
+    /// event reached the server (snapshots that must retry until delivered).
+    pub acks: Mutex<std::collections::HashMap<String, KvWrites>>,
 }
 
 fn millis_now() -> i64 {
@@ -195,6 +201,13 @@ impl Engine {
                     self.host.info("Stats batch sent successfully");
                     self.host.debug(format!("Sent {} events", events.len()));
                     for callback_id in events.iter().filter_map(|queued| queued.callback_id.clone()) {
+                        let ack = self.stats.acks.lock().unwrap().remove(&callback_id);
+                        if let Some(writes) = ack {
+                            for (key, value) in writes {
+                                self.host.kv_set(&key, value.as_deref());
+                            }
+                            continue;
+                        }
                         self.host.emit("statsSent", &json!({ "callbackId": callback_id }));
                     }
                 } else if crate::http::is_retryable_http_status(response.status as i64) {

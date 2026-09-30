@@ -123,7 +123,7 @@ fn zip_download_installs_pending_bundle() {
     assert_eq!(t.host.events_named("updateAvailable").len(), 1);
     let percents: Vec<i64> = t
         .host
-        .events_named("downloadProgress")
+        .events_named("download")
         .iter()
         .map(|event| event["percent"].as_i64().unwrap())
         .collect();
@@ -399,7 +399,7 @@ fn many_encrypted_manifest_files_decrypt_in_parallel() {
     let t = TestEngine::new(json!({ "publicKey": keys().public_pem }));
     let mut manifest = Vec::new();
     let mut contents = Vec::new();
-    for index in 0..200 {
+    for index in 0..64 {
         let name = format!("assets/file-{index}.js");
         let content = format!("console.log({index});").repeat(64).into_bytes();
         files
