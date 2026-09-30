@@ -1,270 +1,212 @@
 package ee.forgr.capacitor_updater;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.PublicKey;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Maps a shared core contract case (native-contract-tests/{policy,security,crypto}.json)
- * onto the current Java implementation and returns an output object with the same keys
- * as the fixture `expect`. Error cases surface as thrown exceptions.
- *
- * The runner (CoreContractTest) is implementation-agnostic; a Rust-backed adapter can
- * later expose the same `run(group, input)` shape.
+ * Runs the shared core contract (native-contract-tests/*.json) through the Android JNI binding
+ * ({@link CapgoCore}), like core/tests/contract.rs does for Rust: every fixture group is a core operation.
+ * File-backed groups get their content written to a temporary file first.
  */
 final class CoreContractAdapter {
 
-    /** Thrown when a specific case cannot be exercised by this implementation (not a failure). */
-    static final class UnsupportedCase extends Exception {
-
-        UnsupportedCase(String reason) {
-            super(reason);
-        }
-    }
-
-    /** Thrown when the adapter has no mapping at all for a group. */
-    static final class UnknownGroup extends RuntimeException {
-
-        UnknownGroup(String group) {
-            super("No Android adapter for group " + group);
-        }
-    }
-
-    private static final File CACHE_DIR = new File("/capgo-contract/cache");
-
     private CoreContractAdapter() {}
 
-    static JSONObject run(String group, JSONObject input) throws Exception {
+    static JSONObject run(final String group, final JSONObject input) throws Exception {
         switch (group) {
-            // ------------------------------------------------------------ policy.json
-            case "legacyDirectUpdateAutoMode":
-                return out("mode", CapacitorUpdaterPlugin.autoUpdateModeForLegacyDirectUpdateMode(input.getString("directUpdateMode")));
-            case "isDirectUpdateMode":
-                return out("direct", CapacitorUpdaterPlugin.isDirectUpdateMode(input.getString("directUpdateMode")));
-            case "shakeMenuGesture": {
-                String value = str(input, "value");
-                return out(
-                    "gesture",
-                    CapacitorUpdaterPlugin.normalizedShakeMenuGesture(value),
-                    "supported",
-                    CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(value)
-                );
-            }
-            case "webViewErrorStatsAction":
-                return out("action", CapacitorUpdaterPlugin.statsActionForWebViewErrorType(input.getString("type")));
-            case "launchDownloadReady":
-                return out(
-                    "notify",
-                    CapgoUpdater.shouldNotifyLaunchDownloadReady(
-                        input.getBoolean("awaitedByCaller"),
-                        input.getBoolean("success"),
-                        input.getBoolean("directInstall"),
-                        input.getBoolean("previewSession")
-                    ),
-                    "status",
-                    CapgoUpdater.launchDownloadReadyStatus(input.getBoolean("success"), input.getBoolean("setNext"))
-                );
-            case "foreignBundleReset":
-                return out(
-                    "reset",
-                    CapgoUpdater.shouldResetForForeignBundle(
-                        str(input, "bundlePath"),
-                        input.getBoolean("isBuiltin"),
-                        input.getBoolean("hasStoredBundleInfo")
-                    )
-                );
-            case "clearPersistedDefaultChannel":
-                return out(
-                    "clear",
-                    CapacitorUpdaterPlugin.shouldClearPersistedDefaultChannel(
-                        input.getBoolean("persistDefaultChannelOnReinstall"),
-                        input.getBoolean("resetWhenUpdate"),
-                        input.getBoolean("nativeBuildVersionChanged"),
-                        input.getBoolean("restoredReinstall")
-                    )
-                );
-            case "manifestConcurrency":
-                return out("maxConcurrentFiles", DownloadService.manifestMaxConcurrentFiles(input.getInt("processorCount")));
-            case "userAgent": {
-                // The Android builder hard codes the "android" platform segment; other platforms go straight to the core.
-                String platform = input.getString("platform");
-                if (!"android".equals(platform)) {
-                    return CapgoCore.call("userAgent", input);
-                }
-                return out(
-                    "userAgent",
-                    DownloadService.buildUserAgent(input.getString("appId"), input.getString("pluginVersion"), input.getString("versionOs"))
-                );
-            }
-            case "retryableHttpStatus":
-                return out("retryable", DownloadService.isRetryableHttpStatus(input.getInt("status")));
-            case "contentRange": {
-                DownloadService.ContentRangeInfo range = DownloadService.parseContentRange(str(input, "header"));
-                if (range == null) {
-                    return out("range", JSONObject.NULL);
-                }
-                return out("range", out("start", range.start, "end", range.end, "total", range.total));
-            }
-            case "zipResumePlan": {
-                DownloadService.ZipWritePlan plan = DownloadService.planZipResumeWrite(
-                    input.getInt("responseCode"),
-                    input.getLong("downloadedBytes"),
-                    str(input, "contentRange")
-                );
-                return out("responseCode", plan.statusCode, "writeOffset", plan.writeOffset);
-            }
-            case "appendHttpBody":
-                return out("append", DownloadService.shouldAppendHttpBody(input.getInt("statusCode"), input.getLong("existingBytes")));
-            case "rateLimitDeadline":
-                return out(
-                    "blockedUntilMs",
-                    CapgoUpdater.resolveRateLimitBlockedUntilMs(str(input, "retryAfter"), str(input, "body"), input.getLong("nowMs"))
-                );
-            case "remoteError": {
-                String body = str(input, "body");
-                return out("error", CapgoUpdater.parseRemoteError(body), "message", CapgoUpdater.parseRemoteMessage(body));
-            }
-            case "bundleStatus": {
-                BundleStatus status = BundleStatus.fromString(str(input, "value"));
-                return out("status", status == null ? JSONObject.NULL : status.toString());
-            }
-            // ---------------------------------------------------------- security.json
-            case "pathTraversalSegment":
-                return out("traversal", CapgoUpdater.containsPathTraversalSegment(input.getString("path")));
-            case "resolvePathInside":
-                return out(
-                    "path",
-                    CapgoUpdater.resolvePathInsideDirectory(new File(input.getString("base")), str(input, "path")).getPath()
-                );
-            case "manifestTargetPath":
-                return out(
-                    "path",
-                    DownloadService.resolveManifestTargetFile(new File(input.getString("base")), input.getString("fileName")).getPath()
-                );
-            case "builtinAssetPath":
-                return out("assetPath", DownloadService.resolveBuiltinAssetPath(input.getString("fileName")));
-            case "safeCacheHash":
-                return out("safe", CapgoUpdater.isSafeCacheHash(str(input, "hash")));
-            case "reusableCacheFile":
-                return reusableCacheFile(str(input, "hash"), input.isNull("size") ? null : input.getLong("size"));
-            case "manifestPartialName":
-                return out("name", DownloadService.manifestPartialFile(CACHE_DIR, str(input, "hash"), str(input, "fileName")).getName());
-            case "shortPathKey":
-                return out("key", CryptoCipher.shortPathKey(str(input, "value")));
-            // ------------------------------------------------------------ crypto.json
-            case "sessionKeyValid":
-                return out("valid", CryptoCipher.isValidSessionKey(str(input, "sessionKey")));
-            case "keyId":
-                return out("keyId", CryptoCipher.calcKeyId(str(input, "publicKey")));
-            case "publicKeyValid": {
-                boolean valid;
+            case "checksumFile": {
+                final File file = File.createTempFile("capgo-core-contract", ".bin");
                 try {
-                    PublicKey key = CryptoCipher.stringToPublicKey(input.getString("publicKey"));
-                    valid = key != null;
-                } catch (Exception error) {
-                    valid = false;
+                    final byte[] chunk = CapgoCore.bytes(input.getString("contentHex"));
+                    try (OutputStream output = Files.newOutputStream(file.toPath())) {
+                        for (int i = 0; i < input.optInt("repeat", 1); i++) {
+                            output.write(chunk);
+                        }
+                    }
+                    return CapgoCore.call(group, CapgoCore.input("path", file.getAbsolutePath()));
+                } finally {
+                    deleteQuietly(file);
                 }
-                return out("valid", valid);
             }
-            case "checksumAlgorithm":
-                return out("algorithm", CryptoCipher.detectChecksumAlgorithm(str(input, "checksum")));
-            case "checksumFile":
-                return checksumFile(input.getString("contentHex"), input.getInt("repeat"));
-            case "decryptChecksum":
-                return out("checksum", CryptoCipher.decryptChecksum(input.getString("checksum"), input.getString("publicKey")));
-            case "decryptFile":
-                return decryptFile(input.getString("publicKey"), input.getString("sessionKey"), input.getString("ciphertextHex"));
+            case "decryptFile": {
+                final File dir = Files.createTempDirectory("capgo-core-contract").toFile();
+                final File file = new File(dir, "bundle.zip");
+                try {
+                    Files.write(file.toPath(), CapgoCore.bytes(input.getString("ciphertextHex")));
+                    final JSONObject callInput = new JSONObject(input.toString());
+                    callInput.remove("ciphertextHex");
+                    callInput.put("path", file.getAbsolutePath());
+                    CapgoCore.call(group, callInput);
+                    return new JSONObject().put("plaintextHex", CapgoCore.hex(Files.readAllBytes(file.toPath())));
+                } finally {
+                    final File[] leftovers = dir.listFiles();
+                    if (leftovers != null) {
+                        for (final File leftover : leftovers) {
+                            deleteQuietly(leftover);
+                        }
+                    }
+                    deleteQuietly(dir);
+                }
+            }
             default:
-                throw new UnknownGroup(group);
+                return CapgoCore.call(group, input);
         }
     }
 
-    private static JSONObject reusableCacheFile(String hash, Long size) throws Exception {
-        File dir = Files.createTempDirectory("capgo-core-contract").toFile();
-        File file = new File(dir, "cache.bin");
-        try {
-            if (size != null) {
-                try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-                    raf.setLength(size);
+    /** Runs every group of {@code native-contract-tests/<name>.json}. */
+    static void runFixture(final String name) throws Exception {
+        final JSONObject fixture = loadFixture(name + ".json");
+        final String publicKeyPem = fixture.optString("publicKeyPem", null);
+        final List<String> failures = new ArrayList<>();
+        int passed = 0;
+
+        final Iterator<String> groups = fixture.keys();
+        while (groups.hasNext()) {
+            final String group = groups.next();
+            final JSONArray cases = fixture.optJSONArray(group);
+            if (cases == null) {
+                continue;
+            }
+            for (int index = 0; index < cases.length(); index++) {
+                final JSONObject testCase = cases.getJSONObject(index);
+                final String label = name + "." + group + " " + testCase.getString("id");
+                final JSONObject input = resolveInput(testCase.getJSONObject("input"), publicKeyPem);
+                final JSONObject expect = testCase.optJSONObject("expect");
+                final String expectedError = expectedError(testCase);
+
+                final JSONObject actual;
+                try {
+                    actual = run(group, input);
+                } catch (CapgoCore.Failure failure) {
+                    if (expectedError != null && expectedError.equals(failure.code)) {
+                        passed++;
+                    } else {
+                        failures.add(
+                            label + ": expected " + (expectedError != null ? "error " + expectedError : expect) + " but threw " + failure
+                        );
+                    }
+                    continue;
+                }
+                if (expectedError != null) {
+                    failures.add(label + ": expected error " + expectedError + " but returned " + actual);
+                } else if (!jsonEquals(expect, actual)) {
+                    failures.add(label + ": expected " + expect + " but was " + actual);
+                } else {
+                    passed++;
                 }
             }
-            return out("reusable", CapgoUpdater.isReusableCacheFile(file, hash));
-        } finally {
-            deleteQuietly(file);
-            deleteQuietly(dir);
         }
+
+        System.out.println("[core-contract] " + name + ": " + passed + " passed, " + failures.size() + " failed");
+        if (!failures.isEmpty()) {
+            fail(name + ".json core contract failures:\n  " + String.join("\n  ", failures));
+        }
+        assertTrue(name + ".json ran no cases", passed > 0);
     }
 
-    private static JSONObject checksumFile(String contentHex, int repeat) throws Exception {
-        File file = File.createTempFile("capgo-core-contract", ".bin");
-        try {
-            byte[] chunk = hexToBytes(contentHex);
-            try (OutputStream output = Files.newOutputStream(file.toPath())) {
-                for (int i = 0; i < repeat; i++) {
-                    output.write(chunk);
+    /** Case-level {@code error}, or an {@code expect} that is exactly {@code {"error": code}}. */
+    private static String expectedError(final JSONObject testCase) {
+        if (testCase.has("error")) {
+            return testCase.optString("error");
+        }
+        final JSONObject expect = testCase.optJSONObject("expect");
+        if (expect != null && expect.length() == 1 && expect.has("error")) {
+            return expect.optString("error");
+        }
+        return null;
+    }
+
+    /** crypto fixtures: an input `publicKey: null` means "use the fixture key". */
+    private static JSONObject resolveInput(final JSONObject input, final String publicKeyPem) throws Exception {
+        if (publicKeyPem != null && input.has("publicKey") && input.isNull("publicKey")) {
+            final JSONObject copy = new JSONObject(input.toString());
+            copy.put("publicKey", publicKeyPem);
+            return copy;
+        }
+        return input;
+    }
+
+    /** Deep JSON equality; numbers compare numerically, an expected null also accepts a missing key. */
+    static boolean jsonEquals(final Object expected, final Object actual) throws Exception {
+        if (expected == null || expected == JSONObject.NULL) {
+            return actual == null || actual == JSONObject.NULL;
+        }
+        if (actual == null || actual == JSONObject.NULL) {
+            return false;
+        }
+        if (expected instanceof Number && actual instanceof Number) {
+            return new BigDecimal(expected.toString()).compareTo(new BigDecimal(actual.toString())) == 0;
+        }
+        if (expected instanceof JSONObject && actual instanceof JSONObject) {
+            final JSONObject expectedObject = (JSONObject) expected;
+            final JSONObject actualObject = (JSONObject) actual;
+            final Set<String> keys = new HashSet<>();
+            expectedObject.keys().forEachRemaining(keys::add);
+            actualObject.keys().forEachRemaining(keys::add);
+            for (final String key : keys) {
+                if (!expectedObject.has(key)) {
+                    return false;
+                }
+                if (!jsonEquals(expectedObject.get(key), actualObject.has(key) ? actualObject.get(key) : null)) {
+                    return false;
                 }
             }
-            return out("checksum", CryptoCipher.calcChecksum(file));
-        } finally {
-            deleteQuietly(file);
+            return true;
         }
-    }
-
-    private static JSONObject decryptFile(String publicKey, String sessionKey, String ciphertextHex) throws Exception {
-        File dir = Files.createTempDirectory("capgo-core-contract").toFile();
-        File file = new File(dir, "bundle.bin");
-        try {
-            Files.write(file.toPath(), hexToBytes(ciphertextHex));
-            CryptoCipher.decryptFile(file, publicKey, sessionKey);
-            return out("plaintextHex", bytesToHex(Files.readAllBytes(file.toPath())));
-        } finally {
-            File[] leftovers = dir.listFiles();
-            if (leftovers != null) {
-                for (File leftover : leftovers) {
-                    deleteQuietly(leftover);
+        if (expected instanceof JSONArray && actual instanceof JSONArray) {
+            final JSONArray expectedArray = (JSONArray) expected;
+            final JSONArray actualArray = (JSONArray) actual;
+            if (expectedArray.length() != actualArray.length()) {
+                return false;
+            }
+            for (int i = 0; i < expectedArray.length(); i++) {
+                if (!jsonEquals(expectedArray.get(i), actualArray.get(i))) {
+                    return false;
                 }
             }
-            deleteQuietly(dir);
+            return true;
+        }
+        return expected.equals(actual);
+    }
+
+    static JSONObject loadFixture(final String fileName) {
+        try {
+            return new JSONObject(new String(Files.readAllBytes(fixtureFile(fileName)), StandardCharsets.UTF_8));
+        } catch (Exception error) {
+            throw new AssertionError("Unable to load core contract fixture " + fileName, error);
         }
     }
 
-    private static void deleteQuietly(File file) {
+    private static Path fixtureFile(final String fileName) throws IOException {
+        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+        while (current != null) {
+            final Path candidate = current.resolve("native-contract-tests").resolve(fileName);
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+            current = current.getParent();
+        }
+        throw new IOException("native-contract-tests/" + fileName + " not found");
+    }
+
+    private static void deleteQuietly(final File file) {
         if (file.exists() && !file.delete()) {
             file.deleteOnExit();
         }
-    }
-
-    private static String str(JSONObject input, String key) {
-        return input.has(key) && !input.isNull(key) ? input.optString(key) : null;
-    }
-
-    private static JSONObject out(Object... keyValues) throws Exception {
-        JSONObject result = new JSONObject();
-        for (int i = 0; i < keyValues.length; i += 2) {
-            result.put((String) keyValues[i], keyValues[i + 1]);
-        }
-        return result;
-    }
-
-    static byte[] hexToBytes(String hex) {
-        if (hex.length() % 2 != 0) {
-            throw new IllegalArgumentException("Odd hex length");
-        }
-        byte[] data = new byte[hex.length() / 2];
-        for (int i = 0; i < hex.length(); i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4) + Character.digit(hex.charAt(i + 1), 16));
-        }
-        return data;
-    }
-
-    static String bytesToHex(byte[] bytes) {
-        StringBuilder hex = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            hex.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
-        }
-        return hex.toString();
     }
 }

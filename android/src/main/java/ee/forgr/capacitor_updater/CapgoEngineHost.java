@@ -17,7 +17,7 @@ import javax.net.ssl.X509TrustManager;
 
 /**
  * Platform services the Rust engine calls back into (from any thread): persistence, logs, events,
- * TLS trust and Android-only download scheduling hooks.
+ * plugin hooks (WebView, splash screen, dialogs) and TLS trust.
  */
 abstract class CapgoEngineHost {
 
@@ -36,6 +36,14 @@ abstract class CapgoEngineHost {
 
     abstract void emit(String event, String payloadJson);
 
+    /**
+     * Plugin hook ({@code core/src/engine/plugin/mod.rs} {@code hooks}): returns a JSON reply or {@code null} when
+     * the hook is not handled. Called from engine threads and from the thread running an engine operation.
+     */
+    String hook(String name, String payloadJson) {
+        return null;
+    }
+
     /** Gate before a download touches disk; null to proceed, else the reason to refuse. */
     String beforeDownload() {
         return null;
@@ -48,11 +56,6 @@ abstract class CapgoEngineHost {
     }
 
     void cancelAllDownloads() {}
-
-    /** Statistics emitted by engine logic; return true once queued (through the statsSend operation). */
-    boolean sendStats(String action, String versionName, String oldVersionName) {
-        return false;
-    }
 
     /**
      * Verifies a server chain (DER, leaf first) with the platform trust store (network security config, user CAs).

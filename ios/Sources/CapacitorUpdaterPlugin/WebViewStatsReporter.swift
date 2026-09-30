@@ -1,7 +1,8 @@
-import Capacitor
 import Foundation
 import WebKit
 
+/// JavaScript side of WebView health stats: errors, CSP violations, load timings
+/// and unclean restarts, reported to the plugin as `reportWebViewError` calls.
 final class WebViewStatsReporter {
     static let script = """
     (function(){
@@ -145,139 +146,17 @@ final class WebViewStatsReporter {
     })();
     """
 
-    private let implementation: CapgoUpdater
     private var installed = false
 
-    init(implementation: CapgoUpdater) {
-        self.implementation = implementation
-    }
-
+    /// Injects the reporter into every document. Reports reach the engine through
+    /// the `reportWebViewError` plugin method.
     func install(on webView: WKWebView?) {
-        guard !installed else {
+        guard !installed, let webView else {
             return
         }
-        guard let webView else {
-            return
-        }
-
         installed = true
         let userScript = WKUserScript(source: Self.script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         webView.configuration.userContentController.addUserScript(userScript)
         webView.evaluateJavaScript(Self.script, completionHandler: nil)
-    }
-
-    func reportError(_ call: CAPPluginCall) {
-        let errorType = call.getString("type") ?? "javascript_error"
-        let current = implementation.getCurrentBundle()
-        implementation.sendStats(
-            action: Self.statsAction(for: errorType),
-            versionName: current.getVersionName(),
-            oldVersionName: "",
-            metadata: Self.buildMetadata([
-                "type": errorType,
-                "message": call.getString("message"),
-                "source": call.getString("source"),
-                "line": call.getString("line") ?? call.getString("lineno"),
-                "column": call.getString("column") ?? call.getString("colno"),
-                "stack": call.getString("stack"),
-                "tag_name": call.getString("tag_name"),
-                "href": call.getString("href"),
-                "user_agent": call.getString("user_agent"),
-                "session_id": call.getString("session_id"),
-                "duration_ms": call.getString("duration_ms"),
-                "page_started_at": call.getString("page_started_at"),
-                "previous_session_id": call.getString("previous_session_id"),
-                "previous_href": call.getString("previous_href"),
-                "previous_started_at": call.getString("previous_started_at"),
-                "previous_updated_at": call.getString("previous_updated_at")
-            ])
-        )
-        call.resolve()
-    }
-
-    static func statsAction(for type: String) -> String {
-        CapgoCore.string("webViewErrorStatsAction", ["type": type], "action", fallback: "webview_javascript_error")
-    }
-
-    static func buildMetadata(_ values: [String: String?]) -> [String: String] {
-        var metadata: [String: String] = [:]
-        put(&metadata, key: "error_type", value: payloadValue(values, "type") ?? "javascript_error", maxLength: 64)
-        put(&metadata, key: "message", value: payloadValue(values, "message"), maxLength: 1_024)
-        put(&metadata, key: "source", value: sanitizeUrl(payloadValue(values, "source")), maxLength: 512)
-        put(&metadata, key: "line", value: payloadValue(values, "line"), maxLength: 32)
-        put(&metadata, key: "column", value: payloadValue(values, "column"), maxLength: 32)
-        put(&metadata, key: "stack", value: payloadValue(values, "stack"), maxLength: 2_048)
-        put(&metadata, key: "tag_name", value: payloadValue(values, "tag_name"), maxLength: 64)
-        put(&metadata, key: "href", value: sanitizeUrl(payloadValue(values, "href")), maxLength: 512)
-        put(&metadata, key: "user_agent", value: payloadValue(values, "user_agent"), maxLength: 256)
-        put(&metadata, key: "session_id", value: payloadValue(values, "session_id"), maxLength: 128)
-        put(&metadata, key: "duration_ms", value: payloadValue(values, "duration_ms"), maxLength: 32)
-        put(&metadata, key: "page_started_at", value: payloadValue(values, "page_started_at"), maxLength: 64)
-        put(&metadata, key: "previous_session_id", value: payloadValue(values, "previous_session_id"), maxLength: 128)
-        put(&metadata, key: "previous_href", value: sanitizeUrl(payloadValue(values, "previous_href")), maxLength: 512)
-        put(&metadata, key: "previous_started_at", value: payloadValue(values, "previous_started_at"), maxLength: 64)
-        put(&metadata, key: "previous_updated_at", value: payloadValue(values, "previous_updated_at"), maxLength: 64)
-        return metadata
-    }
-
-    private static func payloadValue(_ values: [String: String?], _ key: String) -> String? {
-        guard let value = values[key] else {
-            return nil
-        }
-        return value
-    }
-
-    static func sanitizeUrl(_ value: String?) -> String? {
-        guard let value = value, !value.isEmpty else {
-            return value
-        }
-
-        if var components = URLComponents(string: value), components.scheme != nil, components.host != nil {
-            components.user = nil
-            components.password = nil
-            components.query = nil
-            components.fragment = nil
-            components.path = sanitizeUrlPath(components.path)
-            return components.string ?? stripUrlQueryAndFragment(value)
-        }
-
-        return stripUrlQueryAndFragment(value)
-    }
-
-    private static func sanitizeUrlPath(_ path: String) -> String {
-        guard !path.isEmpty else {
-            return path
-        }
-
-        return path
-            .split(separator: "/", omittingEmptySubsequences: false)
-            .map { isSensitiveUrlPathSegment(String($0)) ? "redacted" : String($0) }
-            .joined(separator: "/")
-    }
-
-    private static func isSensitiveUrlPathSegment(_ segment: String) -> Bool {
-        segment.range(of: #"^[0-9]{6,}$"#, options: .regularExpression) != nil ||
-            segment.range(of: #"^[0-9a-fA-F]{16,}$"#, options: .regularExpression) != nil ||
-            segment.range(
-                of: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
-                options: .regularExpression
-            ) != nil
-    }
-
-    private static func stripUrlQueryAndFragment(_ value: String) -> String {
-        let queryIndex = value.firstIndex(of: "?")
-        let fragmentIndex = value.firstIndex(of: "#")
-        let endIndexes = [queryIndex, fragmentIndex].compactMap { $0 }
-        guard let endIndex = endIndexes.min() else {
-            return value
-        }
-        return String(value[..<endIndex])
-    }
-
-    private static func put(_ metadata: inout [String: String], key: String, value: String?, maxLength: Int) {
-        guard let value = value, !value.isEmpty else {
-            return
-        }
-        metadata[key] = String(value.prefix(maxLength))
     }
 }

@@ -14,7 +14,7 @@ protocol CapgoEngineHost: AnyObject {
     func engineKvSet(_ key: String, _ value: String?)
     func engineKvKeys() -> [String]
     func engineEmit(_ event: String, _ payload: [String: Any])
-    /// Platform hook (`sendStats`, `beforeDownload`, ...); nil keeps the engine default.
+    /// Platform hook (`applyBundle`, `splash`, `backgroundTask`, ...); nil keeps the engine default.
     func engineHook(_ name: String, _ payload: [String: Any]) -> [String: Any]?
 }
 

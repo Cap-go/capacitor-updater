@@ -9,7 +9,6 @@ package ee.forgr.capacitor_updater;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.json.JSONTokener;
 
 /** Java handle on a Rust updater engine ({@code core/src/engine}). Thread-safe. */
 final class CapgoEngine {
@@ -53,31 +52,6 @@ final class CapgoEngine {
     JSONArray callArray(final String operation, final JSONObject input) throws CapgoCore.Failure {
         final Object value = this.callValue(operation, input);
         return value instanceof JSONArray ? (JSONArray) value : new JSONArray();
-    }
-
-    /** Engine operations that cannot fail on well-formed input: a failure is a binding bug. */
-    JSONObject callUnchecked(final String operation, final JSONObject input) {
-        try {
-            return this.call(operation, input);
-        } catch (CapgoCore.Failure e) {
-            throw new IllegalStateException("Capgo engine " + operation + " failed: " + e.getMessage(), e);
-        }
-    }
-
-    Object callValueUnchecked(final String operation, final JSONObject input) {
-        try {
-            return this.callValue(operation, input);
-        } catch (CapgoCore.Failure e) {
-            throw new IllegalStateException("Capgo engine " + operation + " failed: " + e.getMessage(), e);
-        }
-    }
-
-    static Object parse(final String json) {
-        try {
-            return new JSONTokener(json).nextValue();
-        } catch (JSONException e) {
-            return JSONObject.NULL;
-        }
     }
 
     @Override

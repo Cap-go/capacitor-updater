@@ -8,7 +8,6 @@ package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.hardware.SensorManager;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -18,14 +17,12 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
-import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetector.Listener {
@@ -84,10 +81,10 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private void onMenuGestureDetected(String gestureName) {
         logger.info(gestureName + " detected");
 
-        boolean canShowPreviewMenu = Boolean.TRUE.equals(plugin.shakeMenuEnabled) && plugin.hasActivePreviewSession();
-        boolean canShowChannelSelector = Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled);
+        boolean canShowPreviewMenu = plugin.shakeMenuEnabled && plugin.hasActivePreviewSession();
+        boolean canShowChannelSelector = plugin.shakeChannelSelectorEnabled;
         if (!canShowPreviewMenu && !canShowChannelSelector) {
-            if (Boolean.TRUE.equals(plugin.shakeMenuEnabled)) {
+            if (plugin.shakeMenuEnabled) {
                 logger.info("Shake preview menu ignored because no preview session is active");
             } else {
                 logger.info("Shake menu is disabled");
@@ -119,7 +116,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     return;
                 }
 
-                showPreviewActionsMenu(Boolean.TRUE.equals(plugin.shakeChannelSelectorEnabled));
+                showPreviewActionsMenu(plugin.shakeChannelSelectorEnabled);
             } catch (Exception e) {
                 logger.error("Error showing shake menu: " + e.getMessage());
                 isShowing = false;
@@ -248,13 +245,11 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private void showPreviewSelector() {
         activity.runOnUiThread(() -> {
             try {
-                JSArray previewsRaw = plugin.previewMenuPreviews();
+                JSONArray previewsRaw = plugin.previewMenuPreviews();
                 List<JSObject> previews = new ArrayList<>();
                 for (int i = 0; i < previewsRaw.length(); i++) {
-                    Object raw = previewsRaw.opt(i);
-                    if (raw instanceof JSObject preview) {
-                        previews.add(preview);
-                    } else if (raw instanceof JSONObject json) {
+                    JSONObject json = previewsRaw.optJSONObject(i);
+                    if (json != null) {
                         previews.add(JSObject.fromJSONObject(json));
                     }
                 }
@@ -385,115 +380,6 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         }).start();
     }
 
-    private void showConfiguredDefaultMenu() {
-        activity.runOnUiThread(() -> {
-            try {
-                String appName = activity.getPackageManager().getApplicationLabel(activity.getApplicationInfo()).toString();
-                String title = "Preview " + appName + " Menu";
-                String message = "What would you like to do?";
-                String okButtonTitle = "Go Home";
-                String reloadButtonTitle = "Reload app";
-                String cancelButtonTitle = "Close menu";
-
-                CapgoUpdater updater = plugin.implementation;
-                Bridge bridge = activity.getBridge();
-
-                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-                builder.setTitle(title);
-                builder.setMessage(message);
-
-                // Go Home button
-                builder.setPositiveButton(
-                    okButtonTitle,
-                    new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int id) {
-                            try {
-                                BundleInfo current = updater.getCurrentBundle();
-                                logger.info("Current bundle: " + current.toString());
-
-                                BundleInfo next = updater.getNextBundle();
-                                logger.info("Next bundle: " + (next != null ? next.toString() : "null"));
-
-                                if (next != null && !next.isBuiltin()) {
-                                    logger.info("Setting bundle to: " + next.toString());
-                                    updater.set(next);
-                                    String path = updater.getCurrentBundlePath();
-                                    logger.info("Setting server path: " + path);
-                                    if (updater.isUsingBuiltin()) {
-                                        bridge.setServerAssetPath(path);
-                                    } else {
-                                        bridge.setServerBasePath(path);
-                                    }
-                                } else {
-                                    logger.info("Resetting to builtin");
-                                    updater.reset();
-                                    String path = updater.getCurrentBundlePath();
-                                    bridge.setServerAssetPath(path);
-                                }
-
-                                try {
-                                    updater.delete(current.getId());
-                                } catch (Exception err) {
-                                    logger.warn("Cannot delete version " + current.getId() + ": " + err.getMessage());
-                                }
-
-                                logger.info("Reload app done");
-                            } catch (Exception e) {
-                                logger.error("Error in Go Home action: " + e.getMessage());
-                            } finally {
-                                dialog.dismiss();
-                                isShowing = false;
-                            }
-                        }
-                    }
-                );
-
-                // Reload button
-                builder.setNeutralButton(
-                    reloadButtonTitle,
-                    new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int id) {
-                            try {
-                                logger.info("Reloading webview");
-                                String pathHot = updater.getCurrentBundlePath();
-                                bridge.setServerBasePath(pathHot);
-                                activity.runOnUiThread(() -> {
-                                    if (bridge.getWebView() != null) {
-                                        bridge.getWebView().reload();
-                                    }
-                                });
-                            } catch (Exception e) {
-                                logger.error("Error in Reload action: " + e.getMessage());
-                            } finally {
-                                dialog.dismiss();
-                                isShowing = false;
-                            }
-                        }
-                    }
-                );
-
-                // Cancel button
-                builder.setNegativeButton(
-                    cancelButtonTitle,
-                    new DialogInterface.OnClickListener() {
-                        public void onClick(DialogInterface dialog, int id) {
-                            logger.info("Shake menu cancelled");
-                            dialog.dismiss();
-                            isShowing = false;
-                        }
-                    }
-                );
-
-                AlertDialog dialog = builder.create();
-                dialog.setOnDismissListener((dialogInterface) -> isShowing = false);
-                dialog.show();
-            } catch (Exception e) {
-                logger.error("Error showing shake menu: " + e.getMessage());
-                isShowing = false;
-            }
-        });
-    }
-
     private void showChannelSelector() {
         activity.runOnUiThread(() -> {
             try {
@@ -530,44 +416,29 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                 // Fetch channels in background
                 new Thread(() -> {
-                    final CapgoUpdater updater = plugin.implementation;
-                    updater.listChannels((res) -> {
-                        activity.runOnUiThread(() -> {
-                            loadingDialog.dismiss();
+                    final JSONObject res = plugin.runEngineMethod("listChannels", new JSONObject());
+                    activity.runOnUiThread(() -> {
+                        loadingDialog.dismiss();
 
-                            if (didCancel[0]) {
-                                return;
-                            }
+                        if (didCancel[0]) {
+                            return;
+                        }
 
-                            if (res == null) {
-                                showError("Failed to load channels: unknown error");
-                                return;
-                            }
+                        final String error = rejection(res);
+                        if (error != null) {
+                            showError("Failed to load channels: " + error);
+                            return;
+                        }
 
-                            Object errorObj = res.get("error");
-                            if (errorObj != null) {
-                                Object messageObj = res.get("message");
-                                String message = messageObj != null ? messageObj.toString() : errorObj.toString();
-                                showError("Failed to load channels: " + message);
-                                return;
-                            }
+                        final JSONObject result = res.optJSONObject("resolve");
+                        final JSONArray channelsRaw = result == null ? null : result.optJSONArray("channels");
+                        final List<String> channels = channelNames(channelsRaw);
+                        if (channels.isEmpty()) {
+                            showError("No channels available for self-assignment");
+                            return;
+                        }
 
-                            Object channelsObj = res.get("channels");
-                            if (!(channelsObj instanceof List)) {
-                                showError("No channels available for self-assignment");
-                                return;
-                            }
-
-                            List<?> channelsRaw = (List<?>) channelsObj;
-                            List<Map<String, Object>> channels = toChannelList(channelsRaw);
-
-                            if (channels.isEmpty()) {
-                                showError("No channels available for self-assignment");
-                                return;
-                            }
-
-                            presentChannelPicker(channels);
-                        });
+                        presentChannelPicker(channels);
                     });
                 }).start();
             } catch (Exception e) {
@@ -577,28 +448,31 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         });
     }
 
-    private List<Map<String, Object>> toChannelList(List<?> channelsRaw) {
-        List<Map<String, Object>> channels = new ArrayList<>();
-        for (Object item : channelsRaw) {
-            if (!(item instanceof Map<?, ?> rawMap)) {
-                continue;
-            }
-
-            Map<String, Object> channel = new java.util.HashMap<>();
-            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                if (entry.getKey() instanceof String key) {
-                    channel.put(key, entry.getValue());
-                }
-            }
-
-            if (!channel.isEmpty()) {
-                channels.add(channel);
-            }
+    /** Rejection message of an engine method result, or {@code null} when it resolved. */
+    private static String rejection(JSONObject result) {
+        final JSONObject reject = result == null ? null : result.optJSONObject("reject");
+        if (reject == null) {
+            return result == null ? "unknown error" : null;
         }
-        return channels;
+        return reject.optString("message", "unknown error");
     }
 
-    private void presentChannelPicker(List<Map<String, Object>> channels) {
+    private static List<String> channelNames(JSONArray channels) {
+        final List<String> names = new ArrayList<>();
+        if (channels == null) {
+            return names;
+        }
+        for (int i = 0; i < channels.length(); i++) {
+            final JSONObject channel = channels.optJSONObject(i);
+            final String name = channel == null ? "" : channel.optString("name", "");
+            if (!name.isEmpty()) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private void presentChannelPicker(List<String> allChannelNames) {
         try {
             AlertDialog.Builder builder = new AlertDialog.Builder(activity);
             builder.setTitle("Select Channel");
@@ -614,15 +488,6 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             searchField.setHint("Search channels...");
             searchField.setSingleLine(true);
             layout.addView(searchField);
-
-            // Create list of channel names
-            List<String> allChannelNames = new ArrayList<>();
-            for (Map<String, Object> channel : channels) {
-                Object nameObj = channel.get("name");
-                if (nameObj instanceof String) {
-                    allChannelNames.add((String) nameObj);
-                }
-            }
 
             // Displayed channels (first 5 by default)
             final List<String> displayedChannels = new ArrayList<>();
@@ -708,197 +573,147 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 progressDialog.show();
 
                 new Thread(() -> {
-                    final CapgoUpdater updater = plugin.implementation;
-                    final Bridge bridge = activity.getBridge();
-                    final String configDefaultChannel = plugin.getConfig().getString("defaultChannel", "");
-
-                    // Set the channel - respect plugin's allowSetDefaultChannel config
-                    updater.setChannel(
-                        channelName,
-                        updater.editor,
-                        "CapacitorUpdater.defaultChannel",
-                        plugin.allowSetDefaultChannel,
-                        configDefaultChannel,
-                        (setRes) -> {
-                            if (setRes == null) {
-                                activity.runOnUiThread(() -> {
-                                    progressDialog.dismiss();
-                                    showError("Failed to set channel: unknown error");
-                                });
-                                return;
-                            }
-
-                            Object errorObj = setRes.get("error");
-                            if (errorObj != null) {
-                                Object messageObj = setRes.get("message");
-                                String message = messageObj != null ? messageObj.toString() : errorObj.toString();
-                                activity.runOnUiThread(() -> {
-                                    progressDialog.dismiss();
-                                    showError("Failed to set channel: " + message);
-                                });
-                                return;
-                            }
-
-                            // Update progress message
-                            activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
-
-                            // Check for updates
-                            String updateUrlStr = plugin.getUpdateUrl();
-                            if (updateUrlStr == null || updateUrlStr.isEmpty()) {
-                                updateUrlStr = "https://plugin.capgo.app/updates";
-                            }
-
-                            final String finalUpdateUrlStr = updateUrlStr;
-                            updater.getLatest(finalUpdateUrlStr, channelName, (latestRes) -> {
-                                if (latestRes == null) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showSuccess("Channel set to " + channelName + ". Could not check for updates.");
-                                    });
-                                    return;
-                                }
-
-                                String latestError = getString(latestRes, "error");
-                                String latestKind = getString(latestRes, "kind");
-                                String latestMessage = getString(latestRes, "message");
-
-                                String detail =
-                                    latestMessage != null && !latestMessage.isEmpty()
-                                        ? latestMessage
-                                        : latestError != null && !latestError.isEmpty()
-                                            ? latestError
-                                            : latestKind != null && !latestKind.isEmpty()
-                                                ? latestKind
-                                                : "server did not provide a message";
-
-                                // Handle update errors first (before "no new version" check)
-                                if (
-                                    "failed".equals(latestKind) ||
-                                    (latestError != null &&
-                                        !latestError.isEmpty() &&
-                                        !"up_to_date".equals(latestKind) &&
-                                        !"blocked".equals(latestKind))
-                                ) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showError("Channel set to " + channelName + ". Update check failed: " + detail);
-                                    });
-                                    return;
-                                }
-
-                                if ("blocked".equals(latestKind)) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showError("Channel set to " + channelName + ". Update check blocked: " + detail);
-                                    });
-                                    return;
-                                }
-
-                                String latestUrl = getString(latestRes, "url");
-
-                                Object manifestObj = latestRes.get("manifest");
-                                JSONArray manifestArray = null;
-                                if (manifestObj instanceof JSONArray) {
-                                    manifestArray = (JSONArray) manifestObj;
-                                } else if (manifestObj instanceof List) {
-                                    manifestArray = new JSONArray((List<?>) manifestObj);
-                                }
-                                final boolean hasManifest = manifestArray != null && manifestArray.length() > 0;
-
-                                // Check if there's an actual update available. A manifest-only
-                                // response legitimately has no URL (the files come from the
-                                // manifest, not a zip), so only report "already on latest" when
-                                // the URL is empty AND there is no manifest to download from.
-                                if ("up_to_date".equals(latestKind) || ((latestUrl == null || latestUrl.isEmpty()) && !hasManifest)) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showSuccess("Channel set to " + channelName + ". Already on latest version.");
-                                    });
-                                    return;
-                                }
-
-                                String version = getString(latestRes, "version");
-                                if (version == null || version.isEmpty()) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showError("Channel set to " + channelName + ". Update check failed: missing version.");
-                                    });
-                                    return;
-                                }
-
-                                // Update message
-                                final String versionForUi = version;
-                                activity.runOnUiThread(() -> progressDialog.setMessage("Downloading update " + versionForUi + "..."));
-
-                                String sessionKey = getString(latestRes, "sessionKey");
-                                String checksum = getString(latestRes, "checksum");
-
-                                // A manifest-only response has no zip URL; downloadManifest
-                                // tolerates the placeholder URL the plugin already uses.
-                                final String downloadUrl =
-                                    latestUrl == null || latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl;
-
-                                // Download the update
-                                try {
-                                    BundleInfo bundle;
-                                    if (hasManifest) {
-                                        bundle = updater.downloadManifest(
-                                            downloadUrl,
-                                            versionForUi,
-                                            sessionKey != null ? sessionKey : "",
-                                            checksum != null ? checksum : "",
-                                            manifestArray
-                                        );
-                                    } else {
-                                        bundle = updater.download(
-                                            downloadUrl,
-                                            versionForUi,
-                                            sessionKey != null ? sessionKey : "",
-                                            checksum != null ? checksum : ""
-                                        );
-                                    }
-
-                                    // Set as next bundle
-                                    updater.setNextBundle(bundle.getId());
-
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showSuccessWithReload("Update downloaded! Reload to apply version " + versionForUi + "?", () -> {
-                                            try {
-                                                if (bridge == null) {
-                                                    logger.warn("Bridge is null, cannot reload app");
-                                                    return;
-                                                }
-                                                updater.set(bundle);
-                                                String path = updater.getCurrentBundlePath();
-                                                if (updater.isUsingBuiltin()) {
-                                                    bridge.setServerAssetPath(path);
-                                                } else {
-                                                    bridge.setServerBasePath(path);
-                                                }
-                                                if (bridge.getWebView() != null) {
-                                                    bridge.getWebView().reload();
-                                                }
-                                            } catch (Exception e) {
-                                                logger.error("Error applying bundle before reload: " + e.getMessage());
-                                            }
-                                        });
-                                    });
-                                } catch (Exception e) {
-                                    activity.runOnUiThread(() -> {
-                                        progressDialog.dismiss();
-                                        showError("Failed to download update: " + e.getMessage());
-                                    });
-                                }
-                            });
-                        }
+                    final String setError = rejection(
+                        plugin.runEngineMethod("setChannel", jsonOf("channel", channelName, "triggerAutoUpdate", false))
                     );
+                    if (setError != null) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Failed to set channel: " + setError);
+                        });
+                        return;
+                    }
+
+                    activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
+
+                    final JSONObject latestResult = plugin.runEngineMethod("getLatest", jsonOf("channel", channelName));
+                    final String latestFailure = rejection(latestResult);
+                    if (latestFailure != null) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Channel set to " + channelName + ". Update check failed: " + latestFailure);
+                        });
+                        return;
+                    }
+                    final JSONObject latest = latestResult.optJSONObject("resolve");
+                    if (latest == null) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showSuccess("Channel set to " + channelName + ". Could not check for updates.");
+                        });
+                        return;
+                    }
+
+                    final String latestError = latest.optString("error", "");
+                    final String latestKind = latest.optString("kind", "");
+                    final String latestMessage = latest.optString("message", "");
+                    final String detail = !latestMessage.isEmpty()
+                        ? latestMessage
+                        : !latestError.isEmpty()
+                            ? latestError
+                            : !latestKind.isEmpty()
+                                ? latestKind
+                                : "server did not provide a message";
+
+                    if (!latestError.isEmpty() && !"up_to_date".equals(latestKind) && !"blocked".equals(latestKind)) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Channel set to " + channelName + ". Update check failed: " + detail);
+                        });
+                        return;
+                    }
+
+                    if ("blocked".equals(latestKind)) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Channel set to " + channelName + ". Update check blocked: " + detail);
+                        });
+                        return;
+                    }
+
+                    final String latestUrl = latest.optString("url", "");
+                    final JSONArray manifest = latest.optJSONArray("manifest");
+                    final boolean hasManifest = manifest != null && manifest.length() > 0;
+
+                    // A manifest-only response legitimately has no URL (the files come from the
+                    // manifest, not a zip), so only report "already on latest" when the URL is
+                    // empty AND there is no manifest to download from.
+                    if ("up_to_date".equals(latestKind) || (latestUrl.isEmpty() && !hasManifest)) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showSuccess("Channel set to " + channelName + ". Already on latest version.");
+                        });
+                        return;
+                    }
+
+                    final String version = latest.optString("version", "");
+                    if (version.isEmpty()) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Channel set to " + channelName + ". Update check failed: missing version.");
+                        });
+                        return;
+                    }
+
+                    activity.runOnUiThread(() -> progressDialog.setMessage("Downloading update " + version + "..."));
+
+                    // A manifest-only response has no zip URL; the engine tolerates this placeholder.
+                    final JSONObject downloadArgs = jsonOf(
+                        "url",
+                        latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl,
+                        "version",
+                        version,
+                        "sessionKey",
+                        latest.optString("sessionKey", ""),
+                        "checksum",
+                        latest.optString("checksum", "")
+                    );
+                    if (hasManifest) {
+                        try {
+                            downloadArgs.put("manifest", manifest);
+                        } catch (JSONException ignored) {
+                            // Constant key.
+                        }
+                    }
+                    final JSONObject downloaded = plugin.runEngineMethod("download", downloadArgs);
+                    final String downloadError = rejection(downloaded);
+                    final JSONObject bundle = downloaded.optJSONObject("resolve");
+                    final String bundleId = bundle == null ? "" : bundle.optString("id", "");
+                    if (downloadError != null || bundleId.isEmpty()) {
+                        activity.runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            showError("Failed to download update: " + (downloadError != null ? downloadError : "missing bundle"));
+                        });
+                        return;
+                    }
+
+                    // Set as next bundle
+                    final String nextError = rejection(plugin.runEngineMethod("next", jsonOf("id", bundleId)));
+                    if (nextError != null) {
+                        logger.warn("Could not queue downloaded bundle: " + nextError);
+                    }
+
+                    activity.runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        showSuccessWithReload("Update downloaded! Reload to apply version " + version + "?", () ->
+                            new Thread(() -> {
+                                final String setBundleError = rejection(plugin.runEngineMethod("set", jsonOf("id", bundleId)));
+                                if (setBundleError != null) {
+                                    logger.error("Error applying bundle before reload: " + setBundleError);
+                                }
+                            }).start()
+                        );
+                    });
                 }).start();
             } catch (Exception e) {
                 logger.error("Error selecting channel: " + e.getMessage());
                 isShowing = false;
             }
         });
+    }
+
+    private static JSONObject jsonOf(Object... keyValues) {
+        return CapgoCore.input(keyValues);
     }
 
     private void showError(String message) {
@@ -945,11 +760,6 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             })
             .setOnDismissListener((d) -> isShowing = false)
             .show();
-    }
-
-    private String getString(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        return value != null ? value.toString() : null;
     }
 
     private int dpToPx(int dp) {

@@ -3,7 +3,6 @@ package ee.forgr.capacitor_updater;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -20,10 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.After;
 import org.junit.Before;
@@ -188,35 +185,74 @@ public class HttpNoCookiesTest {
         assertEquals(1, cookieHandler.puts.size());
     }
 
-    private CapgoUpdater updater() throws IOException {
-        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
-        updater.documentsDir = java.nio.file.Files.createTempDirectory("capgo-no-cookies").toFile();
-        updater.statsUrl = "";
-        updater.channelUrl = base + "/channel_self";
-        updater.appId = "app.capgo.test";
-        updater.pluginVersion = "8.0.0";
-        return updater;
-    }
+    /** An engine with an in-memory host; statistics off. */
+    private CapgoEngine engine() throws Exception {
+        final java.io.File root = java.nio.file.Files.createTempDirectory("capgo-no-cookies").toFile();
+        final Map<String, String> store = new java.util.concurrent.ConcurrentHashMap<>();
+        final CapgoEngineHost host = new CapgoEngineHost() {
+            @Override
+            void log(int level, String message) {}
 
-    private static Map<String, Object> await(final java.util.function.Consumer<Callback> call) throws InterruptedException {
-        final CountDownLatch done = new CountDownLatch(1);
-        final java.util.concurrent.atomic.AtomicReference<Map<String, Object>> result = new java.util.concurrent.atomic.AtomicReference<>();
-        call.accept((res) -> {
-            result.set(res);
-            done.countDown();
-        });
-        assertTrue(done.await(10, TimeUnit.SECONDS));
-        return result.get();
+            @Override
+            String kvGet(String key, String defaultValue) {
+                return store.getOrDefault(key, defaultValue);
+            }
+
+            @Override
+            boolean kvContains(String key) {
+                return store.containsKey(key);
+            }
+
+            @Override
+            void kvSet(String key, String value) {
+                if (value == null) {
+                    store.remove(key);
+                } else {
+                    store.put(key, value);
+                }
+            }
+
+            @Override
+            String kvKeysJson() {
+                return new org.json.JSONArray(store.keySet()).toString();
+            }
+
+            @Override
+            void emit(String event, String payloadJson) {}
+        };
+        return new CapgoEngine(
+            CapgoCore.input(
+                "platform",
+                "android",
+                "appId",
+                "app.capgo.test",
+                "pluginVersion",
+                "8.0.0",
+                "versionOs",
+                "15",
+                "bundleRoot",
+                new java.io.File(root, "versions").getAbsolutePath(),
+                "statsUrl",
+                "",
+                "channelUrl",
+                base + "/channel_self"
+            ),
+            host
+        );
     }
 
     @Test
     public void apiCallsNeverSendOrStoreWebViewCookies() throws Exception {
-        final CapgoUpdater updater = this.updater();
+        final CapgoEngine engine = this.engine();
         for (int i = 0; i < 2; i++) {
-            final Map<String, Object> latest = await((callback) -> updater.getLatest(base + "/updates", null, callback));
-            assertEquals(true, latest.get("ok"));
+            final org.json.JSONObject latest = engine.call("getLatest", CapgoCore.input("updateUrl", base + "/updates"));
+            assertEquals(true, latest.opt("ok"));
         }
-        await(updater::listChannels);
+        try {
+            engine.call("listChannels", null);
+        } catch (CapgoCore.Failure ignored) {
+            // The body is not a channel list; only the request headers matter here.
+        }
 
         assertNoCookieTraffic(3);
         assertTrue(recorded.get(0).header("User-Agent").startsWith("CapacitorUpdater/8.0.0 (app.capgo.test) android/"));
@@ -224,10 +260,20 @@ public class HttpNoCookiesTest {
 
     @Test
     public void zipDownloadNeverSendsWebViewCookies() throws Exception {
-        final CapgoUpdater updater = this.updater();
+        final CapgoEngine engine = this.engine();
         try {
-            updater.download(base + "/bundle.zip", "1.0.0", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        } catch (IOException expected) {
+            engine.call(
+                "download",
+                CapgoCore.input(
+                    "url",
+                    base + "/bundle.zip",
+                    "version",
+                    "1.0.0",
+                    "checksum",
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                )
+            );
+        } catch (CapgoCore.Failure expected) {
             // The body is not the expected zip; only the request headers matter here.
         }
         assertTrue(recorded.size() >= 1);

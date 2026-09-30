@@ -6,7 +6,6 @@
 
 package ee.forgr.capacitor_updater;
 
-import java.util.Map;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -63,76 +62,6 @@ final class CapgoCore {
             );
         } catch (JSONException e) {
             throw new Failure("internal", "Core returned invalid JSON: " + e.getMessage());
-        }
-    }
-
-    static JSONObject call(final String operation, final Map<String, ?> input) throws Failure {
-        return call(operation, new JSONObject(input));
-    }
-
-    /**
-     * For operations that cannot fail on well-formed input. A failure is a binding bug: it throws in tests
-     * (assertions enabled) and returns {@code fallback} in production.
-     */
-    private static Object value(final String operation, final JSONObject input, final String key) {
-        try {
-            final JSONObject result = call(operation, input);
-            if (result.has(key)) {
-                return result.get(key);
-            }
-            throw new AssertionError("Capgo core " + operation + " returned no `" + key + "`");
-        } catch (Failure | JSONException e) {
-            throw new AssertionError("Capgo core " + operation + " failed: " + e.getMessage(), e);
-        }
-    }
-
-    static boolean bool(final String operation, final JSONObject input, final String key, final boolean fallback) {
-        try {
-            final Object value = value(operation, input, key);
-            return value instanceof Boolean ? (Boolean) value : fallback;
-        } catch (AssertionError e) {
-            reportBindingBug(e);
-            return fallback;
-        }
-    }
-
-    static String string(final String operation, final JSONObject input, final String key, final String fallback) {
-        try {
-            final Object value = value(operation, input, key);
-            return value instanceof String ? (String) value : fallback;
-        } catch (AssertionError e) {
-            reportBindingBug(e);
-            return fallback;
-        }
-    }
-
-    /** Nullable string result ({@code null} when the core returns JSON null). */
-    static String optString(final String operation, final JSONObject input, final String key) {
-        try {
-            final Object value = value(operation, input, key);
-            return value instanceof String ? (String) value : null;
-        } catch (AssertionError e) {
-            reportBindingBug(e);
-            return null;
-        }
-    }
-
-    static long number(final String operation, final JSONObject input, final String key, final long fallback) {
-        try {
-            final Object value = value(operation, input, key);
-            return value instanceof Number ? ((Number) value).longValue() : fallback;
-        } catch (AssertionError e) {
-            reportBindingBug(e);
-            return fallback;
-        }
-    }
-
-    private static void reportBindingBug(final AssertionError error) {
-        // Surfaces in unit tests (-ea); production keeps the fail-closed fallback.
-        boolean assertionsEnabled = false;
-        assert assertionsEnabled = true;
-        if (assertionsEnabled) {
-            throw error;
         }
     }
 

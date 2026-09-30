@@ -10,83 +10,55 @@ import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.app.ApplicationExitInfo;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Build;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
+/**
+ * Reads the previous process exits ({@link ApplicationExitInfo}, API 30+) for the engine, which reports the
+ * ones worth a statistic ({@code previousExits} of {@code pluginLoad}). Kept out of the plugin class so older
+ * Android versions never resolve {@link ApplicationExitInfo} while reflecting plugin methods.
+ */
 @TargetApi(Build.VERSION_CODES.R)
 final class AndroidAppExitReporter {
 
+    private static final int MAX_EXITS = 8;
+
     private AndroidAppExitReporter() {}
 
-    static void reportPreviousAppExitReasons(
-        final Context context,
-        final SharedPreferences prefs,
-        final CapgoUpdater implementation,
-        final Logger logger,
-        final String lastReportedAppExitTimestampPrefKey
-    ) {
+    /** Newest first; empty when unavailable. */
+    static JSONArray previousExits(final Context context, final Logger logger) {
+        final JSONArray exits = new JSONArray();
         try {
             final ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (activityManager == null) {
-                return;
+                return exits;
             }
-
-            final List<ApplicationExitInfo> exitReasons = activityManager.getHistoricalProcessExitReasons(context.getPackageName(), 0, 8);
-            if (exitReasons == null || exitReasons.isEmpty()) {
-                return;
+            final List<ApplicationExitInfo> infos = activityManager.getHistoricalProcessExitReasons(context.getPackageName(), 0, MAX_EXITS);
+            if (infos == null) {
+                return exits;
             }
-
-            final long lastReportedTimestamp = prefs.getLong(lastReportedAppExitTimestampPrefKey, 0L);
-            long newestReportedTimestamp = lastReportedTimestamp;
-            final BundleInfo current = implementation.getCurrentBundle();
-            final String versionName = current == null ? "" : current.getVersionName();
-
-            for (final ApplicationExitInfo exitInfo : exitReasons) {
-                if (exitInfo == null || exitInfo.getTimestamp() <= lastReportedTimestamp) {
+            for (final ApplicationExitInfo info : infos) {
+                if (info == null) {
                     continue;
                 }
-
-                final String action = CapacitorUpdaterPlugin.statsActionForApplicationExitReason(exitInfo.getReason());
-                if (action == null) {
-                    continue;
-                }
-
-                implementation.sendStats(action, versionName, "", buildApplicationExitMetadata(exitInfo));
-                newestReportedTimestamp = Math.max(newestReportedTimestamp, exitInfo.getTimestamp());
-            }
-
-            if (newestReportedTimestamp > lastReportedTimestamp) {
-                prefs.edit().putLong(lastReportedAppExitTimestampPrefKey, newestReportedTimestamp).apply();
+                exits.put(
+                    new JSONObject()
+                        .put("reason", info.getReason())
+                        .put("status", info.getStatus())
+                        .put("importance", info.getImportance())
+                        .put("timestamp", info.getTimestamp())
+                        .put("pid", info.getPid())
+                        .put("pss", info.getPss())
+                        .put("rss", info.getRss())
+                        .put("processName", info.getProcessName() == null ? "" : info.getProcessName())
+                        .put("description", info.getDescription() == null ? "" : info.getDescription())
+                );
             }
         } catch (final Exception e) {
-            logger.warn("Unable to report previous app exit reason: " + e.getMessage());
+            logger.warn("Unable to read previous app exit reasons: " + e.getMessage());
         }
-    }
-
-    private static Map<String, String> buildApplicationExitMetadata(final ApplicationExitInfo exitInfo) {
-        final Map<String, String> metadata = new HashMap<>();
-        metadata.put("exit_reason", CapacitorUpdaterPlugin.applicationExitReasonName(exitInfo.getReason()));
-        metadata.put("exit_reason_code", Integer.toString(exitInfo.getReason()));
-        metadata.put("exit_status", Integer.toString(exitInfo.getStatus()));
-        metadata.put("exit_importance", Integer.toString(exitInfo.getImportance()));
-        metadata.put("exit_timestamp", Long.toString(exitInfo.getTimestamp()));
-        metadata.put("pid", Integer.toString(exitInfo.getPid()));
-        metadata.put("pss_kb", Long.toString(exitInfo.getPss()));
-        metadata.put("rss_kb", Long.toString(exitInfo.getRss()));
-
-        final String processName = exitInfo.getProcessName();
-        if (processName != null && !processName.isEmpty()) {
-            metadata.put("process_name", CapacitorUpdaterPlugin.truncateStatsMetadataValue(processName, 128));
-        }
-
-        final String description = exitInfo.getDescription();
-        if (description != null && !description.isEmpty()) {
-            metadata.put("exit_description", CapacitorUpdaterPlugin.truncateStatsMetadataValue(description, 512));
-        }
-
-        return metadata;
+        return exits;
     }
 }

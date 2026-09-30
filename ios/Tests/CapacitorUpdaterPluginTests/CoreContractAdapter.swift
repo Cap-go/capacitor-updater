@@ -2,7 +2,7 @@ import Foundation
 @testable import CapacitorUpdaterPlugin
 
 /// Maps a shared core contract operation (`group` + JSON `input`) onto the
-/// plugin's Swift API (backed by the Rust core) and returns the JSON output object.
+/// Swift binding of the Rust core and returns the JSON output object.
 ///
 /// Success returns a dictionary with exactly the keys of the fixture `expect`.
 /// Contract errors (`expect: {"error": ...}`) must surface as a thrown error;
@@ -16,153 +16,14 @@ enum CoreContractAdapter {
 
     typealias Operation = (ContractInput) throws -> [String: Any]
 
-    /// Groups the iOS plugin has no Swift wrapper for (Android download-flow
-    /// helpers). They still run on iOS, straight through the core binding.
-    static let coreOnlyGroups: Set<String> = [
-        "launchDownloadReady",
-        "contentRange",
-        "zipResumePlan",
-        "builtinAssetPath"
-    ]
-
     static func run(group: String, input: [String: Any]) throws -> [String: Any] {
-        if coreOnlyGroups.contains(group) {
+        // Policy, HTTP and path rules have no Swift wrapper: the engine and the
+        // host call the core directly, so the fixtures run through the binding.
+        guard let operation = cryptoOperations[group] else {
             return try CapgoCore.call(group, input.mapValues { $0 as Any? })
-        }
-        guard let operation = operations[group] else {
-            throw InputError(description: "No iOS adapter for group \(group)")
         }
         return try operation(ContractInput(values: input))
     }
-
-    private static let operations: [String: Operation] = policyOperations
-        .merging(httpOperations) { $1 }
-        .merging(securityOperations) { $1 }
-        .merging(cryptoOperations) { $1 }
-
-    // MARK: - policy.json
-
-    private static let policyOperations: [String: Operation] = [
-        "legacyDirectUpdateAutoMode": { input in
-            ["mode": CapacitorUpdaterPlugin.autoUpdateModeForLegacyDirectUpdateMode(try input.string("directUpdateMode"))]
-        },
-        "isDirectUpdateMode": { input in
-            ["direct": CapacitorUpdaterPlugin.isDirectUpdateMode(try input.string("directUpdateMode"))]
-        },
-        "shakeMenuGesture": { input in
-            let value = try input.optionalString("value")
-            return [
-                "gesture": CapacitorUpdaterPlugin.normalizedShakeMenuGesture(value),
-                "supported": CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(value)
-            ]
-        },
-        "webViewErrorStatsAction": { input in
-            ["action": WebViewStatsReporter.statsAction(for: try input.string("type"))]
-        },
-        "foreignBundleReset": { input in
-            ["reset": CapgoUpdater.shouldResetForForeignBundle(
-                bundlePath: try input.optionalString("bundlePath"),
-                isBuiltin: try input.bool("isBuiltin"),
-                hasStoredBundleInfo: try input.bool("hasStoredBundleInfo")
-            )]
-        },
-        "clearPersistedDefaultChannel": { input in
-            let plugin = CapacitorUpdaterPlugin()
-            plugin.persistDefaultChannelOnReinstall = try input.bool("persistDefaultChannelOnReinstall")
-            return ["clear": plugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: try input.bool("nativeBuildVersionChanged"),
-                resetWhenUpdate: try input.bool("resetWhenUpdate"),
-                restoredReinstall: try input.bool("restoredReinstall")
-            )]
-        },
-        "manifestConcurrency": { input in
-            ["maxConcurrentFiles": CapgoUpdater.clampedManifestConcurrency(processorCount: try input.int("processorCount"))]
-        },
-        "bundleStatus": { input in
-            let status = BundleStatus(storedValue: try input.string("value"))
-            return ["status": status.map { $0.storedValue as Any } ?? NSNull()]
-        }
-    ]
-
-    private static let httpOperations: [String: Operation] = [
-        "userAgent": { input in
-            // The iOS builder hard codes the platform; other platforms go straight to the core.
-            guard try input.string("platform") == "ios" else {
-                return try CapgoCore.call("userAgent", input.values.mapValues { $0 as Any? })
-            }
-            return ["userAgent": CapgoUpdater.buildUserAgent(
-                appId: try input.string("appId"),
-                pluginVersion: try input.string("pluginVersion"),
-                versionOs: try input.string("versionOs")
-            )]
-        },
-        "retryableHttpStatus": { input in
-            ["retryable": CapgoUpdater.isTransientStatsFailure(try input.int("status"))]
-        },
-        "appendHttpBody": { input in
-            ["append": CapgoUpdater.shouldAppendHttpBody(
-                statusCode: try input.int("statusCode"),
-                existingBytes: Int64(try input.int("existingBytes"))
-            )]
-        },
-        "rateLimitDeadline": { input in
-            ["blockedUntilMs": CapgoUpdater.resolveRateLimitBlockedUntilMs(
-                retryAfterHeader: try input.optionalString("retryAfter"),
-                data: try input.optionalString("body").map { Data($0.utf8) },
-                nowMs: try input.double("nowMs")
-            )]
-        },
-        "remoteError": { input in
-            let parsed = CapgoUpdater.parseRemoteError(data: try input.optionalString("body").map { Data($0.utf8) })
-            return ["error": parsed.error, "message": parsed.message]
-        }
-    ]
-
-    // MARK: - security.json
-
-    private static let securityOperations: [String: Operation] = [
-        "pathTraversalSegment": { input in
-            ["traversal": CapgoUpdater.containsPathTraversalSegment(try input.string("path"))]
-        },
-        "resolvePathInside": { input in
-            let resolved = try CapgoUpdater.resolvePathInsideDirectory(
-                baseDirectory: URL(fileURLWithPath: try input.string("base")),
-                relativePath: try input.string("path")
-            )
-            return ["path": resolved.path]
-        },
-        "manifestTargetPath": { input in
-            let resolved = try CapgoUpdater.resolveManifestTargetPath(
-                baseDirectory: URL(fileURLWithPath: try input.string("base")),
-                fileName: try input.string("fileName")
-            )
-            return ["path": resolved.path]
-        },
-        "safeCacheHash": { input in
-            // A missing manifest hash is never a safe cache key; the Swift helper only takes a String.
-            ["safe": try input.optionalString("hash").map { CapgoUpdater.isSafeCacheHash($0) } ?? false]
-        },
-        "reusableCacheFile": { input in
-            ["reusable": try withTemporaryDirectory { directory in
-                let file = directory.appendingPathComponent("cache-entry")
-                if let size = try input.optionalInt("size") {
-                    try Data(count: size).write(to: file)
-                }
-                return CapgoUpdater.isReusableCacheFile(file, expectedHash: try input.string("hash"))
-            }]
-        },
-        "manifestPartialName": { input in
-            let url = CapgoUpdater.manifestPartialURL(
-                cacheFolder: FileManager.default.temporaryDirectory,
-                hash: try input.string("hash"),
-                fileName: try input.string("fileName")
-            )
-            return ["name": url.lastPathComponent]
-        },
-        "shortPathKey": { input in
-            ["key": CryptoCipher.shortPathKey(try input.string("value"))]
-        }
-    ]
 
     // MARK: - crypto.json
 

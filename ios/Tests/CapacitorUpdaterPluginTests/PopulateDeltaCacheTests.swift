@@ -5,7 +5,7 @@ import XCTest
 /// Points the builtin folder at a writable temp directory — the real app
 /// bundle (Bundle.main) is read-only at test-runtime, so tests can't write
 /// fixture files there directly.
-private final class TestableCapgoUpdater: CapgoUpdater {
+private final class TestableCapgoUpdater: StatsRecordingCapgoUpdater {
     override init() {
         super.init()
         builtinFolderOverride = FileManager.default.temporaryDirectory.appendingPathComponent("populate-delta-cache-builtin-\(UUID().uuidString)")
@@ -81,7 +81,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         CryptoCipher.setLogger(Logger(withTag: "PopulateDeltaCacheTests", options: Logger.Options(level: .silent)))
         implementation = TestableCapgoUpdater()
         bundleId = "delta-cache-\(UUID().uuidString)"
-        bundleDir = try implementation.getBundleDirectory(id: bundleId)
+        bundleDir = try implementation.bundleDirectory(id: bundleId)
         try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
     }
 
@@ -284,11 +284,12 @@ extension PopulateDeltaCacheTests {
 
         // Only checksum recovery is needed when builtin matches; no file/session decryption occurs.
         let result = try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "a:b")
+        let id = try XCTUnwrap(result["id"] as? String)
         defer {
-            _ = implementation.delete(id: result.getId(), removeInfo: true)
+            implementation.deleteBundle(id: id)
             implementation.shutdown()
         }
-        let destination = try implementation.getBundleDirectory(id: result.getId())
+        let destination = try implementation.bundleDirectory(id: id)
         XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("assets/\(name)")), Data())
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("assets/\(name).br").path))
     }
@@ -301,54 +302,5 @@ extension PopulateDeltaCacheTests {
         let manifest = [ManifestEntry(file_name: "../\(name).br", file_hash: hash, download_url: nil)]
 
         XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
-    }
-}
-
-final class IoBufferSizeTests: XCTestCase {
-    func testIoBuffersAre256KiBForChecksumAndCopy() {
-        XCTAssertEqual(CryptoCipher.ioBufferBytes(), 256 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(), 256 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(), 256 * 1024)
-    }
-}
-
-final class ManifestConcurrencyTests: XCTestCase {
-    func testManifestConcurrencyScalesWithCpuAndStaysCapped() {
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 12)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 16)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 36)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 64)
-        let live = CapgoUpdater.manifestMaxConcurrentFiles
-        XCTAssertGreaterThanOrEqual(live, 8)
-        XCTAssertLessThanOrEqual(live, 64)
-        XCTAssertEqual(live, CapgoUpdater.clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount))
-    }
-}
-
-final class DownloadPathRuleTests: XCTestCase {
-    func testShouldAppendHttpBodyOnlyForPartialContent() {
-        XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 200, existingBytes: 100))
-        XCTAssertTrue(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 100))
-        XCTAssertFalse(CapgoUpdater.shouldAppendHttpBody(statusCode: 206, existingBytes: 0))
-    }
-
-    func testManifestPartialURLIsStableForSha256AndPath() {
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-partial-\(UUID().uuidString)")
-        let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let nested = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js")
-        let root = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "app.js")
-        let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "vendor/app.js")
-        XCTAssertNotEqual(nested.lastPathComponent, root.lastPathComponent)
-        XCTAssertNotEqual(nested.lastPathComponent, vendor.lastPathComponent)
-        XCTAssertEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js").lastPathComponent)
-        XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_\(hash)_"))
-        XCTAssertLessThan(nested.lastPathComponent.count, 255)
-        XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
-        let unsafe = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: "../evil", fileName: "app.js")
-        XCTAssertTrue(unsafe.lastPathComponent.hasPrefix("partial_"))
-        XCTAssertTrue(unsafe.standardizedFileURL.path.hasPrefix(cache.standardizedFileURL.path + "/"))
-        XCTAssertFalse(unsafe.lastPathComponent.contains(".."))
     }
 }

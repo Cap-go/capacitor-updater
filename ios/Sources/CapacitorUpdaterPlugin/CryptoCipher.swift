@@ -5,13 +5,16 @@
  */
 
 import Foundation
-import CryptoKit
 
-/// Bundle crypto entry points. The work (RSA recovery, AES-128-CBC
-/// decryption, SHA-256 of files) runs in the shared Rust core; this type keeps
-/// the plugin's logging and error surface.
+/// Swift entry points to the core's bundle crypto (RSA recovery, AES-128-CBC
+/// decryption, SHA-256 of files). The updater engine calls the core directly;
+/// these wrappers back the shared crypto contract tests.
 public struct CryptoCipher {
-    private static var logger: Logger!
+    public enum CryptoError: Error {
+        case cannotDecode
+    }
+
+    private static var logger = Logger(withTag: "✨  CapgoUpdater")
 
     public static func setLogger(_ logger: Logger) {
         self.logger = logger
@@ -25,14 +28,14 @@ public struct CryptoCipher {
         do {
             let result = try CapgoCore.call("decryptChecksum", ["checksum": checksum, "publicKey": publicKey])
             guard let decrypted = result["checksum"] as? String else {
-                throw CustomError.cannotDecode
+                throw CryptoError.cannotDecode
             }
             logChecksumInfo(label: "Decrypted checksum", hexChecksum: decrypted)
             return decrypted
         } catch {
             logger.error("Checksum decryption failed")
             logger.debug("Error: \(error)")
-            throw CustomError.cannotDecode
+            throw CryptoError.cannotDecode
         }
     }
 
@@ -55,22 +58,6 @@ public struct CryptoCipher {
         }
     }
 
-    /// 256 KiB: one size for checksum, copy, and decode.
-    /// 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
-    static let ioBufferBytesValue = 256 * 1024
-
-    static func ioBufferBytes() -> Int {
-        return ioBufferBytesValue
-    }
-
-    static func checksumBufferBytes() -> Int {
-        return ioBufferBytesValue
-    }
-
-    static func copyBufferBytes() -> Int {
-        return ioBufferBytesValue
-    }
-
     /// Lowercase hex SHA-256 of a file, or "" when it cannot be read.
     public static func calcChecksum(filePath: URL) -> String {
         do {
@@ -81,26 +68,6 @@ public struct CryptoCipher {
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
-    }
-
-    /// Incremental SHA-256 for bytes streamed during a download.
-    final class RunningChecksum {
-        private var sha256 = SHA256()
-
-        func update(_ data: Data) {
-            guard !data.isEmpty else {
-                return
-            }
-            sha256.update(data: data)
-        }
-
-        func hex() -> String {
-            CryptoCipher.hexString(from: sha256)
-        }
-    }
-
-    static func hexString(from sha256: SHA256) -> String {
-        return sha256.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
     static func shortPathKey(_ fileName: String) -> String {
@@ -124,7 +91,7 @@ public struct CryptoCipher {
         } catch {
             logger.error("File decryption failed")
             logger.debug("Version: \(version), Error: \(error)")
-            throw CustomError.cannotDecode
+            throw CryptoError.cannotDecode
         }
         if outcome == "notEncrypted" {
             logger.info("Encryption not set, no public key or session, ignored")

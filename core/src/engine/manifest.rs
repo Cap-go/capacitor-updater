@@ -114,6 +114,27 @@ fn decode_brotli(source: &Path, target: &Path, expected: &str) -> io::Result<Opt
     fsutil::write_verified(&mut decoder, target, Some(expected))
 }
 
+/// AES key of an encrypted manifest download: one RSA operation, done the
+/// first time a file actually has to be decrypted (reused files need none).
+pub(crate) struct LazySession<'a> {
+    public_key: String,
+    session_key: &'a str,
+    cell: std::sync::OnceLock<Result<Option<crypto::SessionKey>, String>>,
+}
+
+impl LazySession<'_> {
+    fn get(&self) -> Result<Option<&crypto::SessionKey>, String> {
+        self.cell
+            .get_or_init(|| {
+                crypto::bundle_session_key(&self.public_key, self.session_key)
+                    .map_err(|error| format!("Failed to decrypt session key: {}", error.message))
+            })
+            .as_ref()
+            .map(Option::as_ref)
+            .map_err(Clone::clone)
+    }
+}
+
 impl Engine {
     fn apk_assets(&self) -> Option<ApkAssets> {
         let path = self.config().builtin_apk.clone();
@@ -351,14 +372,11 @@ impl Engine {
         }
         self.send_stats("download_manifest_start", Some(&request.version), None, None);
         let tasks = self.plan_tasks(request, manifest, &destination)?;
-        // One RSA operation per download; files are decrypted with the same AES key.
-        let session = crypto::bundle_session_key(&self.config().public_key, &request.session_key).map_err(|error| {
-            self.send_stats("decrypt_fail", Some(&request.version), None, None);
-            CoreError::new(
-                "decrypt_fail",
-                format!("Failed to decrypt session key: {}", error.message),
-            )
-        })?;
+        let session = LazySession {
+            public_key: self.config().public_key.clone(),
+            session_key: &request.session_key,
+            cell: std::sync::OnceLock::new(),
+        };
         let total = tasks.len();
         let workers = (crate::policy::manifest_max_concurrent_files(
             std::thread::available_parallelism()
@@ -380,7 +398,7 @@ impl Engine {
                     let Some(task) = queue.lock().unwrap().next() else {
                         return;
                     };
-                    match self.process_manifest_file(&task, request, session.as_ref(), assets.as_ref(), cancel) {
+                    match self.process_manifest_file(&task, request, &session, assets.as_ref(), cancel) {
                         Ok(()) => {
                             let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
                             self.progress(&id, 10 + (done * 60 / total.max(1)) as i64);
@@ -414,7 +432,7 @@ impl Engine {
         &self,
         task: &Task,
         request: &DownloadRequest,
-        session: Option<&crypto::SessionKey>,
+        session: &LazySession<'_>,
         assets: Option<&ApkAssets>,
         cancel: &Cancel,
     ) -> CoreResult<()> {
@@ -448,7 +466,7 @@ impl Engine {
         &self,
         task: &Task,
         request: &DownloadRequest,
-        session: Option<&crypto::SessionKey>,
+        session: &LazySession<'_>,
         cancel: &Cancel,
     ) -> CoreResult<()> {
         let cache = self.config().cache_dir.clone();
@@ -530,6 +548,7 @@ impl Engine {
             self.send_stats("decrypt_fail", Some(&request.version), None, None);
             CoreError::new("decrypt_fail", format!("Failed to decrypt {}: {error}", task.file_name))
         };
+        let session = session.get().map_err(|message| decrypt_failed(&message))?;
         let mut work: Option<std::path::PathBuf> = None;
         let written = match session {
             // Brotli needs a seekable plaintext file: decrypt into a work file in one pass.

@@ -323,6 +323,27 @@ fn manifest_reuses_builtin_files() {
     assert!(server.requests().is_empty());
 }
 
+/// Files reused from the builtin bundle need no decryption: the session key is
+/// only decrypted when a file is downloaded.
+#[test]
+fn encrypted_manifest_reusing_builtin_needs_no_session_decryption() {
+    let base = TestEngine::new(json!({}));
+    let builtin = base.root().join("public");
+    std::fs::create_dir_all(builtin.join("js")).unwrap();
+    std::fs::write(builtin.join("js/app.js"), b"builtin").unwrap();
+    let t = TestEngine::new(json!({
+        "builtinDir": builtin.to_string_lossy(),
+        "storageRoot": base.root().to_string_lossy(),
+        "publicKey": keys().public_pem,
+    }));
+    let manifest = json!([{ "file_name": "js/app.js", "file_hash": encrypted_checksum(b"builtin"), "download_url": "http://127.0.0.1:1/nope" }]);
+    let installed = t.call(
+        "download",
+        json!({ "version": "2", "manifest": manifest, "sessionKey": "AAAAAAAAAAAAAAAAAAAAAA==:AAAA" }),
+    );
+    assert_eq!(installed["status"], "pending");
+}
+
 #[test]
 fn manifest_brotli_and_checksum_failure() {
     let files: Files = Arc::default();

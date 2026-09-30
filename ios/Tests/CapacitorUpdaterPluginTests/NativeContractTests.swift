@@ -98,7 +98,7 @@ final class NativeContractTests: XCTestCase {
             let expect = try dictionary(testCase, "expect", id: id)
 
             XCTAssertEqual(
-                CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(try int(input, "seconds", id: id)),
+                CapgoCore.int("periodCheckDelay", ["seconds": try int(input, "seconds", id: id)], "normalizedSeconds", fallback: -1),
                 try int(expect, "normalizedSeconds", id: id),
                 id
             )
@@ -110,20 +110,12 @@ final class NativeContractTests: XCTestCase {
             let id = try string(testCase, "id", id: "autoUpdateMode")
             let input = try dictionary(testCase, "input", id: id)
             let expect = try dictionary(testCase, "expect", id: id)
-            let normalizedMode = CapacitorUpdaterPlugin.normalizedAutoUpdateMode(try string(input, "mode", id: id))
+            let result = try CapgoCore.call("autoUpdateMode", ["mode": try string(input, "mode", id: id)])
 
-            XCTAssertEqual(normalizedMode, try string(expect, "mode", id: id), id)
-            XCTAssertEqual(CapacitorUpdaterPlugin.isAutoUpdateModeEnabled(normalizedMode), try bool(expect, "enabled", id: id), id)
-            XCTAssertEqual(
-                CapacitorUpdaterPlugin.directUpdateModeForAutoUpdateMode(normalizedMode),
-                try string(expect, "directUpdateMode", id: id),
-                id
-            )
-            XCTAssertEqual(
-                CapacitorUpdaterPlugin.shouldAutoUpdateModeSetNextBundle(normalizedMode),
-                try bool(expect, "setNextBundle", id: id),
-                id
-            )
+            XCTAssertEqual(result["mode"] as? String, try string(expect, "mode", id: id), id)
+            XCTAssertEqual(result["enabled"] as? Bool, try bool(expect, "enabled", id: id), id)
+            XCTAssertEqual(result["directUpdateMode"] as? String, try string(expect, "directUpdateMode", id: id), id)
+            XCTAssertEqual(result["setNextBundle"] as? Bool, try bool(expect, "setNextBundle", id: id), id)
         }
     }
 
@@ -134,10 +126,10 @@ final class NativeContractTests: XCTestCase {
             let expect = try dictionary(testCase, "expect", id: id)
 
             XCTAssertEqual(
-                CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(
-                    directUpdateMode: try string(input, "mode", id: id),
-                    plannedDirectUpdate: try bool(input, "plannedDirectUpdate", id: id)
-                ),
+                CapgoCore.bool("onLaunchDirectUpdateConsumption", [
+                    "mode": try string(input, "mode", id: id),
+                    "plannedDirectUpdate": try bool(input, "plannedDirectUpdate", id: id)
+                ], "consume"),
                 try bool(expect, "consume", id: id),
                 id
             )
@@ -151,7 +143,7 @@ final class NativeContractTests: XCTestCase {
             let expect = try dictionary(testCase, "expect", id: id)
 
             XCTAssertEqual(
-                CapacitorUpdaterPlugin.normalizedUpdateResponseKind(kind: try optionalString(input, "kind", id: id)),
+                CapgoCore.string("updateResponseKind", ["kind": try optionalString(input, "kind", id: id)], "kind"),
                 try string(expect, "kind", id: id),
                 id
             )
