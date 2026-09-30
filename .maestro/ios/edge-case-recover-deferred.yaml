@@ -1,0 +1,26 @@
+appId: app.capgo.updater
+---
+# One Maestro run per edge case: every extra run pays the XCTest driver startup again, which a
+# hosted macOS runner cannot afford inside the 10 minute job cap.
+- runFlow:
+    file: edge-case-wait-summary.yaml
+    env:
+      SUMMARY_PATTERN: '${BUILTIN_PATTERN}'
+- runScript:
+    file: edge-case-clear-faults.js
+    env:
+      HOST_SERVER_URL: '${HOST_SERVER_URL}'
+      SCENARIO_ID: '${SCENARIO_ID}'
+# Cold launch: the launch check downloads the release and queues it as next.
+- launchApp
+- runFlow:
+    file: edge-case-wait-summary.yaml
+    env:
+      SUMMARY_PATTERN: '${DOWNLOADED_PATTERN}'
+# Background applies the queued release; the next launch runs it.
+- pressKey: Home
+- launchApp
+- runFlow:
+    file: edge-case-wait-summary.yaml
+    env:
+      SUMMARY_PATTERN: '${APPLIED_PATTERN}'
