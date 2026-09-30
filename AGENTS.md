@@ -54,12 +54,12 @@ The example app references the plugin via `file:..`. Use `bunx cap sync <platfor
 
 ## Rust Core
 
-The updater core logic (update policy, path/zip-slip guards, RSA/AES bundle crypto, checksums, HTTP helper decisions) lives in one Rust crate, `core/`, used by both Android (JNI) and iOS (xcframework). See `core/README.md`.
+The whole updater (update cycle, downloads, bundle store, rollback, delays, previews, channels, stats, crypto and path guards) lives in one Rust crate, `core/`, used by both Android (JNI) and iOS (xcframework). The Java/Swift plugins only keep Capacitor glue and platform work (WebView, lifecycle, UI, app store APIs), reached through engine hooks. See `core/README.md`.
 
 - Requires rustup (`rustup` adds cross targets automatically), `cargo-ndk` + an Android NDK for Android, Xcode for iOS.
 - `bun run core:test` runs the Rust unit tests and every shared fixture in `native-contract-tests/`.
 - `bun run core:build:android` / `bun run core:build:ios` produce the prebuilt binaries (git-ignored, shipped in the npm package by CI). `scripts/test-ios.sh` rebuilds the xcframework automatically; Android JVM tests build a host library through Gradle.
-- Change behavior fixture-first: update `scripts/generate-core-contract-fixtures.mjs`, regenerate, then change `core/`. Rust, Android and iOS runners must pass the same fixtures. Do not reimplement core logic in Swift/Java; call `CapgoCore`.
+- Change behavior in `core/` with a Rust test (`core/tests/plugin.rs` for plugin flows; fixture-first via `scripts/generate-core-contract-fixtures.mjs` for pure rules). Rust, Android and iOS runners must pass the same fixtures. Do not reimplement engine logic in Swift/Java; call the engine.
 
 ## Project Structure
 

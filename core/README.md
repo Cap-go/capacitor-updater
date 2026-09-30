@@ -1,56 +1,69 @@
 # Capgo updater core (Rust)
 
-Platform-neutral core of the Capgo live updater. Android and iOS call the same
-compiled Rust code, so security boundaries and update decisions behave
-identically everywhere, and a new host (another OS, React Native, Flutter,
-Electron, desktop, ...) only has to bind two C functions.
+The Capgo live updater, written once. Android and iOS run the same compiled
+Rust engine: update decisions, downloads, bundle storage, statistics and
+security boundaries behave identically everywhere. A new host (another OS,
+React Native, Flutter, Electron, desktop, ...) binds a few C functions and
+implements a handful of platform hooks.
 
 ## What lives here
 
 | Module | Responsibility |
 | --- | --- |
-| `policy` | `autoUpdate` / `directUpdate` modes, period check delay, launch-download notifications, default-channel resets, manifest concurrency, shake menu gesture, bundle status parsing |
-| `http` | User agent, retryable statuses, `Content-Range` parsing, zip resume planning, 429 rate-limit deadlines, backend error bodies |
-| `paths` | Path traversal guards for manifest `file_name`, zip entries and bundle ids; delta-cache and partial-download names |
-| `crypto` | RSA public-key parsing and PKCS#1 v1.5 type-1 recovery (Capgo CLI `privateEncrypt`), session keys, checksum decryption, streaming AES-128-CBC bundle decryption, file SHA-256 |
+| `engine::plugin` | The Capacitor plugin behavior: load, config, auto-update cycle, direct updates, `notifyAppReady` and rollback, delay conditions, preview sessions, channels, every JavaScript method, launch / health / WebView statistics |
+| `engine::store` | Bundle registry (`<id>_info`), current / next / fallback bundles, set / reset / delete, cleanup |
+| `engine::download`, `engine::manifest`, `engine::archive` | Zip and manifest downloads: resume, retries, checksum before extraction, decryption, brotli, delta cache, zip-slip / symlink guards |
+| `engine::backend`, `engine::stats` | Update, channel and stats endpoints, 429 handling, batched and persisted stats |
+| `net` | HTTP client (rustls, no cookies, HTTPS -> HTTP redirect guard) |
+| `policy`, `http`, `paths`, `crypto` | Pure rules shared by the engine and the contract fixtures |
 
-Hosts keep what is inherently platform specific: networking stack, background
-work (WorkManager / URLSession), key-value storage, WebView reloads, lifecycle,
-UI (shake menu), and the Capacitor bridge.
+Hosts keep only what needs the platform: the Capacitor bridge (method
+registration, resolve / reject, listener dispatch), the WebView (applying a
+bundle, injected scripts), lifecycle observers, UI (splash screen, loaders,
+alerts, shake menu), key-value storage and app store APIs.
 
-## One entry point
-
-Every operation is `name + JSON object -> JSON object`:
+## Engine API
 
 ```c
-char *capgo_core_call(const char *operation, const char *input_json);
+CapgoEngine *capgo_engine_new(const char *config_json, CapgoHostCallbacks host);
+char *capgo_engine_call(const CapgoEngine *engine, const char *operation, const char *input_json);
+void capgo_engine_free(CapgoEngine *engine);
 void capgo_core_free(char *value);
 ```
 
-The result is always an envelope:
+Results are envelopes (`{"ok": true, "value": ...}` / `{"ok": false, "error": {code, message}}`).
+The main operations a plugin host uses:
 
-```json
-{"ok": true, "value": {"maxConcurrentFiles": 8}}
-{"ok": false, "error": {"code": "path_traversal", "message": "..."}}
-```
+- `pluginLoad {config, native}`: once at plugin load.
+- `pluginMethod {name, args}`: every JavaScript method; answers
+  `{"resolve": value}` or `{"reject": {message, code?, data?}}`.
+- `appForeground`, `appBackground`, `appTerminate`, `openUrl {url}`.
 
-Operation names and payloads are exactly the group names and `input`/`expect`
-objects of the shared fixtures in [`native-contract-tests/`](../native-contract-tests).
-`api::OPERATIONS` lists them; `coreInfo` returns the list at runtime.
+The host callbacks (`CapgoHostCallbacks`, JNI `CapgoEngineHost`) provide logging,
+key-value storage, event delivery and `hook(name, payload)` for platform work:
+`applyBundle`, `splash`, `previewLoader`, `previewNotice`, `shakeMenu`,
+`keepUrlPath`, `backgroundTask`, `excludeFromBackup` (see `engine::plugin::hooks`).
+
+Stateless rules are also exposed through `capgo_core_call(operation, json)`;
+their names and payloads are the groups of the shared fixtures in
+[`native-contract-tests/`](../native-contract-tests).
 
 Bindings in this repository:
 
-- iOS: `ios/Sources/CapacitorUpdaterPlugin/CapgoCore.swift` (C ABI through `CapgoUpdaterCore.xcframework`)
-- Android: `android/src/main/java/ee/forgr/capacitor_updater/CapgoCore.java` (JNI, `CapgoCoreNative`)
+- iOS: `CapgoEngine.swift` / `CapgoCore.swift` (C ABI through `CapgoUpdaterCore.xcframework`)
+- Android: `CapgoEngine.java` / `CapgoCore.java` (JNI, `CapgoCoreNative`)
 
-## Build
+## Build and test
 
 ```bash
-bun run core:test            # cargo test: unit tests + every shared contract fixture
+bun run core:test            # cargo test: engine scenarios, downloads, contract fixtures
 bun run core:lint            # rustfmt + clippy
 bun run core:build:android   # android/src/main/jniLibs/<abi>/libcapgo_updater_core.so (needs cargo-ndk + NDK)
 bun run core:build:ios       # ios/Frameworks/CapgoUpdaterCore.xcframework (needs Xcode)
 ```
+
+`tests/plugin.rs` drives the engine like a Capacitor host does (hooks, events,
+a fake update server) and covers the update lifecycle end to end.
 
 The binaries are build outputs (git-ignored). CI builds them for every
 Android/iOS job and the release workflows ship them in the npm package, so app
@@ -59,18 +72,19 @@ library automatically (`buildCapgoCoreHost` Gradle task).
 
 ## Adding a new host
 
-1. Build the crate for the target (`staticlib` or `cdylib`) and bind
-   `capgo_core_call` / `capgo_core_free` (header: `include/capgo_updater_core.h`).
-2. Write a thin `call(operation, input)` wrapper that parses the envelope.
-3. Add a contract runner that executes `native-contract-tests/*.json` through
-   that wrapper (see `CoreContractTests.swift` / `CoreContractTest.java`).
-4. Implement the host-only pieces (network, storage, reload) around it.
+1. Build the crate for the target (`staticlib` or `cdylib`) and bind the engine
+   functions (header: `include/capgo_updater_core.h`).
+2. Implement the host callbacks: storage, events, logging and the hooks above.
+3. Forward the framework's plugin methods to `pluginMethod` and its lifecycle
+   events to `appForeground` / `appBackground`.
+4. Run the contract fixtures through your binding (see `CoreContractTests.swift` /
+   `CoreContractTest.java`).
 
 ## Changing behavior
 
-Change the fixture first (`scripts/generate-core-contract-fixtures.mjs`, then
-`bun run generate:core-contract policy security`), then the Rust code. The Rust,
-Android and iOS runners must all pass the same fixtures.
+Change behavior in Rust with a test (`tests/plugin.rs` for plugin flows, the
+fixtures for pure rules: `scripts/generate-core-contract-fixtures.mjs`). Hosts
+must not reimplement engine logic.
 
 Security boundaries (path guards, signature/checksum/session-key checks) must
 not be weakened without an explicit product decision and tests.
