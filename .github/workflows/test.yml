@@ -192,6 +192,8 @@ jobs:
           - manual-zip-no-persist
           - manual-zip-config-guards
           - manual-manifest
+          - edge-deferred
+          - edge-direct
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -589,6 +591,144 @@ jobs:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
+  # Built separately from maestro_ios_apps so both builds stay under the 10 minute job cap.
+  maestro_ios_edge_apps:
+    permissions:
+      contents: read
+      actions: write
+    needs: maestro_web_assets
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    name: Build iOS Maestro edge case apps
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
+          dependency-cache-path: |
+            node_modules
+            example-app/node_modules
+          install-example: 'true'
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Build iOS apps
+        run: |
+          set -euo pipefail
+          artifact_root="$RUNNER_TEMP/maestro-ios-edge-apps"
+          derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
+          scenarios=(
+            edge-deferred
+            edge-direct
+          )
+
+          rm -rf "$artifact_root" "$derived_data_path"
+          mkdir -p "$artifact_root"
+
+          for scenario in "${scenarios[@]}"; do
+            app_artifact_path="$artifact_root/$scenario"
+            bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
+            xcodebuild \
+              -project example-app/ios/App/App.xcodeproj \
+              -scheme App \
+              -configuration Debug \
+              -destination "generic/platform=iOS Simulator" \
+              -derivedDataPath "$derived_data_path" \
+              build
+            mkdir -p "$app_artifact_path"
+            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
+          done
+      - name: Upload iOS apps
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-edge-apps
+          path: ${{ runner.temp }}/maestro-ios-edge-apps
+          if-no-files-found: error
+
+  maestro_ios_edge_cases:
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - maestro_web_assets
+      - maestro_ios_edge_apps
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    name: iOS example app Maestro edge case / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: edge-network-drop
+            app: edge-deferred
+          - scenario: edge-kill-download
+            app: edge-deferred
+          - scenario: edge-corrupt-bundle
+            app: edge-deferred
+          - scenario: edge-offline-check
+            app: edge-deferred
+          - scenario: edge-direct-network-drop
+            app: edge-direct
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
+      # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
+      - name: Boot iOS simulator early
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Download reusable Maestro web assets
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Download iOS app
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-edge-apps
+          path: maestro-ios-edge-apps
+      # A full case takes most of the 10 minute cap on hosted macOS runners, so no case-level retry here.
+      # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
+      - name: Run edge case Maestro flows
+        run: |
+          set -euo pipefail
+          CAPGO_MAESTRO_SKIP_BUILD=1 \
+          CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
+          CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
+          CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=360 \
+          CAPGO_MAESTRO_EDGE_CASE_RETRIES=1 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Upload edge case Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-edge-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+
   web:
     permissions:
       contents: read
@@ -646,6 +786,18 @@ jobs:
           - on-launch
           - manual-zip-config-guards
           - manual-manifest
+        # Edge cases share one app build per app scenario and inject failures via the fake server.
+        include:
+          - scenario: edge-network-drop
+            app: edge-deferred
+          - scenario: edge-kill-download
+            app: edge-deferred
+          - scenario: edge-corrupt-bundle
+            app: edge-deferred
+          - scenario: edge-offline-check
+            app: edge-deferred
+          - scenario: edge-direct-network-drop
+            app: edge-direct
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -702,7 +854,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          name: maestro-android-app-${{ matrix.app || matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
       - name: Wait before retrying Android app download
         if: steps.download_android_app_1.outcome == 'failure'
@@ -713,7 +865,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          name: maestro-android-app-${{ matrix.app || matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
       - name: Wait before final Android app download
         if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
@@ -722,7 +874,7 @@ jobs:
         if: steps.download_android_app_1.outcome == 'failure' && steps.download_android_app_2.outcome == 'failure'
         uses: actions/download-artifact@v8
         with:
-          name: maestro-android-app-${{ matrix.scenario }}
+          name: maestro-android-app-${{ matrix.app || matrix.scenario }}
           path: example-app/android/app/build/outputs/apk/debug
       - name: Enable KVM group perms
         run: |
@@ -759,6 +911,13 @@ jobs:
             exit 1
           fi
           echo "Android live update Maestro scenario '${{ matrix.scenario }}' passed."
+      - name: Upload fake Capgo server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-android-server-log-${{ matrix.scenario }}
+          path: .maestro-artifacts/fake-capgo-server.log
+          if-no-files-found: ignore
 
   maestro_android:
     if: always()

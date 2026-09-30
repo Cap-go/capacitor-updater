@@ -150,6 +150,9 @@ public class CapgoUpdater {
     }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
+    // Versions whose WorkManager download is observed by this process. WorkManager persists work across a
+    // process kill, but the observer that finishes the download does not survive it.
+    private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
     public CapgoUpdater(Logger logger) {
@@ -273,6 +276,19 @@ public class CapgoUpdater {
             return true;
         }
         return !directInstall && !previewSession;
+    }
+
+    static boolean shouldRestartOrphanedDownload(final boolean observedByThisProcess) {
+        return !observedByThisProcess;
+    }
+
+    static boolean shouldReleaseLaunchWhileRetrying(
+        final boolean awaitedByCaller,
+        final boolean setNext,
+        final boolean directUpdate,
+        final boolean previewSession
+    ) {
+        return !awaitedByCaller && setNext && directUpdate && !previewSession;
     }
 
     static String launchDownloadReadyStatus(final boolean success, final boolean setNext) {
@@ -746,13 +762,14 @@ public class CapgoUpdater {
         this.backgroundDownloadSettled(readyBundle, launchDownloadReadyStatus(success, setNext));
     }
 
-    private void observeWorkProgress(Context context, String id, boolean setNext) {
+    private void observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
         if (!(context instanceof LifecycleOwner)) {
             logger.error("Context is not a LifecycleOwner, cannot observe work progress");
             return;
         }
 
         final AtomicBoolean terminalHandled = new AtomicBoolean(false);
+        final AtomicBoolean launchReleasedWhileRetrying = new AtomicBoolean(false);
         activity.runOnUiThread(() -> {
             WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(id)
@@ -763,12 +780,33 @@ public class CapgoUpdater {
                     Data progress = workInfo.getProgress();
 
                     switch (workInfo.getState()) {
+                        case ENQUEUED:
+                            // A run attempt already happened, so WorkManager scheduled a retry (network lost midway,
+                            // 5xx, ...). Retries back off without limit, so a direct install must not keep the launch
+                            // (and its splashscreen) blocked until the network comes back.
+                            if (
+                                workInfo.getRunAttemptCount() > 0 &&
+                                shouldReleaseLaunchWhileRetrying(
+                                    downloadFutures.containsKey(id),
+                                    setNext,
+                                    Boolean.TRUE.equals(CapgoUpdater.this.directUpdate),
+                                    CapgoUpdater.this.previewSession
+                                ) &&
+                                launchReleasedWhileRetrying.compareAndSet(false, true)
+                            ) {
+                                logger.warn("Direct update download is retrying, continuing launch on the current bundle");
+                                // Same fallback as the autoSplashscreen timeout: a later success installs on next background.
+                                CapgoUpdater.this.directUpdate = false;
+                                io.execute(() -> backgroundDownloadSettled(getCurrentBundle(), launchDownloadReadyStatus(false, false)));
+                            }
+                            break;
                         case RUNNING:
                             int percent = progress.getInt(DownloadService.PERCENT, 0);
                             notifyDownload(id, percent);
                             break;
                         case SUCCEEDED:
                             if (!terminalHandled.compareAndSet(false, true)) break;
+                            observedDownloadVersions.remove(observedVersion);
                             logger.info("Download succeeded: " + workInfo.getState());
                             Data outputData = workInfo.getOutputData();
                             String dest = outputData.getString(DownloadService.FILEDEST);
@@ -815,11 +853,14 @@ public class CapgoUpdater {
                                     future.complete(resultBundle);
                                 }
                                 final BundleInfo readyBundle = success && setNext ? resultBundle : null;
-                                notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
+                                if (!launchReleasedWhileRetrying.get()) {
+                                    notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
+                                }
                             });
                             break;
                         case FAILED:
                             if (!terminalHandled.compareAndSet(false, true)) break;
+                            observedDownloadVersions.remove(observedVersion);
                             Data failedData = workInfo.getOutputData();
                             String error = failedData.getString(DownloadService.ERROR);
                             logger.error("Download failed");
@@ -854,11 +895,14 @@ public class CapgoUpdater {
                                 if (failedFuture != null) {
                                     failedFuture.complete(failedBundle);
                                 }
-                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
+                                if (!launchReleasedWhileRetrying.get()) {
+                                    notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
+                                }
                             });
                             break;
                         case CANCELLED:
                             if (!terminalHandled.compareAndSet(false, true)) break;
+                            observedDownloadVersions.remove(observedVersion);
                             DataManager.getInstance().clearManifest(id);
                             CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                             if (cancelledFuture != null) {
@@ -884,7 +928,8 @@ public class CapgoUpdater {
             logger.error("Activity is null, cannot observe work progress");
             return;
         }
-        observeWorkProgress(this.activity, id, setNext);
+        observedDownloadVersions.add(version);
+        observeWorkProgress(this.activity, id, version, setNext);
 
         if (manifest != null) {
             DataManager.getInstance().setManifest(id, manifest);
@@ -1534,6 +1579,13 @@ public class CapgoUpdater {
                     return;
                 }
                 logger.info("Retrying failed download for version: " + version);
+            } else if (shouldRestartOrphanedDownload(observedDownloadVersions.contains(version))) {
+                // Left over from a killed process: nothing would finish it or release the launch, so start over.
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version)) {
+                    logger.error("Failed to cancel orphaned download before restarting it");
+                    return;
+                }
+                logger.info("Restarting download orphaned by a previous process for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
                 return;
