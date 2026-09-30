@@ -706,7 +706,7 @@
         "processorCount": -3
       },
       "expect": {
-        "maxConcurrentFiles": 16
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -715,7 +715,7 @@
         "processorCount": 0
       },
       "expect": {
-        "maxConcurrentFiles": 16
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -724,7 +724,7 @@
         "processorCount": 1
       },
       "expect": {
-        "maxConcurrentFiles": 16
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -733,7 +733,7 @@
         "processorCount": 4
       },
       "expect": {
-        "maxConcurrentFiles": 16
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -742,7 +742,7 @@
         "processorCount": 5
       },
       "expect": {
-        "maxConcurrentFiles": 20
+        "maxConcurrentFiles": 40
       }
     },
     {
@@ -751,7 +751,7 @@
         "processorCount": 8
       },
       "expect": {
-        "maxConcurrentFiles": 32
+        "maxConcurrentFiles": 64
       }
     },
     {

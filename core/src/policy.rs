@@ -164,9 +164,10 @@ pub fn should_clear_persisted_default_channel(
 }
 
 /// HTTP + decode share one pool. Manifest files are mostly small and the work
-/// is I/O bound (request latency dominates): 4x cores, at least 16, at most 64.
+/// is I/O bound (request latency dominates, not CPU): 8x cores, at least 32,
+/// at most 64. Each worker holds a 256 KiB write buffer.
 pub fn manifest_max_concurrent_files(processor_count: i64) -> i64 {
-    processor_count.max(1).saturating_mul(4).clamp(16, 64)
+    processor_count.max(1).saturating_mul(8).clamp(32, 64)
 }
 
 #[cfg(test)]
