@@ -292,3 +292,21 @@ class CapacitorUpdaterTests: XCTestCase {
         logger.error("Error message")
     }
 }
+
+final class CleartextPolicyTests: XCTestCase {
+    func testAtsDecidesPlainHttpForTheEngineClient() {
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "127.0.0.1", ats: nil))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "localhost", ats: nil))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: nil))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ["NSAllowsArbitraryLoads": true]))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "mac.local", ats: ["NSAllowsLocalNetworking": true]))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ["NSAllowsLocalNetworking": true]))
+        let exceptions: [String: Any] = [
+            "NSExceptionDomains": [
+                "example.com": ["NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true]
+            ]
+        ]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: exceptions))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "example.org", ats: exceptions))
+    }
+}

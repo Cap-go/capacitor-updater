@@ -151,6 +151,9 @@ public class CapgoUpdater {
         @Override
         String hook(final String name, final String payloadJson) {
             try {
+                if ("cleartextPermitted".equals(name)) {
+                    return cleartextPermittedReply(payloadJson);
+                }
                 return listener.onHook(name, payloadJson);
             } catch (RuntimeException e) {
                 logger.error("Hook " + name + " failed: " + e.getMessage());
@@ -163,6 +166,17 @@ public class CapgoUpdater {
             resetBackgroundRunnerWorkForBundleSwitch(new File(path));
         }
     };
+
+    /** The engine's HTTP client asks before plain HTTP: the app's network security config decides. */
+    static String cleartextPermittedReply(final String payloadJson) {
+        try {
+            final String host = new JSONObject(payloadJson).optString("host", "");
+            final boolean permitted = android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host);
+            return new JSONObject().put("permitted", permitted).toString();
+        } catch (JSONException e) {
+            return null;
+        }
+    }
 
     /**
      * Stored value as a string. Earlier plugin versions stored some keys as booleans or longs

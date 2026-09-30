@@ -51,7 +51,11 @@ typedef struct CapgoHostCallbacks {
 
 typedef struct CapgoEngine CapgoEngine;
 
-/** Creates an updater engine from a JSON configuration; NULL when invalid. */
+/**
+ * Creates an updater engine from a JSON configuration; NULL when invalid.
+ * The engine owns host.context in every case: on failure release(context) has
+ * already been called when NULL is returned.
+ */
 CapgoEngine *capgo_engine_new(const char *config_json, CapgoHostCallbacks host);
 
 /** Runs an engine operation (blocking); JSON envelope like capgo_core_call(). */

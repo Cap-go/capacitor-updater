@@ -81,9 +81,10 @@ impl Engine {
 
     /// Applies runtime settings (endpoints, ids, public key, preview session, timeout).
     pub fn configure(&self, value: &Value) -> CoreResult<()> {
-        let (user_agent, timeout) = {
+        let (user_agent, timeout, allow_downgrade) = {
             let mut config = self.config_mut();
             config.apply(value)?;
+            let allow_downgrade = config.allow_https_to_http_redirect;
             (
                 crate::http::user_agent(
                     &config.app_id,
@@ -92,10 +93,12 @@ impl Engine {
                     &config.platform,
                 ),
                 Duration::from_millis(config.timeout_ms),
+                allow_downgrade,
             )
         };
         self.http.set_user_agent(user_agent);
         self.http.set_timeout(timeout);
+        self.http.set_allow_https_to_http_redirect(allow_downgrade);
         Ok(())
     }
 

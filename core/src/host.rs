@@ -56,6 +56,13 @@ pub trait Host: Send + Sync + 'static {
         None
     }
 
+    /// Whether plain HTTP to `host` is allowed by the app (Android network
+    /// security config, iOS App Transport Security). `None`: no policy.
+    fn cleartext_permitted(&self, host: &str) -> Option<bool> {
+        self.hook("cleartextPermitted", &serde_json::json!({ "host": host }))
+            .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
+    }
+
     /// Called right before the current bundle path changes (Android reschedules
     /// Background Runner work here).
     fn will_switch_bundle(&self, _path: &str) {}

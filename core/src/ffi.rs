@@ -218,6 +218,10 @@ impl Host for CHost {
 
 /// Creates an engine. Returns NULL on invalid configuration (the error is logged to the host).
 ///
+/// Ownership of `host.context` passes to the engine in every case: on failure
+/// `release(context)` has already been called when NULL is returned, so the
+/// caller must not release it again.
+///
 /// # Safety
 /// `config_json` must be NULL or a valid NUL-terminated string; `host` callbacks must stay valid
 /// until `release` is called.

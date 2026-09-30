@@ -4,7 +4,7 @@
 //! Android `X509TrustManager` through the host, rustls-native roots elsewhere).
 
 use std::io::Read;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -100,6 +100,9 @@ pub struct Http {
     user_agent: RwLock<String>,
     timeout: RwLock<Duration>,
     allow_https_to_http_redirect: std::sync::atomic::AtomicBool,
+    host: Arc<dyn Host>,
+    /// Cleartext decisions per host name.
+    cleartext: Mutex<std::collections::HashMap<String, bool>>,
 }
 
 fn classify_io(error: &std::io::Error) -> NetErrorKind {
@@ -147,7 +150,12 @@ fn headers_of(response: &ureq::Response) -> Vec<(String, String)> {
 
 impl Http {
     pub fn new(host: Arc<dyn Host>, user_agent: String, timeout: Duration) -> Self {
-        let tls = Arc::new(tls_config(host));
+        let timeout = if timeout.is_zero() {
+            Duration::from_secs(20)
+        } else {
+            timeout
+        };
+        let tls = Arc::new(tls_config(host.clone()));
         let agent = build_agent(tls.clone(), timeout);
         let download_agent = build_agent(tls.clone(), timeout.max(Duration::from_secs(60)));
         Self {
@@ -157,6 +165,39 @@ impl Http {
             user_agent: RwLock::new(user_agent),
             timeout: RwLock::new(timeout),
             allow_https_to_http_redirect: std::sync::atomic::AtomicBool::new(false),
+            host,
+            cleartext: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Plain HTTP must be allowed by the app's own policy (the OS stacks enforce
+    /// it for their clients; this client has to ask).
+    fn check_cleartext(&self, url: &str) -> Result<(), NetError> {
+        let Ok(parsed) = url::Url::parse(url) else {
+            return Ok(());
+        };
+        if parsed.scheme() != "http" {
+            return Ok(());
+        }
+        let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+        let cached = self.cleartext.lock().unwrap().get(&host).copied();
+        let permitted = match cached {
+            Some(permitted) => permitted,
+            None => {
+                let permitted = self.host.cleartext_permitted(&host).unwrap_or(true);
+                self.cleartext.lock().unwrap().insert(host.clone(), permitted);
+                permitted
+            }
+        };
+        if permitted {
+            Ok(())
+        } else {
+            Err(NetError {
+                kind: NetErrorKind::InvalidUrl,
+                message: format!(
+                    "Cleartext HTTP traffic to {host} is not permitted by the app's network security policy"
+                ),
+            })
         }
     }
 
@@ -211,6 +252,7 @@ impl Http {
         let mut method = method.to_string();
         let mut body = body;
         for _ in 0..=MAX_REDIRECTS {
+            self.check_cleartext(&current)?;
             let request = self.prepare(agent, &method, &current, headers);
             let response = Self::finish(match body {
                 Some(body) => request.send_bytes(body),

@@ -5,6 +5,7 @@
  */
 
 import Foundation
+import Network
 import UIKit
 
 /// iOS host of the shared Rust updater engine (`core/src/engine`).
@@ -251,12 +252,47 @@ import UIKit
         case "excludeFromBackup":
             excludeFromBackup(path: payload["path"] as? String ?? "")
             return nil
+        case "cleartextPermitted":
+            let ats = Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]
+            return ["permitted": Self.atsAllowsCleartext(host: payload["host"] as? String ?? "", ats: ats)]
         default:
             return onHook?(name, payload)
         }
     }
 
     // MARK: - Platform services
+
+    /// App Transport Security decision for plain HTTP to `host` (the engine's HTTP client
+    /// is not URLSession, so it applies the app's ATS settings itself).
+    static func atsAllowsCleartext(host: String, ats: [String: Any]?) -> Bool {
+        let host = host.lowercased()
+        // IP literals and localhost are not subject to ATS.
+        if host == "localhost" || IPv4Address(host) != nil || IPv6Address(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))) != nil {
+            return true
+        }
+        guard let ats else {
+            return false
+        }
+        if ats["NSAllowsArbitraryLoads"] as? Bool == true {
+            return true
+        }
+        if ats["NSAllowsLocalNetworking"] as? Bool == true && (!host.contains(".") || host.hasSuffix(".local")) {
+            return true
+        }
+        let exceptions = ats["NSExceptionDomains"] as? [String: [String: Any]] ?? [:]
+        for (domain, settings) in exceptions {
+            let domain = domain.lowercased()
+            let allowsHTTP = settings["NSExceptionAllowsInsecureHTTPLoads"] as? Bool == true
+                || settings["NSTemporaryExceptionAllowsInsecureHTTPLoads"] as? Bool == true
+            guard allowsHTTP else {
+                continue
+            }
+            if host == domain || (settings["NSIncludesSubdomains"] as? Bool == true && host.hasSuffix("." + domain)) {
+                return true
+            }
+        }
+        return false
+    }
 
     private func updateBackgroundTask(action: String, name: String) {
         backgroundTasksLock.lock()

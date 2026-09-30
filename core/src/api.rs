@@ -40,7 +40,12 @@ fn opt_i64(input: &Value, key: &str) -> CoreResult<Option<i64>> {
         None => Ok(None),
         Some(value) => value
             .as_i64()
-            .or_else(|| value.as_f64().filter(|v| v.fract() == 0.0).map(|v| v as i64))
+            .or_else(|| {
+                value
+                    .as_f64()
+                    .filter(|v| v.fract() == 0.0 && *v >= i64::MIN as f64 && *v < i64::MAX as f64)
+                    .map(|v| v as i64)
+            })
             .map(Some)
             .ok_or_else(|| CoreError::invalid_input(format!("`{key}` must be an integer"))),
     }

@@ -218,3 +218,16 @@ fn get_channel_persists_server_channel() {
     assert_eq!(result["channel"], "company-a");
     assert_eq!(t.kv("CapacitorUpdater.defaultChannel").unwrap(), "company-a");
 }
+
+#[test]
+fn cleartext_http_follows_the_app_policy() {
+    let server = FakeServer::start(|_| FakeServer::json(200, json!({ "version": "1.2.0" })));
+    let t = engine_with(&server);
+    t.host
+        .reply_to_hook("cleartextPermitted", json!({ "permitted": false }));
+    let result = t.call("getLatest", json!({}));
+    assert_eq!(result["error"], "network_error");
+    assert!(result["message"].as_str().unwrap().contains("Cleartext HTTP traffic"));
+    assert!(server.requests().is_empty(), "nothing sent in clear text");
+    assert_eq!(t.host.hooks_named("cleartextPermitted")[0]["host"], "127.0.0.1");
+}

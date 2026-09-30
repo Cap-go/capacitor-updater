@@ -96,7 +96,8 @@ fn digits(text: &str) -> Option<i64> {
 /// `yyyy-MM-ddTHH:mm:ss[.SSS][Z|±HH:mm|±HHmm|±HH]`.
 pub fn parse_iso8601_ms(value: &str) -> Option<i64> {
     let value = value.trim();
-    if value.len() < 19 || value.as_bytes()[10] != b'T' {
+    // Fixed byte offsets below: only ASCII can be sliced safely.
+    if !value.is_ascii() || value.len() < 19 || value.as_bytes()[10] != b'T' {
         return None;
     }
     let (date, rest) = value.split_at(10);
@@ -392,6 +393,8 @@ mod tests {
         assert_eq!(parse_iso8601_ms("2024-02-29T12:00:00.000Z"), Some(1_709_208_000_000));
         assert_eq!(parse_iso8601_ms("not a date"), None);
         assert_eq!(parse_iso8601_ms("2024-13-01T00:00:00Z"), None);
+        assert_eq!(parse_iso8601_ms("2024-01-01T00:00:0\u{e9}"), None);
+        assert_eq!(parse_iso8601_ms("2024-01-01T00:00:00+1\u{e9}1"), None);
     }
 
     #[test]

@@ -56,6 +56,23 @@ fn resolve_entry(destination: &Path, name: &str) -> Result<PathBuf, ExtractError
         })
 }
 
+/// The deepest existing ancestor of `path`, canonicalized, must stay inside
+/// `root` (catches directories reached through symlinks from earlier entries).
+fn physically_inside(root: &Path, path: &Path) -> bool {
+    let Ok(root) = fs::canonicalize(root) else {
+        return false;
+    };
+    let mut probe = path.to_path_buf();
+    loop {
+        if fs::symlink_metadata(&probe).is_ok() {
+            return fs::canonicalize(&probe).is_ok_and(|real| real.starts_with(&root));
+        }
+        if !probe.pop() {
+            return false;
+        }
+    }
+}
+
 fn lexical_normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -93,6 +110,10 @@ pub fn extract_zip(
         let mut entry = archive.by_index(index).map_err(|error| failed(&error))?;
         let name = entry.name().to_string();
         let target = resolve_entry(destination, &name)?;
+        // Earlier symlink entries must not redirect this one outside the bundle.
+        if !physically_inside(destination, target.parent().unwrap_or(destination)) {
+            return Err(ExtractError::PathEscape(name));
+        }
         if entry.is_dir() {
             fs::create_dir_all(&target).map_err(|_| ExtractError::Directory(target.display().to_string()))?;
             progress(index + 1, total);
@@ -106,12 +127,17 @@ pub fn extract_zip(
         if entry.is_symlink() {
             let mut link = String::new();
             entry.read_to_string(&mut link).map_err(|error| failed(&error))?;
-            // The link must stay inside its own directory (lexically).
-            let resolved = if Path::new(&link).is_absolute() {
-                PathBuf::from(&link)
-            } else {
-                parent.join(&link)
-            };
+            // Relative targets without `..` only: the link stays inside its own directory
+            // whatever the other entries are (no chains through `..`).
+            let link_path = Path::new(&link);
+            if link_path.is_absolute()
+                || link_path
+                    .components()
+                    .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return Err(ExtractError::PathEscape(name));
+            }
+            let resolved = parent.join(&link);
             let resolved = lexical_normalize(&resolved);
             let parent_normalized = lexical_normalize(&parent);
             if resolved != parent_normalized && !resolved.starts_with(&parent_normalized) {

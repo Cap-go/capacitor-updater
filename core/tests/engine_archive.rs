@@ -78,6 +78,33 @@ fn rejects_symlinks_escaping_their_directory() {
 }
 
 #[test]
+fn rejects_symlink_chains_escaping_the_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = zip_of(&[
+        Entry::Symlink("m", "."),
+        Entry::Symlink("l", "m/.."),
+        Entry::File("l/x", b"pwned"),
+    ]);
+    let error = extract(&bytes, dir.path()).unwrap_err();
+    assert!(matches!(error, ExtractError::PathEscape(_)), "{error:?}");
+    assert!(!dir.path().join("x").exists());
+    // A directory entry reached through a symlink to the outside is refused too.
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("out")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("out/escape")).unwrap();
+    let zip = dir.path().join("bundle.zip");
+    std::fs::write(
+        &zip,
+        zip_of(&[Entry::Dir("escape/sub/"), Entry::File("escape/y", b"pwned")]),
+    )
+    .unwrap();
+    assert!(extract_zip(&zip, &dir.path().join("out"), &mut |_, _| {}, &|| false).is_err());
+    assert!(!outside.path().join("y").exists());
+    assert!(!outside.path().join("sub").exists());
+}
+
+#[test]
 fn rejects_traversal_and_windows_entries() {
     let dir = tempfile::tempdir().unwrap();
     let error = extract(&zip_of(&[Entry::File("../evil.txt", b"x")]), dir.path()).unwrap_err();
