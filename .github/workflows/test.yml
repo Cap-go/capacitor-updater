@@ -564,6 +564,12 @@ jobs:
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios/crash-reports/" \; 2>/dev/null || true
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -630,6 +636,12 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports/" \; 2>/dev/null || true
       - name: Upload live update Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -772,6 +784,12 @@ jobs:
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports/" \; 2>/dev/null || true
       - name: Upload edge case Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
