@@ -12,6 +12,10 @@ final class BundleHardeningTests: XCTestCase {
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-hardening-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // Zip downloads are staged in Documents, which a fresh simulator without a host app may not have yet.
+        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        }
         CryptoCipher.setLogger(Logger(withTag: "hardening-tests", options: Logger.Options(level: .silent)))
     }
 
