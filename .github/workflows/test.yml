@@ -665,6 +665,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build iOS apps
         run: |
           set -euo pipefail

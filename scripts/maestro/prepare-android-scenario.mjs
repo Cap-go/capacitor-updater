@@ -1,4 +1,5 @@
 import { runCommand } from './command.mjs';
+import { purgeLocalPluginCopy } from './purge-local-plugin-copy.mjs';
 import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
 async function runCommandWithRetries(command, args, options, maxAttempts = 3) {
@@ -41,6 +42,14 @@ const env = {
   }),
   CAPGO_DIRECT_UPDATE: scenario.directUpdate,
 };
+
+// A restored dependency cache can hold a copy of the plugin with native files that were since deleted.
+purgeLocalPluginCopy();
+
+await runCommand('bun', ['install'], {
+  cwd: exampleAppDir,
+  env,
+});
 
 await runCommand('bun', ['run', 'build'], {
   cwd: exampleAppDir,
