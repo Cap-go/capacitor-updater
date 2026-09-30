@@ -3,6 +3,7 @@
 #   scripts/bench/run-ios.sh <label> <plugin-checkout-dir> [options]   (see lib.sh for options)
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+bench_caffeinate "$@"
 bench_parse_args "$@"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -11,9 +12,6 @@ APP_ID="app.capgo.updater"
 DERIVED="$BENCH_DIR/derived/$LABEL-ios"
 
 bench_prepare_fixtures
-
-xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
-xcrun simctl bootstatus "$UDID" -b >/dev/null
 
 app_path() { echo "$BENCH_DIR/apps/$LABEL-ios-$1.app"; }
 
@@ -38,6 +36,18 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     cp -R "$DERIVED/Build/Products/Release-iphonesimulator/App.app" "$(app_path "$variant")"
   done
 fi
+
+bench_acquire_lock
+BOOTED_BY_BENCH=0
+if ! xcrun simctl list devices | grep "$UDID" | grep -q Booted; then
+  xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+  BOOTED_BY_BENCH=1
+fi
+xcrun simctl bootstatus "$UDID" -b >/dev/null
+bench_platform_cleanup() {
+  xcrun simctl terminate "$UDID" "$APP_ID" >/dev/null 2>&1 || true
+  if [[ "$BOOTED_BY_BENCH" == "1" ]]; then xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; fi
+}
 
 restart_app() {
   xcrun simctl terminate "$UDID" "$APP_ID" >/dev/null 2>&1 || true

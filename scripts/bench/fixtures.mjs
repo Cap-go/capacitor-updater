@@ -10,11 +10,19 @@
 //   file_hash is hex(privateEncrypt(raw sha256 of the plaintext file)).
 import crypto from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { benchJs, indexHtml } from './app-template.mjs';
-import { deviceBaseUrl, keysDir, manifestTmpDir } from './config.mjs';
+import {
+  builtinPadDir,
+  builtinPadFileBytes,
+  builtinPadFiles,
+  builtinPadIndex,
+  deviceBaseUrl,
+  keysDir,
+  manifestTmpDir,
+} from './config.mjs';
 
 export async function ensureKeys() {
   const privPath = path.join(keysDir, 'private.pem');
@@ -96,9 +104,27 @@ export function splitSizes(bytes, count) {
   return sizes;
 }
 
-export function padFileName(i) {
+export function padFileName(i, prefix = 'pad') {
   const dir = String(Math.floor(i / 100)).padStart(2, '0');
-  return `pad/d${dir}/f${String(i).padStart(4, '0')}.bin`;
+  return `${prefix}/d${dir}/f${String(i).padStart(4, '0')}.bin`;
+}
+
+/** Random files for the app's builtin public/bpad (generated once, reused by every build). */
+export async function ensureBuiltinPad() {
+  if (existsSync(builtinPadIndex)) {
+    const index = JSON.parse(await readFile(builtinPadIndex, 'utf8'));
+    if (index.files?.length === builtinPadFiles && index.fileBytes === builtinPadFileBytes) return index;
+  }
+  await rm(builtinPadDir, { recursive: true, force: true });
+  const files = [];
+  for (let i = 0; i < builtinPadFiles; i += 1) {
+    const name = padFileName(i, 'bpad');
+    const hash = await writeRandomFile(path.join(builtinPadDir, name), builtinPadFileBytes);
+    files.push({ name, hash, size: builtinPadFileBytes });
+  }
+  const index = { fileBytes: builtinPadFileBytes, files };
+  await writeFile(builtinPadIndex, JSON.stringify(index));
+  return index;
 }
 
 /** Write index.html + bench.js (+ random padding) into `dir`. */
@@ -127,15 +153,32 @@ export function encodePath(rel) {
 }
 
 /**
- * Generate a fresh manifest version on disk (served under /m/<version>/...).
- * Every file has unique random content so nothing can be reused from the
- * builtin assets or from the delta cache.
+ * Generate a manifest version on disk (served under /m/<version>/...).
+ * index.html, bench.js and `files - reuse.names.length` padding files get fresh
+ * random content. `reuse` copies files (same name, same bytes) from `reuse.srcDir`
+ * so the device can take them from its delta cache or builtin assets instead of
+ * downloading them. `keepPlain` keeps a plaintext copy (returned as plainRoot) so a
+ * later version can reuse its files.
  */
-export async function createManifestVersion({ version, files, bytes, variant, keys }) {
+export async function createManifestVersion({ version, files, bytes, variant, keys, reuse = null, keepPlain = false }) {
   const plainDir = path.join(manifestTmpDir, `${version}.plain`);
   const serveDir = path.join(manifestTmpDir, version);
-  await writeBundleTree(plainDir, { marker: version, bytes, files });
-  const names = ['index.html', 'bench.js', ...Array.from({ length: files }, (_, i) => padFileName(i))];
+  const reusedNames = reuse?.names ?? [];
+  const newCount = files - reusedNames.length;
+  const newStart = reuse?.newStart ?? 0;
+  await writeBundleTree(plainDir, { marker: version });
+  const sizes = splitSizes(Math.round((bytes * newCount) / files), Math.max(newCount, 1));
+  const newNames = [];
+  for (let i = 0; i < newCount; i += 1) {
+    const name = padFileName(newStart + i);
+    await writeRandomFile(path.join(plainDir, name), sizes[i]);
+    newNames.push(name);
+  }
+  for (const name of reusedNames) {
+    await mkdir(path.dirname(path.join(plainDir, name)), { recursive: true });
+    await copyFile(path.join(reuse.srcDir, name), path.join(plainDir, name));
+  }
+  const names = ['index.html', 'bench.js', ...reusedNames, ...newNames];
   const session = variant === 'enc' ? newSession(keys.privateKey) : null;
   const manifest = [];
   let servedBytes = 0;
@@ -159,13 +202,23 @@ export async function createManifestVersion({ version, files, bytes, variant, ke
       download_url: `${deviceBaseUrl}/m/${encodePath(version)}/${encodePath(name)}`,
     });
   }
+  let plainRoot = null;
   if (session) {
-    await rm(plainDir, { recursive: true, force: true });
+    if (keepPlain) plainRoot = plainDir;
+    else await rm(plainDir, { recursive: true, force: true });
   } else {
     await rm(serveDir, { recursive: true, force: true });
     await rename(plainDir, serveDir);
+    plainRoot = keepPlain ? serveDir : null;
   }
-  return { manifest, sessionKey: session?.sessionKey, servedBytes, fileCount: names.length };
+  return {
+    manifest,
+    sessionKey: session?.sessionKey,
+    servedBytes,
+    fileCount: names.length,
+    expectedDownloads: names.length - reusedNames.length,
+    plainRoot,
+  };
 }
 
 export async function removeManifestVersion(version) {

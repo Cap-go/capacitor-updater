@@ -13,13 +13,22 @@ import path from 'node:path';
 import {
   benchPort,
   buildCases,
+  builtinPadDir,
+  reuseRatio,
+  suites as allSuites,
   defaultRuns,
   deviceBaseUrl,
   manifestTmpDir,
   zipDir,
   zipFixtureBase,
 } from './config.mjs';
-import { createManifestVersion, ensureKeys, removeManifestVersion } from './fixtures.mjs';
+import {
+  createManifestVersion,
+  ensureBuiltinPad,
+  ensureKeys,
+  padFileName,
+  removeManifestVersion,
+} from './fixtures.mjs';
 
 function arg(name, fallback = undefined) {
   const i = process.argv.indexOf(`--${name}`);
@@ -39,6 +48,7 @@ const retryFailed = Boolean(arg('retry-failed', false));
 const maxAttempts = Number.parseInt(arg('max-attempts', '2'), 10);
 const port = Number.parseInt(arg('port', String(benchPort)), 10);
 const idleRestartSec = Number.parseInt(arg('idle-restart', '150'), 10);
+const enabledSuites = String(arg('suites', allSuites.join(','))).split(',');
 
 if (!platform || !label || !['plain', 'enc'].includes(variant) || !resultsFile) {
   console.error(
@@ -48,7 +58,8 @@ if (!platform || !label || !['plain', 'enc'].includes(variant) || !resultsFile) 
 }
 
 const keys = await ensureKeys();
-const allCases = buildCases(variant, runs).filter((c) => !only || only.test(c.id));
+const builtinPad = await ensureBuiltinPad();
+const allCases = buildCases(variant, runs, enabledSuites).filter((c) => !only || only.test(c.id));
 
 // ---- resume support --------------------------------------------------------
 const finished = new Set();
@@ -97,7 +108,7 @@ let needsRestart = false;
 let lastSeen = Date.now();
 let preparing = false;
 let lastFinishedBytes = 0;
-let lastFinishedVersion = null;
+let lastFinishedVersions = [];
 
 function log(msg) {
   console.log(`[bench-server ${new Date().toISOString().slice(11, 19)}] ${msg}`);
@@ -118,8 +129,10 @@ function record(c, fields) {
     version: c.version,
     servedBytes: c.meta?.servedBytes,
     fileCount: c.meta?.fileCount,
+    expectedDownloads: c.meta?.expectedDownloads,
     requests: served.get(c.version)?.requests ?? 0,
     requestBytes: served.get(c.version)?.bytes ?? 0,
+    ...(c.case.shape ? { shape: c.case.shape, peakInFlight: c.peakInFlight ?? 0 } : {}),
     ...(c.case.warmup ? { warmup: true } : {}),
     ...fields,
   };
@@ -129,6 +142,7 @@ function record(c, fields) {
   }
   appendFileSync(resultsFile, `${JSON.stringify(rec)}\n`);
   served.delete(c.version);
+  for (const v of c.versions) served.delete(v);
   log(
     `${rec.ok ? 'OK  ' : 'FAIL'} ${rec.caseId} a${rec.attempt}` +
       (rec.ok
@@ -136,7 +150,7 @@ function record(c, fields) {
         : ` ${rec.error}`),
   );
   lastFinishedBytes = c.case.bytes;
-  lastFinishedVersion = c.case.kind === 'manifest' ? c.version : null;
+  lastFinishedVersions = c.versions;
   current = null;
 }
 
@@ -144,34 +158,66 @@ function randomSuffix() {
   return crypto.randomBytes(3).toString('hex').slice(0, 4);
 }
 
+async function zipDownload(c, version) {
+  const fixture = JSON.parse(await readFile(`${zipFixtureBase(c.sizeKey, c.variant)}.json`, 'utf8'));
+  const download = { url: `${deviceBaseUrl}/z/${fixture.file}`, version, checksum: fixture.checksum };
+  if (fixture.sessionKey) download.sessionKey = fixture.sessionKey;
+  return { download, meta: { servedBytes: fixture.size, fileCount: c.files + 2, expectedDownloads: 1 } };
+}
+
+async function manifestDownload(version, options) {
+  const t = Date.now();
+  const m = await createManifestVersion({ version, keys, ...options });
+  log(`generated manifest ${version} (${m.fileCount} files, ${m.expectedDownloads} to fetch) in ${Date.now() - t}ms`);
+  const download = { url: `${deviceBaseUrl}/z/unused.zip`, version, manifest: m.manifest };
+  if (m.sessionKey) download.sessionKey = m.sessionKey;
+  return {
+    download,
+    plainRoot: m.plainRoot,
+    meta: { servedBytes: m.servedBytes, fileCount: m.fileCount, expectedDownloads: m.expectedDownloads },
+  };
+}
+
 async function prepareCase(c) {
   const attempt = (attempts.get(c.id) ?? 0) + 1;
   attempts.set(c.id, attempt);
   const version = `${label}-${c.id}-a${attempt}-${randomSuffix()}`;
-  let download;
-  let meta = {};
-  if (c.kind === 'zip') {
-    const fixture = JSON.parse(await readFile(`${zipFixtureBase(c.sizeKey, c.variant)}.json`, 'utf8'));
-    download = {
-      url: `${deviceBaseUrl}/z/${fixture.file}`,
-      version,
-      checksum: fixture.checksum,
-    };
-    if (fixture.sessionKey) download.sessionKey = fixture.sessionKey;
-    meta = { servedBytes: fixture.size, fileCount: c.files + 2 };
+  const base = { files: c.files, bytes: c.bytes, variant: c.variant };
+  const reused = Math.round(c.files * reuseRatio);
+  let prepared;
+  let pre = null;
+  // Generated manifest versions to delete from disk once the case is over.
+  const versions = [];
+  if (c.kind === 'zip' || c.kind === 'shaped-zip') {
+    prepared = await zipDownload(c, version);
+  } else if (c.kind === 'reuse-cache') {
+    // Version A: installed untimed right before B, so its files land in the delta cache.
+    const versionA = `${version}-A`;
+    const a = await manifestDownload(versionA, { ...base, keepPlain: true });
+    pre = a.download;
+    versions.push(versionA);
+    const names = Array.from({ length: reused }, (_, i) => padFileName(i));
+    prepared = await manifestDownload(version, { ...base, reuse: { srcDir: a.plainRoot, names, newStart: reused } });
+    versions.push(version);
+  } else if (c.kind === 'reuse-builtin') {
+    const names = builtinPad.files.slice(0, reused).map((f) => f.name);
+    if (names.length < reused) throw new Error(`builtin pad too small for ${c.id}`);
+    prepared = await manifestDownload(version, { ...base, reuse: { srcDir: builtinPadDir, names, newStart: 0 } });
+    versions.push(version);
   } else {
-    const t = Date.now();
-    const m = await createManifestVersion({ version, files: c.files, bytes: c.bytes, variant: c.variant, keys });
-    log(`generated manifest ${version} (${m.fileCount} files) in ${Date.now() - t}ms`);
-    download = {
-      url: `${deviceBaseUrl}/z/unused.zip`,
-      version,
-      manifest: m.manifest,
-    };
-    if (m.sessionKey) download.sessionKey = m.sessionKey;
-    meta = { servedBytes: m.servedBytes, fileCount: m.fileCount };
+    prepared = await manifestDownload(version, base);
+    versions.push(version);
   }
-  return { case: c, attempt, version, download, meta };
+  return {
+    case: c,
+    attempt,
+    version,
+    versions,
+    download: prepared.download,
+    pre,
+    preSettleMs: pre ? 2000 + Math.round((c.bytes / (100 * 1024 * 1024)) * 2000) : 0,
+    meta: prepared.meta,
+  };
 }
 
 function runCleanCmd() {
@@ -186,10 +232,8 @@ async function nextAction() {
     return { action: 'wait', ms: 3000 };
   }
   if (preparing) return { action: 'wait', ms: 2000 };
-  if (lastFinishedVersion) {
-    await removeManifestVersion(lastFinishedVersion);
-    lastFinishedVersion = null;
-  }
+  for (const v of lastFinishedVersions) await removeManifestVersion(v);
+  lastFinishedVersions = [];
   if (!queue.length) return { action: 'done' };
   preparing = true;
   try {
@@ -203,7 +247,14 @@ async function nextAction() {
     log(`start ${c.id} a${prepared.attempt} (${c.mode})`);
     return {
       action: 'run',
-      case: { id: c.id, attempt: prepared.attempt, mode: c.mode, download: prepared.download },
+      case: {
+        id: c.id,
+        attempt: prepared.attempt,
+        mode: c.mode,
+        download: prepared.download,
+        pre: prepared.pre,
+        preSettleMs: prepared.preSettleMs,
+      },
     };
   } finally {
     preparing = false;
@@ -230,12 +281,74 @@ function safeJoin(root, rel) {
   return target;
 }
 
-function serveFile(file, method) {
+// ---- network shaping (per case) ---------------------------------------------
+// One token bucket shared by every payload connection (total bandwidth cap), plus a
+// fixed delay before the response headers of every payload request (latency/TTFB).
+const SHAPE_CHUNK = 16 * 1024;
+const bucket = { tokens: 0, last: performance.now(), rateBytesPerSec: 0 };
+async function takeTokens(n) {
+  const capacity = 4 * SHAPE_CHUNK;
+  for (;;) {
+    const now = performance.now();
+    bucket.tokens = Math.min(capacity, bucket.tokens + ((now - bucket.last) / 1000) * bucket.rateBytesPerSec);
+    bucket.last = now;
+    if (bucket.tokens >= n) {
+      bucket.tokens -= n;
+      return;
+    }
+    await Bun.sleep(Math.max(1, Math.ceil(((n - bucket.tokens) / bucket.rateBytesPerSec) * 1000)));
+  }
+}
+
+// Parallelism seen by the server during a shaped case (requests between arrival and last byte).
+let inFlight = 0;
+function requestDone(state) {
+  if (!state.done) {
+    state.done = true;
+    inFlight -= 1;
+  }
+}
+
+function shapedBody(file, state) {
+  let data = null;
+  let offset = 0;
+  return new ReadableStream({
+    cancel() {
+      requestDone(state);
+    },
+    async pull(controller) {
+      data ??= new Uint8Array(await Bun.file(file).arrayBuffer());
+      if (offset >= data.length) {
+        controller.close();
+        requestDone(state);
+        return;
+      }
+      const n = Math.min(SHAPE_CHUNK, data.length - offset);
+      await takeTokens(n);
+      controller.enqueue(data.subarray(offset, offset + n));
+      offset += n;
+    },
+  });
+}
+
+async function serveFile(file, method) {
   if (!file || !existsSync(file)) return new Response('not found', { status: 404, headers: cors });
   const f = Bun.file(file);
-  return new Response(method === 'HEAD' ? null : f, {
-    headers: { ...cors, 'content-type': 'application/octet-stream', 'content-length': String(f.size) },
-  });
+  const headers = { ...cors, 'content-type': 'application/octet-stream', 'content-length': String(f.size) };
+  const shape = current?.case.shape;
+  if (shape) {
+    bucket.rateBytesPerSec = (shape.mbit * 1_000_000) / 8;
+    const state = { done: false };
+    inFlight += 1;
+    if (current) current.peakInFlight = Math.max(current.peakInFlight ?? 0, inFlight);
+    await Bun.sleep(shape.latencyMs);
+    if (method === 'HEAD') {
+      requestDone(state);
+      return new Response(null, { headers });
+    }
+    return new Response(shapedBody(file, state), { headers });
+  }
+  return new Response(method === 'HEAD' ? null : f, { headers });
 }
 
 async function body(req) {
@@ -282,7 +395,7 @@ const server = Bun.serve({
         remaining: queue.length + (current || preparing ? 1 : 0),
         current: current ? { id: current.case.id, attempt: current.attempt, phase: current.phase } : null,
         needsRestart,
-        done: !queue.length && !current && !preparing && !lastFinishedVersion,
+        done: !queue.length && !current && !preparing && !lastFinishedVersions.length,
         lastSeenAgoSec: Math.round((Date.now() - lastSeen) / 1000),
       });
     }
@@ -326,6 +439,14 @@ const server = Bun.serve({
       return json(await nextAction());
     }
     if (p === '/bench/next') return json(await nextAction());
+    if (p === '/bench/pre-done') {
+      if (matches(b)) {
+        // The timed part starts now: give it the full case timeout.
+        current.startedAt = Date.now();
+        log(`pre-download done for ${current.case.id}`);
+      }
+      return json({ ok: true });
+    }
     if (p === '/bench/downloaded') {
       if (!matches(b)) return json({ ok: false, stale: true });
       current.phase = 'awaiting-ready';

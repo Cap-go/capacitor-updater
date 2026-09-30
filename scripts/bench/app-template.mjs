@@ -79,6 +79,16 @@ export function benchJs(marker) {
     log('run ' + c.id + ' attempt ' + c.attempt);
     await cleanupBundles();
     var base = { caseId: c.id, attempt: c.attempt };
+    if (c.pre) {
+      // Untimed setup download (e.g. install version A so B can reuse its files).
+      try {
+        await call('download', c.pre);
+      } catch (e) {
+        return postRetry('/bench/result', Object.assign({}, base, { ok: false, error: 'pre-download: ' + errText(e) }));
+      }
+      await sleep(c.preSettleMs || 0);
+      await postRetry('/bench/pre-done', base);
+    }
     var t0 = Date.now();
     var bundle;
     try {

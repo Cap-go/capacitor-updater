@@ -8,20 +8,39 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { builtinWwwDir, fixturesDir, zipDir, zipFixtureBase, zipSizes } from './config.mjs';
-import { encryptedChecksum, encryptFileTo, ensureKeys, newSession, sha256File, writeBundleTree } from './fixtures.mjs';
+import crypto from 'node:crypto';
+import { benchJs } from './app-template.mjs';
+import {
+  encryptedChecksum,
+  encryptFileTo,
+  ensureBuiltinPad,
+  ensureKeys,
+  newSession,
+  sha256File,
+  writeBundleTree,
+} from './fixtures.mjs';
 
 const force = process.argv.includes('--force');
 const keys = await ensureKeys();
 
 await writeBundleTree(builtinWwwDir, { marker: 'builtin' });
 console.log(`[bench] builtin www -> ${builtinWwwDir}`);
+const pad = await ensureBuiltinPad();
+console.log(`[bench] builtin pad: ${pad.files.length} files`);
+
+// Zips embed bench.js: regenerate them whenever the app-side bench script changes.
+const benchStamp = crypto.createHash('sha256').update(benchJs('stamp')).digest('hex').slice(0, 16);
 
 await mkdir(zipDir, { recursive: true });
 
 for (const size of zipSizes) {
   const plainBase = zipFixtureBase(size.key, 'plain');
   const encBase = zipFixtureBase(size.key, 'enc');
-  if (!force && existsSync(`${plainBase}.json`) && existsSync(`${encBase}.json`)) {
+  const upToDate =
+    existsSync(`${plainBase}.json`) &&
+    existsSync(`${encBase}.json`) &&
+    JSON.parse(await readFile(`${encBase}.json`, 'utf8')).benchStamp === benchStamp;
+  if (!force && upToDate) {
     console.log(`[bench] zip ${size.key} already generated`);
     continue;
   }
@@ -51,6 +70,7 @@ for (const size of zipSizes) {
         file: path.basename(encZip),
         checksum: encryptedChecksum(keys.privateKey, sha),
         sessionKey: session.sessionKey,
+        benchStamp,
         sha256: sha,
         size: (await stat(encZip)).size,
       },

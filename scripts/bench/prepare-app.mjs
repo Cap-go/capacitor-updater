@@ -8,8 +8,8 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { appsDir, builtinWwwDir, deviceBaseUrl } from './config.mjs';
-import { ensureKeys } from './fixtures.mjs';
+import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl } from './config.mjs';
+import { ensureBuiltinPad, ensureKeys } from './fixtures.mjs';
 
 function arg(name, fallback = undefined) {
   const i = process.argv.indexOf(`--${name}`);
@@ -94,7 +94,17 @@ if (!skipInstall) {
     }
   }
   rmSync(path.join(appDir, 'node_modules', '@capgo', 'capacitor-updater'), { recursive: true, force: true });
-  run('bun', ['install'], appDir);
+  // The npm registry occasionally 404s a freshly published tarball: retry a few times.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      run('bun', ['install'], appDir);
+      break;
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      console.warn(`[bench-prepare] bun install failed (attempt ${attempt}), retrying in 20s`);
+      spawnSync('sleep', ['20']);
+    }
+  }
 }
 
 // The bench uses release builds (optimized Java/Swift). Give the release variant the
@@ -108,6 +118,9 @@ if (existsSync(debugSrc)) {
 
 rmSync(path.join(appDir, 'www'), { recursive: true, force: true });
 cpSync(builtinWwwDir, path.join(appDir, 'www'), { recursive: true });
+// Builtin files for the builtin-reuse manifest cases (www/bpad/...).
+await ensureBuiltinPad();
+cpSync(builtinPadDir, path.join(appDir, 'www'), { recursive: true });
 
 const keys = await ensureKeys();
 const updater = {

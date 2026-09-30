@@ -6,17 +6,50 @@ BENCH_DIR="${BENCH_DIR:-$BENCH_ROOT/.context/bench}"
 BENCH_PORT="${BENCH_PORT:-3193}"
 BENCH_LOG_DIR="$BENCH_DIR/logs"
 SERVER_PID=""
+# Other agents share the emulator/simulators: hold this lock while using a device.
+BENCH_DEVICE_LOCK="${BENCH_DEVICE_LOCK-/tmp/capgo-maestro.lock}"
+BENCH_LOCK_HELD=0
 mkdir -p "$BENCH_LOG_DIR"
+
+# Re-exec the runner under caffeinate so the Mac cannot sleep in the middle of a run.
+bench_caffeinate() {
+  if [[ -z "${BENCH_CAFFEINATED:-}" ]] && command -v caffeinate >/dev/null 2>&1; then
+    export BENCH_CAFFEINATED=1
+    exec caffeinate -dimsu "$0" "$@"
+  fi
+}
+
+bench_acquire_lock() {
+  [[ -z "$BENCH_DEVICE_LOCK" ]] && return 0
+  local waited=0
+  until mkdir "$BENCH_DEVICE_LOCK" 2>/dev/null; do
+    if ((waited % 300 == 0)); then echo "[bench] waiting for device lock $BENCH_DEVICE_LOCK (${waited}s)"; fi
+    sleep 15
+    waited=$((waited + 15))
+  done
+  BENCH_LOCK_HELD=1
+  echo "[bench] device lock acquired"
+}
+
+bench_release_lock() {
+  if [[ "$BENCH_LOCK_HELD" == "1" ]]; then
+    rmdir "$BENCH_DEVICE_LOCK" 2>/dev/null || true
+    BENCH_LOCK_HELD=0
+    echo "[bench] device lock released"
+  fi
+}
 
 bench_usage() {
   cat >&2 <<EOF
 usage: $0 <label> <plugin-checkout-dir> [--variants plain,enc] [--only <regex>] [--runs N]
-                                        [--skip-build] [--retry-failed] [--no-core]
+                                        [--suites main,reuse,shaped] [--skip-build] [--retry-failed] [--no-core]
   label           results label, e.g. before / after
   checkout        plugin checkout to benchmark (its example-app native projects are copied)
   --variants      encryption variants to run (default plain,enc)
   --only          regex filter on case ids (e.g. 'zip-3MB|manifest-2f')
   --runs          runs per cell (default 3)
+  --suites        case suites: main (zip + fresh manifests), reuse (delta-cache / builtin reuse),
+                  shaped (latency + bandwidth cap). Default: all
   --skip-build    reuse the previously built app for this label
   --retry-failed  re-run cases whose final attempt failed
   --no-core       do not run <checkout>/scripts/build-core.sh before building
@@ -32,6 +65,7 @@ bench_parse_args() {
   VARIANTS="plain,enc"
   ONLY=""
   RUNS="3"
+  SUITES="main,reuse,shaped"
   SKIP_BUILD=0
   RETRY_FAILED=0
   BUILD_CORE=1
@@ -40,6 +74,7 @@ bench_parse_args() {
       --variants) VARIANTS="$2"; shift 2 ;;
       --only) ONLY="$2"; shift 2 ;;
       --runs) RUNS="$2"; shift 2 ;;
+      --suites) SUITES="$2"; shift 2 ;;
       --skip-build) SKIP_BUILD=1; shift ;;
       --retry-failed) RETRY_FAILED=1; shift ;;
       --no-core) BUILD_CORE=0; shift ;;
@@ -79,7 +114,7 @@ bench_start_server() {
   [[ -n "$ONLY" ]] && extra+=(--only "$ONLY")
   [[ "$RETRY_FAILED" == "1" ]] && extra+=(--retry-failed)
   (cd "$BENCH_ROOT" && exec bun scripts/bench/server.mjs --platform "$platform" --label "$LABEL" --variant "$variant" \
-    --results "$results" --runs "$RUNS" --port "$BENCH_PORT" --clean-cmd "$clean_cmd" ${extra[@]+"${extra[@]}"}) >>"$log" 2>&1 &
+    --results "$results" --runs "$RUNS" --suites "$SUITES" --port "$BENCH_PORT" --clean-cmd "$clean_cmd" ${extra[@]+"${extra[@]}"}) >>"$log" 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 50); do
     curl -sf "http://127.0.0.1:$BENCH_PORT/bench/status" >/dev/null 2>&1 && return 0
@@ -128,4 +163,10 @@ bench_monitor() {
   done
 }
 
-trap bench_stop_server EXIT
+bench_cleanup() {
+  bench_stop_server
+  if declare -F bench_platform_cleanup >/dev/null; then bench_platform_cleanup || true; fi
+  bench_release_lock
+}
+trap bench_cleanup EXIT
+trap 'exit 130' INT TERM

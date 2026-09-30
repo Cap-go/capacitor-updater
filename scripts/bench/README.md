@@ -13,6 +13,16 @@ RSA-2048 `privateEncrypt` session key, RSA-encrypted checksums / `file_hash`).
 - manifest (delta) downloads: 2 files / 20 KB, 20 / 2 MB, 200 / 20 MB, 2000 / 200 MB. Every
   version has fresh random content (plus a unique `index.html`/`bench.js`), so every file is
   downloaded. The server also counts the requests per version (`requests` in the JSONL).
+- manifest reuse (`--suites reuse`, background only): 200 files / 20 MB and 2000 files / 200 MB,
+  where 90% of the files are already on the device. There are two sources: *delta cache*
+  (version A, which holds the same files, is downloaded untimed right before B, and only B
+  is timed) and *builtin* (1800 random 100 KiB files ship in the app's `public/bpad/`, and
+  the manifest reuses them). `expectedDownloads` versus `requests` in the JSONL shows
+  whether the reuse really happened.
+- network-shaped (`--suites shaped`, plain, background): zip 30 MB, manifest 200 files /
+  20 MB and 2000 files / 20 MB. Every payload response waits 80 ms before its headers, and
+  all payload bytes share one 40 Mbit/s token bucket (`BENCH_SHAPE_LATENCY_MS`,
+  `BENCH_SHAPE_MBIT`). This measures how well each side parallelizes requests and uses the link.
 - `background`: time from the JS `download()` call until it resolves.
 - `direct`: `download()`, then `set()`. The clock stops when the new bundle's JS has
   resolved `notifyAppReady()`. The time spent on bench HTTP calls is not counted
@@ -50,7 +60,12 @@ bun scripts/bench/report.mjs
 For an `after` checkout that has `core/`, the runners call `scripts/build-core.sh <platform>`
 first (skip this with `--no-core`).
 
-Options: `--variants plain|enc|plain,enc`, `--only '<regex on case id>'`, `--runs N`,
+The runners re-exec themselves under `caffeinate -dimsu`. They hold `/tmp/capgo-maestro.lock`
+(which Maestro runs share; set `BENCH_DEVICE_LOCK=` to disable) while they use a device, and
+they boot the simulator or start the emulator (AVD `BENCH_AVD`) if needed. They shut down only
+the devices they started.
+
+Options: `--suites main,reuse,shaped`, `--variants plain|enc|plain,enc`, `--only '<regex on case id>'`, `--runs N`,
 `--skip-build` (reuse the last built app), `--retry-failed`.
 
 Results are appended per attempt to `.context/bench/results-<label>-<platform>.jsonl`. If you

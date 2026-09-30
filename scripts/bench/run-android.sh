@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Live-update benchmark on the Android emulator (release APK signed with the debug key).
 #   scripts/bench/run-android.sh <label> <plugin-checkout-dir> [options]   (see lib.sh for options)
-# Expects a running emulator (default AVD capgo_mem_api36):
-#   ~/Library/Android/sdk/emulator/emulator -avd capgo_mem_api36 -no-window -no-audio &
+# Uses the running emulator, or starts AVD $BENCH_AVD (default capgo_mem_api36) and stops it at the end.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+bench_caffeinate "$@"
 bench_parse_args "$@"
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
@@ -14,15 +14,6 @@ APP_ID="app.capgo.updater"
 ACTIVITY="$APP_ID/.MainActivity"
 
 bench_prepare_fixtures
-
-"$ADB" wait-for-device
-until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do sleep 2; done
-# Root is needed to clear the app's delta cache between cases on a release (non-debuggable) build.
-if [[ "$("$ADB" shell whoami | tr -d '\r')" != "root" ]]; then
-  "$ADB" root >/dev/null
-  sleep 2
-  "$ADB" wait-for-device
-fi
 
 apk_path() { echo "$BENCH_DIR/apps/$LABEL-android-$1.apk"; }
 
@@ -49,6 +40,39 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
       --ks-key-alias androiddebugkey --out "$(apk_path "$variant")" "$aligned"
     rm -f "$aligned"
   done
+fi
+
+bench_acquire_lock
+STARTED_EMULATOR=0
+if ! "$ADB" devices | grep -q "device$"; then
+  echo "[bench] starting emulator ${BENCH_AVD:-capgo_mem_api36}"
+  nohup "$SDK/emulator/emulator" -avd "${BENCH_AVD:-capgo_mem_api36}" -no-window -no-audio -no-snapshot-save \
+    >"$BENCH_LOG_DIR/emulator.log" 2>&1 &
+  STARTED_EMULATOR=1
+fi
+bench_platform_cleanup() {
+  "$ADB" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+  "$ADB" reverse --remove "tcp:$BENCH_PORT" >/dev/null 2>&1 || true
+  if [[ "$STARTED_EMULATOR" == "1" ]]; then
+    "$ADB" emu kill >/dev/null 2>&1 || true
+    # emu kill returns before the emulator is gone: wait so the next run does not see a dying device.
+    for _ in $(seq 1 60); do "$ADB" devices | grep -q "device$" || break; sleep 1; done
+  fi
+}
+booted=0
+for _ in $(seq 1 120); do
+  if [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then booted=1; break; fi
+  sleep 2
+done
+if [[ "$booted" != "1" ]]; then
+  echo "[bench] emulator did not boot within 240s" >&2
+  exit 1
+fi
+# Root is needed to clear the app's delta cache between cases on a release (non-debuggable) build.
+if [[ "$("$ADB" shell whoami | tr -d '\r')" != "root" ]]; then
+  "$ADB" root >/dev/null
+  sleep 2
+  "$ADB" wait-for-device
 fi
 
 reverse_port() {

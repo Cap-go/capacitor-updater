@@ -2,8 +2,20 @@
 //
 // Usage: bun scripts/bench/report.mjs [--before before] [--after after] [--out .context/bench/report.md]
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { androidSize, iosSize } from './app-size.mjs';
 import path from 'node:path';
-import { benchDir, manifestSizes, modes, variants, zipSizes } from './config.mjs';
+import {
+  benchDir,
+  manifestSizes,
+  modes,
+  reuseKinds,
+  reuseRatio,
+  reuseSizes,
+  shape,
+  shapedSizes,
+  variants,
+  zipSizes,
+} from './config.mjs';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -140,6 +152,71 @@ for (const platform of platforms) {
   lines.push('');
   lines.push('</details>');
   lines.push('');
+
+  const has = (kinds) => [b, a].some((recs) => (recs ?? []).some((r) => kinds.includes(r.kind)));
+  const medianOf = (recs, kind, sizeKey, variant, field) => {
+    const vals = (recs ?? [])
+      .filter((r) => r.ok && r.kind === kind && r.sizeKey === sizeKey && r.variant === variant && r[field] != null)
+      .map((r) => r[field]);
+    return stats(vals)?.median;
+  };
+  if (has(reuseKinds)) {
+    lines.push(`#### Manifest reuse (background, ${Math.round(reuseRatio * 100)}% of the files already on the device)`);
+    lines.push('');
+    lines.push(
+      '*delta cache*: version A with the same files was installed (untimed) right before B; only B is timed. ' +
+        "*builtin*: the reused files ship in the app's builtin `public/`. " +
+        '"Fetched" = payload requests the server saw for B (expected: new files + `index.html` + `bench.js`).',
+    );
+    lines.push('');
+    lines.push('| Reuse from | Payload | Encryption | Before | After | Δ | Fetched before / after (expected) |');
+    lines.push('|---|---|---|---|---|---|---|');
+    for (const kind of reuseKinds) {
+      for (const size of reuseSizes) {
+        for (const variant of variants) {
+          const pb = pick(b, kind, size.key, variant, 'background', 'totalMs');
+          const pa = pick(a, kind, size.key, variant, 'background', 'totalMs');
+          const fb = medianOf(b, kind, size.key, variant, 'requests');
+          const fa = medianOf(a, kind, size.key, variant, 'requests');
+          const exp =
+            medianOf(a, kind, size.key, variant, 'expectedDownloads') ??
+            medianOf(b, kind, size.key, variant, 'expectedDownloads');
+          lines.push(
+            `| ${kind === 'reuse-cache' ? 'delta cache' : 'builtin'} | ${size.files} files / ${size.key.split('-')[1].replace('MB', ' MB')} | ${variant === 'enc' ? 'on' : 'off'} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures)} | ${delta(pb.st, pa.st)} | ${fb ?? '-'} / ${fa ?? '-'} (${exp ?? '-'}) |`,
+          );
+        }
+      }
+    }
+    lines.push('');
+  }
+  if (has(['shaped-zip', 'shaped-manifest'])) {
+    lines.push(
+      `#### Network-shaped (background, plain): ${shape.latencyMs} ms before every response, ${shape.mbit} Mbit/s total (shared token bucket)`,
+    );
+    lines.push('');
+    lines.push(
+      `The link alone needs ~${((20 * 1024 * 1024 * 8) / (shape.mbit * 1e6)).toFixed(1)} s for 20 MB and ~${((30 * 1024 * 1024 * 8) / (shape.mbit * 1e6)).toFixed(1)} s for 30 MB. ` +
+        '"Link use" = payload bytes / total time, as a share of the cap.',
+    );
+    lines.push('');
+    lines.push('| Payload | Before | After | Δ | Link use before / after | Peak parallel requests before / after |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const size of shapedSizes) {
+      const pb = pick(b, size.kind, size.key, 'plain', 'background', 'totalMs');
+      const pa = pick(a, size.kind, size.key, 'plain', 'background', 'totalMs');
+      const use = (p) =>
+        p.st ? `${Math.round(((size.bytes * 8) / (p.st.median / 1000) / (shape.mbit * 1e6)) * 100)}%` : '-';
+      const title =
+        size.kind === 'shaped-zip'
+          ? `zip ${size.key.replace('MB', ' MB')}`
+          : `manifest ${size.files} files / ${size.key.split('-')[1].replace('MB', ' MB')}`;
+      lines.push(
+        `| ${title} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures)} | ${delta(pb.st, pa.st)} | ${use(pb)} / ${use(pa)} | ${medianOf(b, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} / ${medianOf(a, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} |`,
+      );
+    }
+    lines.push('');
+  }
+
   for (const [label, recs] of [
     [before, b],
     [after, a],
@@ -163,6 +240,85 @@ for (const platform of platforms) {
         `- ${platform} ${label} \`${key}\`: ${g.attempts} failed attempts, ${g.finals} run(s) lost. Errors: ${[...g.errors].map((e) => `\`${e}\``).join('; ')}`,
       );
     }
+  }
+}
+
+// ---- app size ------------------------------------------------------------------
+const kib = (n) =>
+  n == null ? '-' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MiB` : `${(n / 1024).toFixed(1)} KiB`;
+const sizeDelta = (x, y) => (x == null || y == null ? '-' : `${y - x >= 0 ? '+' : '-'}${kib(Math.abs(y - x))}`);
+const ab = androidSize(before);
+const aa = androidSize(after);
+const ib = iosSize(before);
+const ia = iosSize(after);
+if (ab || aa || ib || ia) {
+  lines.push('### App size (release bench builds, plain variant)');
+  lines.push('');
+  lines.push(
+    "The bench app's web assets (`public/`, including the 180 MB builtin pad used by the reuse cases) are listed separately; the rows without web assets show the native footprint.",
+  );
+  lines.push('');
+  if (ab || aa) {
+    lines.push('#### Android (signed release APK, all ABIs)');
+    lines.push('');
+    lines.push('| | Before | After | Δ |');
+    lines.push('|---|---|---|---|');
+    lines.push(
+      `| APK total | ${kib(ab?.apkBytes)} | ${kib(aa?.apkBytes)} | ${sizeDelta(ab?.apkBytes, aa?.apkBytes)} |`,
+    );
+    const noWeb = (x) => (x ? x.apkBytes - x.webCompressed : null);
+    lines.push(
+      `| APK without web assets | ${kib(noWeb(ab))} | ${kib(noWeb(aa))} | ${sizeDelta(noWeb(ab), noWeb(aa))} |`,
+    );
+    lines.push(
+      `| classes*.dex (uncompressed) | ${kib(ab?.dexBytes)} | ${kib(aa?.dexBytes)} | ${sizeDelta(ab?.dexBytes, aa?.dexBytes)} |`,
+    );
+    const abis = [...new Set([...(ab?.libs ?? []), ...(aa?.libs ?? [])].map((l) => l.abi))].sort();
+    for (const abi of abis) {
+      const lb = ab?.libs.find((l) => l.abi === abi);
+      const la = aa?.libs.find((l) => l.abi === abi);
+      lines.push(
+        `| lib/${abi}/libcapgo_updater_core.so (in APK) | ${lb ? `${kib(lb.size)} (${kib(lb.compressed)})` : '-'} | ${la ? `${kib(la.size)} (${kib(la.compressed)})` : '-'} | ${sizeDelta(lb?.size ?? 0, la?.size ?? 0)} |`,
+      );
+    }
+    if (aa) {
+      const dexDiff = (aa.dexBytes ?? 0) - (ab?.dexBytes ?? 0);
+      const estimate = aa.arm64Gzip + dexDiff - (ab?.arm64Gzip ?? 0);
+      lines.push('');
+      lines.push(
+        `Estimated per-device download change (arm64 split): gzip -9 of the arm64 \`.so\` (${kib(aa.arm64Gzip)}) ${dexDiff >= 0 ? '+' : '-'} dex difference (${kib(Math.abs(dexDiff))}) = **${estimate >= 0 ? '+' : '-'}${kib(Math.abs(estimate))}**.`,
+      );
+    }
+    lines.push('');
+  }
+  if (ib || ia) {
+    lines.push('#### iOS (Release simulator .app)');
+    lines.push('');
+    lines.push('| | Before | After | Δ |');
+    lines.push('|---|---|---|---|');
+    lines.push(
+      `| .app total | ${kib(ib?.appBytes)} | ${kib(ia?.appBytes)} | ${sizeDelta(ib?.appBytes, ia?.appBytes)} |`,
+    );
+    const noWeb = (x) => (x ? x.appBytes - x.webBytes : null);
+    lines.push(
+      `| .app without web assets | ${kib(noWeb(ib))} | ${kib(noWeb(ia))} | ${sizeDelta(noWeb(ib), noWeb(ia))} |`,
+    );
+    lines.push(
+      `| App executable (${ia?.exeArchs ?? ib?.exeArchs}) | ${kib(ib?.exeBytes)} | ${kib(ia?.exeBytes)} | ${sizeDelta(ib?.exeBytes, ia?.exeBytes)} |`,
+    );
+    lines.push(
+      `| App executable, arm64 slice | ${kib(ib?.exeArm64Bytes)} | ${kib(ia?.exeArm64Bytes)} | ${sizeDelta(ib?.exeArm64Bytes, ia?.exeArm64Bytes)} |`,
+    );
+    const fws = [...new Set([...(ib?.frameworks ?? []), ...(ia?.frameworks ?? [])].map((f) => f.name))].sort();
+    for (const name of fws) {
+      const fb = ib?.frameworks.find((f) => f.name === name);
+      const fa = ia?.frameworks.find((f) => f.name === name);
+      lines.push(
+        `| Frameworks/${name} | ${kib(fb?.bytes)} | ${kib(fa?.bytes)} | ${sizeDelta(fb?.bytes ?? 0, fa?.bytes ?? 0)} |`,
+      );
+    }
+    if (!fws.length) lines.push('| Frameworks/ | (none) | (none) | - |');
+    lines.push('');
   }
 }
 
