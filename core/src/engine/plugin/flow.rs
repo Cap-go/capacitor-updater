@@ -263,6 +263,7 @@ impl Engine {
     // ---- lifecycle ---------------------------------------------------------------------------
 
     pub(crate) fn app_moved_to_foreground(&self) {
+        self.plugin_state().in_background = false;
         self.mark_session_foreground(true);
         let current = self.current_bundle();
         self.send_stats("app_moved_to_foreground", Some(current.version_name()), None, None);
@@ -288,6 +289,7 @@ impl Engine {
     /// Runs on the caller's thread (the host's background notification) so the
     /// splash screen is up before the OS snapshots the app.
     pub(crate) fn background_splash(&self) {
+        self.plugin_state().in_background = true;
         self.mark_session_foreground(false);
         self.plugin_state().auto_splashscreen_timed_out = false;
         let config = self.plugin_config();

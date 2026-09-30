@@ -999,3 +999,47 @@ fn page_load_stats_are_sanitized() {
     assert!(body.contains("https://a.b/p/redacted"));
     assert!(!body.contains("t=1"));
 }
+
+/// Android freezes backgrounded apps: a rollback timer that expires while the
+/// app is in background must wait for the next foreground instead of rolling
+/// back a bundle whose page could not run yet.
+#[test]
+fn no_rollback_while_the_app_is_in_background() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("next", json!({ "id": id }));
+    p.background();
+    p.wait_for_event("set", 1);
+    std::thread::sleep(Duration::from_millis(1300));
+    assert!(p.events("updateFailed").is_empty(), "no rollback in background");
+    assert_eq!(p.current()["id"], id);
+    // Back in foreground the page confirms itself.
+    p.foreground();
+    p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
+    std::thread::sleep(Duration::from_millis(1300));
+    assert!(p.events("updateFailed").is_empty());
+    assert_eq!(p.current()["status"], "success");
+}
+
+#[test]
+fn android_background_install_does_not_wait_for_the_frozen_page() {
+    let p = Plugin::load_with(
+        json!({ "autoUpdate": false }),
+        json!({ "reloadWaitsForAppReady": true, "pendingBundleMinAppReadyTimeoutMs": 1000 }),
+    );
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("next", json!({ "id": id }));
+    let start = Instant::now();
+    p.background();
+    p.wait_for_event("set", 1);
+    assert!(
+        start.elapsed() < Duration::from_millis(900),
+        "installed without waiting"
+    );
+    assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
+    p.foreground();
+    p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
+    assert_eq!(p.current()["status"], "success");
+}

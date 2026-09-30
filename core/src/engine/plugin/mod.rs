@@ -322,6 +322,8 @@ pub struct PluginState {
     pub default_channel_cleanup_must_retry: bool,
     pub ready_generation: i64,
     pub ready_guard_armed: bool,
+    /// Between `appBackground` and `appForeground`: rollback checks wait for the next foreground.
+    pub in_background: bool,
 }
 
 /// `notifyAppReady` signal: waiters record the count they saw and wake when it grows.

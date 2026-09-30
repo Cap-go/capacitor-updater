@@ -119,9 +119,18 @@ impl Engine {
             let Some(engine) = Engine::sleep_unless_dropped(&weak, wait) else {
                 return;
             };
-            if engine.plugin.app_ready_check.load(std::sync::atomic::Ordering::SeqCst) == generation {
-                engine.check_revert();
+            if engine.plugin.app_ready_check.load(std::sync::atomic::Ordering::SeqCst) != generation {
+                return;
             }
+            // A backgrounded (or frozen, then thawed) app cannot confirm its page: the next
+            // foreground arms a fresh check.
+            if engine.plugin_state().in_background {
+                engine
+                    .host
+                    .info("App is in background, notifyAppReady check deferred to the next foreground");
+                return;
+            }
+            engine.check_revert();
         });
     }
 
@@ -250,7 +259,8 @@ impl Engine {
     /// return `false` when `notifyAppReady` does not arrive in time.
     pub(crate) fn reload_app(&self) -> bool {
         let config = self.plugin_config();
-        if config.reload_waits_for_app_ready {
+        // A backgrounded page cannot confirm itself: do not wait (the next foreground checks it).
+        if config.reload_waits_for_app_ready && !self.plugin_state().in_background {
             // This reload owns notifyAppReady synchronization.
             self.clear_pending_ready_wait();
             let token = self.ready_token();
