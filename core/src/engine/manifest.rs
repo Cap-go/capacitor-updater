@@ -24,8 +24,6 @@ use crate::net::NetError;
 use crate::paths;
 
 const PER_FILE_ESTIMATE: u64 = 100 * 1024;
-/// Manifest workers started at once; the rest join as files finish.
-const INITIAL_MANIFEST_WORKERS: usize = 16;
 const MIN_FREE_BYTES: u64 = 50 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -396,49 +394,28 @@ impl Engine {
         let failed = AtomicBool::new(false);
         let first_error: Mutex<Option<CoreError>> = Mutex::new(None);
         let assets = self.apk_assets();
-        // Connections open gradually: a burst of new connections to one host can stall
-        // (dropped SYNs retry after 1 s). Each finished file admits one more worker.
-        let admitted = Mutex::new(workers.min(INITIAL_MANIFEST_WORKERS));
-        let admit = std::sync::Condvar::new();
         std::thread::scope(|scope| {
-            for index in 0..workers {
-                let (queue, completed, failed, first_error) = (&queue, &completed, &failed, &first_error);
-                let (admitted, admit, session, assets, id) = (&admitted, &admit, &session, &assets, &id);
-                scope.spawn(move || {
-                    let mut open = admitted.lock().unwrap();
-                    while index >= *open {
-                        if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
-                            return;
-                        }
-                        open = admit.wait_timeout(open, Duration::from_millis(100)).unwrap().0;
+            for _ in 0..workers {
+                scope.spawn(|| loop {
+                    if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
+                        return;
                     }
-                    drop(open);
-                    loop {
-                        if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
-                            return;
+                    let Some(task) = queue.lock().unwrap().next() else {
+                        return;
+                    };
+                    match self.process_manifest_file(&task, request, &session, assets.as_ref(), cancel) {
+                        Ok(()) => {
+                            let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                            self.progress(&id, 10 + (done * 60 / total.max(1)) as i64);
                         }
-                        let Some(task) = queue.lock().unwrap().next() else {
+                        Err(error) => {
+                            self.host.error(format!(
+                                "Manifest file download failed: {} ({})",
+                                task.file_name, error.message
+                            ));
+                            failed.store(true, Ordering::SeqCst);
+                            first_error.lock().unwrap().get_or_insert(error);
                             return;
-                        };
-                        match self.process_manifest_file(&task, request, session, assets.as_ref(), cancel) {
-                            Ok(()) => {
-                                let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                                self.progress(id, 10 + (done * 60 / total.max(1)) as i64);
-                                let mut open = admitted.lock().unwrap();
-                                if *open < workers {
-                                    *open += 1;
-                                    admit.notify_all();
-                                }
-                            }
-                            Err(error) => {
-                                self.host.error(format!(
-                                    "Manifest file download failed: {} ({})",
-                                    task.file_name, error.message
-                                ));
-                                failed.store(true, Ordering::SeqCst);
-                                first_error.lock().unwrap().get_or_insert(error);
-                                return;
-                            }
                         }
                     }
                 });
