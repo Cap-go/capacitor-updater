@@ -113,6 +113,10 @@ export function benchJs(marker) {
     return postRetry('/bench/result', Object.assign({}, base, { ok: false, error: 'set() resolved but no reload happened' }));
   }
   async function main() {
+    // Apply-step split for direct mode: navStart = when this document started loading
+    // (the WebView reload triggered by set()), tNotifyStart = just before notifyAppReady.
+    var navStart = (window.performance && performance.timeOrigin) || null;
+    var tNotifyStart = Date.now();
     var ready = null;
     var readyError = null;
     try { ready = await call('notifyAppReady'); } catch (e) { readyError = errText(e); }
@@ -126,6 +130,8 @@ export function benchJs(marker) {
     var resp = await postRetry('/bench/boot', {
       marker: ${JSON.stringify(marker)},
       tReady: tReady,
+      navStart: navStart,
+      tNotifyStart: tNotifyStart,
       readyError: readyError,
       ready: ready,
       bundle: bundle,

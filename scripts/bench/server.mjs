@@ -420,10 +420,21 @@ const server = Bun.serve({
         if (ps && ps.caseId === current.case.id && ps.attempt === current.attempt && version === current.version) {
           const downloadMs = current.t1 - current.t0;
           const applyMs = b.tReady - ps.tSet;
+          // set() call until the new document starts loading / document load until
+          // notifyAppReady() is called / the notifyAppReady() call itself.
+          const phases =
+            typeof b.navStart === 'number' && typeof b.tNotifyStart === 'number'
+              ? {
+                  setMs: Math.round(b.navStart - ps.tSet),
+                  loadMs: Math.round(b.tNotifyStart - b.navStart),
+                  notifyMs: b.tReady - b.tNotifyStart,
+                }
+              : {};
           record(current, {
             ok: true,
             downloadMs,
             applyMs,
+            ...phases,
             totalMs: downloadMs + applyMs,
             wallMs: b.tReady - current.t0,
           });

@@ -26,6 +26,8 @@ const before = arg('before', 'before');
 const after = arg('after', 'after');
 const out = arg('out', path.join(benchDir, 'report.md'));
 const note = arg('note', '');
+// Cells with no `after` records are taken from this label and marked with †.
+const afterFallback = arg('after-fallback', '');
 const platforms = ['ios', 'android'];
 
 function load(label, platform) {
@@ -58,12 +60,20 @@ function fmt(ms) {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-function cell(st, failures) {
-  if (!st) return failures ? `FAIL (${failures}x)` : 'n/a';
+function cell(st, failures, fallback = false) {
+  const mark = fallback ? ' †' : '';
+  if (!st) return failures ? `FAIL (${failures}x)${mark}` : 'n/a';
   const range = st.n > 1 ? ` (${fmt(st.min)}–${fmt(st.max)})` : '';
-  const n = st.n < 3 ? ` n=${st.n}` : '';
+  const n = st.n !== 3 ? ` n=${st.n}` : '';
   const f = failures ? ` +${failures} fail` : '';
-  return `**${fmt(st.median)}**${range}${n}${f}`;
+  return `**${fmt(st.median)}**${range}${n}${f}${mark}`;
+}
+
+const cellKey = (r) => `${r.kind}|${r.sizeKey}|${r.variant}|${r.mode}`;
+function withFallback(primary, fallback) {
+  if (!fallback) return primary;
+  const keys = new Set((primary ?? []).map(cellKey));
+  return [...(primary ?? []), ...fallback.filter((r) => !keys.has(cellKey(r))).map((r) => ({ ...r, fallback: true }))];
 }
 
 function delta(b, a) {
@@ -89,7 +99,7 @@ function pick(records, kind, sizeKey, variant, mode, field) {
   );
   const okVals = matching.filter((r) => r.ok && r[field] != null).map((r) => r[field]);
   const failures = matching.filter((r) => !r.ok && r.final).length;
-  return { st: stats(okVals), failures };
+  return { st: stats(okVals), failures, fb: matching.some((r) => r.fallback) };
 }
 
 const lines = [];
@@ -111,7 +121,7 @@ if (note) {
 
 for (const platform of platforms) {
   const b = load(before, platform);
-  const a = load(after, platform);
+  const a = withFallback(load(after, platform), afterFallback ? load(afterFallback, platform) : null);
   if (!b && !a) continue;
   const platformTitle = platform === 'ios' ? 'iOS simulator (iPhone 17 Pro)' : 'Android emulator (API 36, arm64)';
   lines.push(`### ${platformTitle}`);
@@ -128,7 +138,7 @@ for (const platform of platforms) {
         const pb = pick(b, row.kind, row.sizeKey, variant, mode, 'totalMs');
         const pa = pick(a, row.kind, row.sizeKey, variant, mode, 'totalMs');
         lines.push(
-          `| ${row.title} | ${variant === 'enc' ? 'on' : 'off'} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures)} | ${delta(pb.st, pa.st)} |`,
+          `| ${row.title} | ${variant === 'enc' ? 'on' : 'off'} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures, pa.fb)} | ${delta(pb.st, pa.st)} |`,
         );
       }
     }
@@ -152,6 +162,29 @@ for (const platform of platforms) {
   lines.push('');
   lines.push('</details>');
   lines.push('');
+
+  const phaseRows = [];
+  for (const row of rowsDef) {
+    for (const variant of variants) {
+      const f = (recs, field) => pick(recs, row.kind, row.sizeKey, variant, 'direct', field).st?.median;
+      if (f(b, 'setMs') == null && f(a, 'setMs') == null) continue;
+      phaseRows.push(
+        `| ${row.title} | ${variant === 'enc' ? 'on' : 'off'} | ${fmt(f(b, 'applyMs'))} / ${fmt(f(a, 'applyMs'))} | ${fmt(f(b, 'setMs'))} / ${fmt(f(a, 'setMs'))} | ${fmt(f(b, 'loadMs'))} / ${fmt(f(a, 'loadMs'))} | ${fmt(f(b, 'notifyMs'))} / ${fmt(f(a, 'notifyMs'))} |`,
+      );
+    }
+  }
+  if (phaseRows.length) {
+    lines.push('#### Direct mode: apply step split (median, before / after)');
+    lines.push('');
+    lines.push(
+      '*set()*: from the `set()` call until the new document starts loading (`performance.timeOrigin`). *reload*: new document load until the bench script calls `notifyAppReady()`. *notify*: the `notifyAppReady()` call.',
+    );
+    lines.push('');
+    lines.push('| Payload | Encryption | Apply | set() | Reload | notify |');
+    lines.push('|---|---|---|---|---|---|');
+    lines.push(...phaseRows);
+    lines.push('');
+  }
 
   const has = (kinds) => [b, a].some((recs) => (recs ?? []).some((r) => kinds.includes(r.kind)));
   const medianOf = (recs, kind, sizeKey, variant, field) => {
@@ -182,7 +215,7 @@ for (const platform of platforms) {
             medianOf(a, kind, size.key, variant, 'expectedDownloads') ??
             medianOf(b, kind, size.key, variant, 'expectedDownloads');
           lines.push(
-            `| ${kind === 'reuse-cache' ? 'delta cache' : 'builtin'} | ${size.files} files / ${size.key.split('-')[1].replace('MB', ' MB')} | ${variant === 'enc' ? 'on' : 'off'} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures)} | ${delta(pb.st, pa.st)} | ${fb ?? '-'} / ${fa ?? '-'} (${exp ?? '-'}) |`,
+            `| ${kind === 'reuse-cache' ? 'delta cache' : 'builtin'} | ${size.files} files / ${size.key.split('-')[1].replace('MB', ' MB')} | ${variant === 'enc' ? 'on' : 'off'} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures, pa.fb)} | ${delta(pb.st, pa.st)} | ${fb ?? '-'} / ${fa ?? '-'} (${exp ?? '-'}) |`,
           );
         }
       }
@@ -211,7 +244,7 @@ for (const platform of platforms) {
           ? `zip ${size.key.replace('MB', ' MB')}`
           : `manifest ${size.files} files / ${size.key.split('-')[1].replace('MB', ' MB')}`;
       lines.push(
-        `| ${title} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures)} | ${delta(pb.st, pa.st)} | ${use(pb)} / ${use(pa)} | ${medianOf(b, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} / ${medianOf(a, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} |`,
+        `| ${title} | ${cell(pb.st, pb.failures)} | ${cell(pa.st, pa.failures, pa.fb)} | ${delta(pb.st, pa.st)} | ${use(pb)} / ${use(pa)} | ${medianOf(b, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} / ${medianOf(a, size.kind, size.key, 'plain', 'peakInFlight') ?? '-'} |`,
       );
     }
     lines.push('');
