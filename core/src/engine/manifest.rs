@@ -62,6 +62,24 @@ impl ApkAssets {
     }
 }
 
+/// Per-path lock shared by every engine in the process (entries die with their last user).
+fn partial_lock(path: &Path) -> std::sync::Arc<Mutex<()>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, OnceLock, Weak};
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some(lock) = locks.get(path).and_then(Weak::upgrade) {
+        return lock;
+    }
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(path.to_path_buf(), Arc::downgrade(&lock));
+    lock
+}
+
 fn entry_text<'a>(entry: &'a Value, key: &str) -> &'a str {
     entry.get(key).and_then(Value::as_str).unwrap_or_default()
 }
@@ -464,6 +482,16 @@ impl Engine {
         };
         let _ = fs::create_dir_all(&partial_dir);
         let partial = partial_dir.join(paths::manifest_partial_name(Some(&task.hash), &task.file_name));
+        // The partial is named by file and hash, so overlapping downloads that share a file
+        // would append to, rename or delete each other's partial: one transfer at a time.
+        let lock = partial_lock(&partial);
+        let _owner = lock.lock().unwrap_or_else(|poison| poison.into_inner());
+        // The transfer we waited for may have left the file in the delta cache.
+        if let Some(cached) = &task.cache {
+            if Self::reusable(Some(cached), &task.hash) && fsutil::link_or_copy(cached, &task.target).is_ok() {
+                return Ok(());
+            }
+        }
         let stat_name = format!("{}:{}", request.version, task.file_name);
         let file_fail = |message: String| {
             self.send_stats("download_manifest_file_fail", Some(&stat_name), None, None);

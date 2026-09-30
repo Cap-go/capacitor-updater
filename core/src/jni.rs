@@ -143,26 +143,6 @@ impl Host for JniHost {
         .unwrap_or(false)
     }
 
-    fn send_stats(&self, action: &str, version_name: &str, old_version_name: &str) -> bool {
-        self.with_env(|env| {
-            let action = Self::string_arg(env, action)?;
-            let version_name = Self::string_arg(env, version_name)?;
-            let old_version_name = Self::string_arg(env, old_version_name)?;
-            env.call_method(
-                self.host.as_obj(),
-                "sendStats",
-                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
-                &[
-                    JValue::Object(&action),
-                    JValue::Object(&version_name),
-                    JValue::Object(&old_version_name),
-                ],
-            )?
-            .z()
-        })
-        .unwrap_or(false)
-    }
-
     fn kv_keys(&self) -> Vec<String> {
         self.with_env(|env| {
             let keys = env

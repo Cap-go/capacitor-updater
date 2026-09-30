@@ -174,9 +174,11 @@ export async function createManifestVersion({ version, files, bytes, variant, ke
     await writeRandomFile(path.join(plainDir, name), sizes[i]);
     newNames.push(name);
   }
-  for (const name of reusedNames) {
-    await mkdir(path.dirname(path.join(plainDir, name)), { recursive: true });
-    await copyFile(path.join(reuse.srcDir, name), path.join(plainDir, name));
+  if (reuse) {
+    for (const name of reusedNames) {
+      await mkdir(path.dirname(path.join(plainDir, name)), { recursive: true });
+      await copyFile(path.join(reuse.srcDir, name), path.join(plainDir, name));
+    }
   }
   const names = ['index.html', 'bench.js', ...reusedNames, ...newNames];
   const session = variant === 'enc' ? newSession(keys.privateKey) : null;

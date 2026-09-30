@@ -236,7 +236,31 @@ pub fn extract_zip(
         progress(done, total);
     }
 
-    // The same path twice: the last entry wins (as a sequential extraction would).
+    // Pass 1b (sequential): every file gets its physical path. Two names can reach one
+    // file through an in-bundle directory symlink (`b -> a`: `a/x` and `b/x`); parallel
+    // writers must never share a file, and a file must not replace a directory.
+    for file in &mut files {
+        let parent = file.target.parent().unwrap_or(destination).to_path_buf();
+        fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
+        if !physically_inside(destination, &parent) {
+            return Err(ExtractError::PathEscape(file.name.clone()));
+        }
+        let real_parent = fs::canonicalize(&parent).map_err(|error| failed(&error))?;
+        let Some(file_name) = file.target.file_name() else {
+            return Err(ExtractError::PathEscape(file.name.clone()));
+        };
+        let physical = real_parent.join(file_name);
+        if fs::metadata(&physical).is_ok_and(|metadata| metadata.is_dir()) {
+            return Err(ExtractError::Failed(format!(
+                "Entry {} collides with a directory in {}",
+                file.name,
+                zip_path.display()
+            )));
+        }
+        file.target = physical;
+    }
+
+    // The same physical file twice: the last entry wins (as a sequential extraction would).
     let mut last_by_target = std::collections::HashMap::new();
     for (position, file) in files.iter().enumerate() {
         last_by_target.insert(file.target.clone(), position);

@@ -341,3 +341,35 @@ fn parallel_extraction_writes_every_file() {
         assert_eq!(std::fs::read(out.join(name)).unwrap(), contents[index], "{name}");
     }
 }
+
+/// Two names for one file through an in-bundle directory symlink: the last entry
+/// wins every time (parallel writers never share the file).
+#[test]
+#[cfg(unix)]
+fn directory_alias_collisions_resolve_to_the_last_entry() {
+    let first = vec![b'a'; 256 * 1024];
+    let second = vec![b'b'; 256 * 1024];
+    let bytes = zip_of(&[
+        Entry::Dir("a/"),
+        Entry::Symlink("b", "a"),
+        Entry::File("a/x.js", &first),
+        Entry::File("b/x.js", &second),
+        Entry::File("a/y.js", b"y"),
+    ]);
+    for _ in 0..30 {
+        let dir = tempfile::tempdir().unwrap();
+        let out = extract(&bytes, dir.path()).unwrap();
+        assert_eq!(std::fs::read(out.join("a/x.js")).unwrap(), second);
+        assert_eq!(std::fs::read(out.join("b/x.js")).unwrap(), second);
+        assert_eq!(std::fs::read(out.join("a/y.js")).unwrap(), b"y");
+    }
+}
+
+/// A file entry cannot replace a directory (another entry's parent).
+#[test]
+#[cfg(unix)]
+fn file_entries_colliding_with_directories_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = zip_of(&[Entry::File("m/y.js", b"y"), Entry::File("m", b"file")]);
+    assert!(matches!(extract(&bytes, dir.path()), Err(ExtractError::Failed(_))));
+}

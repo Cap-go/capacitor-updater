@@ -312,4 +312,37 @@ final class CleartextPolicyTests: XCTestCase {
         XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: exceptions))
         XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "example.org", ats: exceptions))
     }
+
+    /// Apple's precedence: fine-grained keys disable NSAllowsArbitraryLoads, exception domains override it.
+    func testAtsPrecedenceWithMixedSettings() {
+        for key in ["NSAllowsArbitraryLoadsInWebContent", "NSAllowsArbitraryLoadsForMedia", "NSAllowsLocalNetworking"] {
+            for value in [true, false] {
+                let ats: [String: Any] = ["NSAllowsArbitraryLoads": true, key: value]
+                XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ats), "\(key)=\(value)")
+            }
+        }
+        // An exception domain without insecure HTTP keeps TLS required under arbitrary loads.
+        let strictDomain: [String: Any] = [
+            "NSAllowsArbitraryLoads": true,
+            "NSExceptionDomains": ["example.com": ["NSIncludesSubdomains": true, "NSExceptionRequiresForwardSecrecy": false]]
+        ]
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: strictDomain))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.org", ats: strictDomain))
+        // The most specific exception domain wins.
+        let nested: [String: Any] = [
+            "NSExceptionDomains": [
+                "example.com": ["NSIncludesSubdomains": true, "NSExceptionAllowsInsecureHTTPLoads": true],
+                "secure.example.com": ["NSIncludesSubdomains": true]
+            ]
+        ]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "cdn.example.com", ats: nested))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "api.secure.example.com", ats: nested))
+        // An exact domain entry applies without NSIncludesSubdomains; subdomains do not.
+        let exact: [String: Any] = ["NSExceptionDomains": ["example.com": ["NSExceptionAllowsInsecureHTTPLoads": true]]]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "example.com", ats: exact))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: exact))
+        // IPs: arbitrary loads only when no fine-grained key is present.
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "1.2.3.4", ats: ["NSAllowsArbitraryLoads": true]))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "1.2.3.4", ats: ["NSAllowsArbitraryLoads": true, "NSAllowsArbitraryLoadsForMedia": true]))
+    }
 }

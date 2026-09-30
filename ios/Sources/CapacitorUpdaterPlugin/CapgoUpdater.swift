@@ -263,43 +263,42 @@ import UIKit
     // MARK: - Platform services
 
     /// App Transport Security decision for plain HTTP to `host` (the engine's HTTP client
-    /// is not URLSession, so it applies the app's ATS settings itself).
+    /// is not URLSession, so it applies the app's ATS settings itself), with Apple's precedence:
+    /// - `NSAllowsArbitraryLoads` is ignored when `NSAllowsArbitraryLoadsInWebContent`,
+    ///   `NSAllowsArbitraryLoadsForMedia` or `NSAllowsLocalNetworking` is present (any value).
+    /// - A matching exception domain (the most specific one) overrides the global settings.
+    /// - IP addresses cannot be exception domains: only local networking or arbitrary loads allow them.
     static func atsAllowsCleartext(host: String, ats: [String: Any]?) -> Bool {
         let host = host.lowercased()
         // ATS always allows localhost.
         if host == "localhost" {
             return true
         }
-        let allowsArbitraryLoads = ats?["NSAllowsArbitraryLoads"] as? Bool == true
-        let allowsLocalNetworking = ats?["NSAllowsLocalNetworking"] as? Bool == true
-        if allowsArbitraryLoads {
-            return true
-        }
-        // IP addresses are subject to ATS and cannot be listed in NSExceptionDomains:
-        // only NSAllowsLocalNetworking (or arbitrary loads) permits them.
+        let ats = ats ?? [:]
+        let fineGrainedKeys = ["NSAllowsArbitraryLoadsInWebContent", "NSAllowsArbitraryLoadsForMedia", "NSAllowsLocalNetworking"]
+        let hasFineGrainedKey = fineGrainedKeys.contains { ats[$0] != nil }
+        let allowsArbitraryLoads = !hasFineGrainedKey && ats["NSAllowsArbitraryLoads"] as? Bool == true
+        let allowsLocalNetworking = ats["NSAllowsLocalNetworking"] as? Bool == true
         let unbracketed = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         if IPv4Address(host) != nil || IPv6Address(unbracketed) != nil {
-            return allowsLocalNetworking
+            return allowsLocalNetworking || allowsArbitraryLoads
+        }
+        let exceptions = ats["NSExceptionDomains"] as? [String: [String: Any]] ?? [:]
+        let match = exceptions
+            .map { (domain: $0.key.lowercased(), settings: $0.value) }
+            .filter { entry in
+                host == entry.domain
+                    || (entry.settings["NSIncludesSubdomains"] as? Bool == true && host.hasSuffix("." + entry.domain))
+            }
+            .max { $0.domain.count < $1.domain.count }
+        if let settings = match?.settings {
+            return settings["NSExceptionAllowsInsecureHTTPLoads"] as? Bool == true
+                || settings["NSTemporaryExceptionAllowsInsecureHTTPLoads"] as? Bool == true
         }
         if allowsLocalNetworking && (!host.contains(".") || host.hasSuffix(".local")) {
             return true
         }
-        guard let ats else {
-            return false
-        }
-        let exceptions = ats["NSExceptionDomains"] as? [String: [String: Any]] ?? [:]
-        for (domain, settings) in exceptions {
-            let domain = domain.lowercased()
-            let allowsHTTP = settings["NSExceptionAllowsInsecureHTTPLoads"] as? Bool == true
-                || settings["NSTemporaryExceptionAllowsInsecureHTTPLoads"] as? Bool == true
-            guard allowsHTTP else {
-                continue
-            }
-            if host == domain || (settings["NSIncludesSubdomains"] as? Bool == true && host.hasSuffix("." + domain)) {
-                return true
-            }
-        }
-        return false
+        return allowsArbitraryLoads
     }
 
     private func updateBackgroundTask(action: String, name: String) {

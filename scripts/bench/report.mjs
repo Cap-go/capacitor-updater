@@ -306,7 +306,7 @@ if (ab || aa || ib || ia) {
     lines.push(
       `| classes*.dex (uncompressed) | ${kib(ab?.dexBytes)} | ${kib(aa?.dexBytes)} | ${sizeDelta(ab?.dexBytes, aa?.dexBytes)} |`,
     );
-    const abis = [...new Set([...(ab?.libs ?? []), ...(aa?.libs ?? [])].map((l) => l.abi))].sort();
+    const abis = [...new Set([...(ab?.libs ?? []), ...(aa?.libs ?? [])].map((l) => l.abi))].sort((a, b) => a.localeCompare(b));
     for (const abi of abis) {
       const lb = ab?.libs.find((l) => l.abi === abi);
       const la = aa?.libs.find((l) => l.abi === abi);
@@ -342,7 +342,7 @@ if (ab || aa || ib || ia) {
     lines.push(
       `| App executable, arm64 slice | ${kib(ib?.exeArm64Bytes)} | ${kib(ia?.exeArm64Bytes)} | ${sizeDelta(ib?.exeArm64Bytes, ia?.exeArm64Bytes)} |`,
     );
-    const fws = [...new Set([...(ib?.frameworks ?? []), ...(ia?.frameworks ?? [])].map((f) => f.name))].sort();
+    const fws = [...new Set([...(ib?.frameworks ?? []), ...(ia?.frameworks ?? [])].map((f) => f.name))].sort((a, b) => a.localeCompare(b));
     for (const name of fws) {
       const fb = ib?.frameworks.find((f) => f.name === name);
       const fa = ia?.frameworks.find((f) => f.name === name);
