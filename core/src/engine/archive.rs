@@ -113,20 +113,22 @@ struct FileEntry {
 fn write_file_entry(
     archive: &mut Archive,
     entry: &FileEntry,
-    destination: &Path,
     buffer: &mut [u8],
     zip_path: &Path,
 ) -> Result<(), ExtractError> {
     let failed = |error: &dyn std::fmt::Display| {
         ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
     };
-    let parent = entry.target.parent().unwrap_or(destination).to_path_buf();
-    fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
-    // Symlinks created in the first pass must not redirect this file outside the bundle.
-    if !physically_inside(destination, &parent) {
-        return Err(ExtractError::PathEscape(entry.name.clone()));
-    }
-    if fs::symlink_metadata(&entry.target).is_ok() {
+    // `target` is the physical path: its parent exists and was checked in pass 1b.
+    if let Ok(existing) = fs::symlink_metadata(&entry.target) {
+        // A directory here is another entry's parent: never replace it.
+        if existing.is_dir() {
+            return Err(ExtractError::Failed(format!(
+                "Entry {} collides with a directory in {}",
+                entry.name,
+                zip_path.display()
+            )));
+        }
         super::store::remove_path(&entry.target).map_err(|error| failed(&error))?;
     }
     let mut zip_entry = archive.by_index(entry.index).map_err(|error| failed(&error))?;
@@ -188,6 +190,16 @@ pub fn extract_zip(
         let mut entry = archive.by_index(index).map_err(|error| failed(&error))?;
         let name = entry.name().to_string();
         let target = resolve_entry(destination, &name)?;
+        if !entry.is_dir() && !entry.is_symlink() {
+            // Checked in pass 1b, once every symlink exists.
+            files.push(FileEntry {
+                index,
+                name,
+                target,
+                declared: entry.size(),
+            });
+            continue;
+        }
         if !physically_inside(destination, target.parent().unwrap_or(destination)) {
             return Err(ExtractError::PathEscape(name));
         }
@@ -195,15 +207,6 @@ pub fn extract_zip(
             fs::create_dir_all(&target).map_err(|_| ExtractError::Directory(target.display().to_string()))?;
             done += 1;
             progress(done, total);
-            continue;
-        }
-        if !entry.is_symlink() {
-            files.push(FileEntry {
-                index,
-                name,
-                target,
-                declared: entry.size(),
-            });
             continue;
         }
         let parent = target.parent().unwrap_or(destination).to_path_buf();
@@ -238,26 +241,31 @@ pub fn extract_zip(
 
     // Pass 1b (sequential): every file gets its physical path. Two names can reach one
     // file through an in-bundle directory symlink (`b -> a`: `a/x` and `b/x`); parallel
-    // writers must never share a file, and a file must not replace a directory.
+    // writers must never share a file. No symlink is created after pass 1, so each
+    // directory is created, checked and canonicalized once.
+    let root = fs::canonicalize(destination).map_err(|_| ExtractError::Directory(destination.display().to_string()))?;
+    let mut real_dirs: std::collections::HashMap<PathBuf, PathBuf> = std::collections::HashMap::new();
     for file in &mut files {
         let parent = file.target.parent().unwrap_or(destination).to_path_buf();
-        fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
-        if !physically_inside(destination, &parent) {
-            return Err(ExtractError::PathEscape(file.name.clone()));
-        }
-        let real_parent = fs::canonicalize(&parent).map_err(|error| failed(&error))?;
+        let real_parent = match real_dirs.get(&parent) {
+            Some(real) => real.clone(),
+            None => {
+                if !physically_inside(destination, &parent) {
+                    return Err(ExtractError::PathEscape(file.name.clone()));
+                }
+                fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
+                let real = fs::canonicalize(&parent).map_err(|_| ExtractError::PathEscape(file.name.clone()))?;
+                if !real.starts_with(&root) {
+                    return Err(ExtractError::PathEscape(file.name.clone()));
+                }
+                real_dirs.insert(parent, real.clone());
+                real
+            }
+        };
         let Some(file_name) = file.target.file_name() else {
             return Err(ExtractError::PathEscape(file.name.clone()));
         };
-        let physical = real_parent.join(file_name);
-        if fs::metadata(&physical).is_ok_and(|metadata| metadata.is_dir()) {
-            return Err(ExtractError::Failed(format!(
-                "Entry {} collides with a directory in {}",
-                file.name,
-                zip_path.display()
-            )));
-        }
-        file.target = physical;
+        file.target = real_parent.join(file_name);
     }
 
     // The same physical file twice: the last entry wins (as a sequential extraction would).
@@ -307,7 +315,7 @@ pub fn extract_zip(
                     let Some(entry) = files.get(position) else {
                         return;
                     };
-                    if let Err(error) = write_file_entry(&mut archive, entry, destination, &mut buffer, zip_path) {
+                    if let Err(error) = write_file_entry(&mut archive, entry, &mut buffer, zip_path) {
                         first_error.lock().unwrap().get_or_insert(error);
                         stop.store(true, std::sync::atomic::Ordering::SeqCst);
                         return;
