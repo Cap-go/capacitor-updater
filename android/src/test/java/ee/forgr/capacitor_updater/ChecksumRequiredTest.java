@@ -52,6 +52,11 @@ public class ChecksumRequiredTest {
             this.sentStatsActions.add(action);
         }
 
+        @Override
+        public void sendStats(final String action, final String versionName) {
+            this.sentStatsActions.add(action);
+        }
+
         List<String> getSentStatsActions() {
             return this.sentStatsActions;
         }
