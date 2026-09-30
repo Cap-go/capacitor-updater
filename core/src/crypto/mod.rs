@@ -67,9 +67,23 @@ pub fn decrypt_checksum(checksum: &str, public_key: &str) -> CoreResult<String> 
             ),
         ));
     }
-    let key = RsaPublicKey::from_pem(public_key)?;
+    let key = cached_public_key(public_key)?;
     let decrypted = key.public_decrypt(&encrypted)?;
     Ok(hex_encode(&decrypted))
+}
+
+/// The configured public key parsed once (manifests decrypt one checksum per file).
+fn cached_public_key(pem: &str) -> CoreResult<std::sync::Arc<RsaPublicKey>> {
+    static CACHE: std::sync::Mutex<Option<(String, std::sync::Arc<RsaPublicKey>)>> = std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some((cached_pem, key)) = cache.as_ref() {
+        if cached_pem == pem {
+            return Ok(key.clone());
+        }
+    }
+    let key = std::sync::Arc::new(RsaPublicKey::from_pem(pem)?);
+    *cache = Some((pem.to_string(), key.clone()));
+    Ok(key)
 }
 
 /// Parsed `<iv>:<encrypted key>` session key.
@@ -95,7 +109,7 @@ fn decrypt_session_key(public_key: &str, session_key: &str) -> CoreResult<Sessio
         .ok_or_else(|| CoreError::new("invalid_iv", "IV must be 16 bytes of base64"))?;
     let encrypted_key =
         base64_decode(key_b64).ok_or_else(|| CoreError::new("invalid_session_key", "Session key is not base64"))?;
-    let rsa_key = RsaPublicKey::from_pem(public_key)?;
+    let rsa_key = cached_public_key(public_key)?;
     let key = rsa_key.public_decrypt(&encrypted_key).map_err(|error| {
         CoreError::new(
             "session_key_decrypt_failed",

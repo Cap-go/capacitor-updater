@@ -39,28 +39,128 @@ struct Task {
     legacy_cache: Option<PathBuf>,
 }
 
-/// Reads builtin files out of the APK (`assets/public/...`), one archive per thread.
+/// Reads builtin files out of the APK (`assets/public/...`). The APK's central
+/// directory is parsed once per process and shared by every worker.
 struct ApkAssets {
     path: PathBuf,
 }
 
-thread_local! {
-    static APK: std::cell::RefCell<Option<(PathBuf, zip::ZipArchive<io::BufReader<File>>)>> = const { std::cell::RefCell::new(None) };
+/// Buffered `Read + Seek` over a shared file with positional reads: cheap to
+/// clone, so each worker gets its own cursor over one parsed archive.
+struct SharedFile {
+    file: std::sync::Arc<File>,
+    len: u64,
+    position: u64,
+    buffer: Vec<u8>,
+    buffer_start: u64,
+}
+
+impl Clone for SharedFile {
+    fn clone(&self) -> Self {
+        Self {
+            file: self.file.clone(),
+            len: self.len,
+            position: self.position,
+            buffer: Vec::new(),
+            buffer_start: 0,
+        }
+    }
+}
+
+impl SharedFile {
+    fn open(path: &Path) -> io::Result<Self> {
+        let file = File::open(path)?;
+        let len = file.metadata()?.len();
+        Ok(Self {
+            file: std::sync::Arc::new(file),
+            len,
+            position: 0,
+            buffer: Vec::new(),
+            buffer_start: 0,
+        })
+    }
+
+    #[cfg(unix)]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        std::os::unix::fs::FileExt::read_at(&*self.file, buf, offset)
+    }
+
+    #[cfg(not(unix))]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        use std::io::Seek;
+        let mut file = self.file.try_clone()?;
+        file.seek(io::SeekFrom::Start(offset))?;
+        file.read(buf)
+    }
+}
+
+impl Read for SharedFile {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        const BUFFER: usize = 64 * 1024;
+        if out.is_empty() || self.position >= self.len {
+            return Ok(0);
+        }
+        let buffered_end = self.buffer_start + self.buffer.len() as u64;
+        if self.position < self.buffer_start || self.position >= buffered_end {
+            if out.len() >= BUFFER {
+                // Large reads go straight to the file.
+                let read = self.read_at(out, self.position)?;
+                self.position += read as u64;
+                return Ok(read);
+            }
+            let mut buffer = std::mem::take(&mut self.buffer);
+            buffer.resize(BUFFER, 0);
+            let read = self.read_at(&mut buffer, self.position)?;
+            buffer.truncate(read);
+            self.buffer = buffer;
+            self.buffer_start = self.position;
+            if read == 0 {
+                return Ok(0);
+            }
+        }
+        let offset = (self.position - self.buffer_start) as usize;
+        let count = out.len().min(self.buffer.len() - offset);
+        out[..count].copy_from_slice(&self.buffer[offset..offset + count]);
+        self.position += count as u64;
+        Ok(count)
+    }
+}
+
+impl std::io::Seek for SharedFile {
+    fn seek(&mut self, position: io::SeekFrom) -> io::Result<u64> {
+        let next = match position {
+            io::SeekFrom::Start(offset) => offset as i128,
+            io::SeekFrom::End(offset) => self.len as i128 + offset as i128,
+            io::SeekFrom::Current(offset) => self.position as i128 + offset as i128,
+        };
+        if next < 0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+        }
+        self.position = next as u64;
+        Ok(self.position)
+    }
+}
+
+type ApkArchive = zip::ZipArchive<SharedFile>;
+
+fn apk_archive(path: &Path) -> Option<ApkArchive> {
+    static CACHE: std::sync::Mutex<Option<(PathBuf, ApkArchive)>> = std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some((cached_path, archive)) = cache.as_ref() {
+        if cached_path == path {
+            return Some(archive.clone());
+        }
+    }
+    let archive = zip::ZipArchive::new(SharedFile::open(path).ok()?).ok()?;
+    *cache = Some((path.to_path_buf(), archive.clone()));
+    Some(archive)
 }
 
 impl ApkAssets {
     fn with_entry<R>(&self, name: &str, f: impl FnOnce(&mut dyn Read) -> io::Result<R>) -> Option<R> {
-        APK.with(|cell| {
-            let mut slot = cell.borrow_mut();
-            if slot.as_ref().map(|(path, _)| path != &self.path).unwrap_or(true) {
-                let file = File::open(&self.path).ok()?;
-                let archive = zip::ZipArchive::new(io::BufReader::new(file)).ok()?;
-                *slot = Some((self.path.clone(), archive));
-            }
-            let (_, archive) = slot.as_mut()?;
-            let mut entry = archive.by_name(&format!("assets/{name}")).ok()?;
-            f(&mut entry).ok()
-        })
+        let mut archive = apk_archive(&self.path)?;
+        let mut entry = archive.by_name(&format!("assets/{name}")).ok()?;
+        f(&mut entry).ok()
     }
 
     fn matches(&self, name: &str, hash: &str) -> bool {

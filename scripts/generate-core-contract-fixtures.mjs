@@ -144,12 +144,12 @@ const policy = {
     ),
   ),
   manifestConcurrency: [
-    [-3, 8],
-    [0, 8],
-    [1, 8],
-    [4, 8],
-    [5, 10],
-    [8, 16],
+    [-3, 16],
+    [0, 16],
+    [1, 16],
+    [4, 16],
+    [5, 20],
+    [8, 32],
     [32, 64],
     [128, 64],
   ].map(([processorCount, maxConcurrentFiles]) => ({

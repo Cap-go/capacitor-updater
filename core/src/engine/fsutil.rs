@@ -148,33 +148,94 @@ pub fn modified_before(path: &Path, age: std::time::Duration) -> bool {
         .is_some_and(|elapsed| elapsed > age)
 }
 
-/// Writes a stream to a file in 1 MiB blocks and (optionally) hashes it on a
-/// separate thread, so hashing overlaps with network and disk I/O.
+/// What the side thread of a [`BlockWriter`] does with the bytes.
+#[derive(Clone)]
+pub enum StreamSink {
+    None,
+    /// SHA-256 of the bytes.
+    Hash,
+    /// AES-128-CBC decrypt into `plain` and SHA-256 of the plaintext.
+    Decrypt {
+        key: [u8; 16],
+        iv: [u8; 16],
+        plain: PathBuf,
+    },
+}
+
+type SinkThread = (
+    std::sync::mpsc::SyncSender<Vec<u8>>,
+    std::thread::JoinHandle<Option<String>>,
+);
+
+/// Writes a stream to a file in 1 MiB blocks; a side thread hashes (or
+/// decrypts and hashes) the same blocks, overlapping with network and disk I/O.
 pub struct BlockWriter {
     file: File,
     block: Vec<u8>,
-    hasher: Option<(std::sync::mpsc::SyncSender<Vec<u8>>, std::thread::JoinHandle<String>)>,
+    sink: Option<SinkThread>,
 }
 
 const BLOCK_BYTES: usize = 1024 * 1024;
 
+fn decrypt_sink(
+    receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+    key: [u8; 16],
+    iv: [u8; 16],
+    plain: &Path,
+) -> Option<String> {
+    let file = File::create(plain).ok()?;
+    let mut output = io::BufWriter::with_capacity(BLOCK_BYTES, file);
+    let mut decryptor = crate::crypto::aes_cbc::CbcDecryptor::new(&key, &iv);
+    let mut context = Context::new(&SHA256);
+    let mut out = Vec::with_capacity(BLOCK_BYTES + 16);
+    let mut produced = 0usize;
+    for block in receiver {
+        out.clear();
+        decryptor.update(&block, &mut out);
+        context.update(&out);
+        output.write_all(&out).ok()?;
+        produced += out.len();
+    }
+    out.clear();
+    decryptor.finish(&mut out).ok()?;
+    context.update(&out);
+    output.write_all(&out).ok()?;
+    output.flush().ok()?;
+    produced += out.len();
+    (produced > 0).then(|| hex_encode(context.finish().as_ref()))
+}
+
 impl BlockWriter {
-    pub fn new(file: File, hash: bool) -> Self {
-        let hasher = hash.then(|| {
-            let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
-            let handle = std::thread::spawn(move || {
-                let mut context = Context::new(&SHA256);
-                for block in receiver {
-                    context.update(&block);
-                }
-                hex_encode(context.finish().as_ref())
-            });
-            (sender, handle)
-        });
+    pub fn new(file: File, sink: StreamSink) -> Self {
+        let sink = match sink {
+            StreamSink::None => None,
+            StreamSink::Hash => {
+                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+                let handle = std::thread::spawn(move || {
+                    let mut context = Context::new(&SHA256);
+                    for block in receiver {
+                        context.update(&block);
+                    }
+                    Some(hex_encode(context.finish().as_ref()))
+                });
+                Some((sender, handle))
+            }
+            StreamSink::Decrypt { key, iv, plain } => {
+                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+                let handle = std::thread::spawn(move || {
+                    let result = decrypt_sink(receiver, key, iv, &plain);
+                    if result.is_none() {
+                        let _ = fs::remove_file(&plain);
+                    }
+                    result
+                });
+                Some((sender, handle))
+            }
+        };
         Self {
             file,
             block: Vec::with_capacity(BLOCK_BYTES),
-            hasher,
+            sink,
         }
     }
 
@@ -196,22 +257,23 @@ impl BlockWriter {
         }
         self.file.write_all(&self.block)?;
         let block = std::mem::replace(&mut self.block, Vec::with_capacity(BLOCK_BYTES));
-        if let Some((sender, _)) = &self.hasher {
-            // A dropped hasher only loses the streamed hash; the caller re-hashes the file.
+        if let Some((sender, _)) = &self.sink {
+            // A failed side thread only loses its result; the caller falls back to a file pass.
             if sender.send(block).is_err() {
-                self.hasher = None;
+                self.sink = None;
             }
         }
         Ok(())
     }
 
-    /// Writes what is buffered and returns the SHA-256 of everything written (when hashing).
+    /// Writes what is buffered and returns the side thread's result: the SHA-256
+    /// of the bytes (`Hash`) or of the plaintext (`Decrypt`), `None` when unavailable.
     pub fn finish(mut self) -> io::Result<Option<String>> {
         self.flush_block()?;
         self.file.flush()?;
-        Ok(self.hasher.take().and_then(|(sender, handle)| {
+        Ok(self.sink.take().and_then(|(sender, handle)| {
             drop(sender);
-            handle.join().ok()
+            handle.join().ok().flatten()
         }))
     }
 }

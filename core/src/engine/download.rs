@@ -265,29 +265,51 @@ impl Engine {
             }
         };
 
-        // An encrypted zip is verified after decryption: hashing the ciphertext is wasted work.
-        let hash_while_downloading = !crypto::is_valid_session_key(Some(&request.session_key));
-        let transfer = self.transfer_zip(
-            &request.url,
-            &request.version,
-            &id,
-            &temp,
-            &info,
-            cancel,
-            hash_while_downloading,
-        );
+        // Plain zips are hashed while they download; encrypted ones are decrypted
+        // (and the plaintext hashed) while they download. Resumed transfers fall
+        // back to a pass over the file.
+        let plain = storage.join(format!("temp_{id}.plain"));
+        let encrypted = crypto::is_valid_session_key(Some(&request.session_key));
+        let sink = if encrypted {
+            let public_key = self.config().public_key.clone();
+            match crypto::bundle_session_key(&public_key, &request.session_key) {
+                Ok(Some(session)) => fsutil::StreamSink::Decrypt {
+                    key: session.key,
+                    iv: session.iv,
+                    plain: plain.clone(),
+                },
+                _ => fsutil::StreamSink::None,
+            }
+        } else {
+            fsutil::StreamSink::Hash
+        };
+        let transfer = self.transfer_zip(&request.url, &request.version, &id, &temp, &info, cancel, sink);
         cleanup(&[&info]);
         let streamed_hash = match transfer {
             Ok(hash) => hash,
             Err(error) => {
-                cleanup(&[&temp]);
+                cleanup(&[&temp, &plain]);
                 return Err(error);
+            }
+        };
+        // Decrypted while downloading: the plaintext replaces the ciphertext.
+        let streamed_hash = match streamed_hash {
+            Some(hash) if encrypted => match fs::rename(&plain, &temp) {
+                Ok(()) => Some(hash),
+                Err(_) => {
+                    cleanup(&[&temp, &plain]);
+                    return Err(CoreError::new("unzip_fail", "Cannot move the decrypted bundle"));
+                }
+            },
+            other => {
+                cleanup(&[&plain]);
+                other
             }
         };
         self.send_stats("download_zip_complete", Some(&request.version), None, None);
         self.progress(&id, 71);
 
-        let verified = self.verify_zip(&temp, request, streamed_hash);
+        let verified = self.verify_zip(&temp, request, streamed_hash, encrypted);
         let checksum = match verified {
             Ok(checksum) => checksum,
             Err(error) => {
@@ -345,12 +367,22 @@ impl Engine {
 
     /// Decrypts (when encrypted) and checks the zip against the expected checksum
     /// before anything is extracted. Returns the SHA-256 of the plain zip.
-    /// `streamed_hash` is the SHA-256 computed while downloading (absent after a resume).
-    fn verify_zip(&self, zip: &Path, request: &DownloadRequest, streamed_hash: Option<String>) -> CoreResult<String> {
+    /// `streamed_hash` is the SHA-256 computed while downloading (absent after a
+    /// resume); for an encrypted zip it is the plaintext hash and `zip` already
+    /// holds the plaintext.
+    fn verify_zip(
+        &self,
+        zip: &Path,
+        request: &DownloadRequest,
+        streamed_hash: Option<String>,
+        encrypted: bool,
+    ) -> CoreResult<String> {
         let public_key = self.config().public_key.clone();
         let mut expected = request.checksum.clone();
         let mut plain_hash = streamed_hash;
-        if crypto::is_valid_session_key(Some(&request.session_key)) {
+        if encrypted && plain_hash.is_some() {
+            expected = crypto::decrypt_checksum(&request.checksum, &public_key)?;
+        } else if crypto::is_valid_session_key(Some(&request.session_key)) {
             let decrypted =
                 crypto::bundle_session_key(&public_key, &request.session_key).and_then(|session| match session {
                     Some(session) => {
@@ -394,14 +426,14 @@ impl Engine {
         temp: &Path,
         info: &Path,
         cancel: &Cancel,
-        hash: bool,
+        sink: fsutil::StreamSink,
     ) -> CoreResult<Option<String>> {
         let _ = fs::write(info, version);
         let _ = fs::remove_file(temp);
         let mut attempt = 0;
         loop {
             attempt += 1;
-            match self.transfer_zip_once(url, version, id, temp, cancel, hash) {
+            match self.transfer_zip_once(url, version, id, temp, cancel, &sink) {
                 Ok(hash) => return Ok(hash),
                 Err((error, retryable)) => {
                     if !retryable || attempt >= MAX_ZIP_ATTEMPTS || cancel.is_cancelled() {
@@ -424,7 +456,7 @@ impl Engine {
         id: &str,
         temp: &Path,
         cancel: &Cancel,
-        hash: bool,
+        sink: &fsutil::StreamSink,
     ) -> Result<Option<String>, (CoreError, bool)> {
         let existing = fs::metadata(temp).map(|metadata| metadata.len()).unwrap_or(0);
         let range = format!("bytes={existing}-");
@@ -490,7 +522,9 @@ impl Engine {
                         message: error.to_string(),
                     })?;
                 written = if append { existing } else { 0 };
-                file = Some(fsutil::BlockWriter::new(handle, hash && !append));
+                // A resumed body only covers the tail: no streamed result.
+                let sink = if append { fsutil::StreamSink::None } else { sink.clone() };
+                file = Some(fsutil::BlockWriter::new(handle, sink));
                 Ok(())
             }
             crate::net::Stream::Chunk(chunk) => {

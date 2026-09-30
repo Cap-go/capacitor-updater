@@ -163,9 +163,10 @@ pub fn should_clear_persisted_default_channel(
     !persist_default_channel_on_reinstall && (restored_reinstall || (reset_when_update && native_build_version_changed))
 }
 
-/// HTTP + decode share one pool: 2x cores, at least 8, at most 64.
+/// HTTP + decode share one pool. Manifest files are mostly small and the work
+/// is I/O bound (request latency dominates): 4x cores, at least 16, at most 64.
 pub fn manifest_max_concurrent_files(processor_count: i64) -> i64 {
-    processor_count.max(1).saturating_mul(2).clamp(8, 64)
+    processor_count.max(1).saturating_mul(4).clamp(16, 64)
 }
 
 #[cfg(test)]

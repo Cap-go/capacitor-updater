@@ -227,6 +227,94 @@ fn encrypted_zip_requires_session_key_and_decrypts() {
     assert_eq!(error.code, "checksum_not_encrypted");
 }
 
+/// Serves `body`: the first request drops the connection halfway, later ones honour `Range`.
+fn truncating_server(body: Vec<u8>) -> String {
+    use std::io::{BufRead, BufReader, Read};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/b.zip", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let mut first = true;
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut start = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("range: bytes=") {
+                    start = value.trim().trim_end_matches('-').parse().unwrap_or(0);
+                }
+            }
+            let total = body.len();
+            if first {
+                first = false;
+                let _ = stream.write_all(
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n").as_bytes(),
+                );
+                let _ = stream.write_all(&body[..total / 2]);
+            } else {
+                let _ = stream.write_all(format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{}/{total}\r\nConnection: close\r\n\r\n",
+                    total - start,
+                    total - 1
+                ).as_bytes());
+                let _ = stream.write_all(&body[start..]);
+            }
+            let _ = stream.flush();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let _ = stream.read(&mut [0u8; 1]);
+        }
+    });
+    url
+}
+
+/// Encrypted zips are decrypted while downloading; a resumed transfer falls back
+/// to decrypting the file, and a corrupted ciphertext still fails.
+#[test]
+fn encrypted_zip_streamed_resumed_and_corrupted() {
+    let mut noise = Vec::new();
+    let mut state: u32 = 1;
+    for _ in 0..(512 * 1024) {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        noise.push((state >> 16) as u8);
+    }
+    let bundle = zip_of(&[("index.html", b"<html>stream</html>"), ("blob.bin", &noise)]);
+    let encrypted = aes_encrypt(&bundle);
+    let t = TestEngine::new(json!({ "publicKey": keys().public_pem }));
+    let request = |url: String, version: &str| json!({ "url": url, "version": version, "checksum": encrypted_checksum(&bundle), "sessionKey": session_key() });
+    // Streamed.
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), encrypted.clone())])));
+    let installed = t.call("download", request(format!("{}/b.zip", server.url), "2"));
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
+    assert_eq!(std::fs::read(dir.join("blob.bin")).unwrap(), noise);
+    // Resumed.
+    let installed = t.call("download", request(truncating_server(encrypted.clone()), "3"));
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
+    assert_eq!(std::fs::read(dir.join("blob.bin")).unwrap(), noise);
+    // Corrupted ciphertext (last block): refused, nothing left behind.
+    let mut corrupted = encrypted.clone();
+    let last = corrupted.len() - 1;
+    corrupted[last] ^= 0xff;
+    let server = serve(Arc::new(Mutex::new(vec![("/b.zip".into(), corrupted)])));
+    let error = t
+        .engine
+        .call("download", &request(format!("{}/b.zip", server.url), "4"))
+        .unwrap_err();
+    assert!(
+        error.code == "decrypt_fail" || error.code == "checksum_fail",
+        "{error:?}"
+    );
+    let leftovers: Vec<String> = std::fs::read_dir(t.root())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("temp_"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
 #[test]
 fn transient_server_errors_are_retried() {
     let bundle = web_bundle("retry");
@@ -334,6 +422,46 @@ fn delta_cache_survives_bundle_deletion() {
         json!({ "version": "3", "manifest": [manifest_entry(&server, "app.js", &content)] }),
     );
     assert_eq!(server.requests().len(), requests);
+}
+
+/// Android: builtin files are read from the APK (`assets/public/...`) through one
+/// shared archive index, by every worker in parallel.
+#[test]
+fn manifest_reuses_apk_assets_in_parallel() {
+    let files: Files = Arc::default();
+    let server = serve(files.clone());
+    let base = TestEngine::new(json!({}));
+    let apk = base.root().join("app.apk");
+    let contents: Vec<(String, Vec<u8>)> = (0..120)
+        .map(|index| {
+            (
+                format!("js/chunk-{index}.js"),
+                format!("console.log({index});").repeat(50).into_bytes(),
+            )
+        })
+        .collect();
+    let entries: Vec<(String, Vec<u8>)> = contents
+        .iter()
+        .map(|(name, content)| (format!("assets/public/{name}"), content.clone()))
+        .chain(std::iter::once(("classes.dex".to_string(), vec![0u8; 1000])))
+        .collect();
+    let refs: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(name, content)| (name.as_str(), content.as_slice()))
+        .collect();
+    std::fs::write(&apk, zip_of(&refs)).unwrap();
+    let t =
+        TestEngine::new(json!({ "builtinApk": apk.to_string_lossy(), "storageRoot": base.root().to_string_lossy() }));
+    let manifest: Vec<Value> = contents
+        .iter()
+        .map(|(name, content)| json!({ "file_name": name, "file_hash": sha256(content), "download_url": format!("{}/nope", server.url) }))
+        .collect();
+    let installed = t.call("download", json!({ "version": "2", "manifest": manifest }));
+    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
+    for (name, content) in &contents {
+        assert_eq!(&std::fs::read(dir.join(name)).unwrap(), content, "{name}");
+    }
+    assert!(server.requests().is_empty(), "everything came from the APK");
 }
 
 #[test]

@@ -190,7 +190,7 @@ fn c_abi_round_trip() {
         let output = capgo_updater_core::ffi::capgo_core_call(operation.as_ptr(), input.as_ptr());
         let text = CStr::from_ptr(output).to_str().unwrap().to_string();
         capgo_updater_core::ffi::capgo_core_free(output);
-        assert_eq!(text, r#"{"ok":true,"value":{"maxConcurrentFiles":8}}"#);
+        assert_eq!(text, r#"{"ok":true,"value":{"maxConcurrentFiles":16}}"#);
     }
 
     let unknown = CString::new("nope").unwrap();
