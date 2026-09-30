@@ -44,7 +44,7 @@ final class BundleHardeningTests: XCTestCase {
             } catch {
                 return DownloadRequestResult(fileURL: nil, response: nil, error: error, timedOut: false)
             }
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
+            let response = HTTPURLResponse(url: request.url ?? fileURL, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
             return DownloadRequestResult(fileURL: fileURL, response: response, error: nil, timedOut: false)
         }
 
@@ -78,7 +78,8 @@ final class BundleHardeningTests: XCTestCase {
     func testDownloadRejectsChecksumMismatchBeforeExtraction() throws {
         let updater = makeDownloadUpdater(payload: try bundleZipData())
         defer { updater.shutdown() }
-        let url = URL(string: "https://example.com/update.zip")!
+        // Never fetched: LocalDownloadCapgoUpdater serves the payload.
+        let url = root.appendingPathComponent("update.zip")
 
         XCTAssertThrowsError(
             try updater.downloadVerified(url: url, version: "9.9.9-mismatch", sessionKey: "", expectedChecksum: String(repeating: "a", count: 64))
@@ -97,7 +98,8 @@ final class BundleHardeningTests: XCTestCase {
         let zip = try bundleZipData()
         let updater = makeDownloadUpdater(payload: zip)
         defer { updater.shutdown() }
-        let url = URL(string: "https://example.com/update.zip")!
+        // Never fetched: LocalDownloadCapgoUpdater serves the payload.
+        let url = root.appendingPathComponent("update.zip")
 
         let bundle = try updater.downloadVerified(url: url, version: "9.9.9-match", sessionKey: "", expectedChecksum: sha256Hex(zip))
         defer { _ = updater.delete(id: bundle.getId()) }
@@ -112,7 +114,8 @@ final class BundleHardeningTests: XCTestCase {
         // The shake menu passes the update response checksum; an empty one must stop before any download.
         let updater = makeDownloadUpdater(payload: try bundleZipData())
         defer { updater.shutdown() }
-        let url = URL(string: "https://example.com/update.zip")!
+        // Never fetched: LocalDownloadCapgoUpdater serves the payload.
+        let url = root.appendingPathComponent("update.zip")
 
         XCTAssertThrowsError(try updater.downloadVerified(url: url, version: "9.9.9-empty", sessionKey: "", expectedChecksum: ""))
         XCTAssertEqual(updater.downloadRequests, 0)
