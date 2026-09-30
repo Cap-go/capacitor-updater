@@ -1,5 +1,5 @@
 import { runCommand } from './command.mjs';
-import { createBuildEnv, exampleAppDir, getScenario } from './scenarios.mjs';
+import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
 async function runCommandWithRetries(command, args, options, maxAttempts = 3) {
   let attempt = 1;
@@ -29,7 +29,7 @@ if (!scenarioId) {
   throw new Error('Usage: bun scripts/maestro/prepare-android-scenario.mjs <scenario-id>');
 }
 
-const scenario = getScenario(scenarioId);
+const scenario = getScenario(resolveAppScenarioId(scenarioId));
 
 const env = {
   ...createBuildEnv({

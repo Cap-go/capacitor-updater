@@ -1,6 +1,6 @@
 import { runCommand } from './command.mjs';
 import { purgeLocalPluginCopy } from './purge-local-plugin-copy.mjs';
-import { createBuildEnv, exampleAppDir, getScenario } from './scenarios.mjs';
+import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
 const scenarioId = process.argv[2];
 
@@ -8,7 +8,7 @@ if (!scenarioId) {
   throw new Error('Usage: bun scripts/maestro/prepare-ios-scenario.mjs <scenario-id>');
 }
 
-const scenario = getScenario(scenarioId);
+const scenario = getScenario(resolveAppScenarioId(scenarioId));
 
 const env = {
   ...createBuildEnv({
