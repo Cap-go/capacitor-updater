@@ -3,8 +3,8 @@ package ee.forgr.capacitor_updater;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -217,7 +217,20 @@ public class EngineHostTest {
             listener
         );
         return updater.createEngine(
-            CapgoCore.input("appId", "app.capgo.test", "pluginVersion", "8.0.0", "versionBuild", "1.0.0", "versionCode", "10", "versionOs", "15", "deviceId", "device-2"),
+            CapgoCore.input(
+                "appId",
+                "app.capgo.test",
+                "pluginVersion",
+                "8.0.0",
+                "versionBuild",
+                "1.0.0",
+                "versionCode",
+                "10",
+                "versionOs",
+                "15",
+                "deviceId",
+                "device-2"
+            ),
             "serverBasePath"
         );
     }
