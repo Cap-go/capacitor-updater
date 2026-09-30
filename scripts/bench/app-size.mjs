@@ -2,8 +2,9 @@
 // Web assets (public/, which carries the 180 MB bench builtin pad) are reported
 // separately so the native footprint is visible.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { appsDir } from './config.mjs';
 
 function sh(cmd, args, options = {}) {
@@ -13,8 +14,7 @@ function sh(cmd, args, options = {}) {
 }
 
 function gzip9Size(buffer) {
-  const r = spawnSync('gzip', ['-9', '-c'], { input: buffer, maxBuffer: 1 << 30 });
-  return r.stdout.length;
+  return gzipSync(buffer, { level: 9 }).length;
 }
 
 /** Android: entries of the signed release APK. */
@@ -68,7 +68,7 @@ export function iosSize(label) {
     const tmp = path.join(appsDir, `.${label}-App-arm64`);
     sh('lipo', [exe, '-thin', 'arm64', '-output', tmp]);
     arm64Bytes = statSync(tmp).size;
-    spawnSync('rm', ['-f', tmp]);
+    rmSync(tmp, { force: true });
   }
   const fwDir = path.join(app, 'Frameworks');
   const frameworks = existsSync(fwDir)

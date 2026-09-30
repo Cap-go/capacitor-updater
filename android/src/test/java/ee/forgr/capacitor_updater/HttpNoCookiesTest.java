@@ -219,6 +219,12 @@ public class HttpNoCookiesTest {
 
             @Override
             void emit(String event, String payloadJson) {}
+
+            /** The local test server is plain HTTP: allow it (unanswered, the engine refuses cleartext). */
+            @Override
+            String hook(String name, String payloadJson) {
+                return "cleartextPermitted".equals(name) ? "{\"permitted\":true}" : null;
+            }
         };
         return new CapgoEngine(
             CapgoCore.input(

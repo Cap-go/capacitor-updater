@@ -1,11 +1,15 @@
 package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.getcapacitor.PluginMethod;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Set;
@@ -168,5 +172,59 @@ public class EngineHostTest {
             Thread.sleep(20);
         }
         assertTrue(this.events.toString(), this.events.contains("updateCheckResult"));
+    }
+
+    /** The engine holds its host through a JNI global ref: only close() lets the plugin (and Activity) go. */
+    @Test
+    public void closeReleasesTheHost() throws Exception {
+        final WeakReference<?>[] listener = new WeakReference<?>[1];
+        final CapgoEngine owned = this.engineWithListener(listener);
+        final CapgoEngine shared = this.engine;
+        this.engine = owned;
+        this.load(CapgoCore.input("autoUpdate", true, "periodCheckDelay", 600, "statsUrl", "", "updateUrl", "http://127.0.0.1:9/updates"));
+        this.engine = shared;
+        collectGarbage();
+        assertNotNull("held by the engine while it is open", listener[0].get());
+        owned.close();
+        for (int attempt = 0; attempt < 50 && listener[0].get() != null; attempt++) {
+            collectGarbage();
+        }
+        assertNull("released after close()", listener[0].get());
+        try {
+            owned.call("pluginMethods", null);
+            fail("calls after close() must fail");
+        } catch (final CapgoCore.Failure expected) {
+            assertEquals("internal", expected.code);
+        }
+    }
+
+    private CapgoEngine engineWithListener(final WeakReference<?>[] out) {
+        final Context context = RuntimeEnvironment.getApplication();
+        final CapgoUpdater.Listener listener = new CapgoUpdater.Listener() {
+            @Override
+            public void onEvent(final String event, final String payloadJson) {}
+
+            @Override
+            public String onHook(final String name, final String payloadJson) {
+                return null;
+            }
+        };
+        out[0] = new WeakReference<>(listener);
+        final CapgoUpdater updater = new CapgoUpdater(
+            context,
+            this.prefs,
+            new Logger("EngineHostTest", new Logger.Options(Logger.LogLevel.silent)),
+            listener
+        );
+        return updater.createEngine(
+            CapgoCore.input("appId", "app.capgo.test", "pluginVersion", "8.0.0", "versionBuild", "1.0.0", "versionCode", "10", "versionOs", "15", "deviceId", "device-2"),
+            "serverBasePath"
+        );
+    }
+
+    private static void collectGarbage() throws InterruptedException {
+        System.gc();
+        System.runFinalization();
+        Thread.sleep(20);
     }
 }

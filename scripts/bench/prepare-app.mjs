@@ -102,7 +102,7 @@ if (!skipInstall) {
     } catch (error) {
       if (attempt >= 3) throw error;
       console.warn(`[bench-prepare] bun install failed (attempt ${attempt}), retrying in 20s`);
-      spawnSync('sleep', ['20']);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
     }
   }
 }

@@ -187,7 +187,7 @@ fn local_offset_seconds(local_seconds: i64) -> i64 {
 }
 
 /// Native version comparison (numeric components, then pre-release < release).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct NativeVersion {
     numbers: Vec<u64>,
     prerelease: Option<String>,
@@ -224,6 +224,15 @@ impl NativeVersion {
     }
 }
 
+// Equality follows the ordering (`beta.02` == `beta.2`).
+impl PartialEq for NativeVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for NativeVersion {}
+
 impl PartialOrd for NativeVersion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -246,7 +255,37 @@ impl Ord for NativeVersion {
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
-            (Some(left), Some(right)) => left.cmp(right),
+            (Some(left), Some(right)) => compare_prerelease(left, right),
+        }
+    }
+}
+
+/// SemVer precedence: dot-separated identifiers compared in order, numeric ones
+/// numerically (`beta.2` < `beta.10`) and below alphanumeric ones; a shorter
+/// list of equal identifiers comes first.
+fn compare_prerelease(left: &str, right: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    fn numeric(identifier: &str) -> Option<&str> {
+        (!identifier.is_empty() && identifier.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| identifier.trim_start_matches('0'))
+    }
+    let mut left_parts = left.split('.');
+    let mut right_parts = right.split('.');
+    loop {
+        let ordering = match (left_parts.next(), right_parts.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(a), Some(b)) => match (numeric(a), numeric(b)) {
+                // Arbitrary length: compare digit strings without leading zeros.
+                (Some(a), Some(b)) => a.len().cmp(&b.len()).then_with(|| a.cmp(b)),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => a.cmp(b),
+            },
+        };
+        if ordering != Ordering::Equal {
+            return ordering;
         }
     }
 }
@@ -403,6 +442,11 @@ mod tests {
         assert!(v("1.2.3") < v("1.10.0"));
         assert!(v("2.0.0-beta.1") < v("2.0.0"));
         assert_eq!(v("1.2"), v("1.2.0"));
+        assert!(v("1.0.0-beta.2") < v("1.0.0-beta.10"));
+        assert!(v("1.0.0-alpha") < v("1.0.0-alpha.1"));
+        assert!(v("1.0.0-alpha.1") < v("1.0.0-alpha.beta"));
+        assert!(v("1.0.0-beta.11") < v("1.0.0-rc.1"));
+        assert_eq!(v("1.0.0-beta.02"), v("1.0.0-beta.2"));
         assert!(NativeVersion::parse("abc").is_none());
     }
 

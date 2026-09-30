@@ -460,6 +460,22 @@ fn kill_and_date_delays() {
     assert!(p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").is_none());
 }
 
+#[test]
+fn native_version_delay_orders_prerelease_numbers_numerically() {
+    let p = Plugin::load_with(
+        json!({ "autoUpdate": false }),
+        json!({ "versionName": "1.0.0-beta.10" }),
+    );
+    p.resolve(
+        "setMultiDelay",
+        json!({ "delayConditions": [{ "kind": "nativeVersion", "value": "1.0.0-beta.2" }, { "kind": "nativeVersion", "value": "1.0.0-beta.11" }] }),
+    );
+    p.t.engine.plugin_foreground_for_tests();
+    let stored = p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap();
+    assert!(!stored.contains("beta.2\""), "beta.10 reached beta.2: {stored}");
+    assert!(stored.contains("beta.11"), "beta.10 has not reached beta.11: {stored}");
+}
+
 // ---- readiness and rollback ---------------------------------------------------------------------
 
 #[test]

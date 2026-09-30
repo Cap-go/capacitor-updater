@@ -53,6 +53,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
@@ -81,7 +82,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final String pluginVersion = "8.52.0";
 
     private Logger logger;
-    private CapgoEngine engine;
+    // Cleared (and the Rust engine freed) in handleOnDestroy.
+    private volatile CapgoEngine engine;
     private boolean jsLoggingEnabled = true;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     /** Engine methods can block (set / reload wait for notifyAppReady), so each call gets its own thread. */
@@ -292,11 +294,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     /** Runs an engine operation; failures are logged and answered with an empty object. */
     private JSONObject engineCall(final String operation, final JSONObject input) {
-        if (this.engine == null) {
+        final CapgoEngine engine = this.engine;
+        if (engine == null) {
             return new JSONObject();
         }
         try {
-            return this.engine.call(operation, input);
+            return engine.call(operation, input);
         } catch (final CapgoCore.Failure e) {
             logger.error("Engine " + operation + " failed: " + e.getMessage());
             return new JSONObject();
@@ -310,10 +313,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     /** Runs a JavaScript method in the engine, blocking: {@code {resolve: value}} or {@code {reject: {...}}}. */
     JSONObject runEngineMethod(final String name, final JSONObject args) {
         try {
-            if (this.engine == null) {
+            final CapgoEngine engine = this.engine;
+            if (engine == null) {
                 throw new CapgoCore.Failure("not_loaded", "CapacitorUpdater failed to load");
             }
-            return this.engine.call("pluginMethod", new JSONObject().put("name", name).put("args", args == null ? new JSONObject() : args));
+            return engine.call("pluginMethod", new JSONObject().put("name", name).put("args", args == null ? new JSONObject() : args));
         } catch (final CapgoCore.Failure | JSONException e) {
             final JSONObject rejection = new JSONObject();
             try {
@@ -330,7 +334,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.ensureBridgeSet();
         final String name = call.getMethodName();
         final JSObject args = call.getData();
-        this.methodExecutor.execute(() -> settle(call, this.runEngineMethod(name, args)));
+        try {
+            this.methodExecutor.execute(() -> settle(call, this.runEngineMethod(name, args)));
+        } catch (final RejectedExecutionException e) {
+            call.reject("CapacitorUpdater was destroyed");
+        }
     }
 
     static void settle(final PluginCall call, final JSONObject result) {
@@ -1107,11 +1115,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     JSONArray previewMenuPreviews() {
-        if (this.engine == null) {
+        final CapgoEngine engine = this.engine;
+        if (engine == null) {
             return new JSONArray();
         }
         try {
-            return this.engine.callArray("previewMenuPreviews", new JSONObject());
+            return engine.callArray("previewMenuPreviews", new JSONObject());
         } catch (final CapgoCore.Failure e) {
             logger.error("Could not list previews: " + e.getMessage());
             return new JSONArray();
@@ -1468,6 +1477,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } catch (final Exception e) {
             logger.error("Failed to run handleOnDestroy: " + e.getMessage());
+        }
+        this.releaseEngine();
+    }
+
+    /**
+     * Frees the Rust engine, which holds the host (and through it this plugin and the Activity), and stops its
+     * background work (periodic checks, timers). Running calls finish first; close() runs off the main thread
+     * because a running call can be waiting on a main-thread hook.
+     */
+    private void releaseEngine() {
+        final CapgoEngine engine = this.engine;
+        this.engine = null;
+        this.methodExecutor.shutdown();
+        if (engine != null) {
+            new Thread(engine::close, "capgo-engine-close").start();
         }
     }
 

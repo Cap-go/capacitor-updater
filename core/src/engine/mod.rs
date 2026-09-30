@@ -5,6 +5,7 @@
 //! JSON configuration, then drive it with [`Engine::call`] (blocking; call it
 //! off the UI thread). Long-running work reports progress through events.
 
+mod apk;
 pub mod archive;
 pub mod backend;
 pub mod config;
