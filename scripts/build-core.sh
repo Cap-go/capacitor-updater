@@ -62,6 +62,14 @@ build_android() {
       -o "$out" \
       build --release --features jni --locked
   )
+  # cargo-ndk keeps the symbol table (~1.3 MB per ABI): strip it.
+  local strip_tool
+  strip_tool="$(ls -d "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -1)"
+  if [[ -n "$strip_tool" ]]; then
+    find "$out" -name "lib$LIB_NAME.so" -exec "$strip_tool" --strip-all {} \;
+  else
+    echo "llvm-strip not found in the NDK; Android libraries are not stripped" >&2
+  fi
   echo "Android core libraries written to $out"
 }
 

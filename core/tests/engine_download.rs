@@ -306,6 +306,36 @@ fn manifest_download_then_cache_reuse() {
     assert_eq!(server.requests().len(), requests, "no network for cached files");
 }
 
+/// Delta cache entries are hard links when possible: deleting the bundle keeps them.
+#[test]
+fn delta_cache_survives_bundle_deletion() {
+    let files: Files = Arc::default();
+    let server = serve(files.clone());
+    let content = b"cached content".to_vec();
+    files.lock().unwrap().push(("/files/app.js".into(), content.clone()));
+    let t = TestEngine::new(json!({}));
+    let installed = t.call(
+        "download",
+        json!({ "version": "2", "manifest": [manifest_entry(&server, "app.js", &content)] }),
+    );
+    let id = installed["id"].as_str().unwrap().to_string();
+    t.call("bundleDelete", json!({ "id": id }));
+    let cache = t.root().join("cache/capgo_downloads");
+    let cached = std::fs::read_dir(&cache)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| entry.file_name().to_string_lossy().ends_with("_app.js"))
+        .expect("cache entry");
+    assert_eq!(std::fs::read(cached.path()).unwrap(), content);
+    // The next version reuses it without the network.
+    let requests = server.requests().len();
+    t.call(
+        "download",
+        json!({ "version": "3", "manifest": [manifest_entry(&server, "app.js", &content)] }),
+    );
+    assert_eq!(server.requests().len(), requests);
+}
+
 #[test]
 fn manifest_reuses_builtin_files() {
     let files: Files = Arc::default();

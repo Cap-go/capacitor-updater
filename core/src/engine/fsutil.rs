@@ -51,6 +51,24 @@ pub fn copy_atomically(source: &Path, destination: &Path) -> io::Result<()> {
     result
 }
 
+/// Hard-links `source` to `destination` (atomically replacing it); copies when
+/// linking is not possible (other volume, unsupported file system). Only for
+/// files the updater owns and never rewrites in place (bundle and cache files).
+pub fn link_or_copy(source: &Path, destination: &Path) -> io::Result<()> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| io::Error::other("destination has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let temp = unique_temp(parent, "capgo-", ".tmp");
+    if fs::hard_link(source, &temp).is_ok() {
+        if fs::rename(&temp, destination).is_ok() {
+            return Ok(());
+        }
+        let _ = fs::remove_file(&temp);
+    }
+    copy_atomically(source, destination)
+}
+
 /// Writes `data` to `destination` through a sibling temp file + rename.
 pub fn write_atomically(destination: &Path, data: &[u8]) -> io::Result<()> {
     let parent = destination

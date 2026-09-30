@@ -454,7 +454,7 @@ impl Engine {
         }
         // 3. Delta cache (hash-named files were verified when written).
         for cached in [&task.cache, &task.legacy_cache].into_iter().flatten() {
-            if Self::reusable(Some(cached), &task.hash) && fsutil::copy_atomically(cached, &task.target).is_ok() {
+            if Self::reusable(Some(cached), &task.hash) && fsutil::link_or_copy(cached, &task.target).is_ok() {
                 return Ok(());
             }
         }
@@ -489,7 +489,9 @@ impl Engine {
         } else {
             Vec::new()
         };
-        let mut output: Option<File> = None;
+        let mut output: Option<io::BufWriter<File>> = None;
+        // Hashed while downloading when the whole body comes in this response.
+        let mut hasher: Option<ring::digest::Context> = None;
         let result = self
             .http
             .download(&task.download_url, &headers, &mut |event| match event {
@@ -505,18 +507,19 @@ impl Engine {
                         });
                     }
                     let append = crate::http::should_append_http_body(head.status as i64, existing as i64);
-                    output = Some(
-                        OpenOptions::new()
-                            .create(true)
-                            .write(true)
-                            .append(append)
-                            .truncate(!append)
-                            .open(&partial)
-                            .map_err(|error| NetError {
-                                kind: crate::net::NetErrorKind::Io,
-                                message: error.to_string(),
-                            })?,
-                    );
+                    let file = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .append(append)
+                        .truncate(!append)
+                        .open(&partial)
+                        .map_err(|error| NetError {
+                            kind: crate::net::NetErrorKind::Io,
+                            message: error.to_string(),
+                        })?;
+                    // Network reads are small: batch them into large writes.
+                    output = Some(io::BufWriter::with_capacity(256 * 1024, file));
+                    hasher = (!append).then(|| ring::digest::Context::new(&ring::digest::SHA256));
                     Ok(())
                 }
                 crate::net::Stream::Chunk(chunk) => {
@@ -525,6 +528,9 @@ impl Engine {
                             kind: crate::net::NetErrorKind::Io,
                             message: "download_stopped".into(),
                         });
+                    }
+                    if let Some(hasher) = hasher.as_mut() {
+                        hasher.update(chunk);
                     }
                     match output.as_mut() {
                         Some(file) => file.write_all(chunk).map_err(|error| NetError {
@@ -535,7 +541,14 @@ impl Engine {
                     }
                 }
             });
-        drop(output);
+        let flushed = output.map_or(Ok(()), |mut output| output.flush());
+        let result = result.and_then(|head| {
+            flushed.map(|()| head).map_err(|error| NetError {
+                kind: crate::net::NetErrorKind::Io,
+                message: error.to_string(),
+            })
+        });
+        let streamed_hash = hasher.map(|hasher| crate::text::hex_encode(hasher.finish().as_ref()));
         if let Err(error) = result {
             if error.message == "download_stopped" {
                 return Err(CoreError::new("download_stopped", "Download cancelled"));
@@ -574,8 +587,15 @@ impl Engine {
                 }
             }
             None if task.brotli => decode_brotli(&partial, &task.target, &task.hash),
-            None => File::open(&partial)
-                .and_then(|mut file| fsutil::write_verified(&mut file, &task.target, Some(&task.hash))),
+            // Plain file hashed while downloading: move it in place, no second pass.
+            None => match &streamed_hash {
+                Some(hash) if hash.eq_ignore_ascii_case(&task.hash) => {
+                    fs::rename(&partial, &task.target).map(|()| Some(hash.clone()))
+                }
+                Some(_) => Ok(None),
+                None => File::open(&partial)
+                    .and_then(|mut file| fsutil::write_verified(&mut file, &task.target, Some(&task.hash))),
+            },
         };
         if let Some(work) = &work {
             let _ = fs::remove_file(work);
@@ -609,7 +629,7 @@ impl Engine {
         let _ = fs::remove_file(&partial);
         // Best effort: a full cache must not fail the update.
         if let Some(cache_file) = &task.cache {
-            if !cache_file.exists() && fsutil::copy_atomically(&task.target, cache_file).is_err() {
+            if !cache_file.exists() && fsutil::link_or_copy(&task.target, cache_file).is_err() {
                 self.host
                     .debug(format!("Delta cache write failed: {}", cache_file.display()));
             }

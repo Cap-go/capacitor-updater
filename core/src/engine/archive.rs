@@ -87,8 +87,84 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     out
 }
 
+/// Read buffer around the archive: large sequential reads for inflate.
+const ARCHIVE_READ_BUFFER: usize = 1024 * 1024;
+/// Regular files are written by this many threads at most (storage is the limit).
+const MAX_EXTRACT_WORKERS: usize = 4;
+
+type Archive = zip::ZipArchive<io::BufReader<File>>;
+
+fn open_archive(zip_path: &Path) -> Result<Archive, ExtractError> {
+    let failed = |error: &dyn std::fmt::Display| {
+        ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
+    };
+    let file = File::open(zip_path).map_err(|error| failed(&error))?;
+    zip::ZipArchive::new(io::BufReader::with_capacity(ARCHIVE_READ_BUFFER, file)).map_err(|error| failed(&error))
+}
+
+/// A regular file entry to write in the second pass.
+struct FileEntry {
+    index: usize,
+    name: String,
+    target: PathBuf,
+    declared: u64,
+}
+
+fn write_file_entry(
+    archive: &mut Archive,
+    entry: &FileEntry,
+    destination: &Path,
+    buffer: &mut [u8],
+    zip_path: &Path,
+) -> Result<(), ExtractError> {
+    let failed = |error: &dyn std::fmt::Display| {
+        ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
+    };
+    let parent = entry.target.parent().unwrap_or(destination).to_path_buf();
+    fs::create_dir_all(&parent).map_err(|_| ExtractError::Directory(parent.display().to_string()))?;
+    // Symlinks created in the first pass must not redirect this file outside the bundle.
+    if !physically_inside(destination, &parent) {
+        return Err(ExtractError::PathEscape(entry.name.clone()));
+    }
+    if fs::symlink_metadata(&entry.target).is_ok() {
+        super::store::remove_path(&entry.target).map_err(|error| failed(&error))?;
+    }
+    let mut zip_entry = archive.by_index(entry.index).map_err(|error| failed(&error))?;
+    // Inflate hands out small chunks: batch them into large writes.
+    let file = File::create(&entry.target).map_err(|error| failed(&error))?;
+    let mut output = io::BufWriter::with_capacity(ARCHIVE_READ_BUFFER, file);
+    let mut written: u64 = 0;
+    loop {
+        // zip verifies the CRC-32 when the entry is fully read.
+        let read = zip_entry.read(buffer).map_err(|error| failed(&error))?;
+        if read == 0 {
+            break;
+        }
+        written += read as u64;
+        // Never inflate past the size the central directory declares (zip bombs).
+        if written > entry.declared {
+            return Err(ExtractError::Failed(format!(
+                "Entry {} inflates beyond its declared size",
+                entry.name
+            )));
+        }
+        output.write_all(&buffer[..read]).map_err(|error| failed(&error))?;
+    }
+    if written != entry.declared {
+        return Err(ExtractError::Failed(format!(
+            "Entry {} size {written} does not match declared {}",
+            entry.name, entry.declared
+        )));
+    }
+    output.flush().map_err(|error| failed(&error))?;
+    Ok(())
+}
+
 /// Extracts `zip_path` into `destination` (created). `progress(done, total)` is
 /// called after each entry. `cancelled()` aborts between entries.
+///
+/// Directories and symlinks are created first, in archive order; regular files
+/// are then written by a few threads, each with its own archive handle.
 pub fn extract_zip(
     zip_path: &Path,
     destination: &Path,
@@ -98,11 +174,13 @@ pub fn extract_zip(
     let failed = |error: &dyn std::fmt::Display| {
         ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
     };
-    let file = File::open(zip_path).map_err(|error| failed(&error))?;
-    let mut archive = zip::ZipArchive::new(io::BufReader::new(file)).map_err(|error| failed(&error))?;
+    let mut archive = open_archive(zip_path)?;
     fs::create_dir_all(destination).map_err(|_| ExtractError::Directory(destination.display().to_string()))?;
     let total = archive.len();
-    let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
+    let mut done = 0;
+    let mut files: Vec<FileEntry> = Vec::new();
+
+    // Pass 1: validate every name, create directories and symlinks.
     for index in 0..total {
         if cancelled() {
             return Err(ExtractError::Cancelled);
@@ -110,13 +188,22 @@ pub fn extract_zip(
         let mut entry = archive.by_index(index).map_err(|error| failed(&error))?;
         let name = entry.name().to_string();
         let target = resolve_entry(destination, &name)?;
-        // Earlier symlink entries must not redirect this one outside the bundle.
         if !physically_inside(destination, target.parent().unwrap_or(destination)) {
             return Err(ExtractError::PathEscape(name));
         }
         if entry.is_dir() {
             fs::create_dir_all(&target).map_err(|_| ExtractError::Directory(target.display().to_string()))?;
-            progress(index + 1, total);
+            done += 1;
+            progress(done, total);
+            continue;
+        }
+        if !entry.is_symlink() {
+            files.push(FileEntry {
+                index,
+                name,
+                target,
+                declared: entry.size(),
+            });
             continue;
         }
         let parent = target.parent().unwrap_or(destination).to_path_buf();
@@ -124,57 +211,105 @@ pub fn extract_zip(
         if fs::symlink_metadata(&target).is_ok() {
             super::store::remove_path(&target).map_err(|error| failed(&error))?;
         }
-        if entry.is_symlink() {
-            let mut link = String::new();
-            entry.read_to_string(&mut link).map_err(|error| failed(&error))?;
-            // Relative targets without `..` only: the link stays inside its own directory
-            // whatever the other entries are (no chains through `..`).
-            let link_path = Path::new(&link);
-            if link_path.is_absolute()
-                || link_path
-                    .components()
-                    .any(|component| matches!(component, std::path::Component::ParentDir))
-            {
-                return Err(ExtractError::PathEscape(name));
-            }
-            let resolved = parent.join(&link);
-            let resolved = lexical_normalize(&resolved);
-            let parent_normalized = lexical_normalize(&parent);
-            if resolved != parent_normalized && !resolved.starts_with(&parent_normalized) {
-                return Err(ExtractError::PathEscape(name));
-            }
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(&link, &target).map_err(|error| failed(&error))?;
-            #[cfg(not(unix))]
-            return Err(failed(&"symlinks are not supported on this platform"));
-        } else {
-            let declared = entry.size();
-            let mut output = File::create(&target).map_err(|error| failed(&error))?;
-            let mut written: u64 = 0;
-            loop {
-                // zip verifies the CRC-32 when the entry is fully read.
-                let read = entry.read(&mut buffer).map_err(|error| failed(&error))?;
-                if read == 0 {
-                    break;
+        let mut link = String::new();
+        entry.read_to_string(&mut link).map_err(|error| failed(&error))?;
+        // Relative targets without `..` only: the link stays inside its own directory
+        // whatever the other entries are (no chains through `..`).
+        let link_path = Path::new(&link);
+        if link_path.is_absolute()
+            || link_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(ExtractError::PathEscape(name));
+        }
+        let resolved = lexical_normalize(&parent.join(&link));
+        let parent_normalized = lexical_normalize(&parent);
+        if resolved != parent_normalized && !resolved.starts_with(&parent_normalized) {
+            return Err(ExtractError::PathEscape(name));
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&link, &target).map_err(|error| failed(&error))?;
+        #[cfg(not(unix))]
+        return Err(failed(&"symlinks are not supported on this platform"));
+        done += 1;
+        progress(done, total);
+    }
+
+    // The same path twice: the last entry wins (as a sequential extraction would).
+    let mut last_by_target = std::collections::HashMap::new();
+    for (position, file) in files.iter().enumerate() {
+        last_by_target.insert(file.target.clone(), position);
+    }
+    let skipped = files.len() - last_by_target.len();
+    let files: Vec<FileEntry> = files
+        .into_iter()
+        .enumerate()
+        .filter(|(position, file)| last_by_target.get(&file.target) == Some(position))
+        .map(|(_, file)| file)
+        .collect();
+    done += skipped;
+
+    // Pass 2: regular files in parallel.
+    let workers = std::thread::available_parallelism()
+        .map(|cores| cores.get())
+        .unwrap_or(2)
+        .clamp(1, MAX_EXTRACT_WORKERS)
+        .min(files.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let first_error: std::sync::Mutex<Option<ExtractError>> = std::sync::Mutex::new(None);
+    let (sender, receiver) = std::sync::mpsc::channel::<()>();
+    std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for _ in 0..workers {
+            let sender = sender.clone();
+            let (files, next, stop, first_error) = (&files, &next, &stop, &first_error);
+            handles.push(scope.spawn(move || {
+                let mut archive = match open_archive(zip_path) {
+                    Ok(archive) => archive,
+                    Err(error) => {
+                        first_error.lock().unwrap().get_or_insert(error);
+                        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                };
+                let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
+                loop {
+                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        return;
+                    }
+                    let position = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let Some(entry) = files.get(position) else {
+                        return;
+                    };
+                    if let Err(error) = write_file_entry(&mut archive, entry, destination, &mut buffer, zip_path) {
+                        first_error.lock().unwrap().get_or_insert(error);
+                        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                    let _ = sender.send(());
                 }
-                written += read as u64;
-                // Never inflate past the size the central directory declares (zip bombs).
-                if written > declared {
-                    return Err(ExtractError::Failed(format!(
-                        "Entry {name} inflates beyond its declared size"
-                    )));
-                }
-                output.write_all(&buffer[..read]).map_err(|error| failed(&error))?;
-            }
-            if written != declared {
-                return Err(ExtractError::Failed(format!(
-                    "Entry {name} size {written} does not match declared {declared}"
-                )));
+            }));
+        }
+        drop(sender);
+        // Progress and cancellation stay on the caller's thread.
+        for () in receiver.iter() {
+            done += 1;
+            progress(done, total);
+            if cancelled() {
+                stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                first_error.lock().unwrap().get_or_insert(ExtractError::Cancelled);
             }
         }
-        progress(index + 1, total);
+        for handle in handles {
+            let _ = handle.join();
+        }
+    });
+    match first_error.into_inner().unwrap() {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 fn visible_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {

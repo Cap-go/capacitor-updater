@@ -321,3 +321,23 @@ fn interrupted_zip_download_resumes_with_range() {
     let resumed_at: usize = ranges[1].as_deref().unwrap().parse().unwrap();
     assert!(resumed_at > 0 && resumed_at < bundle.len(), "{ranges:?}");
 }
+
+#[test]
+fn parallel_extraction_writes_every_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let names: Vec<String> = (0..200)
+        .map(|index| format!("assets/d{}/f{index}.js", index % 7))
+        .collect();
+    let contents: Vec<Vec<u8>> = (0..200)
+        .map(|index| format!("file {index}").repeat(100).into_bytes())
+        .collect();
+    let entries: Vec<Entry<'_>> = names
+        .iter()
+        .zip(&contents)
+        .map(|(name, content)| Entry::File(name, content))
+        .collect();
+    let out = extract(&zip_of(&entries), dir.path()).unwrap();
+    for (index, name) in names.iter().enumerate() {
+        assert_eq!(std::fs::read(out.join(name)).unwrap(), contents[index], "{name}");
+    }
+}
