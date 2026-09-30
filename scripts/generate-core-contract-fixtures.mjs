@@ -407,7 +407,8 @@ function buildCrypto() {
   const encryptedKey = privateEncrypt(aesKey);
   const sessionKey = `${iv.toString('base64')}:${encryptedKey.toString('base64')}`;
   const aesEncrypt = (plaintext) => {
-    const cipher = crypto.createCipheriv('aes-128-cbc', aesKey, iv);
+    // Capgo CLI bundle format (AES-128-CBC); fixture generation only.
+    const cipher = crypto.createCipheriv('aes-128-cbc', aesKey, iv); // NOSONAR
     return Buffer.concat([cipher.update(plaintext), cipher.final()]);
   };
 

@@ -17,13 +17,13 @@ runs:
         rustup default stable
     - name: Cache Rust build
       if: inputs.cache == 'true'
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         workspaces: core -> target
         key: ${{ inputs.platform }}
     - name: Install cargo-ndk
       if: inputs.platform == 'android'
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
       with:
         tool: cargo-ndk
     - name: Build core

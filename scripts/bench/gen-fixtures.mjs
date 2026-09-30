@@ -30,7 +30,7 @@ for (const size of zipSizes) {
   await writeBundleTree(tree, { marker: `zip-${size.key}`, bytes: size.bytes, files: size.files });
   const plainZip = `${plainBase}.zip`;
   await rm(plainZip, { force: true });
-  const zip = spawnSync('zip', ['-q', '-r', plainZip, '.'], { cwd: tree, stdio: 'inherit' });
+  const zip = spawnSync('/usr/bin/zip', ['-q', '-r', plainZip, '.'], { cwd: tree, stdio: 'inherit' });
   if (zip.status !== 0) throw new Error(`zip failed for ${size.key}`);
   await rm(tree, { recursive: true, force: true });
 

@@ -6,6 +6,7 @@
 //     --results .context/bench/results-before-ios.jsonl [--runs 3] [--only <regex>] \
 //     [--clean-cmd "<shell command clearing the app delta cache>"] [--retry-failed] [--max-attempts 2]
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -140,7 +141,7 @@ function record(c, fields) {
 }
 
 function randomSuffix() {
-  return Math.random().toString(36).slice(2, 6);
+  return crypto.randomBytes(3).toString('hex').slice(0, 4);
 }
 
 async function prepareCase(c) {
@@ -175,7 +176,7 @@ async function prepareCase(c) {
 
 function runCleanCmd() {
   if (!cleanCmd) return;
-  const r = spawnSync('sh', ['-c', cleanCmd], { timeout: 60000, encoding: 'utf8' });
+  const r = spawnSync('/bin/sh', ['-c', cleanCmd], { timeout: 60000, encoding: 'utf8' });
   if (r.status !== 0) log(`clean cmd failed (${r.status}): ${(r.stderr || '').trim().slice(0, 200)}`);
 }
 

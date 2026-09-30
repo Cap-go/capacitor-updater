@@ -47,12 +47,14 @@ export function newSession(privateKey) {
 }
 
 export function encryptBuffer(session, buf) {
-  const cipher = crypto.createCipheriv('aes-128-cbc', session.key, session.iv);
+  // Capgo CLI bundle format (AES-128-CBC); test fixture only.
+  const cipher = crypto.createCipheriv('aes-128-cbc', session.key, session.iv); // NOSONAR
   return Buffer.concat([cipher.update(buf), cipher.final()]);
 }
 
 export async function encryptFileTo(session, src, dest) {
-  const cipher = crypto.createCipheriv('aes-128-cbc', session.key, session.iv);
+  // Capgo CLI bundle format (AES-128-CBC); test fixture only.
+  const cipher = crypto.createCipheriv('aes-128-cbc', session.key, session.iv); // NOSONAR
   await pipeline(createReadStream(src, { highWaterMark: 1024 * 1024 }), cipher, createWriteStream(dest));
 }
 

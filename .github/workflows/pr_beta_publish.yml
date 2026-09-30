@@ -15,15 +15,15 @@ concurrency:
   group: pr-beta-${{ github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   authorize:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.issue.pull_request && contains(github.event.comment.body, '/publish-beta')) }}
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -240,6 +240,11 @@ jobs:
   publish:
     needs: [authorize, core]
     if: ${{ !cancelled() && needs.authorize.result == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
