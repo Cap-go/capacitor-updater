@@ -1625,7 +1625,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let manifestEntries = manifestEntries {
             next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
         } else {
-            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
+            next = try self.implementation.downloadVerified(url: url, version: version, sessionKey: sessionKey, expectedChecksum: rawChecksum)
         }
 
         if manifestEntries == nil {
@@ -4641,7 +4641,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 )
                                 return
                             }
-                            nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
+                            nextImpl = try self.implementation.downloadVerified(
+                                url: downloadUrl,
+                                version: latestVersionName,
+                                sessionKey: sessionKey,
+                                expectedChecksum: res.checksum,
+                                link: res.link,
+                                comment: res.comment
+                            )
                         }
                     }
                     guard let next = nextImpl else {
@@ -4778,7 +4785,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.logger.error("Error downloading file \(error.localizedDescription)")
                     let current: BundleInfo = self.implementation.getCurrentBundle()
                     self.endBackGroundTaskWithNotif(
-                        msg: "Error downloading file",
+                        msg: (error as? ObjectSavableError) == .checksum ? "Error checksum" : "Error downloading file",
                         latestVersionName: latestVersionName,
                         current: current,
                         plannedDirectUpdate: plannedDirectUpdate

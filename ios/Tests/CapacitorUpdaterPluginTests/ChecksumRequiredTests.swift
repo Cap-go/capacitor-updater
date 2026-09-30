@@ -18,7 +18,14 @@ final class ChecksumRequiredTests: XCTestCase {
             super.init()
         }
 
-        override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        override func downloadVerified(
+            url _: URL,
+            version _: String,
+            sessionKey _: String,
+            expectedChecksum _: String,
+            link _: String? = nil,
+            comment _: String? = nil
+        ) throws -> BundleInfo {
             downloadedBundle
         }
     }

@@ -168,6 +168,34 @@ public class ChecksumRequiredTest {
     }
 
     @Test
+    public void finishDownloadNeverExtractsZipWhenChecksumMismatch() throws Exception {
+        final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
+        configureFinishDownloadTestState(updater);
+        final Path tempDir = Files.createTempDirectory("capgo-checksum-before-unzip");
+        updater.documentsDir = tempDir.toFile();
+        final Path zipPath = createZipWithEntry("index.html");
+        final String dest = "bundle.zip";
+        Files.copy(zipPath, tempDir.resolve(dest));
+
+        final boolean success = updater.finishDownload(
+            "bundle-id",
+            dest,
+            "1.0.0",
+            "",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            false,
+            false
+        );
+
+        assertFalse(success);
+        assertTrue(updater.getSentStatsActions().contains("checksum_fail"));
+        assertFalse("archive is deleted", Files.exists(tempDir.resolve(dest)));
+        try (java.util.stream.Stream<Path> files = Files.walk(tempDir)) {
+            assertFalse("nothing was extracted", files.anyMatch((path) -> path.getFileName().toString().equals("index.html")));
+        }
+    }
+
+    @Test
     public void finishDownloadAcceptsZipWhenChecksumMatches() throws Exception {
         final StatsTrackingCapgoUpdater updater = new StatsTrackingCapgoUpdater();
         configureFinishDownloadTestState(updater);
