@@ -133,12 +133,12 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     }
 
     override func downloadVerified(
-        url: URL,
-        version: String,
-        sessionKey: String,
-        expectedChecksum: String,
-        link: String? = nil,
-        comment: String? = nil
+        url _: URL,
+        version _: String,
+        sessionKey _: String,
+        expectedChecksum _: String,
+        link _: String? = nil,
+        comment _: String? = nil
     ) throws -> BundleInfo {
         downloadCalls += 1
         onDownloadStart?()

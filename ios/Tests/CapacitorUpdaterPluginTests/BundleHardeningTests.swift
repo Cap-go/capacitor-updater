@@ -28,11 +28,11 @@ final class BundleHardeningTests: XCTestCase {
         var extractionCalls = 0
         var sentStatsActions: [String] = []
 
-        override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
+        override func sendStats(action: String, versionName _: String? = nil, oldVersionName _: String? = "") {
             sentStatsActions.append(action)
         }
 
-        override func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+        override func performDownloadRequest(_ request: URLRequest, label _: String) -> DownloadRequestResult {
             downloadRequests += 1
             let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-hardening-\(UUID().uuidString).zip")
             do {
@@ -193,27 +193,41 @@ final class BundleHardeningTests: XCTestCase {
     private let key = Data((0..<16).map { UInt8($0 * 7 & 0xff) })
     private let iv = Data((0..<16).map { UInt8($0 + 3) })
 
-    private func aesEncrypt(_ plain: Data, padding: Bool) -> Data {
-        var out = [UInt8](repeating: 0, count: plain.count + kCCBlockSizeAES128)
-        var moved = 0
-        let status = key.withUnsafeBytes { keyPtr in
-            iv.withUnsafeBytes { ivPtr in
-                plain.withUnsafeBytes { plainPtr in
-                    CCCrypt(
-                        CCOperation(kCCEncrypt),
-                        CCAlgorithm(kCCAlgorithmAES),
-                        padding ? CCOptions(kCCOptionPKCS7Padding) : 0,
-                        keyPtr.baseAddress, key.count,
-                        ivPtr.baseAddress,
-                        plainPtr.baseAddress, plain.count,
-                        &out, out.count,
-                        &moved
-                    )
-                }
-            }
+    /// Encrypts like the Capgo CLI (AES-128-CBC with PKCS#7) through the streaming CommonCrypto API.
+    private func aesEncrypt(_ plain: Data) -> Data {
+        var cryptor: CCCryptorRef?
+        let keyBytes = [UInt8](key)
+        let ivBytes = [UInt8](iv)
+        let createStatus = CCCryptorCreate(
+            CCOperation(kCCEncrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            CCOptions(kCCOptionPKCS7Padding),
+            keyBytes,
+            keyBytes.count,
+            ivBytes,
+            &cryptor
+        )
+        guard createStatus == kCCSuccess, let cryptor else {
+            XCTFail("cannot create AES encryptor")
+            return Data()
         }
-        XCTAssertEqual(status, CCCryptorStatus(kCCSuccess))
-        return Data(out.prefix(moved))
+        defer { CCCryptorRelease(cryptor) }
+        let input = [UInt8](plain)
+        var out = [UInt8](repeating: 0, count: input.count + kCCBlockSizeAES128)
+        var updateMoved = 0
+        XCTAssertEqual(CCCryptorUpdate(cryptor, input, input.count, &out, out.count, &updateMoved), CCCryptorStatus(kCCSuccess))
+        var finalMoved = 0
+        let finalStatus = out.withUnsafeMutableBufferPointer { buffer in
+            CCCryptorFinal(cryptor, buffer.baseAddress?.advanced(by: updateMoved), buffer.count - updateMoved, &finalMoved)
+        }
+        XCTAssertEqual(finalStatus, CCCryptorStatus(kCCSuccess))
+        return Data(out.prefix(updateMoved + finalMoved))
+    }
+
+    /// CBC encryption of a single 16-byte block with no padding: it is the first block of its padded encryption.
+    private func aesEncryptRawBlock(_ block: [UInt8]) -> Data {
+        XCTAssertEqual(block.count, kCCBlockSizeAES128)
+        return aesEncrypt(Data(block)).prefix(kCCBlockSizeAES128)
     }
 
     private var aesKey: AES128Key {
@@ -227,30 +241,30 @@ final class BundleHardeningTests: XCTestCase {
         block[13] = 4
         block[14] = 4
         block[15] = 4
-        return aesEncrypt(Data(block), padding: false)
+        return aesEncryptRawBlock(block)
     }
 
     func testAesFileDecryptionRoundTripsAcrossChunks() throws {
         let plain = Data((0..<(CryptoCipher.ioBufferBytes() * 2 + 5)).map { UInt8($0 * 31 & 0xff) })
         let file = root.appendingPathComponent("round-trip.bin")
-        try aesEncrypt(plain, padding: true).write(to: file)
+        try aesEncrypt(plain).write(to: file)
 
         try aesKey.decrypt(from: file, to: file)
 
         XCTAssertEqual(try Data(contentsOf: file), plain)
-        XCTAssertEqual(aesKey.decrypt(data: aesEncrypt(Data("short".utf8), padding: true)), Data("short".utf8))
+        XCTAssertEqual(aesKey.decrypt(data: aesEncrypt(Data("short".utf8))), Data("short".utf8))
     }
 
     func testAesFileDecryptionRejectsCorruptedCiphertext() throws {
-        let valid = aesEncrypt(Data("capgo-strict-aes".utf8), padding: true)
+        let valid = aesEncrypt(Data("capgo-strict-aes".utf8))
         var zeroPadding = [UInt8](repeating: 0x41, count: 16)
         zeroPadding[15] = 0
         var oversizedPadding = [UInt8](repeating: 0x41, count: 16)
         oversizedPadding[15] = 17
         let cases: [(String, Data)] = [
             ("bad padding", badPaddingCiphertext()),
-            ("zero padding", aesEncrypt(Data(zeroPadding), padding: false)),
-            ("padding > block", aesEncrypt(Data(oversizedPadding), padding: false)),
+            ("zero padding", aesEncryptRawBlock(zeroPadding)),
+            ("padding > block", aesEncryptRawBlock(oversizedPadding)),
             ("not block aligned", valid + Data([1, 2, 3])),
             ("truncated", valid.prefix(10))
         ]
@@ -265,7 +279,7 @@ final class BundleHardeningTests: XCTestCase {
 
     func testDecryptFileFailsWhenPublicKeyIsUnusable() throws {
         let file = root.appendingPathComponent("encrypted.bin")
-        let ciphertext = aesEncrypt(Data("encrypted bundle".utf8), padding: true)
+        let ciphertext = aesEncrypt(Data("encrypted bundle".utf8))
         try ciphertext.write(to: file)
 
         XCTAssertThrowsError(
