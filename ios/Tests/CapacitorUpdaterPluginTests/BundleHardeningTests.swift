@@ -203,20 +203,12 @@ final class BundleHardeningTests: XCTestCase {
 
     /// Reference AES-128-CBC decryption without any padding handling.
     private func rawCbcDecrypt(_ ciphertext: Data, iv chainingValue: Data) -> Data {
-        var cryptor: CCCryptorRef?
-        let keyBytes = [UInt8](key)
-        let ivBytes = [UInt8](chainingValue)
-        let createStatus = CCCryptorCreate(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), 0, keyBytes, keyBytes.count, ivBytes, &cryptor)
-        guard createStatus == kCCSuccess, let cryptor else {
-            XCTFail("cannot create AES decryptor")
+        let reference = AES128Key(iv: chainingValue, aes128Key: key, logger: Logger(withTag: "hardening-tests", options: Logger.Options(level: .silent)))
+        guard let plain = reference.decryptBlocks(ciphertext) else {
+            XCTFail("reference AES decryption failed")
             return Data()
         }
-        defer { CCCryptorRelease(cryptor) }
-        let input = [UInt8](ciphertext)
-        var out = [UInt8](repeating: 0, count: input.count)
-        var moved = 0
-        XCTAssertEqual(CCCryptorUpdate(cryptor, input, input.count, &out, out.count, &moved), CCCryptorStatus(kCCSuccess))
-        return Data(out.prefix(moved))
+        return plain
     }
 
     /// Builds a `blocks`-long CBC ciphertext whose last block decrypts to `lastPlainBlock`, by choosing the

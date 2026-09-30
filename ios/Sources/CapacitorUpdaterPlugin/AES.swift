@@ -57,59 +57,48 @@ public struct AES128Key {
     /// and provide it `ivData` for the initialization vector. Will use cipher block chaining (CBC) as
     /// the mode of operation.
     ///
-    /// Returns the decrypted data.
+    /// Returns the decrypted data, or nil when the ciphertext is not block aligned or the PKCS#7 padding is invalid.
     ///
     public func decrypt(data: Data) -> Data? {
+        guard let plain = decryptBlocks(data) else {
+            return nil
+        }
+        guard let padding = strictPkcs7PaddingLength(lastBlock: Array(plain.suffix(AESConstants.blockSize))) else {
+            logger.error("AES decryption failed: invalid padding")
+            return nil
+        }
+        return plain.prefix(plain.count - padding)
+    }
+
+    /// AES-CBC decryption of whole blocks, padding left in place. Nil when `data` is empty or not block aligned.
+    func decryptBlocks(_ data: Data) -> Data? {
         guard !data.isEmpty, data.count % AESConstants.blockSize == 0 else {
             logger.error("AES ciphertext is not block aligned")
             return nil
         }
-        let encryptedData: UnsafePointer<UInt8> = (data as NSData).bytes.bindMemory(
-            to: UInt8.self, capacity: data.count)
-        let encryptedDataLength: Int = data.count
-
-        if let result: NSMutableData = NSMutableData(length: encryptedDataLength) {
-            let keyData: UnsafePointer<UInt8> = (self.aes128Key as NSData).bytes.bindMemory(
-                to: UInt8.self, capacity: self.aes128Key.count)
-            let keyLength: size_t = size_t(self.aes128Key.count)
-            let ivData: UnsafePointer<UInt8> = (initVector as NSData).bytes.bindMemory(
-                to: UInt8.self, capacity: self.initVector.count)
-
-            let decryptedData: UnsafeMutablePointer<UInt8> = UnsafeMutablePointer<UInt8>(
-                result.mutableBytes.assumingMemoryBound(to: UInt8.self))
-            let decryptedDataLength: size_t = size_t(result.length)
-
-            var decryptedLength: size_t = 0
-
-            let status: CCCryptorStatus = CCCrypt(
-                CCOperation(kCCDecrypt),
-                AESConstants.aesAlgorithm,
-                AESConstants.aesOptions,
-                keyData,
-                keyLength,
-                ivData,
-                encryptedData,
-                encryptedDataLength,
-                decryptedData,
-                decryptedDataLength,
-                &decryptedLength)
-
-            if Int32(status) == Int32(kCCSuccess) {
-                result.length = Int(decryptedLength)
-                let plain = result as Data
-                guard let padding = strictPkcs7PaddingLength(lastBlock: Array(plain.suffix(AESConstants.blockSize))) else {
-                    logger.error("AES decryption failed: invalid padding")
-                    return nil
-                }
-                return plain.prefix(plain.count - padding)
-            } else {
-                logger.error("AES decryption failed with status: \(status)")
-                return nil
-            }
-        } else {
-            logger.error("Failed to allocate memory for AES decryption")
+        var output = [UInt8](repeating: 0, count: data.count)
+        var decryptedLength: size_t = 0
+        let input = [UInt8](data)
+        let keyBytes = [UInt8](aes128Key)
+        let ivBytes = [UInt8](initVector)
+        let status: CCCryptorStatus = CCCrypt(
+            CCOperation(kCCDecrypt),
+            AESConstants.aesAlgorithm,
+            AESConstants.aesOptions,
+            keyBytes,
+            keyBytes.count,
+            ivBytes,
+            input,
+            input.count,
+            &output,
+            output.count,
+            &decryptedLength
+        )
+        guard status == kCCSuccess else {
+            logger.error("AES decryption failed with status: \(status)")
             return nil
         }
+        return Data(output.prefix(decryptedLength))
     }
 
     /// Rejects empty ciphertext and ciphertext that is not a whole number of AES blocks.
