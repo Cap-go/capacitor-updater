@@ -28,10 +28,11 @@ num-bigint = "0.4"
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
-sha2 = "0.10"
 url = "2"
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2"] }
+# zlib-rs: fast pure-Rust inflate (miniz_oxide was 3-4x slower than the system zlib on iOS).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rustls-platform-verifier = "0.5"
@@ -48,5 +49,24 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 codegen-units = 1
 lto = true
 opt-level = "s"
+
+# Hot paths (inflate, CRC, AES, the engine's own loops) are built for speed; the rest stays small.
+[profile.release.package.capgo-updater-core]
+opt-level = 3
+
+[profile.release.package.zlib-rs]
+opt-level = 3
+
+[profile.release.package.crc32fast]
+opt-level = 3
+
+[profile.release.package.aes]
+opt-level = 3
+
+[profile.release.package.zip]
+opt-level = 3
+
+[profile.release.package.flate2]
+opt-level = 3
 # Only applies to linked outputs (Android .so); iOS static libs are stripped by scripts/build-core.sh.
 strip = true

@@ -1,0 +1,4 @@
+# The `aes` crate only uses the ARMv8 AES instructions on aarch64 with this cfg;
+# without it bundle decryption falls back to a much slower software AES.
+[target.'cfg(target_arch = "aarch64")']
+rustflags = ["--cfg", "aes_armv8"]

@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
+use ring::digest::{Context, SHA256};
 
 use crate::crypto::checksum::IO_BUFFER_BYTES;
 use crate::text::hex_encode;
@@ -62,7 +62,7 @@ pub fn write_verified(reader: &mut dyn Read, destination: &Path, expected: Optio
     let temp = unique_temp(parent, "capgo-", ".tmp");
     let result = (|| {
         let mut output = File::create(&temp)?;
-        let mut hasher = Sha256::new();
+        let mut hasher = Context::new(&SHA256);
         let mut buffer = vec![0u8; IO_BUFFER_BYTES];
         loop {
             let read = reader.read(&mut buffer)?;
@@ -74,7 +74,7 @@ pub fn write_verified(reader: &mut dyn Read, destination: &Path, expected: Optio
         }
         output.flush()?;
         drop(output);
-        let actual = hex_encode(&hasher.finalize());
+        let actual = hex_encode(hasher.finish().as_ref());
         if let Some(expected) = expected {
             if !expected.eq_ignore_ascii_case(&actual) {
                 return Ok(None);
@@ -89,7 +89,7 @@ pub fn write_verified(reader: &mut dyn Read, destination: &Path, expected: Optio
 
 /// SHA-256 of a readable stream.
 pub fn sha256_reader(reader: &mut dyn Read) -> io::Result<String> {
-    let mut hasher = Sha256::new();
+    let mut hasher = Context::new(&SHA256);
     let mut buffer = vec![0u8; IO_BUFFER_BYTES];
     loop {
         let read = reader.read(&mut buffer)?;
@@ -98,7 +98,7 @@ pub fn sha256_reader(reader: &mut dyn Read) -> io::Result<String> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(hex_encode(&hasher.finalize()))
+    Ok(hex_encode(hasher.finish().as_ref()))
 }
 
 pub fn file_matches_hash(path: &Path, expected: &str) -> bool {

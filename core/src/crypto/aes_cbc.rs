@@ -100,11 +100,8 @@ fn temp_path_for(path: &Path) -> CoreResult<PathBuf> {
     let parent = path
         .parent()
         .ok_or_else(|| CoreError::new("io_error", format!("No parent directory for {}", path.display())))?;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    Ok(parent.join(format!("capgo-aes-{}-{nanos}.tmp", std::process::id())))
+    // Files are decrypted in parallel in one directory: the name must be unique per call.
+    Ok(crate::engine::fsutil::unique_temp(parent, "capgo-aes-", ".tmp"))
 }
 
 /// Decrypts `path` in place: streams into a sibling temp file, then atomically replaces it.
@@ -118,7 +115,11 @@ pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> Core
     let temp = temp_path_for(path)?;
     let result = (|| {
         let mut input = File::open(path).map_err(|error| CoreError::io("Cannot open encrypted file", error))?;
-        let mut output = File::create(&temp).map_err(|error| CoreError::io("Cannot create temp file", error))?;
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|error| CoreError::io("Cannot create temp file", error))?;
         let mut decryptor = CbcDecryptor::new(key, iv);
         let mut buffer = vec![0u8; IO_BUFFER_BYTES];
         let mut plain = Vec::with_capacity(IO_BUFFER_BYTES + BLOCK);
@@ -144,8 +145,9 @@ pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> Core
             .map_err(|error| CoreError::io("Cannot write decrypted file", error))?;
         written += plain.len() as u64;
         output
-            .sync_all()
+            .flush()
             .map_err(|error| CoreError::io("Cannot flush decrypted file", error))?;
+        drop(output);
         if written == 0 {
             return Err(CoreError::new("empty_output", "Empty decrypted data"));
         }
