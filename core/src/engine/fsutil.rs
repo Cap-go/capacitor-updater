@@ -129,3 +129,71 @@ pub fn modified_before(path: &Path, age: std::time::Duration) -> bool {
         .and_then(|modified| modified.elapsed().ok())
         .is_some_and(|elapsed| elapsed > age)
 }
+
+/// Writes a stream to a file in 1 MiB blocks and (optionally) hashes it on a
+/// separate thread, so hashing overlaps with network and disk I/O.
+pub struct BlockWriter {
+    file: File,
+    block: Vec<u8>,
+    hasher: Option<(std::sync::mpsc::SyncSender<Vec<u8>>, std::thread::JoinHandle<String>)>,
+}
+
+const BLOCK_BYTES: usize = 1024 * 1024;
+
+impl BlockWriter {
+    pub fn new(file: File, hash: bool) -> Self {
+        let hasher = hash.then(|| {
+            let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+            let handle = std::thread::spawn(move || {
+                let mut context = Context::new(&SHA256);
+                for block in receiver {
+                    context.update(&block);
+                }
+                hex_encode(context.finish().as_ref())
+            });
+            (sender, handle)
+        });
+        Self {
+            file,
+            block: Vec::with_capacity(BLOCK_BYTES),
+            hasher,
+        }
+    }
+
+    pub fn write(&mut self, mut data: &[u8]) -> io::Result<()> {
+        while !data.is_empty() {
+            let take = (BLOCK_BYTES - self.block.len()).min(data.len());
+            self.block.extend_from_slice(&data[..take]);
+            data = &data[take..];
+            if self.block.len() == BLOCK_BYTES {
+                self.flush_block()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn flush_block(&mut self) -> io::Result<()> {
+        if self.block.is_empty() {
+            return Ok(());
+        }
+        self.file.write_all(&self.block)?;
+        let block = std::mem::replace(&mut self.block, Vec::with_capacity(BLOCK_BYTES));
+        if let Some((sender, _)) = &self.hasher {
+            // A dropped hasher only loses the streamed hash; the caller re-hashes the file.
+            if sender.send(block).is_err() {
+                self.hasher = None;
+            }
+        }
+        Ok(())
+    }
+
+    /// Writes what is buffered and returns the SHA-256 of everything written (when hashing).
+    pub fn finish(mut self) -> io::Result<Option<String>> {
+        self.flush_block()?;
+        self.file.flush()?;
+        Ok(self.hasher.take().and_then(|(sender, handle)| {
+            drop(sender);
+            handle.join().ok()
+        }))
+    }
+}

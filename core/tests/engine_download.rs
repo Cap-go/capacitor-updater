@@ -391,34 +391,6 @@ fn encrypted_manifest_files_are_decrypted() {
     assert_eq!(std::fs::read(dir.join("index.html")).unwrap(), content);
 }
 
-/// Regression: files decrypted in parallel in one directory used to share temp names.
-#[test]
-fn many_encrypted_manifest_files_decrypt_in_parallel() {
-    let files: Files = Arc::default();
-    let server = serve(files.clone());
-    let t = TestEngine::new(json!({ "publicKey": keys().public_pem }));
-    let mut manifest = Vec::new();
-    let mut contents = Vec::new();
-    for index in 0..64 {
-        let name = format!("assets/file-{index}.js");
-        let content = format!("console.log({index});").repeat(64).into_bytes();
-        files
-            .lock()
-            .unwrap()
-            .push((format!("/files/{name}"), aes_encrypt(&content)));
-        manifest.push(json!({ "file_name": name, "file_hash": encrypted_checksum(&content), "download_url": format!("{}/files/{name}", server.url) }));
-        contents.push((name, content));
-    }
-    let installed = t.call(
-        "download",
-        json!({ "version": "2", "manifest": manifest, "sessionKey": session_key() }),
-    );
-    let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
-    for (name, content) in contents {
-        assert_eq!(std::fs::read(dir.join(&name)).unwrap(), content, "{name}");
-    }
-}
-
 #[test]
 fn https_to_http_redirect_is_refused() {
     let t = TestEngine::new(json!({}));

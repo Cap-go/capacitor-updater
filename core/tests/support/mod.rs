@@ -107,25 +107,32 @@ impl FakeServer {
         let (requests_clone, responder_clone) = (requests.clone(), responder.clone());
         std::thread::spawn(move || {
             for mut request in server.incoming_requests() {
-                let mut body = Vec::new();
-                let _ = std::io::Read::read_to_end(request.as_reader(), &mut body);
-                let recorded = RecordedRequest {
-                    method: request.method().to_string(),
-                    url: request.url().to_string(),
-                    headers: request
-                        .headers()
-                        .iter()
-                        .map(|h| (h.field.to_string(), h.value.to_string()))
-                        .collect(),
-                    body,
-                };
-                requests_clone.lock().unwrap().push(recorded.clone());
-                let (status, headers, body) = (responder_clone.lock().unwrap())(&recorded);
-                let mut response = tiny_http::Response::from_data(body).with_status_code(status);
-                for (key, value) in headers {
-                    response.add_header(tiny_http::Header::from_bytes(key.as_bytes(), value.as_bytes()).unwrap());
-                }
-                let _ = request.respond(response);
+                // One thread per request: a slow response must not stall other connections.
+                let (requests_clone, responder_clone) = (requests_clone.clone(), responder_clone.clone());
+                std::thread::spawn(move || {
+                    let mut body = Vec::new();
+                    let _ = std::io::Read::read_to_end(request.as_reader(), &mut body);
+                    let recorded = RecordedRequest {
+                        method: request.method().to_string(),
+                        url: request.url().to_string(),
+                        headers: request
+                            .headers()
+                            .iter()
+                            .map(|h| (h.field.to_string(), h.value.to_string()))
+                            .collect(),
+                        body,
+                    };
+                    requests_clone.lock().unwrap().push(recorded.clone());
+                    let (status, headers, body) = (responder_clone.lock().unwrap())(&recorded);
+                    // No keep-alive: tiny_http can stall a reused connection under load.
+                    let mut response = tiny_http::Response::from_data(body)
+                        .with_status_code(status)
+                        .with_header(tiny_http::Header::from_bytes(&b"Connection"[..], &b"close"[..]).unwrap());
+                    for (key, value) in headers {
+                        response.add_header(tiny_http::Header::from_bytes(key.as_bytes(), value.as_bytes()).unwrap());
+                    }
+                    let _ = request.respond(response);
+                });
             }
         });
         Self {

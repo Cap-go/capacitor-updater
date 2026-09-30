@@ -351,6 +351,14 @@ impl Engine {
         }
         self.send_stats("download_manifest_start", Some(&request.version), None, None);
         let tasks = self.plan_tasks(request, manifest, &destination)?;
+        // One RSA operation per download; files are decrypted with the same AES key.
+        let session = crypto::bundle_session_key(&self.config().public_key, &request.session_key).map_err(|error| {
+            self.send_stats("decrypt_fail", Some(&request.version), None, None);
+            CoreError::new(
+                "decrypt_fail",
+                format!("Failed to decrypt session key: {}", error.message),
+            )
+        })?;
         let total = tasks.len();
         let workers = (crate::policy::manifest_max_concurrent_files(
             std::thread::available_parallelism()
@@ -372,7 +380,7 @@ impl Engine {
                     let Some(task) = queue.lock().unwrap().next() else {
                         return;
                     };
-                    match self.process_manifest_file(&task, request, assets.as_ref(), cancel) {
+                    match self.process_manifest_file(&task, request, session.as_ref(), assets.as_ref(), cancel) {
                         Ok(()) => {
                             let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
                             self.progress(&id, 10 + (done * 60 / total.max(1)) as i64);
@@ -406,6 +414,7 @@ impl Engine {
         &self,
         task: &Task,
         request: &DownloadRequest,
+        session: Option<&crypto::SessionKey>,
         assets: Option<&ApkAssets>,
         cancel: &Cancel,
     ) -> CoreResult<()> {
@@ -432,10 +441,16 @@ impl Engine {
             }
         }
         // 4. Network.
-        self.download_manifest_file(task, request, cancel)
+        self.download_manifest_file(task, request, session, cancel)
     }
 
-    fn download_manifest_file(&self, task: &Task, request: &DownloadRequest, cancel: &Cancel) -> CoreResult<()> {
+    fn download_manifest_file(
+        &self,
+        task: &Task,
+        request: &DownloadRequest,
+        session: Option<&crypto::SessionKey>,
+        cancel: &Cancel,
+    ) -> CoreResult<()> {
         let cache = self.config().cache_dir.clone();
         let partial_dir = if cache.as_os_str().is_empty() {
             self.config().storage_root.clone()
@@ -509,36 +524,39 @@ impl Engine {
             }
             return Err(file_fail(format!("Failed to download {}: {error}", task.file_name)));
         }
-        // Decrypt a work copy; the partial stays encrypted (resumable, reusable).
-        let public_key = self.config().public_key.clone();
-        let encrypted = !public_key.is_empty() && crypto::is_valid_session_key(Some(&request.session_key));
-        let work = if encrypted {
-            let work = partial_dir.join(format!(
-                "work_{}_{}",
-                super::store::random_id(),
-                basename(&task.file_name)
-            ));
-            let decrypted = fs::copy(&partial, &work)
-                .map_err(|error| CoreError::io("Cannot copy manifest partial", error))
-                .and_then(|_| crypto::decrypt_bundle_file(&work, &public_key, Some(&request.session_key)).map(|_| ()));
-            if let Err(error) = decrypted {
-                let _ = fs::remove_file(&work);
-                let _ = fs::remove_file(&partial);
-                self.send_stats("decrypt_fail", Some(&request.version), None, None);
-                return Err(CoreError::new(
-                    "decrypt_fail",
-                    format!("Failed to decrypt {}: {}", task.file_name, error.message),
-                ));
-            }
-            Some(work)
-        } else {
-            None
+        // The partial stays encrypted (resumable, reusable): decrypt while reading it.
+        let decrypt_failed = |error: &dyn std::fmt::Display| {
+            let _ = fs::remove_file(&partial);
+            self.send_stats("decrypt_fail", Some(&request.version), None, None);
+            CoreError::new("decrypt_fail", format!("Failed to decrypt {}: {error}", task.file_name))
         };
-        let source = work.clone().unwrap_or_else(|| partial.clone());
-        let written = if task.brotli {
-            decode_brotli(&source, &task.target, &task.hash)
-        } else {
-            File::open(&source).and_then(|mut file| fsutil::write_verified(&mut file, &task.target, Some(&task.hash)))
+        let mut work: Option<std::path::PathBuf> = None;
+        let written = match session {
+            // Brotli needs a seekable plaintext file: decrypt into a work file in one pass.
+            Some(session) if task.brotli => {
+                let path = partial_dir.join(format!(
+                    "work_{}_{}",
+                    super::store::random_id(),
+                    basename(&task.file_name)
+                ));
+                if let Err(error) = crypto::aes_cbc::decrypt_file_to(&partial, &path, &session.key, &session.iv) {
+                    let _ = fs::remove_file(&path);
+                    return Err(decrypt_failed(&error.message));
+                }
+                work = Some(path.clone());
+                decode_brotli(&path, &task.target, &task.hash)
+            }
+            Some(session) => {
+                let input = File::open(&partial).map_err(|error| decrypt_failed(&error))?;
+                let mut reader = crypto::aes_cbc::CbcDecryptReader::new(input, &session.key, &session.iv);
+                match fsutil::write_verified(&mut reader, &task.target, Some(&task.hash)) {
+                    Err(error) if error.kind() == io::ErrorKind::InvalidData => return Err(decrypt_failed(&error)),
+                    other => other,
+                }
+            }
+            None if task.brotli => decode_brotli(&partial, &task.target, &task.hash),
+            None => File::open(&partial)
+                .and_then(|mut file| fsutil::write_verified(&mut file, &task.target, Some(&task.hash))),
         };
         if let Some(work) = &work {
             let _ = fs::remove_file(work);

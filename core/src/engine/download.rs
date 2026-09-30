@@ -2,7 +2,6 @@
 //! cancellation, status transitions, post-install actions).
 
 use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -268,14 +267,17 @@ impl Engine {
 
         let transfer = self.transfer_zip(&request.url, &request.version, &id, &temp, &info, cancel);
         cleanup(&[&info]);
-        if let Err(error) = transfer {
-            cleanup(&[&temp]);
-            return Err(error);
-        }
+        let streamed_hash = match transfer {
+            Ok(hash) => hash,
+            Err(error) => {
+                cleanup(&[&temp]);
+                return Err(error);
+            }
+        };
         self.send_stats("download_zip_complete", Some(&request.version), None, None);
         self.progress(&id, 71);
 
-        let verified = self.verify_zip(&temp, request);
+        let verified = self.verify_zip(&temp, request, streamed_hash);
         let checksum = match verified {
             Ok(checksum) => checksum,
             Err(error) => {
@@ -333,11 +335,21 @@ impl Engine {
 
     /// Decrypts (when encrypted) and checks the zip against the expected checksum
     /// before anything is extracted. Returns the SHA-256 of the plain zip.
-    fn verify_zip(&self, zip: &Path, request: &DownloadRequest) -> CoreResult<String> {
+    /// `streamed_hash` is the SHA-256 computed while downloading (absent after a resume).
+    fn verify_zip(&self, zip: &Path, request: &DownloadRequest, streamed_hash: Option<String>) -> CoreResult<String> {
         let public_key = self.config().public_key.clone();
         let mut expected = request.checksum.clone();
+        let mut plain_hash = streamed_hash;
         if crypto::is_valid_session_key(Some(&request.session_key)) {
-            crypto::decrypt_bundle_file(zip, &public_key, Some(&request.session_key)).map_err(|error| {
+            let decrypted =
+                crypto::bundle_session_key(&public_key, &request.session_key).and_then(|session| match session {
+                    Some(session) => {
+                        crypto::aes_cbc::decrypt_file_in_place_hashed(zip, &session.key, &session.iv).map(Some)
+                    }
+                    None => Ok(None),
+                });
+            // The checksum covers the decrypted zip.
+            plain_hash = decrypted.map_err(|error| {
                 self.send_stats("decrypt_fail", Some(&request.version), None, None);
                 CoreError::new("decrypt_fail", format!("AES file decryption failed: {}", error.message))
             })?;
@@ -345,7 +357,10 @@ impl Engine {
         } else if !public_key.is_empty() {
             expected = crypto::decrypt_checksum(&request.checksum, &public_key)?;
         }
-        let actual = crypto::checksum::sha256_file(zip)?;
+        let actual = match plain_hash {
+            Some(hash) => hash,
+            None => crypto::checksum::sha256_file(zip)?,
+        };
         if !expected.eq_ignore_ascii_case(&actual) {
             self.host.error("Checksum mismatch");
             self.host.debug(format!("Expected: {expected}, Got: {actual}"));
@@ -367,14 +382,14 @@ impl Engine {
         temp: &Path,
         info: &Path,
         cancel: &Cancel,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<Option<String>> {
         let _ = fs::write(info, version);
         let _ = fs::remove_file(temp);
         let mut attempt = 0;
         loop {
             attempt += 1;
             match self.transfer_zip_once(url, version, id, temp, cancel) {
-                Ok(()) => return Ok(()),
+                Ok(hash) => return Ok(hash),
                 Err((error, retryable)) => {
                     if !retryable || attempt >= MAX_ZIP_ATTEMPTS || cancel.is_cancelled() {
                         return Err(error);
@@ -396,7 +411,7 @@ impl Engine {
         id: &str,
         temp: &Path,
         cancel: &Cancel,
-    ) -> Result<(), (CoreError, bool)> {
+    ) -> Result<Option<String>, (CoreError, bool)> {
         let existing = fs::metadata(temp).map(|metadata| metadata.len()).unwrap_or(0);
         let range = format!("bytes={existing}-");
         let headers: Vec<(&str, &str)> = if existing > 0 {
@@ -404,7 +419,8 @@ impl Engine {
         } else {
             Vec::new()
         };
-        let mut file: Option<fs::File> = None;
+        // Hashed while writing when the whole body comes in this response.
+        let mut file: Option<fsutil::BlockWriter> = None;
         let mut written: u64 = 0;
         let mut expected_total: Option<u64> = None;
         let mut offset: u64 = 0;
@@ -460,7 +476,7 @@ impl Engine {
                         message: error.to_string(),
                     })?;
                 written = if append { existing } else { 0 };
-                file = Some(handle);
+                file = Some(fsutil::BlockWriter::new(handle, !append));
                 Ok(())
             }
             crate::net::Stream::Chunk(chunk) => {
@@ -468,7 +484,7 @@ impl Engine {
                     return Err(stopped());
                 }
                 let handle = file.as_mut().ok_or_else(stopped)?;
-                handle.write_all(chunk).map_err(|error| NetError {
+                handle.write(chunk).map_err(|error| NetError {
                     kind: crate::net::NetErrorKind::Io,
                     message: error.to_string(),
                 })?;
@@ -483,9 +499,13 @@ impl Engine {
                 Ok(())
             }
         });
-        if let Some(mut handle) = file {
-            let _ = handle.flush();
-        }
+        let streamed_hash = match file.map(fsutil::BlockWriter::finish) {
+            Some(Ok(hash)) => hash,
+            Some(Err(error)) => {
+                return Err((CoreError::io("Cannot write download", error), true));
+            }
+            None => None,
+        };
         match result {
             Ok(_) => {}
             Err(error) => {
@@ -543,7 +563,7 @@ impl Engine {
                 return incomplete("incomplete_download");
             }
         }
-        Ok(())
+        Ok(streamed_hash)
     }
 
     /// Copies the files of an installed bundle into the delta cache

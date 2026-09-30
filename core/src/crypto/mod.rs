@@ -73,9 +73,17 @@ pub fn decrypt_checksum(checksum: &str, public_key: &str) -> CoreResult<String> 
 }
 
 /// Parsed `<iv>:<encrypted key>` session key.
-struct SessionKey {
-    iv: [u8; 16],
-    key: [u8; 16],
+pub struct SessionKey {
+    pub iv: [u8; 16],
+    pub key: [u8; 16],
+}
+
+/// The AES key of an encrypted bundle, `None` when the bundle is not encrypted.
+pub fn bundle_session_key(public_key: &str, session_key: &str) -> CoreResult<Option<SessionKey>> {
+    if public_key.is_empty() || !is_valid_session_key(Some(session_key)) {
+        return Ok(None);
+    }
+    decrypt_session_key(public_key, session_key).map(Some)
 }
 
 fn decrypt_session_key(public_key: &str, session_key: &str) -> CoreResult<SessionKey> {

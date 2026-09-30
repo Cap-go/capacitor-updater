@@ -183,8 +183,16 @@ impl Plugin {
     }
 
     fn stats_actions(&self) -> Vec<String> {
-        // Stats reach the fake server in batches.
-        self.t.engine.flush_stats();
+        // Stats reach the fake server in batches: wait until the queue is drained.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.t.engine.flush_stats();
+            if self.t.engine.pending_stats_count() == 0 || Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(50));
         self.backend
             .server
             .requests()

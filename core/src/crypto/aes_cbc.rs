@@ -104,59 +104,115 @@ fn temp_path_for(path: &Path) -> CoreResult<PathBuf> {
     Ok(crate::engine::fsutil::unique_temp(parent, "capgo-aes-", ".tmp"))
 }
 
-/// Decrypts `path` in place: streams into a sibling temp file, then atomically replaces it.
-pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<()> {
-    let size = fs::metadata(path)
+/// Decrypts `source` into `destination` (created, must not exist) in one pass and
+/// returns the SHA-256 (lowercase hex) of the plaintext.
+pub fn decrypt_file_to(source: &Path, destination: &Path, key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<String> {
+    let size = fs::metadata(source)
         .map_err(|error| CoreError::io("Cannot stat encrypted file", error))?
         .len();
     if size == 0 {
         return Err(CoreError::new("empty_input", "Empty encrypted data"));
     }
-    let temp = temp_path_for(path)?;
-    let result = (|| {
-        let mut input = File::open(path).map_err(|error| CoreError::io("Cannot open encrypted file", error))?;
-        let mut output = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|error| CoreError::io("Cannot create temp file", error))?;
-        let mut decryptor = CbcDecryptor::new(key, iv);
-        let mut buffer = vec![0u8; IO_BUFFER_BYTES];
-        let mut plain = Vec::with_capacity(IO_BUFFER_BYTES + BLOCK);
-        let mut written = 0u64;
-        loop {
-            let read = input
-                .read(&mut buffer)
-                .map_err(|error| CoreError::io("Cannot read encrypted file", error))?;
-            if read == 0 {
-                break;
-            }
-            plain.clear();
-            decryptor.update(&buffer[..read], &mut plain);
-            output
-                .write_all(&plain)
-                .map_err(|error| CoreError::io("Cannot write decrypted file", error))?;
-            written += plain.len() as u64;
+    let input = File::open(source).map_err(|error| CoreError::io("Cannot open encrypted file", error))?;
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|error| CoreError::io("Cannot create temp file", error))?;
+    let mut reader = CbcDecryptReader::new(input, key, iv);
+    let mut hasher = ring::digest::Context::new(&ring::digest::SHA256);
+    let mut buffer = vec![0u8; IO_BUFFER_BYTES];
+    loop {
+        let read = reader.read(&mut buffer).map_err(|error| match error.kind() {
+            std::io::ErrorKind::InvalidData => CoreError::new("decrypt_failed", error.to_string()),
+            _ => CoreError::io("Cannot read encrypted file", error),
+        })?;
+        if read == 0 {
+            break;
         }
-        plain.clear();
-        decryptor.finish(&mut plain)?;
+        hasher.update(&buffer[..read]);
         output
-            .write_all(&plain)
+            .write_all(&buffer[..read])
             .map_err(|error| CoreError::io("Cannot write decrypted file", error))?;
-        written += plain.len() as u64;
-        output
-            .flush()
-            .map_err(|error| CoreError::io("Cannot flush decrypted file", error))?;
-        drop(output);
-        if written == 0 {
-            return Err(CoreError::new("empty_output", "Empty decrypted data"));
-        }
-        fs::rename(&temp, path).map_err(|error| CoreError::io("Cannot replace encrypted file", error))
-    })();
+    }
+    output
+        .flush()
+        .map_err(|error| CoreError::io("Cannot flush decrypted file", error))?;
+    Ok(crate::text::hex_encode(hasher.finish().as_ref()))
+}
+
+/// Decrypts `path` in place (sibling temp file + atomic rename) and returns the
+/// SHA-256 of the plaintext.
+pub fn decrypt_file_in_place_hashed(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<String> {
+    let temp = temp_path_for(path)?;
+    let result = decrypt_file_to(path, &temp, key, iv).and_then(|hash| {
+        fs::rename(&temp, path).map_err(|error| CoreError::io("Cannot replace encrypted file", error))?;
+        Ok(hash)
+    });
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
     result
+}
+
+/// Decrypts `path` in place: streams into a sibling temp file, then atomically replaces it.
+pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<()> {
+    decrypt_file_in_place_hashed(path, key, iv).map(|_| ())
+}
+
+/// Plaintext reader over an AES-128-CBC ciphertext stream (PKCS#7 checked at the end).
+pub struct CbcDecryptReader<R: Read> {
+    inner: R,
+    decryptor: Option<CbcDecryptor>,
+    input: Vec<u8>,
+    plain: Vec<u8>,
+    position: usize,
+    produced: u64,
+}
+
+impl<R: Read> CbcDecryptReader<R> {
+    pub fn new(inner: R, key: &[u8; 16], iv: &[u8; 16]) -> Self {
+        Self {
+            inner,
+            decryptor: Some(CbcDecryptor::new(key, iv)),
+            input: vec![0u8; IO_BUFFER_BYTES],
+            plain: Vec::with_capacity(IO_BUFFER_BYTES + BLOCK),
+            position: 0,
+            produced: 0,
+        }
+    }
+}
+
+impl<R: Read> Read for CbcDecryptReader<R> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let invalid = |message: String| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+        loop {
+            if self.position < self.plain.len() {
+                let count = out.len().min(self.plain.len() - self.position);
+                out[..count].copy_from_slice(&self.plain[self.position..self.position + count]);
+                self.position += count;
+                self.produced += count as u64;
+                return Ok(count);
+            }
+            let Some(decryptor) = self.decryptor.as_mut() else {
+                return Ok(0);
+            };
+            self.plain.clear();
+            self.position = 0;
+            let read = self.inner.read(&mut self.input)?;
+            if read == 0 {
+                let decryptor = self.decryptor.take().expect("decryptor present");
+                decryptor
+                    .finish(&mut self.plain)
+                    .map_err(|error| invalid(error.message))?;
+                if self.produced == 0 && self.plain.is_empty() {
+                    return Err(invalid("Empty decrypted data".into()));
+                }
+            } else {
+                decryptor.update(&self.input[..read], &mut self.plain);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
