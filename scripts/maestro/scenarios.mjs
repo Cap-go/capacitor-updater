@@ -167,6 +167,24 @@ export const scenarios = {
     },
     releases: [{ version: 'manual-zip-config-guards-v1', label: 'manual-zip-config-guards-v1' }],
   },
+  'edge-deferred': {
+    id: 'edge-deferred',
+    mode: 'auto',
+    delivery: 'zip',
+    autoUpdate: true,
+    directUpdate: 'false',
+    builtinLabel: 'edge-deferred-builtin',
+    releases: [{ version: 'edge-deferred-v1', label: 'edge-deferred-v1' }],
+  },
+  'edge-direct': {
+    id: 'edge-direct',
+    mode: 'auto',
+    delivery: 'zip',
+    autoUpdate: true,
+    directUpdate: 'always',
+    builtinLabel: 'edge-direct-builtin',
+    releases: [{ version: 'edge-direct-v1', label: 'edge-direct-v1' }],
+  },
   'native-reset': {
     id: 'native-reset',
     mode: 'auto',
@@ -178,8 +196,24 @@ export const scenarios = {
   },
 };
 
+// Edge cases reuse one app build per scenario and drive failures through the fake server's
+// fault injection (see fake-capgo-server.mjs), so each case only needs its own CI job, not its
+// own native build.
+export const edgeCases = {
+  'edge-network-drop': { app: 'edge-deferred' },
+  'edge-kill-download': { app: 'edge-deferred' },
+  'edge-corrupt-bundle': { app: 'edge-deferred' },
+  'edge-offline-check': { app: 'edge-deferred' },
+  'edge-direct-network-drop': { app: 'edge-direct' },
+};
+
 export function findScenario(id) {
   return scenarios[id] ?? null;
+}
+
+// Maps an edge case id to the app scenario it runs against; plain scenario ids map to themselves.
+export function resolveAppScenarioId(id) {
+  return edgeCases[id]?.app ?? id;
 }
 
 export function getScenario(id) {
