@@ -132,7 +132,14 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         return currentBundleValue
     }
 
-    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+    override func downloadVerified(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        expectedChecksum: String,
+        link: String? = nil,
+        comment: String? = nil
+    ) throws -> BundleInfo {
         downloadCalls += 1
         onDownloadStart?()
         if let downloadedBundleValue {
