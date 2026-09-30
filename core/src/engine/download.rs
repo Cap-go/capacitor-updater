@@ -265,7 +265,17 @@ impl Engine {
             }
         };
 
-        let transfer = self.transfer_zip(&request.url, &request.version, &id, &temp, &info, cancel);
+        // An encrypted zip is verified after decryption: hashing the ciphertext is wasted work.
+        let hash_while_downloading = !crypto::is_valid_session_key(Some(&request.session_key));
+        let transfer = self.transfer_zip(
+            &request.url,
+            &request.version,
+            &id,
+            &temp,
+            &info,
+            cancel,
+            hash_while_downloading,
+        );
         cleanup(&[&info]);
         let streamed_hash = match transfer {
             Ok(hash) => hash,
@@ -373,7 +383,9 @@ impl Engine {
         Ok(actual)
     }
 
-    /// GET with resume and bounded retries into `temp`.
+    /// GET with resume and bounded retries into `temp`. With `hash`, returns the
+    /// SHA-256 of the body when it arrived in one response.
+    #[allow(clippy::too_many_arguments)]
     fn transfer_zip(
         &self,
         url: &str,
@@ -382,13 +394,14 @@ impl Engine {
         temp: &Path,
         info: &Path,
         cancel: &Cancel,
+        hash: bool,
     ) -> CoreResult<Option<String>> {
         let _ = fs::write(info, version);
         let _ = fs::remove_file(temp);
         let mut attempt = 0;
         loop {
             attempt += 1;
-            match self.transfer_zip_once(url, version, id, temp, cancel) {
+            match self.transfer_zip_once(url, version, id, temp, cancel, hash) {
                 Ok(hash) => return Ok(hash),
                 Err((error, retryable)) => {
                     if !retryable || attempt >= MAX_ZIP_ATTEMPTS || cancel.is_cancelled() {
@@ -411,6 +424,7 @@ impl Engine {
         id: &str,
         temp: &Path,
         cancel: &Cancel,
+        hash: bool,
     ) -> Result<Option<String>, (CoreError, bool)> {
         let existing = fs::metadata(temp).map(|metadata| metadata.len()).unwrap_or(0);
         let range = format!("bytes={existing}-");
@@ -476,7 +490,7 @@ impl Engine {
                         message: error.to_string(),
                     })?;
                 written = if append { existing } else { 0 };
-                file = Some(fsutil::BlockWriter::new(handle, !append));
+                file = Some(fsutil::BlockWriter::new(handle, hash && !append));
                 Ok(())
             }
             crate::net::Stream::Chunk(chunk) => {
