@@ -198,7 +198,12 @@ impl BundleInfo {
             version: text("version"),
             downloaded: text("downloaded").unwrap_or_default().trim().to_string(),
             checksum: text("checksum").unwrap_or_default(),
-            status: BundleStatus::parse(object.get("status").and_then(Value::as_str)).unwrap_or(BundleStatus::Error),
+            status: match object.get("status") {
+                Some(Value::Object(tagged)) if tagged.len() == 1 => {
+                    BundleStatus::parse(tagged.keys().next().map(String::as_str)).unwrap_or(BundleStatus::Error)
+                }
+                status => BundleStatus::parse(status.and_then(Value::as_str)).unwrap_or(BundleStatus::Error),
+            },
             link: text("link"),
             comment: text("comment"),
         })
@@ -223,6 +228,10 @@ impl BundleInfo {
         let text = |key: &str| object.get(key).and_then(Value::as_str).map(str::to_string);
         let status = match object.get("status") {
             None => BundleStatus::Pending,
+            // Older Swift versions encoded the enum as `{"SUCCESS":{}}`.
+            Some(Value::Object(tagged)) if tagged.len() == 1 => {
+                BundleStatus::parse(tagged.keys().next().map(String::as_str)).unwrap_or(BundleStatus::Error)
+            }
             Some(status) => BundleStatus::parse(status.as_str()).unwrap_or(BundleStatus::Error),
         };
         Some(Self {
@@ -234,6 +243,22 @@ impl BundleInfo {
             link: text("link"),
             comment: text("comment"),
         })
+    }
+}
+
+#[cfg(test)]
+mod stored_status_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_swift_tagged_status() {
+        let bundle = BundleInfo::from_stored_json(
+            r#"{"id":"abcdefghij","version":"1.0.0","downloaded":"","checksum":"","status":{"SUCCESS":{}}}"#,
+        )
+        .unwrap();
+        assert_eq!(bundle.status(), BundleStatus::Success);
+        let raw = BundleInfo::from_raw(&serde_json::json!({ "id": "x", "status": { "pending": {} } })).unwrap();
+        assert_eq!(raw.status(), BundleStatus::Pending);
     }
 }
 

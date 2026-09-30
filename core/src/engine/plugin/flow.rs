@@ -285,10 +285,11 @@ impl Engine {
         self.check_app_ready(self.app_ready_check_timeout());
     }
 
-    pub(crate) fn app_moved_to_background(&self) {
+    /// Runs on the caller's thread (the host's background notification) so the
+    /// splash screen is up before the OS snapshots the app.
+    pub(crate) fn background_splash(&self) {
         self.mark_session_foreground(false);
         self.plugin_state().auto_splashscreen_timed_out = false;
-        let current = self.current_bundle();
         let config = self.plugin_config();
         if config.auto_splashscreen {
             let mut can_show = true;
@@ -311,12 +312,25 @@ impl Engine {
                 self.show_splashscreen();
             }
         }
+    }
+
+    /// Background bookkeeping and the pending install, kept alive with a background task.
+    pub(crate) fn background_work(&self) {
+        let current = self.current_bundle();
+        self.hook(
+            hooks::BACKGROUND_TASK,
+            json!({ "action": "begin", "name": "CapgoInstallNext" }),
+        );
         self.send_stats("app_moved_to_background", Some(current.version_name()), None, None);
         self.persist_stats(false);
         self.host.info("Checking for pending update");
         self.set_background_timestamp(super::now_ms());
         self.check_cancel_delay(DelaySource::Background);
         self.install_next();
+        self.hook(
+            hooks::BACKGROUND_TASK,
+            json!({ "action": "end", "name": "CapgoInstallNext" }),
+        );
     }
 
     /// The app process is going away (Android `onDestroy`).

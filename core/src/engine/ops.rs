@@ -73,7 +73,8 @@ impl Engine {
                     json!({})
                 }
                 "appBackground" => {
-                    self.spawn_plugin_task(|engine| engine.app_moved_to_background());
+                    self.background_splash();
+                    self.spawn_plugin_task(|engine| engine.background_work());
                     json!({})
                 }
                 "appTerminate" => {

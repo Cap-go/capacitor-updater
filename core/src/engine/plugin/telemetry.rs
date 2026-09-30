@@ -311,8 +311,15 @@ impl Engine {
         }
     }
 
+    /// Sends a stats event; URL fields (`href`, `source`, `previous_href`) are sanitized.
     pub(crate) fn report_webview_stats(&self, action: &str, metadata: &Map<String, Value>) {
-        self.send_stats(action, Some(&self.current_version_name()), Some(""), Some(metadata));
+        let mut metadata = metadata.clone();
+        for key in ["href", "source", "previous_href"] {
+            if let Some(url) = metadata.get(key).and_then(Value::as_str).map(str::to_string) {
+                metadata.insert(key.into(), json!(truncate(&sanitize_stats_url(&url), 512)));
+            }
+        }
+        self.send_stats(action, Some(&self.current_version_name()), Some(""), Some(&metadata));
     }
 
     /// `reportWebViewError` from the injected page script.

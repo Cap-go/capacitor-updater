@@ -7,6 +7,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use capgo_updater_core::host::Host;
 use serde_json::{json, Value};
 use support::{FakeServer, TestEngine};
 
@@ -470,7 +471,7 @@ fn missing_notify_app_ready_rolls_back() {
     assert_eq!(p.events("set")[0]["bundle"]["id"], id);
     let failed = p.wait_for_event("updateFailed", 1);
     assert_eq!(failed[0]["bundle"]["id"], id);
-    assert_eq!(p.current()["id"], "builtin");
+    wait_until("rollback to builtin", || p.current()["id"] == "builtin");
     let failed_update = p.resolve("getFailedUpdate", json!({}));
     assert_eq!(failed_update["bundle"]["id"], id);
     assert_eq!(p.resolve("getFailedUpdate", json!({})), Value::Null, "one-shot");
@@ -719,4 +720,282 @@ fn web_view_errors_are_sanitized() {
         .collect::<String>();
     assert!(body.contains("https://a.b/u/redacted"));
     assert!(!body.contains("token"));
+}
+
+// ---- edge cases ported from the native plugin tests ---------------------------------------------
+
+fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !condition() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn contract_public_key() -> String {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../native-contract-tests/crypto-rsa.json");
+    let fixture: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    fixture["publicKeyPem"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn reset_to_pending_without_installable_bundle_keeps_state() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.use_bundle("abcdefghij", "2.0.0");
+    assert_eq!(
+        p.reject("reset", json!({ "usePendingBundle": true }))["message"],
+        "Reset failed"
+    );
+    assert_eq!(p.current()["id"], "abcdefghij");
+    p.t.install_bundle("klmnopqrst", "3.0.0", "pending");
+    p.resolve("next", json!({ "id": "klmnopqrst" }));
+    std::fs::remove_dir_all(p.t.root().join("versions/klmnopqrst")).unwrap();
+    assert_eq!(
+        p.reject("reset", json!({ "usePendingBundle": true }))["message"],
+        "Reset failed"
+    );
+    assert_eq!(p.current()["id"], "abcdefghij", "live bundle kept");
+}
+
+#[test]
+fn reset_to_last_successful_falls_back_to_builtin_when_fallback_is_gone() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.use_bundle("abcdefghij", "2.0.0");
+    p.use_bundle("klmnopqrst", "3.0.0");
+    std::fs::remove_dir_all(p.t.root().join("versions/klmnopqrst")).unwrap();
+    p.resolve("reset", json!({ "toLastSuccessful": true }));
+    assert_eq!(p.current()["id"], "builtin");
+}
+
+#[test]
+fn rollback_deletes_the_failed_bundle() {
+    let p = Plugin::load(json!({ "autoUpdate": false, "autoDeleteFailed": true }));
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("set", json!({ "id": id }));
+    p.wait_for_event("updateFailed", 1);
+    wait_until("failed bundle deleted", || {
+        !p.t.root().join("versions").join(id).exists()
+    });
+    let bundles = p.resolve("list", json!({}))["bundles"].clone();
+    assert!(bundles.as_array().unwrap().iter().all(|bundle| bundle["id"] != id));
+}
+
+#[test]
+fn preview_menu_drops_previews_whose_bundle_is_gone() {
+    let p = Plugin::load(json!({ "autoUpdate": false, "allowPreview": true }));
+    p.t.install_bundle("abcdefghij", "2.0.0", "success");
+    p.t.install_bundle("klmnopqrst", "3.0.0", "success");
+    p.resolve("startPreviewSession", json!({}));
+    p.resolve("set", json!({ "id": "abcdefghij" }));
+    p.resolve("set", json!({ "id": "klmnopqrst" }));
+    assert_eq!(p.t.call("previewMenuPreviews", json!({})).as_array().unwrap().len(), 2);
+    p.t.call("bundleDelete", json!({ "id": "abcdefghij" }));
+    let previews = p.t.call("previewMenuPreviews", json!({}));
+    assert_eq!(previews.as_array().unwrap().len(), 1);
+    assert!(!p
+        .t
+        .kv("CapacitorUpdater.previewSessions")
+        .unwrap()
+        .contains("abcdefghij"));
+    // Auto update is off during a preview.
+    assert_eq!(p.resolve("triggerUpdateCheck", json!({}))["status"], "unavailable");
+    assert_eq!(p.t.call("previewMenuLeave", json!({}))["ok"], true);
+    assert_eq!(p.current()["id"], "builtin");
+}
+
+#[test]
+fn on_launch_installs_once_then_queues() {
+    let p = Plugin::load(json!({ "autoUpdate": "onLaunch" }));
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    p.wait_for_event("set", 1);
+    p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
+    assert_eq!(p.wait_for_event("appReady", 1)[0]["status"], "update installed");
+    p.backend.offer("3.0.0", web_bundle("v3"));
+    p.foreground();
+    let ready = p.wait_for_event("appReady", 2);
+    assert_eq!(ready[1]["status"], "update downloaded, will install next background");
+    assert_eq!(p.resolve("getNextBundle", json!({}))["version"], "3.0.0");
+    assert_eq!(p.current()["version"], "2.0.0");
+}
+
+#[test]
+fn only_download_builtin_latest() {
+    let p = Plugin::load(json!({ "autoUpdate": "onlyDownload" }));
+    *p.backend.latest.lock().unwrap() = json!({ "version": "builtin" });
+    p.foreground();
+    p.wait_for_event("appReady", 1);
+    assert!(p.events("updateAvailable").is_empty());
+    assert_eq!(p.events("noNeedUpdate").len(), 1);
+
+    let p = Plugin::load(json!({ "autoUpdate": "onlyDownload" }));
+    p.use_bundle("abcdefghij", "2.0.0");
+    *p.backend.latest.lock().unwrap() = json!({ "version": "builtin" });
+    p.foreground();
+    p.wait_for_event("appReady", 1);
+    assert_eq!(p.events("updateAvailable")[0]["bundle"]["id"], "builtin");
+    assert!(p.events("noNeedUpdate").is_empty());
+    assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
+}
+
+#[test]
+fn get_latest_method_rejections_and_breaking_events() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    *p.backend.latest.lock().unwrap() = json!({ "error": "no_channel", "message": "No channel" });
+    assert_eq!(p.reject("getLatest", json!({}))["message"], "no_channel");
+    *p.backend.latest.lock().unwrap() = json!({ "message": "store_update_required", "version": "3.0.0" });
+    assert_eq!(p.reject("getLatest", json!({}))["message"], "store_update_required");
+    assert_eq!(p.events("breakingAvailable")[0]["version"], "3.0.0");
+    assert_eq!(p.events("majorAvailable")[0]["version"], "3.0.0");
+    *p.backend.latest.lock().unwrap() = json!({ "error": "no_new_version_available", "kind": "up_to_date" });
+    let up_to_date = p.resolve("getLatest", json!({}));
+    assert_eq!(up_to_date["kind"], "up_to_date");
+    assert_eq!(up_to_date["version"], "1.0.0", "current version filled in");
+    assert!(p.reject("getLatest", json!({ "appId": "other" }))["message"]
+        .as_str()
+        .unwrap()
+        .contains("allowPreview"));
+}
+
+#[test]
+fn app_ready_is_emitted_after_the_wait_times_out() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.install_bundle("abcdefghij", "2.0.0", "success");
+    p.resolve("set", json!({ "id": "abcdefghij" }));
+    let start = Instant::now();
+    p.foreground();
+    let ready = p.wait_for_event("appReady", 1);
+    assert_eq!(ready[0]["status"], "disabled");
+    assert!(
+        start.elapsed() >= Duration::from_millis(900),
+        "waited for notifyAppReady"
+    );
+}
+
+#[test]
+fn native_update_uses_the_legacy_build_key_and_resets() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.use_bundle("abcdefghij", "2.0.0");
+    p.t.host.kv_set("LatestNativeBuildVersion", None);
+    p.t.host.kv_set("LatestVersionNative", Some("9"));
+    let native = json!({ "versionName": "1.0.0", "versionCode": "10", "noBackupDir": p.t.root().join("nobackup").to_string_lossy() });
+    p.t.call(
+        "pluginLoad",
+        json!({ "config": { "autoUpdate": false }, "native": native }),
+    );
+    assert_eq!(p.current()["id"], "builtin");
+    p.t.engine.wait_for_cleanup_for_tests();
+    assert_eq!(p.t.kv("LatestNativeBuildVersion").unwrap(), "10");
+    assert!(
+        !p.t.root().join("versions/abcdefghij").exists(),
+        "obsolete bundle deleted"
+    );
+}
+
+#[test]
+fn os_update_and_app_exits_are_reported_once() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.host.kv_set("CapacitorUpdater.lastVersionOs", Some("13"));
+    p.t.call("configure", json!({ "versionOs": "14" }));
+    let native = json!({
+        "versionName": "1.0.0",
+        "versionCode": "10",
+        "noBackupDir": p.t.root().join("nobackup").to_string_lossy(),
+        "previousExits": [
+            { "reason": 4, "timestamp": 2000, "pid": 1, "processName": "app" },
+            { "reason": 1, "timestamp": 1500 },
+            { "reason": 6, "timestamp": 1000 }
+        ],
+    });
+    let config = json!({ "autoUpdate": false, "statsUrl": format!("{}/stats", p.backend.server.url) });
+    p.t.call("pluginLoad", json!({ "config": config, "native": native }));
+    // The OS snapshot is persisted once the server acknowledged the event.
+    p.stats_actions();
+    p.t.call("pluginLoad", json!({ "config": config, "native": native }));
+    let actions = p.stats_actions();
+    assert_eq!(
+        actions.iter().filter(|action| *action == "app_crash").count(),
+        1,
+        "{actions:?}"
+    );
+    assert_eq!(actions.iter().filter(|action| *action == "app_anr").count(), 1);
+    assert_eq!(
+        actions.iter().filter(|action| *action == "os_version_changed").count(),
+        1
+    );
+    assert_eq!(p.t.kv("CapacitorUpdater.lastReportedAppExitTimestamp").unwrap(), "2000");
+}
+
+#[test]
+fn update_cycle_requires_session_key_and_checksum_before_downloading() {
+    let p = Plugin::load(json!({ "publicKey": contract_public_key() }));
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    assert_eq!(
+        p.wait_for_event("appReady", 1)[0]["status"],
+        "Session key required when public key is present"
+    );
+    assert!(p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .all(|request| request.url != "/b.zip"));
+    assert!(p.stats_actions().contains(&"session_key_required".to_string()));
+
+    let p = Plugin::load(json!({}));
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.backend.latest.lock().unwrap()["checksum"] = json!("");
+    p.foreground();
+    assert_eq!(p.wait_for_event("appReady", 1)[0]["status"], "Checksum required");
+    assert!(p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .all(|request| request.url != "/b.zip"));
+}
+
+#[test]
+fn unexpired_background_delay_and_kill_delay() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.resolve(
+        "setMultiDelay",
+        json!({ "delayConditions": [{ "kind": "background", "value": "600000" }] }),
+    );
+    p.background();
+    std::thread::sleep(Duration::from_millis(100));
+    p.t.engine.plugin_foreground_for_tests();
+    assert!(
+        p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap().contains("600000"),
+        "kept"
+    );
+
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.install_bundle("abcdefghij", "2.0.0", "pending");
+    p.resolve("next", json!({ "id": "abcdefghij" }));
+    p.resolve("setMultiDelay", json!({ "delayConditions": [{ "kind": "kill" }] }));
+    p.t.call("appTerminate", json!({}));
+    assert!(p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").is_none());
+    assert!(p.events("set").is_empty(), "killing does not install");
+}
+
+#[test]
+fn page_load_stats_are_sanitized() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.call(
+        "reportWebViewStats",
+        json!({ "action": "webview_page_loaded", "metadata": { "href": "https://a.b/p/1234567?t=1", "source": "android_webview_listener" } }),
+    );
+    assert!(p.stats_actions().contains(&"webview_page_loaded".to_string()));
+    let body = p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .map(|request| String::from_utf8_lossy(&request.body).to_string())
+        .collect::<String>();
+    assert!(body.contains("https://a.b/p/redacted"));
+    assert!(!body.contains("t=1"));
 }
