@@ -48,7 +48,10 @@ git worktree add .context/bench-main origin/main
 scripts/bench/run-ios.sh before .context/bench-main
 scripts/bench/run-ios.sh after .
 
-# Android (start the emulator first; the script uses `adb root` + `adb reverse`)
+# Android (the script uses `adb root`; the app reaches the host at http://10.0.2.2:<port>,
+# the emulator's host alias, with the emulator's virtual Wi-Fi off for the run.
+# For a physical device: BENCH_ANDROID_TRANSPORT=reverse uses `adb reverse` + 127.0.0.1, but the
+# adb reverse forwarder makes some of a burst of 16+ new connections wait for a 1 s SYN retry)
 ~/Library/Android/sdk/emulator/emulator -avd capgo_mem_api36 -no-window -no-audio &
 scripts/bench/run-android.sh before .context/bench-main
 scripts/bench/run-android.sh after .

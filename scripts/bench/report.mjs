@@ -1,7 +1,11 @@
 // Build a markdown before/after comparison from the bench JSONL results.
 //
 // Usage: bun scripts/bench/report.mjs [--before before] [--after after] [--out .context/bench/report.md]
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+//   [--before-ios L] [--before-android L] [--after-ios L] [--after-android L]   per-platform labels
+//   [--android-transport "<text>"]   shown in the Android section title
+//   [--cold-warm <beforeLabel>,<afterLabel>]   Android cold/warm table from the
+//       results-<label>-cold<N>-{b,d}-android.jsonl and results-<label>-warm-android.jsonl runs
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { androidSize, iosSize } from './app-size.mjs';
 import path from 'node:path';
 import {
@@ -26,9 +30,17 @@ const before = arg('before', 'before');
 const after = arg('after', 'after');
 const out = arg('out', path.join(benchDir, 'report.md'));
 const note = arg('note', '');
-// Cells with no `after` records are taken from this label and marked with †.
-const afterFallback = arg('after-fallback', '');
+// Cells with no `after` records are taken from these labels (comma-separated, first match wins)
+// and marked with †, ‡, § ... in that order.
+const afterFallbacks = arg('after-fallback', '').split(',').filter(Boolean);
+const fallbackMarks = ['†', '‡', '§', '¶'];
 const platforms = ['ios', 'android'];
+const labelsFor = (platform) => ({
+  before: arg(`before-${platform}`, before),
+  after: arg(`after-${platform}`, after),
+});
+const androidTransport = arg('android-transport', '');
+const coldWarm = arg('cold-warm', '');
 
 function load(label, platform) {
   const file = path.join(benchDir, `results-${label}-${platform}.jsonl`);
@@ -60,8 +72,8 @@ function fmt(ms) {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-function cell(st, failures, fallback = false) {
-  const mark = fallback ? ' †' : '';
+function cell(st, failures, fallback = 0) {
+  const mark = fallback ? ` ${fallbackMarks[fallback - 1] ?? '*'}` : '';
   if (!st) return failures ? `FAIL (${failures}x)${mark}` : 'n/a';
   const range = st.n > 1 ? ` (${fmt(st.min)}–${fmt(st.max)})` : '';
   const n = st.n !== 3 ? ` n=${st.n}` : '';
@@ -70,10 +82,14 @@ function cell(st, failures, fallback = false) {
 }
 
 const cellKey = (r) => `${r.kind}|${r.sizeKey}|${r.variant}|${r.mode}`;
-function withFallback(primary, fallback) {
-  if (!fallback) return primary;
-  const keys = new Set((primary ?? []).map(cellKey));
-  return [...(primary ?? []), ...fallback.filter((r) => !keys.has(cellKey(r))).map((r) => ({ ...r, fallback: true }))];
+function withFallback(primary, fallbacks) {
+  let out = primary ?? [];
+  fallbacks.forEach((fallback, i) => {
+    if (!fallback) return;
+    const keys = new Set(out.map(cellKey));
+    out = [...out, ...fallback.filter((r) => !keys.has(cellKey(r))).map((r) => ({ ...r, fallback: i + 1 }))];
+  });
+  return out;
 }
 
 function delta(b, a) {
@@ -99,7 +115,7 @@ function pick(records, kind, sizeKey, variant, mode, field) {
   );
   const okVals = matching.filter((r) => r.ok && r[field] != null).map((r) => r[field]);
   const failures = matching.filter((r) => !r.ok && r.final).length;
-  return { st: stats(okVals), failures, fb: matching.some((r) => r.fallback) };
+  return { st: stats(okVals), failures, fb: matching.find((r) => r.fallback)?.fallback ?? 0 };
 }
 
 const lines = [];
@@ -119,11 +135,58 @@ if (note) {
   lines.push('');
 }
 
+if (coldWarm) {
+  const [cwBefore, cwAfter] = coldWarm.split(',');
+  const cwCells = [
+    { title: 'manifest 20 files / 2 MB, background, plain', key: 'b', id: 'manifest-20f-2MB-plain-background' },
+    { title: 'manifest 2 files / 20 KB, direct, plain', key: 'd', id: 'manifest-2f-20KB-plain-direct' },
+  ];
+  const cold = (label, c) => {
+    const prefix = `results-${label}-cold`;
+    const suffix = `-${c.key}-android.jsonl`;
+    const files = readdirSync(benchDir).filter(
+      (f) => f.startsWith(prefix) && f.endsWith(suffix) && /^\d+$/.test(f.slice(prefix.length, -suffix.length)),
+    );
+    return files.flatMap((f) => load(f.slice('results-'.length, -'-android.jsonl'.length), 'android') ?? []);
+  };
+  const warm = (label) => load(`${label}-warm`, 'android') ?? [];
+  const st = (recs, c, warmOnly) =>
+    stats(
+      recs.filter((r) => r.ok && r.caseId.startsWith(`${c.id}-r`) && (!warmOnly || r.run > 1)).map((r) => r.totalMs),
+    );
+  lines.push(`#### Android cold start (first manifest case after a fresh app launch) vs warm`);
+  lines.push('');
+  lines.push(
+    'Cold: one fresh install + launch per sample (after the two zip warm-ups, which use one connection each), and only this cell runs. ' +
+      'Warm: runs 2+ of one launch that runs both cells alternately (run 1 is dropped because it is cold).',
+  );
+  lines.push('');
+  lines.push('| Cell | Cold before | Warm before | Cold after | Warm after |');
+  lines.push('|---|---|---|---|---|');
+  for (const c of cwCells) {
+    const v = [
+      st(cold(cwBefore, c), c, false),
+      st(warm(cwBefore), c, true),
+      st(cold(cwAfter, c), c, false),
+      st(warm(cwAfter), c, true),
+    ].map((x) => (x ? `**${fmt(x.median)}** (${fmt(x.min)}–${fmt(x.max)}) n=${x.n}` : '-'));
+    lines.push(`| ${c.title} | ${v.join(' | ')} |`);
+  }
+  lines.push('');
+}
+
 for (const platform of platforms) {
+  const { before, after } = labelsFor(platform);
   const b = load(before, platform);
-  const a = withFallback(load(after, platform), afterFallback ? load(afterFallback, platform) : null);
+  const a = withFallback(
+    load(after, platform),
+    afterFallbacks.map((l) => load(l, platform)),
+  );
   if (!b && !a) continue;
-  const platformTitle = platform === 'ios' ? 'iOS simulator (iPhone 17 Pro)' : 'Android emulator (API 36, arm64)';
+  const platformTitle =
+    platform === 'ios'
+      ? 'iOS simulator (iPhone 17 Pro)'
+      : `Android emulator (API 36, arm64${androidTransport ? `; ${androidTransport}` : ''})`;
   lines.push(`### ${platformTitle}`);
   lines.push('');
   for (const mode of modes) {
@@ -280,10 +343,10 @@ for (const platform of platforms) {
 const kib = (n) =>
   n == null ? '-' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MiB` : `${(n / 1024).toFixed(1)} KiB`;
 const sizeDelta = (x, y) => (x == null || y == null ? '-' : `${y - x >= 0 ? '+' : '-'}${kib(Math.abs(y - x))}`);
-const ab = androidSize(before);
-const aa = androidSize(after);
-const ib = iosSize(before);
-const ia = iosSize(after);
+const ab = androidSize(labelsFor('android').before);
+const aa = androidSize(labelsFor('android').after);
+const ib = iosSize(labelsFor('ios').before);
+const ia = iosSize(labelsFor('ios').after);
 if (ab || aa || ib || ia) {
   lines.push('### App size (release bench builds, plain variant)');
   lines.push('');
@@ -306,7 +369,9 @@ if (ab || aa || ib || ia) {
     lines.push(
       `| classes*.dex (uncompressed) | ${kib(ab?.dexBytes)} | ${kib(aa?.dexBytes)} | ${sizeDelta(ab?.dexBytes, aa?.dexBytes)} |`,
     );
-    const abis = [...new Set([...(ab?.libs ?? []), ...(aa?.libs ?? [])].map((l) => l.abi))].sort((a, b) => a.localeCompare(b));
+    const abis = [...new Set([...(ab?.libs ?? []), ...(aa?.libs ?? [])].map((l) => l.abi))].sort((a, b) =>
+      a.localeCompare(b),
+    );
     for (const abi of abis) {
       const lb = ab?.libs.find((l) => l.abi === abi);
       const la = aa?.libs.find((l) => l.abi === abi);
@@ -342,7 +407,9 @@ if (ab || aa || ib || ia) {
     lines.push(
       `| App executable, arm64 slice | ${kib(ib?.exeArm64Bytes)} | ${kib(ia?.exeArm64Bytes)} | ${sizeDelta(ib?.exeArm64Bytes, ia?.exeArm64Bytes)} |`,
     );
-    const fws = [...new Set([...(ib?.frameworks ?? []), ...(ia?.frameworks ?? [])].map((f) => f.name))].sort((a, b) => a.localeCompare(b));
+    const fws = [...new Set([...(ib?.frameworks ?? []), ...(ia?.frameworks ?? [])].map((f) => f.name))].sort((a, b) =>
+      a.localeCompare(b),
+    );
     for (const name of fws) {
       const fb = ib?.frameworks.find((f) => f.name === name);
       const fa = ia?.frameworks.find((f) => f.name === name);

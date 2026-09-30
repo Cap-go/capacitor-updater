@@ -1,4 +1,5 @@
 // Shared paths and the benchmark matrix for the live-update performance bench.
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,20 +8,29 @@ export const repoRoot = path.resolve(scriptDir, '..', '..');
 export const benchDir = process.env.BENCH_DIR ?? path.join(repoRoot, '.context', 'bench');
 export const keysDir = path.join(benchDir, 'keys');
 export const fixturesDir = path.join(benchDir, 'fixtures');
-export const zipDir = path.join(fixturesDir, 'zip');
+
+export const benchPort = Number.parseInt(process.env.BENCH_PORT ?? '3193', 10);
+// The iOS simulator shares the host loopback, so it reaches the bench server at 127.0.0.1.
+// run-android.sh sets BENCH_DEVICE_BASE_URL=http://10.0.2.2:<port> (the emulator's alias for
+// the host loopback) by default, or keeps 127.0.0.1 through `adb reverse` with
+// BENCH_ANDROID_TRANSPORT=reverse (physical devices).
+export const defaultDeviceBaseUrl = `http://127.0.0.1:${benchPort}`;
+export const deviceBaseUrl = process.env.BENCH_DEVICE_BASE_URL ?? defaultDeviceBaseUrl;
+// bench.js (embedded in the builtin www and in every zip) carries the server URL, so zips and
+// the builtin www are kept per device URL: switching transport does not regenerate them.
+const urlTag =
+  deviceBaseUrl === defaultDeviceBaseUrl
+    ? ''
+    : `-${crypto.createHash('sha256').update(deviceBaseUrl).digest('hex').slice(0, 8)}`;
+export const zipDir = path.join(fixturesDir, `zip${urlTag}`);
 export const manifestTmpDir = path.join(fixturesDir, 'manifest-tmp');
-export const builtinWwwDir = path.join(fixturesDir, 'www');
+export const builtinWwwDir = path.join(fixturesDir, `www${urlTag}`);
 // Random files shipped inside the bench app's builtin public/ (under bpad/), used by the
 // builtin-reuse manifest cases. Generated once; hashes in builtin-pad.json.
 export const builtinPadDir = path.join(fixturesDir, 'builtin-pad');
 export const builtinPadIndex = path.join(fixturesDir, 'builtin-pad.json');
 export const appsDir = path.join(benchDir, 'apps');
 export const logsDir = path.join(benchDir, 'logs');
-
-export const benchPort = Number.parseInt(process.env.BENCH_PORT ?? '3193', 10);
-// Both the iOS simulator (loopback shared with the host) and the Android emulator
-// (through `adb reverse`) reach the bench server at 127.0.0.1.
-export const deviceBaseUrl = process.env.BENCH_DEVICE_BASE_URL ?? `http://127.0.0.1:${benchPort}`;
 
 export const MB = 1024 * 1024;
 export const KB = 1024;

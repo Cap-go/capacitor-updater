@@ -115,6 +115,20 @@ if (existsSync(debugSrc)) {
   rmSync(releaseSrc, { recursive: true, force: true });
   cpSync(debugSrc, releaseSrc, { recursive: true });
 }
+// The plugin refuses cleartext HTTP unless NetworkSecurityPolicy allows it for the host, so the
+// bench server host (10.0.2.2 or 127.0.0.1) must be listed in the release network security config.
+if (platform === 'android') {
+  const host = new URL(deviceBaseUrl).hostname;
+  const xmlDir = path.join(releaseSrc, 'res', 'xml');
+  const configs = existsSync(xmlDir)
+    ? readdirSync(xmlDir)
+        .filter((f) => f.endsWith('.xml'))
+        .map((f) => readFileSync(path.join(xmlDir, f), 'utf8'))
+    : [];
+  if (!configs.some((xml) => /cleartextTrafficPermitted="true"/.test(xml) && xml.includes(`>${host}<`))) {
+    throw new Error(`release network security config does not allow cleartext to ${host} (${xmlDir})`);
+  }
+}
 
 rmSync(path.join(appDir, 'www'), { recursive: true, force: true });
 cpSync(builtinWwwDir, path.join(appDir, 'www'), { recursive: true });

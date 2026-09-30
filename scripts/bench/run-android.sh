@@ -2,10 +2,25 @@
 # Live-update benchmark on the Android emulator (release APK signed with the debug key).
 #   scripts/bench/run-android.sh <label> <plugin-checkout-dir> [options]   (see lib.sh for options)
 # Uses the running emulator, or starts AVD $BENCH_AVD (default capgo_mem_api36) and stops it at the end.
+#
+# Transport (BENCH_ANDROID_TRANSPORT):
+#   host (default)  the app reaches the host server at http://10.0.2.2:<port>, the emulator's alias
+#                   for the host loopback (emulator only). No adb forwarding in the data path.
+#   reverse         http://127.0.0.1:<port> through `adb reverse` (physical devices). The adb reverse
+#                   forwarder handles bursts of 16+ new connections badly (some wait for a 1 s SYN
+#                   retry), which penalizes clients that open many parallel connections.
+# BENCH_DEVICE_BASE_URL, when set, overrides the URL for either transport.
 set -euo pipefail
+BENCH_ANDROID_TRANSPORT="${BENCH_ANDROID_TRANSPORT:-host}"
+case "$BENCH_ANDROID_TRANSPORT" in
+  host) export BENCH_DEVICE_BASE_URL="${BENCH_DEVICE_BASE_URL:-http://10.0.2.2:${BENCH_PORT:-3193}}" ;;
+  reverse) export BENCH_DEVICE_BASE_URL="${BENCH_DEVICE_BASE_URL:-http://127.0.0.1:${BENCH_PORT:-3193}}" ;;
+  *) echo "[bench] BENCH_ANDROID_TRANSPORT must be host or reverse" >&2; exit 2 ;;
+esac
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 bench_caffeinate "$@"
 bench_parse_args "$@"
+echo "[bench] android transport: $BENCH_ANDROID_TRANSPORT ($BENCH_DEVICE_BASE_URL)"
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 ADB="${ADB:-$SDK/platform-tools/adb}"
@@ -44,6 +59,7 @@ fi
 
 bench_acquire_lock
 STARTED_EMULATOR=0
+WIFI_DISABLED=0
 if ! "$ADB" devices | grep -q "device$"; then
   echo "[bench] starting emulator ${BENCH_AVD:-capgo_mem_api36}"
   nohup "$SDK/emulator/emulator" -avd "${BENCH_AVD:-capgo_mem_api36}" -no-window -no-audio -no-snapshot-save \
@@ -52,7 +68,8 @@ if ! "$ADB" devices | grep -q "device$"; then
 fi
 bench_platform_cleanup() {
   "$ADB" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
-  "$ADB" reverse --remove "tcp:$BENCH_PORT" >/dev/null 2>&1 || true
+  [[ "$BENCH_ANDROID_TRANSPORT" == "reverse" ]] && { "$ADB" reverse --remove "tcp:$BENCH_PORT" >/dev/null 2>&1 || true; }
+  [[ "$WIFI_DISABLED" == "1" ]] && { "$ADB" shell svc wifi enable >/dev/null 2>&1 || true; }
   if [[ "$STARTED_EMULATOR" == "1" ]]; then
     "$ADB" emu kill >/dev/null 2>&1 || true
     # emu kill returns before the emulator is gone: wait so the next run does not see a dying device.
@@ -75,7 +92,32 @@ if [[ "$("$ADB" shell whoami | tr -d '\r')" != "root" ]]; then
   "$ADB" wait-for-device
 fi
 
+if [[ "$BENCH_ANDROID_TRANSPORT" == "host" && "$("$ADB" shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" != "1" \
+  && "$("$ADB" shell getprop ro.boot.qemu 2>/dev/null | tr -d '\r')" != "1" ]]; then
+  echo "[bench] 10.0.2.2 only exists on the emulator: use BENCH_ANDROID_TRANSPORT=reverse for a physical device" >&2
+  exit 1
+fi
+# The emulator has two links to the host: eth0 (QEMU user networking, "cellular") and wlan0
+# (virtual Wi-Fi through netsimd). With Wi-Fi on, the default route to 10.0.2.2 is wlan0,
+# where the first bytes from the host reach the guest ~1 s late on every new connection.
+# Turn Wi-Fi off for the run so traffic takes eth0 (~5 ms); it is turned back on at the end.
+if [[ "$BENCH_ANDROID_TRANSPORT" == "host" ]]; then
+  if "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q wlan0; then
+    "$ADB" shell svc wifi disable >/dev/null
+    WIFI_DISABLED=1
+    for _ in $(seq 1 30); do
+      "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q " dev eth0 " && break
+      sleep 1
+    done
+  fi
+  if ! "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q " dev eth0 "; then
+    echo "[bench] 10.0.2.2 is not routed through eth0: $("$ADB" shell ip route get 10.0.2.2 2>&1 | head -1)" >&2
+    exit 1
+  fi
+fi
+
 reverse_port() {
+  [[ "$BENCH_ANDROID_TRANSPORT" == "reverse" ]] || return 0
   "$ADB" reverse "tcp:$BENCH_PORT" "tcp:$BENCH_PORT" >/dev/null
 }
 

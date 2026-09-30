@@ -98,11 +98,20 @@ console.log(`[bench-server] ${label}/${platform}/${variant}: ${allCases.length} 
 let current = null; // { case, attempt, version, startedAt, phase, meta }
 // Per-version request accounting (proves every manifest file was fetched).
 const served = new Map();
+// Arrival times (host epoch ms) of the first/last payload request: with a device clock that
+// matches the host (iOS simulator), `firstRequestMs` = t0 -> first request arrives (JS/bridge/
+// engine setup) and `lastRequestMs` = t0 -> last request arrives.
 function countServed(version, bytes) {
-  const s = served.get(version) ?? { requests: 0, bytes: 0 };
+  const s = served.get(version) ?? { requests: 0, bytes: 0, first: Date.now() };
   s.requests += 1;
   s.bytes += bytes;
+  s.last = Date.now();
   served.set(version, s);
+}
+function requestTimes(c, t0) {
+  const s = served.get(c.version);
+  if (!s || typeof t0 !== 'number') return {};
+  return { firstRequestMs: s.first - t0, lastRequestMs: s.last - t0 };
 }
 let needsRestart = false;
 let lastSeen = Date.now();
@@ -433,6 +442,7 @@ const server = Bun.serve({
           record(current, {
             ok: true,
             downloadMs,
+            ...requestTimes(current, b.t0 ?? current.t0),
             applyMs,
             ...phases,
             totalMs: downloadMs + applyMs,
@@ -473,7 +483,13 @@ const server = Bun.serve({
       }
       if (b.ok) {
         const downloadMs = b.t1 - b.t0;
-        record(current, { ok: true, downloadMs, totalMs: downloadMs, status: b.status });
+        record(current, {
+          ok: true,
+          downloadMs,
+          ...requestTimes(current, b.t0),
+          totalMs: downloadMs,
+          status: b.status,
+        });
       } else {
         record(current, { ok: false, error: String(b.error ?? 'unknown').slice(0, 500) });
       }
