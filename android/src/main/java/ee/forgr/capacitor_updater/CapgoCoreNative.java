@@ -7,9 +7,11 @@
 package ee.forgr.capacitor_updater;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /** JNI entry point of the shared Rust updater core (libcapgo_updater_core). */
 final class CapgoCoreNative {
@@ -41,13 +43,20 @@ final class CapgoCoreNative {
 
     /**
      * Robolectric runs each SDK sandbox in its own class loader, and the JVM refuses to bind one native library to
-     * two class loaders, so every loader gets its own copy.
+     * two class loaders, so every loader gets its own copy. Plain streams: this class also loads on API 24-25, which
+     * have no java.nio.file.
      */
     private static void loadHostLibrary(final File library) {
         try {
             final File copy = File.createTempFile("capgo_updater_core", "-" + library.getName());
             copy.deleteOnExit();
-            Files.copy(library.toPath(), copy.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            try (InputStream in = new FileInputStream(library); OutputStream out = new FileOutputStream(copy)) {
+                final byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+            }
             System.load(copy.getAbsolutePath());
         } catch (IOException e) {
             throw new UnsatisfiedLinkError("Cannot load Capgo core host library " + library + ": " + e.getMessage());

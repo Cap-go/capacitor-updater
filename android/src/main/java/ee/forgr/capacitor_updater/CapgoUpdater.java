@@ -33,8 +33,6 @@ import java.net.Proxy;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -581,9 +579,18 @@ public class CapgoUpdater {
                 throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
             }
             final File temp = File.createTempFile("capgo-", ".tmp", parent);
+            // Plain streams and rename (like the previous plugin): java.nio.file needs API 26.
             try {
-                Files.copy(source.toPath(), temp.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                Files.move(temp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                try (FileInputStream input = new FileInputStream(source); FileOutputStream output = new FileOutputStream(temp)) {
+                    final byte[] buffer = new byte[64 * 1024];
+                    int length;
+                    while ((length = input.read(buffer)) != -1) {
+                        output.write(buffer, 0, length);
+                    }
+                }
+                if (!temp.renameTo(dest)) {
+                    throw new IOException("Failed to replace file: " + dest.getAbsolutePath());
+                }
             } finally {
                 if (temp.exists()) {
                     temp.delete();
