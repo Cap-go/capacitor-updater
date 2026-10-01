@@ -86,7 +86,7 @@ First follow the migration guide of Capacitor:
 
 The minimum iOS version is now **15.0** to match Capacitor 7/8 requirements.
 
-The plugin has no third-party iOS dependencies besides Capacitor: ZIP extraction uses a built-in reader on top of Apple's native `Compression` framework, and networking uses `URLSession`.
+The plugin has no third-party iOS dependencies besides Capacitor: the updater logic (downloads, ZIP extraction, decryption, checksums, bundle storage) runs in the shared Rust core, also used on Android, shipped prebuilt as `CapgoUpdaterCore.xcframework`. It has its own HTTPS client (rustls) that checks certificates against the system trust store.
 
 ## Compatibility
 

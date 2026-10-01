@@ -100,10 +100,6 @@ export function patchAndroidBuildGradle(src, android) {
   out = out.replace(/sourceCompatibility JavaVersion\.VERSION_\d+/, `sourceCompatibility JavaVersion.VERSION_${android.java}`);
   out = out.replace(/targetCompatibility JavaVersion\.VERSION_\d+/, `targetCompatibility JavaVersion.VERSION_${android.java}`);
   out = out.replace(
-    /implementation 'com\.squareup\.okhttp3:okhttp:[^']+'/,
-    `implementation 'com.squareup.okhttp3:okhttp:${android.okhttp}'`,
-  );
-  out = out.replace(
     /classpath 'com\.android\.tools\.build:gradle:[^']+'/,
     `classpath 'com.android.tools.build:gradle:${android.agp}'`,
   );
@@ -241,14 +237,12 @@ function selfTest() {
     sourceCompatibility JavaVersion.VERSION_21
     targetCompatibility JavaVersion.VERSION_21
     classpath 'com.android.tools.build:gradle:8.13.0'
-    implementation 'com.squareup.okhttp3:okhttp:5.4.0'
     `,
-    { minSdk: 22, compileSdk: 34, targetSdk: 34, java: 17, okhttp: '4.12.0', agp: '8.7.2' },
+    { minSdk: 22, compileSdk: 34, targetSdk: 34, java: 17, agp: '8.7.2' },
   );
   assert.match(gradle, /: 34/);
   assert.match(gradle, /minSdkVersion[^\n]+: 22/);
   assert.match(gradle, /VERSION_17/);
-  assert.match(gradle, /okhttp:4\.12\.0/);
   assert.match(gradle, /gradle:8\.7\.2/);
 
   const swift = patchPackageSwift(
