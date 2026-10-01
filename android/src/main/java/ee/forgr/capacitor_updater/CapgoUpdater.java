@@ -27,7 +27,10 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -71,6 +74,7 @@ public class CapgoUpdater {
      * deviceId; storage paths and device facts are added here.
      */
     CapgoEngine createEngine(final JSONObject identity, final String serverPathKey) {
+        this.cancelLegacyDownloadWork();
         final JSONObject config;
         try {
             config = new JSONObject(identity.toString());
@@ -132,7 +136,7 @@ public class CapgoUpdater {
             if (value == null) {
                 editor.remove(key);
             } else {
-                editor.putString(key, value);
+                putPreference(editor, key, value);
             }
             editor.commit();
         }
@@ -167,6 +171,18 @@ public class CapgoUpdater {
         }
     };
 
+    /**
+     * Plugin versions before the Rust engine queued downloads as WorkManager jobs whose worker class no
+     * longer exists: cancel any left from before the upgrade (the update check downloads again).
+     */
+    private void cancelLegacyDownloadWork() {
+        try {
+            WorkManager.getInstance(this.context.getApplicationContext()).cancelAllWorkByTag("capacitor_updater_download");
+        } catch (final Exception e) {
+            logger.debug("No legacy download work to cancel: " + e.getMessage());
+        }
+    }
+
     /** The engine's HTTP client asks before plain HTTP: the app's network security config decides. */
     static String cleartextPermittedReply(final String payloadJson) {
         try {
@@ -176,6 +192,37 @@ public class CapgoUpdater {
         } catch (JSONException e) {
             return null;
         }
+    }
+
+    /** Keys earlier plugin versions read with getBoolean / getLong: keep the type so a downgrade still reads them. */
+    private static final Set<String> BOOLEAN_PREFERENCES = new HashSet<>(
+        Arrays.asList(
+            "CapacitorUpdater.previewSession",
+            "CapacitorUpdater.previewSessionAlertPending",
+            "CapacitorUpdater.defaultChannelInstallMarkerCreated",
+            "CapacitorUpdater.previewPreviousShakeMenu",
+            "CapacitorUpdater.previewPreviousShakeChannelSelector",
+            "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
+        )
+    );
+    private static final Set<String> LONG_PREFERENCES = new HashSet<>(
+        Arrays.asList("BACKGROUND_TIMESTAMP_KEY_CAPGO", "CapacitorUpdater.lastReportedAppExitTimestamp")
+    );
+
+    static void putPreference(final SharedPreferences.Editor editor, final String key, final String value) {
+        if (BOOLEAN_PREFERENCES.contains(key) && ("true".equals(value) || "false".equals(value))) {
+            editor.putBoolean(key, Boolean.parseBoolean(value));
+            return;
+        }
+        if (LONG_PREFERENCES.contains(key)) {
+            try {
+                editor.putLong(key, Long.parseLong(value));
+                return;
+            } catch (NumberFormatException ignored) {
+                // Not a number: stored as a string.
+            }
+        }
+        editor.putString(key, value);
     }
 
     /**

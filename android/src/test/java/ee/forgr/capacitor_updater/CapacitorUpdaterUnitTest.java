@@ -301,6 +301,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void preferencesKeepTheTypesEarlierVersionsRead() {
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        CapgoUpdater.putPreference(editor, "CapacitorUpdater.previewSession", "true");
+        CapgoUpdater.putPreference(editor, "CapacitorUpdater.defaultChannelInstallMarkerCreated", "false");
+        CapgoUpdater.putPreference(editor, "BACKGROUND_TIMESTAMP_KEY_CAPGO", "1700000000000");
+        CapgoUpdater.putPreference(editor, "CapacitorUpdater.lastReportedAppExitTimestamp", "not-a-number");
+        CapgoUpdater.putPreference(editor, "CapacitorUpdater.defaultChannel", "beta");
+        verify(editor).putBoolean("CapacitorUpdater.previewSession", true);
+        verify(editor).putBoolean("CapacitorUpdater.defaultChannelInstallMarkerCreated", false);
+        verify(editor).putLong("BACKGROUND_TIMESTAMP_KEY_CAPGO", 1700000000000L);
+        verify(editor).putString("CapacitorUpdater.lastReportedAppExitTimestamp", "not-a-number");
+        verify(editor).putString("CapacitorUpdater.defaultChannel", "beta");
+    }
+
+    @Test
     public void backgroundRunnerLabelIsReadFromConfig() {
         assertEquals(
             "com.example.runner",

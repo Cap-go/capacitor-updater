@@ -83,7 +83,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.shutdown()
     }
 
-    private let pluginVersion: String = "8.52.0"
+    private let pluginVersion: String = "8.52.1"
     static let shakeMenuGestureShake = "shake"
     static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
     /// Events kept for listeners registered after they fired.
@@ -181,9 +181,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.engineOp("appForeground")
     }
 
+    /// Plugin config for the engine. A value JSON cannot carry is dropped on its own (and logged):
+    /// never the whole config, which would silently turn off settings such as publicKey.
     private func pluginConfigJSON() -> [String: Any] {
-        let config = getConfig().getConfigJSON().mapValues { $0 as Any }
-        return JSONSerialization.isValidJSONObject(config) ? config : [:]
+        var config: [String: Any] = [:]
+        for (key, value) in getConfig().getConfigJSON() {
+            if JSONSerialization.isValidJSONObject([key: value as Any]) {
+                config[key] = value
+            } else {
+                logger.error("Ignoring CapacitorUpdater config \(key): not a JSON value")
+            }
+        }
+        return config
     }
 
     private func registerNotificationObservers() {

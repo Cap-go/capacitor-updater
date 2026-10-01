@@ -70,6 +70,29 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(CapgoUpdater.storedString(["a", "b"]), "[\"a\",\"b\"]")
     }
 
+    func testKvSetKeepsTheTypesEarlierVersionsRead() throws {
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.previewSession", "true") as? Bool, true)
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.appSessionForeground", "false") as? Bool, false)
+        XCTAssertEqual((CapgoUpdater.legacyTypedValue("BACKGROUND_TIMESTAMP_KEY_CAPGO", "1700000000000") as? NSNumber)?.int64Value, 1_700_000_000_000)
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("abcdefghij_info", "{}") as? Data, Data("{}".utf8))
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.lastFailedBundle", "{}") as? Data, Data("{}".utf8))
+        let sessions = CapgoUpdater.legacyTypedValue("CapacitorUpdater.previewSessions", "{\"abc\":{\"name\":\"PR 1\"}}") as? [String: Any]
+        XCTAssertEqual((sessions?["abc"] as? [String: String])?["name"], "PR 1")
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.defaultChannel", "beta") as? String, "beta")
+    }
+
+    func testLegacyDownloadTempFilesAreRemoved() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["package_abc.tmp", "update_abc.dat", "keep.tmp", "package_notes.txt"] {
+            FileManager.default.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        CapgoUpdater.removeLegacyDownloadTempFiles(in: dir)
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+        XCTAssertEqual(left, ["keep.tmp", "package_notes.txt"])
+    }
+
     func testLegacyKeyedBundleStatusIsMigratedForTheEngine() throws {
         let legacy = """
         {"downloaded":"1970-01-01T00:00:00.000Z","id":"test-id","version":"1.0.0","checksum":"abc123","status":{"SUCCESS":{}}}

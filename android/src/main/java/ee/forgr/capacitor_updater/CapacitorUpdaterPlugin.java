@@ -79,7 +79,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final long PREVIEW_TRANSITION_LOADER_TIMEOUT_MS = 60000L;
     private static final long MAIN_THREAD_TIMEOUT_SECONDS = 10;
 
-    private final String pluginVersion = "8.52.0";
+    private final String pluginVersion = "8.52.1";
 
     private Logger logger;
     // Cleared (and the Rust engine freed) in handleOnDestroy.

@@ -137,7 +137,24 @@ import UIKit
         if engineInstance == nil {
             logger?.error("Capgo updater engine could not be created")
         }
+        DispatchQueue.global(qos: .utility).async { Self.removeLegacyDownloadTempFiles() }
         return engineInstance
+    }
+
+    /// Plugin versions before the Rust engine downloaded into Documents/package_<id>.tmp and
+    /// update_<id>.dat; one left by an interrupted download would otherwise stay forever.
+    static func removeLegacyDownloadTempFiles(in directory: URL? = nil) {
+        let fileManager = FileManager.default
+        guard let documents = directory ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let contents = try? fileManager.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for url in contents {
+            let name = url.lastPathComponent
+            if (name.hasPrefix("package_") && name.hasSuffix(".tmp")) || (name.hasPrefix("update_") && name.hasSuffix(".dat")) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
     }
 
     /// Flushes queued stats before the plugin goes away.
@@ -224,12 +241,37 @@ import UIKit
             defaults.removeObject(forKey: key)
             return
         }
-        // Bundle records have always been stored as JSON Data (Codable); keep the format.
-        if key.hasSuffix("_info") {
-            defaults.set(Data(value.utf8), forKey: key)
-        } else {
-            defaults.set(value, forKey: key)
+        defaults.set(Self.legacyTypedValue(key, value), forKey: key)
+    }
+
+    /// Keys earlier plugin versions stored with another type (Bool, Int64, a dictionary, Codable Data):
+    /// keep that type so a downgrade still reads them. Everything else is a string.
+    private static let boolKeys: Set<String> = [
+        "CapacitorUpdater.previewSession",
+        "CapacitorUpdater.previewSessionAlertPending",
+        "CapacitorUpdater.defaultChannelInstallMarkerCreated",
+        "CapacitorUpdater.previewPreviousShakeMenu",
+        "CapacitorUpdater.previewPreviousShakeChannelSelector",
+        "CapacitorUpdater.previewPreviousDefaultChannelWasSet",
+        "CapacitorUpdater.appSessionForeground"
+    ]
+
+    static func legacyTypedValue(_ key: String, _ value: String) -> Any {
+        // Bundle records (and the last failed bundle) have always been JSON Data (Codable).
+        if key.hasSuffix("_info") || key == "CapacitorUpdater.lastFailedBundle" {
+            return Data(value.utf8)
         }
+        if boolKeys.contains(key), value == "true" || value == "false" {
+            return value == "true"
+        }
+        if key == "BACKGROUND_TIMESTAMP_KEY_CAPGO", let timestamp = Int64(value) {
+            return NSNumber(value: timestamp)
+        }
+        if key == "CapacitorUpdater.previewSessions",
+           let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] {
+            return object
+        }
+        return value
     }
 
     func engineKvKeys() -> [String] {

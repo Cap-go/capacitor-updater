@@ -41,7 +41,8 @@ pub fn is_hex(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Lenient standard base64: ignores whitespace, accepts missing padding.
+/// Lenient standard base64: ignores whitespace, accepts missing padding and
+/// non-canonical trailing bits.
 /// Matches what Capgo keys/session keys look like on both platforms.
 pub fn base64_decode(value: &str) -> Option<Vec<u8>> {
     use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
@@ -50,7 +51,10 @@ pub fn base64_decode(value: &str) -> Option<Vec<u8>> {
 
     const ENGINE: GeneralPurpose = GeneralPurpose::new(
         &base64::alphabet::STANDARD,
-        GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+            // Android's Base64 and iOS's Data(base64Encoded:) both ignore non-zero trailing bits.
+            .with_decode_allow_trailing_bits(true),
     );
     let compact: String = value.chars().filter(|c| !c.is_whitespace()).collect();
     ENGINE.decode(compact.as_bytes()).ok()
@@ -59,6 +63,14 @@ pub fn base64_decode(value: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base64_accepts_non_canonical_trailing_bits() {
+        // "QQ==" is canonical for "A"; "QR==" sets unused bits, accepted by the old native decoders.
+        assert_eq!(base64_decode("QR=="), Some(b"A".to_vec()));
+        assert_eq!(base64_decode("Q Q"), Some(b"A".to_vec()));
+        assert_eq!(base64_decode("Q!=="), None);
+    }
 
     #[test]
     fn hex_round_trip() {

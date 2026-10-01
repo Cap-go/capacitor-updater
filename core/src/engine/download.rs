@@ -411,7 +411,8 @@ impl Engine {
             Some(hash) => hash,
             None => crypto::checksum::sha256_file(zip)?,
         };
-        if !expected.eq_ignore_ascii_case(&actual) {
+        // Exact match, as both native implementations compared the zip checksum.
+        if expected != actual {
             self.host.error("Checksum mismatch");
             self.host.debug(format!("Expected: {expected}, Got: {actual}"));
             self.send_stats("checksum_fail", Some(&request.version), None, None);
