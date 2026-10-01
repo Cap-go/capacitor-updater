@@ -649,37 +649,45 @@ impl Engine {
                 return;
             }
             _ => {
-                if let Some(bundle) = &existing {
-                    self.host.info(format!(
-                        "Latest bundle already exists in incomplete state ({}) and will be deleted, download will overwrite it.",
-                        bundle.status().as_str()
-                    ));
-                    if self.next_bundle().is_some_and(|next| next.id() == bundle.id()) {
-                        self.set_next_bundle(None);
-                    }
-                    self.delete_bundle(bundle.id(), true, true);
-                }
                 self.consume_on_launch_direct_update(planned);
                 self.plugin_state().cycle_download = Some(super::CycleDownload {
                     version: latest_version.clone(),
                     planned,
                     ..Default::default()
                 });
-                let request = DownloadRequest {
-                    url: url.clone(),
-                    version: latest_version.clone(),
-                    session_key: session_key.clone(),
-                    checksum: text(&response, "checksum").unwrap_or_default(),
-                    manifest: response.get("manifest").and_then(Value::as_array).cloned(),
-                    link: text(&response, "link"),
-                    comment: text(&response, "comment"),
-                    emit_events: false,
-                    ..Default::default()
-                };
-                let result = if request.manifest.is_some() {
-                    self.download_manifest(&request)
-                } else {
-                    self.download_zip(&request)
+                // A scheduled download an earlier process started (killed mid-download) goes on
+                // where it stopped instead of starting over.
+                let adopted = self.adopt_scheduled_download(&latest_version);
+                let result = match adopted {
+                    Some(result) => result,
+                    None => {
+                        if let Some(bundle) = &existing {
+                            self.host.info(format!(
+                                "Latest bundle already exists in incomplete state ({}) and will be deleted, download will overwrite it.",
+                                bundle.status().as_str()
+                            ));
+                            if self.next_bundle().is_some_and(|next| next.id() == bundle.id()) {
+                                self.set_next_bundle(None);
+                            }
+                            self.delete_bundle(bundle.id(), true, true);
+                        }
+                        let request = DownloadRequest {
+                            url: url.clone(),
+                            version: latest_version.clone(),
+                            session_key: session_key.clone(),
+                            checksum: text(&response, "checksum").unwrap_or_default(),
+                            manifest: response.get("manifest").and_then(Value::as_array).cloned(),
+                            link: text(&response, "link"),
+                            comment: text(&response, "comment"),
+                            emit_events: false,
+                            ..Default::default()
+                        };
+                        if request.manifest.is_some() {
+                            self.download_manifest(&request)
+                        } else {
+                            self.download_zip(&request)
+                        }
+                    }
                 };
                 match result {
                     Ok(bundle) => bundle,

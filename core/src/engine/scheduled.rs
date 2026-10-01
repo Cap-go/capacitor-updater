@@ -179,23 +179,7 @@ impl Engine {
         {
             return None;
         }
-        jobs().waiters.insert(
-            id.clone(),
-            Waiter {
-                version: request.version.clone(),
-                retries: 0,
-                outcome: None,
-            },
-        );
-        let scheduled = self
-            .hook(
-                hooks::SCHEDULE_DOWNLOAD,
-                json!({ "id": id, "version": request.version }),
-            )
-            .and_then(|reply| reply.get("scheduled").and_then(Value::as_bool))
-            .unwrap_or(false);
-        if !scheduled {
-            jobs().waiters.remove(&id);
+        if !self.hand_to_scheduler(&id, &request.version) {
             self.remove_job(&id);
             return None;
         }
@@ -204,6 +188,54 @@ impl Engine {
             request.version
         ));
         Some(self.await_scheduled(&id, &request.version, cancel))
+    }
+
+    /// Registers the caller of job `id` and asks the host to run it (idempotent for a job
+    /// it already has). `false`: the host does not schedule downloads.
+    fn hand_to_scheduler(&self, id: &str, version: &str) -> bool {
+        jobs().waiters.insert(
+            id.to_string(),
+            Waiter {
+                version: version.to_string(),
+                retries: 0,
+                outcome: None,
+            },
+        );
+        let scheduled = self
+            .hook(hooks::SCHEDULE_DOWNLOAD, json!({ "id": id, "version": version }))
+            .and_then(|reply| reply.get("scheduled").and_then(Value::as_bool))
+            .unwrap_or(false);
+        if !scheduled {
+            jobs().waiters.remove(id);
+        }
+        scheduled
+    }
+
+    /// Waits for a scheduled job of `version` an earlier process started: the process
+    /// died, the scheduler kept the job (and its partial file). `None` when there is no
+    /// such job or nobody runs it; the caller then downloads again.
+    pub(crate) fn adopt_scheduled_download(&self, version: &str) -> Option<CoreResult<BundleInfo>> {
+        let (record, request) = self.pending_job_ids().into_iter().find_map(|id| {
+            let request = fs::read(self.job_path(&id))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .and_then(|job| DownloadRequest::from_json(&job["request"]).ok())
+                .filter(|request| request.version == version)?;
+            let record = self.get_bundle_info(Some(&id));
+            (record.is_downloading() && record.version_name() == version).then_some((record, request))
+        })?;
+        let id = record.id();
+        if jobs().waiters.contains_key(id) || !self.hand_to_scheduler(id, &request.version) {
+            return None;
+        }
+        self.host.info(format!(
+            "Resuming the scheduled download of {} started before the app restarted",
+            request.version
+        ));
+        let cancel = self.register_download_token(&request.version);
+        let outcome = self.await_scheduled(id, &request.version, &cancel);
+        self.unregister_download_token(&request.version, &cancel);
+        Some(self.scheduled_result(&request, &record, outcome))
     }
 
     /// Blocks until job `id` ends, is cancelled, or the engine is released. Without a

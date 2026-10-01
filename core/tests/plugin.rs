@@ -498,6 +498,82 @@ fn a_job_finished_without_its_cycle_is_installed_by_the_next_check() {
     assert_eq!(zip_requests(), downloads, "no second download");
 }
 
+/// The app was killed while its download job waited: the next launch's update check resumes
+/// that job (same bundle id, partial file kept) instead of downloading again.
+#[test]
+fn the_next_launch_resumes_the_job_of_a_killed_process() {
+    let p = Plugin::load(json!({}));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    let id = p.scheduled_job(1);
+    // Process death: the cycle that waited is gone, the job stays.
+    p.t.call("detachScheduledDownloads", json!({}));
+
+    // New process: same preferences and files, new engine and plugin load.
+    let root = p.t.root();
+    let engine = capgo_updater_core::engine::Engine::new(
+        p.t.host.clone(),
+        &json!({
+            "platform": "ios",
+            "appId": "app.capgo.test",
+            "pluginVersion": "8.0.0",
+            "versionBuild": "1.0.0",
+            "versionCode": "10",
+            "versionOs": "14",
+            "deviceId": "device-1",
+            "builtinServerPath": "",
+            "bundleRoot": root.join("versions").to_string_lossy(),
+            "storageRoot": root.to_string_lossy(),
+            "cacheDir": root.join("cache/capgo_downloads").to_string_lossy(),
+        }),
+    )
+    .unwrap();
+    let url = &p.backend.server.url;
+    engine
+        .call(
+            "pluginLoad",
+            &json!({
+                "config": {
+                    "updateUrl": format!("{url}/updates"),
+                    "statsUrl": format!("{url}/stats"),
+                    "channelUrl": format!("{url}/channel_self"),
+                    "appReadyTimeout": 1000,
+                },
+                "native": { "versionName": "1.0.0", "versionCode": "10", "noBackupDir": root.join("nobackup").to_string_lossy() },
+            }),
+        )
+        .unwrap();
+    engine.wait_for_cleanup_for_tests();
+    let ready_before = p.events("appReady").len();
+    engine.call("appForeground", &json!({})).unwrap();
+    // Same job handed to the scheduler again (it keeps the one it has).
+    assert_eq!(p.scheduled_job(2), id);
+    let reply = engine.call("runScheduledDownload", &json!({ "id": id })).unwrap();
+    assert_eq!(reply["result"], "success", "{reply}");
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while p.events("appReady").len() == ready_before {
+        assert!(Instant::now() < deadline, "cycle did not finish");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        p.events("appReady").last().unwrap()["status"],
+        "update downloaded, will install next background"
+    );
+    let next = engine
+        .call("pluginMethod", &json!({ "name": "getNextBundle", "args": {} }))
+        .unwrap();
+    assert_eq!(next["resolve"]["id"], id.as_str());
+    let zip_requests = p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with("/b.zip"))
+        .count();
+    assert_eq!(zip_requests, 1, "one download, by the job");
+}
+
 #[test]
 fn up_to_date_and_failed_checks_report_results() {
     let p = Plugin::load(json!({}));
