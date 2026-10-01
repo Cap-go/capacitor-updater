@@ -182,6 +182,32 @@ fn install_unwraps_single_top_level_folder_only_without_root_index() {
     );
 }
 
+#[test]
+fn install_does_not_unwrap_a_symlinked_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = extract(
+        &zip_of(&[Entry::File(".app/index.html", b"hidden"), Entry::Symlink("app", ".app")]),
+        dir.path(),
+    )
+    .unwrap();
+    let target = dir.path().join("bundle");
+    install_extracted(&out, &target).unwrap();
+    assert!(std::fs::symlink_metadata(&target).unwrap().is_dir());
+    assert_eq!(std::fs::read(target.join("app/index.html")).unwrap(), b"hidden");
+}
+
+#[test]
+fn rejects_oversized_symlink_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    let huge = "a".repeat(8 * 1024 * 1024);
+    let bytes = zip_of(&[Entry::File("index.html", b"x"), Entry::Symlink("link", &huge)]);
+    let error = extract(&bytes, dir.path()).unwrap_err();
+    assert!(
+        error.message().contains("Symlink target of link is too long"),
+        "{error:?}"
+    );
+}
+
 // ---- delta cache ------------------------------------------------------------------------------
 
 fn sha256(bytes: &[u8]) -> String {
@@ -234,6 +260,29 @@ fn populate_delta_cache_skips_files_identical_to_builtin() {
     let cache = builtin.parent().unwrap().join("cache");
     assert!(!cache.join(format!("{}_app.js", sha256(b"shared"))).exists());
     assert!(cache.join(format!("{}_changed.js", sha256(b"new"))).exists());
+}
+
+#[test]
+fn populate_delta_cache_does_not_follow_directory_symlinks() {
+    let (t, builtin) = delta_engine();
+    let bundle = builtin.parent().unwrap().join("versions/b1");
+    std::fs::create_dir_all(bundle.join("assets")).unwrap();
+    std::fs::write(bundle.join("index.html"), b"<html>loop</html>").unwrap();
+    // Two loops: following them visits 2^depth paths.
+    std::os::unix::fs::symlink(".", bundle.join("assets/a")).unwrap();
+    std::os::unix::fs::symlink(".", bundle.join("assets/b")).unwrap();
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        t.call("populateDeltaCache", json!({ "id": "b1" }));
+        let _ = done.send(());
+    });
+    finished
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("delta cache population must not recurse through symlinks");
+    let cache = builtin.parent().unwrap().join("cache");
+    assert!(cache
+        .join(format!("{}_index.html", sha256(b"<html>loop</html>")))
+        .exists());
 }
 
 #[test]

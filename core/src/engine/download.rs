@@ -863,7 +863,8 @@ pub(crate) fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
             continue;
         }
         let path = entry.path();
-        if path.is_dir() {
+        // Never descend through a directory symlink: `assets/loop -> .` would recurse forever.
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             collect_files(&path, out);
         } else if path.is_file() {
             out.push(path);

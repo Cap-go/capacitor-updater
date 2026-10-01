@@ -637,14 +637,16 @@ impl Engine {
                 ));
             }
             Err(error) => {
-                let _ = fs::remove_file(&partial);
                 if task.brotli {
+                    let _ = fs::remove_file(&partial);
                     self.send_stats("download_manifest_brotli_fail", Some(&stat_target), None, None);
                     return Err(CoreError::new(
                         "brotli_fail",
                         format!("Brotli process failed for {}: {error}", task.file_name),
                     ));
                 }
+                // Destination I/O error: the downloaded payload stays resumable (like the
+                // previous Android plugin, which dropped it only on checksum, decrypt or brotli failures).
                 return Err(file_fail(format!("Failed to write {}: {error}", task.file_name)));
             }
         }

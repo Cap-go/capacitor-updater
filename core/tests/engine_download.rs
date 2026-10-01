@@ -531,6 +531,30 @@ fn manifest_brotli_and_checksum_failure() {
 }
 
 #[test]
+fn manifest_partial_survives_a_destination_write_error() {
+    let files: Files = Arc::default();
+    let server = serve(files.clone());
+    let content = b"payload kept for the retry".to_vec();
+    files.lock().unwrap().push(("/files/app.js".into(), content.clone()));
+    let t = TestEngine::new(json!({}));
+    // A directory where the file goes: the verified payload cannot be moved in place.
+    std::fs::create_dir_all(t.root().join("versions/b1/app.js/blocker")).unwrap();
+    t.engine
+        .call(
+            "download",
+            &json!({ "id": "b1", "version": "2", "manifest": [manifest_entry(&server, "app.js", &content)] }),
+        )
+        .unwrap_err();
+    let partials: Vec<_> = std::fs::read_dir(t.root().join("cache/capgo_downloads"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("partial_"))
+        .collect();
+    assert_eq!(partials.len(), 1, "the downloaded payload stays resumable");
+    assert_eq!(std::fs::read(partials[0].path()).unwrap(), content);
+}
+
+#[test]
 fn manifest_rejects_traversal_and_duplicates() {
     let t = TestEngine::new(json!({}));
     let traversal = t

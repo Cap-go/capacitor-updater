@@ -89,6 +89,8 @@ fn lexical_normalize(path: &Path) -> PathBuf {
 
 /// Read buffer around the archive: large sequential reads for inflate.
 const ARCHIVE_READ_BUFFER: usize = 1024 * 1024;
+/// Longest symlink target accepted (PATH_MAX on Linux and Android).
+const MAX_SYMLINK_TARGET: usize = 4096;
 /// Regular files are written by this many threads at most (storage is the limit).
 const MAX_EXTRACT_WORKERS: usize = 4;
 
@@ -187,7 +189,7 @@ pub fn extract_zip(
         if cancelled() {
             return Err(ExtractError::Cancelled);
         }
-        let mut entry = archive.by_index(index).map_err(|error| failed(&error))?;
+        let entry = archive.by_index(index).map_err(|error| failed(&error))?;
         let name = entry.name().to_string();
         let target = resolve_entry(destination, &name)?;
         if !entry.is_dir() && !entry.is_symlink() {
@@ -214,8 +216,15 @@ pub fn extract_zip(
         if fs::symlink_metadata(&target).is_ok() {
             super::store::remove_path(&target).map_err(|error| failed(&error))?;
         }
+        // Bounded read: a tiny compressed entry could inflate to a huge "target".
         let mut link = String::new();
-        entry.read_to_string(&mut link).map_err(|error| failed(&error))?;
+        entry
+            .take(MAX_SYMLINK_TARGET as u64 + 1)
+            .read_to_string(&mut link)
+            .map_err(|error| failed(&error))?;
+        if link.len() > MAX_SYMLINK_TARGET {
+            return Err(ExtractError::Failed(format!("Symlink target of {name} is too long")));
+        }
         // Relative targets without `..` only: the link stays inside its own directory
         // whatever the other entries are (no chains through `..`).
         let link_path = Path::new(&link);
@@ -375,7 +384,11 @@ pub fn install_extracted(source: &Path, destination: &Path) -> CoreResult<()> {
     if destination.exists() {
         super::store::remove_path(destination).map_err(|error| io_error("Cannot replace bundle folder", error))?;
     }
-    let unwrap = entries.len() == 1 && entries[0].is_dir() && !source.join("index.html").exists();
+    // A real directory only: a symlink to a hidden folder would be moved alone, then
+    // its target deleted with `source`.
+    let unwrap = entries.len() == 1
+        && fs::symlink_metadata(&entries[0]).is_ok_and(|metadata| metadata.is_dir())
+        && !source.join("index.html").exists();
     let from = if unwrap {
         entries[0].clone()
     } else {
