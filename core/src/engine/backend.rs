@@ -422,7 +422,7 @@ impl Engine {
             return ret;
         }
         if !response.is_success() {
-            return error_map("response_error", format!("Server error: {}", response.status));
+            return Self::channel_status_error(&response);
         }
         if body.is_empty() {
             return error_map("no_response_body", "Empty response body");
@@ -482,7 +482,7 @@ impl Engine {
             return error_map(&block.error, block.message);
         }
         if !response.is_success() {
-            return error_map("response_error", format!("Server error: {}", response.status));
+            return Self::channel_status_error(&response);
         }
         if response.body.is_empty() {
             return error_map("no_response_body", "Empty response body");
@@ -524,6 +524,29 @@ impl Engine {
             Some(_) => error_map("parse_error", "Unexpected channels response format"),
             None => error_map("parse_error", "JSON parse error: invalid JSON"),
         }
+    }
+
+    /// Non-2xx channel reply: the server's `error` / `message` when the body has them
+    /// (like `setChannel`), else `response_error` / `Server error: <status>`.
+    fn channel_status_error(response: &Response) -> Json {
+        let body = response.json();
+        let field = |key: &str| {
+            body.as_ref()
+                .and_then(|body| body.get(key))
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        };
+        let fallback = format!("Server error: {}", response.status);
+        let mut ret = match field("error") {
+            Some(error) => error_map(
+                &error,
+                field("message").unwrap_or_else(|| "server did not provide a message".into()),
+            ),
+            None => error_map("response_error", field("message").unwrap_or(fallback)),
+        };
+        ret.insert("statusCode".into(), json!(response.status));
+        ret
     }
 
     fn unavailable_bundle_size(manifest: &[Value], error: &str) -> Json {

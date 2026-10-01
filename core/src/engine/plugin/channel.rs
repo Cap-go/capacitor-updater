@@ -384,6 +384,16 @@ impl Engine {
         Rejection::coded(message, code, &error)
     }
 
+    /// The server call succeeded: a failed state-file write only affects the reinstall
+    /// restore (stored preferences still hold the channel), so it is logged, not rejected.
+    fn persist_channel_state_after(&self, method: &str) {
+        if !self.persist_default_channel_state_from_store() {
+            self.host.error(format!(
+                "{method}: the default channel state file could not be updated; a reinstall may restore an older channel"
+            ));
+        }
+    }
+
     fn trigger_after_channel_change(&self, trigger: bool) {
         if trigger && self.is_auto_update_enabled() {
             self.host.info("Calling autoupdater after channel change!");
@@ -418,14 +428,24 @@ impl Engine {
             }
             return Err(rejection);
         }
-        if !self.persist_default_channel_state_from_store() {
-            return Err(Rejection::coded(
-                "Channel changed but local persistence failed",
-                "SETCHANNEL_PERSISTENCE_FAILED",
-                "persistence_failed",
-            ));
-        }
+        self.persist_channel_state_after("setChannel");
         self.trigger_after_channel_change(args.get("triggerAutoUpdate").and_then(Value::as_bool).unwrap_or(false));
+        // Every server field, plus the status / message the previous iOS plugin always set.
+        let mut result = result;
+        let unset = result.get("unset").and_then(Value::as_bool) == Some(true);
+        if !result.get("status").is_some_and(Value::is_string) {
+            result.insert("status".into(), json!(if unset { "ok" } else { "" }));
+        }
+        if !result.get("message").is_some_and(Value::is_string) {
+            result.insert(
+                "message".into(),
+                json!(if unset {
+                    "Public channel requested, channel override removed. Device will use public channel automatically."
+                } else {
+                    ""
+                }),
+            );
+        }
         Ok(Value::Object(result))
     }
 
@@ -439,13 +459,7 @@ impl Engine {
         if result.contains_key("error") {
             return Err(self.channel_error(&result, "UNSETCHANNEL_FAILED"));
         }
-        if !self.persist_default_channel_state_from_store() {
-            return Err(Rejection::coded(
-                "Channel override removed but local persistence failed",
-                "UNSETCHANNEL_PERSISTENCE_FAILED",
-                "persistence_failed",
-            ));
-        }
+        self.persist_channel_state_after("unsetChannel");
         self.trigger_after_channel_change(args.get("triggerAutoUpdate").and_then(Value::as_bool).unwrap_or(false));
         Ok(Value::Object(result))
     }
@@ -455,12 +469,11 @@ impl Engine {
         if result.contains_key("error") {
             return Err(self.channel_error(&result, "GETCHANNEL_FAILED"));
         }
-        if !self.persist_default_channel_state_from_store() {
-            return Err(Rejection::coded(
-                "Channel synchronized but local persistence failed",
-                "GETCHANNEL_PERSISTENCE_FAILED",
-                "persistence_failed",
-            ));
+        self.persist_channel_state_after("getChannel");
+        // Every server field; allowSet defaults to true when the server omits it.
+        let mut result = result;
+        if !result.get("allowSet").is_some_and(Value::is_boolean) {
+            result.insert("allowSet".into(), json!(true));
         }
         Ok(Value::Object(result))
     }

@@ -673,6 +673,76 @@ fn set_channel_persists_state_and_reports_private_channels() {
 }
 
 #[test]
+fn channel_methods_resolve_every_server_field() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    *p.backend.channel_reply.lock().unwrap() = (200, json!({ "channel": "beta", "status": "ok", "extra": 1 }));
+    let channel = p.resolve("getChannel", json!({}));
+    assert_eq!(channel["channel"], "beta");
+    assert_eq!(channel["extra"], 1);
+    assert_eq!(channel["allowSet"], true, "allowSet defaults to true");
+    *p.backend.channel_reply.lock().unwrap() = (200, json!({ "channel": "beta", "allowSet": false }));
+    assert_eq!(p.resolve("getChannel", json!({}))["allowSet"], false);
+
+    *p.backend.channel_reply.lock().unwrap() = (200, json!({ "extra": "x" }));
+    let set = p.resolve("setChannel", json!({ "channel": "beta" }));
+    assert_eq!(set["extra"], "x");
+    assert_eq!(set["status"], "");
+    assert_eq!(set["message"], "");
+    assert_eq!(set["statusCode"], 200);
+    *p.backend.channel_reply.lock().unwrap() = (200, json!({ "unset": true }));
+    let unset = p.resolve("setChannel", json!({ "channel": "production" }));
+    assert_eq!(unset["status"], "ok");
+    assert_eq!(unset["unset"], true);
+    assert_eq!(
+        unset["message"],
+        "Public channel requested, channel override removed. Device will use public channel automatically."
+    );
+}
+
+#[test]
+fn channel_rejections_carry_the_raw_error_code() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    *p.backend.channel_reply.lock().unwrap() = (403, json!({ "error": "not_allowed", "message": "No access" }));
+    let rejection = p.reject("getChannel", json!({}));
+    assert_eq!(rejection["code"], "GETCHANNEL_FAILED");
+    assert_eq!(rejection["message"], "No access");
+    assert_eq!(rejection["data"]["error"], "not_allowed");
+    let rejection = p.reject("listChannels", json!({}));
+    assert_eq!(rejection["code"], "LISTCHANNELS_FAILED");
+    assert_eq!(rejection["data"]["error"], "not_allowed");
+    *p.backend.channel_reply.lock().unwrap() = (500, json!({}));
+    let rejection = p.reject("getChannel", json!({}));
+    assert_eq!(rejection["message"], "Server error: 500");
+    assert_eq!(rejection["data"]["error"], "response_error");
+    let rejection = p.reject("setChannel", json!({ "channel": "beta" }));
+    assert_eq!(rejection["code"], "SETCHANNEL_FAILED");
+    assert_eq!(rejection["data"]["error"], "response_error");
+}
+
+#[test]
+fn channel_state_file_failures_do_not_reject() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    // A non-empty directory where the state file goes: it can be neither written nor removed.
+    let state = p.t.root().join("nobackup/CapacitorUpdater.defaultChannelState");
+    let _ = std::fs::remove_file(&state);
+    std::fs::create_dir_all(state.join("blocker")).unwrap();
+    assert_eq!(p.resolve("setChannel", json!({ "channel": "beta" }))["status"], "ok");
+    assert_eq!(p.t.kv("CapacitorUpdater.defaultChannel").unwrap(), "beta");
+    *p.backend.channel_reply.lock().unwrap() = (200, json!({ "channel": "beta" }));
+    assert_eq!(p.resolve("getChannel", json!({}))["channel"], "beta");
+    p.resolve("unsetChannel", json!({}));
+    assert!(p.t.kv("CapacitorUpdater.defaultChannel").is_none());
+    assert!(p
+        .t
+        .host
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(_, message)| message.contains("default channel state file could not be updated")));
+}
+
+#[test]
 fn default_channel_is_cleared_on_native_update_when_not_persisted() {
     let backend_config =
         json!({ "autoUpdate": false, "persistDefaultChannelOnReinstall": false, "defaultChannel": "prod" });
