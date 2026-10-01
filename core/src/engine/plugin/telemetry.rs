@@ -29,6 +29,28 @@ fn is_sensitive_segment(segment: &str) -> bool {
         || uuid
 }
 
+/// `%XX` escapes decoded (the previous plugins tested the decoded path, so an
+/// encoded id is redacted too).
+fn percent_decoded(segment: &str) -> String {
+    let bytes = segment.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let hex = |offset: usize| bytes.get(index + offset).and_then(|byte| (*byte as char).to_digit(16));
+        match (bytes[index], hex(1), hex(2)) {
+            (b'%', Some(high), Some(low)) => {
+                out.push((high * 16 + low) as u8);
+                index += 3;
+            }
+            (byte, _, _) => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn strip_query_and_fragment(value: &str) -> &str {
     let end = value.find(['?', '#']).unwrap_or(value.len());
     &value[..end]
@@ -45,7 +67,7 @@ pub fn sanitize_stats_url(value: &str) -> String {
                 .path()
                 .split('/')
                 .map(|segment| {
-                    if is_sensitive_segment(segment) {
+                    if is_sensitive_segment(&percent_decoded(segment)) {
                         "redacted".to_string()
                     } else {
                         segment.to_string()
@@ -450,17 +472,19 @@ impl Engine {
         if percent >= 100 {
             self.emit_bundle_event("downloadComplete", &bundle);
             self.send_stats("download_complete", Some(bundle.version_name()), None, None);
-            self.plugin_state().last_notified_stat_percent = 0;
+            self.plugin_state().last_notified_stat_percent.remove(id);
             return;
         }
         let bucket = (percent / 10) * 10;
         let should_send = {
+            // Per download: concurrent downloads must not suppress each other's buckets.
             let mut state = self.plugin_state();
+            let last = state.last_notified_stat_percent.entry(id.to_string()).or_insert(0);
             if percent == 0 {
-                state.last_notified_stat_percent = 0;
+                *last = 0;
             }
-            if bucket > state.last_notified_stat_percent {
-                state.last_notified_stat_percent = bucket;
+            if bucket > *last {
+                *last = bucket;
                 true
             } else {
                 false
@@ -500,6 +524,15 @@ mod tests {
         assert_eq!(sanitize_stats_url("http://localhost/?a=1"), "http://localhost/");
         assert_eq!(sanitize_stats_url("not a url?secret=1"), "not a url");
         assert_eq!(sanitize_stats_url(""), "");
+        // Encoded ids are redacted like plain ones; other segments keep their encoding.
+        assert_eq!(
+            sanitize_stats_url("https://example.com/u/%31%32%33%34%35%36%37/a%20b"),
+            "https://example.com/u/redacted/a%20b"
+        );
+        assert_eq!(
+            sanitize_stats_url("https://example.com/%31%32%33e4567-e89b-12d3-a456-426614174000"),
+            "https://example.com/redacted"
+        );
     }
 
     #[test]
@@ -511,6 +544,40 @@ mod tests {
         assert_eq!(metadata["line"], "12");
         assert_eq!(metadata["href"], "https://a.b/c");
         assert!(!metadata.contains_key("stack"));
+    }
+
+    /// Two downloads in parallel each report their own progress buckets.
+    #[test]
+    fn progress_buckets_are_tracked_per_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::new(
+            std::sync::Arc::new(crate::host::MemoryHost::default()),
+            &json!({
+                "bundleRoot": dir.path().join("versions").to_string_lossy(),
+                "statsUrl": "http://127.0.0.1:1/stats",
+            }),
+        )
+        .unwrap();
+        for (id, percent) in [
+            ("a", 0),
+            ("a", 10),
+            ("b", 0),
+            ("b", 10),
+            ("a", 25),
+            ("b", 25),
+            ("b", 26),
+        ] {
+            engine.notify_download(id, percent);
+        }
+        let actions: Vec<String> = engine
+            .stats
+            .queue
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|queued| queued.event["action"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(actions, ["download_10", "download_10", "download_20", "download_20"]);
     }
 
     #[test]

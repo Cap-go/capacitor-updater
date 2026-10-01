@@ -106,7 +106,8 @@ pub fn parse_iso8601_ms(value: &str) -> Option<i64> {
     let year = digits(date_parts.next()?)?;
     let month = digits(date_parts.next()?)?;
     let day = digits(date_parts.next()?)?;
-    if date_parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    // Strict, like both previous plugins (non-lenient date formatters): no 2025-02-31.
+    if date_parts.next().is_some() || !(1..=12).contains(&month) || !(1..=days_in_month(year, month)).contains(&day) {
         return None;
     }
     let time = &rest[..8];
@@ -152,9 +153,27 @@ pub fn parse_iso8601_ms(value: &str) -> Option<i64> {
     let seconds = days * 86_400 + hour * 3600 + minute * 60 + second;
     let utc_seconds = match offset_minutes {
         Some(offset) => seconds - offset * 60,
-        None => seconds - local_offset_seconds(seconds),
+        None => local_to_utc_seconds(seconds, local_offset_seconds),
     };
     Some(utc_seconds * 1000 + millis)
+}
+
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+/// UTC seconds of a local wall-clock time (`local` counts the wall-clock fields as
+/// if they were UTC). `offset_at(utc)` is the zone offset at an instant: the offset
+/// is looked up again at the first estimate, so a DST change between the pseudo-UTC
+/// instant and the real one (a transition day) is honoured.
+fn local_to_utc_seconds(local: i64, offset_at: impl Fn(i64) -> i64) -> i64 {
+    let estimate = local - offset_at(local);
+    local - offset_at(estimate)
 }
 
 /// Days since 1970-01-01 (proleptic Gregorian).
@@ -168,11 +187,11 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// Local UTC offset (seconds) for a local wall-clock time expressed as epoch seconds.
-fn local_offset_seconds(local_seconds: i64) -> i64 {
+/// Local UTC offset (seconds) at the instant `utc_seconds`.
+fn local_offset_seconds(utc_seconds: i64) -> i64 {
     #[cfg(unix)]
     unsafe {
-        let time = local_seconds as libc::time_t;
+        let time = utc_seconds as libc::time_t;
         let mut tm: libc::tm = std::mem::zeroed();
         if libc::localtime_r(&time, &mut tm).is_null() {
             return 0;
@@ -181,7 +200,7 @@ fn local_offset_seconds(local_seconds: i64) -> i64 {
     }
     #[cfg(not(unix))]
     {
-        let _ = local_seconds;
+        let _ = utc_seconds;
         0
     }
 }
@@ -434,6 +453,28 @@ mod tests {
         assert_eq!(parse_iso8601_ms("2024-13-01T00:00:00Z"), None);
         assert_eq!(parse_iso8601_ms("2024-01-01T00:00:0\u{e9}"), None);
         assert_eq!(parse_iso8601_ms("2024-01-01T00:00:00+1\u{e9}1"), None);
+        assert_eq!(parse_iso8601_ms("2025-02-29T00:00:00Z"), None);
+        assert_eq!(parse_iso8601_ms("2025-02-31T00:00:00Z"), None);
+        assert_eq!(parse_iso8601_ms("2025-04-31T00:00:00Z"), None);
+        assert_eq!(parse_iso8601_ms("1900-02-29T00:00:00Z"), None);
+        assert!(parse_iso8601_ms("2000-02-29T00:00:00Z").is_some());
+    }
+
+    /// America/Los_Angeles on 2025-03-09: PDT (-07) from 10:00 UTC, PST (-08) before.
+    #[test]
+    fn zone_less_dates_use_the_offset_of_their_own_instant() {
+        let dst_start = parse_iso8601_ms("2025-03-09T10:00:00Z").unwrap() / 1000;
+        let los_angeles = |utc: i64| if utc >= dst_start { -7 * 3600 } else { -8 * 3600 };
+        let local = parse_iso8601_ms("2025-03-09T03:30:00Z").unwrap() / 1000;
+        assert_eq!(
+            local_to_utc_seconds(local, los_angeles),
+            parse_iso8601_ms("2025-03-09T03:30:00-07:00").unwrap() / 1000
+        );
+        let local = parse_iso8601_ms("2025-03-08T23:00:00Z").unwrap() / 1000;
+        assert_eq!(
+            local_to_utc_seconds(local, los_angeles),
+            parse_iso8601_ms("2025-03-08T23:00:00-08:00").unwrap() / 1000
+        );
     }
 
     #[test]

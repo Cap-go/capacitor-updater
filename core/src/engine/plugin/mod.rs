@@ -332,7 +332,8 @@ pub struct PluginState {
     pub launch_start_reported: bool,
     pub launch_ready_reported: bool,
     pub launch_timeout_reported: bool,
-    pub last_notified_stat_percent: i64,
+    /// Last `download_<bucket>` statistic sent, per downloading bundle id.
+    pub last_notified_stat_percent: std::collections::HashMap<String, i64>,
     pub download_started_at: Option<Instant>,
     pub default_channel_cleanup_must_retry: bool,
     pub ready_generation: i64,
