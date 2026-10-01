@@ -173,12 +173,10 @@ impl EngineConfig {
                 self.public_key.clear();
                 self.key_id.clear();
             } else {
-                // RSA-2048 only, like the previous iOS plugin: checksums are one 256-byte block,
-                // so any other size could never verify an encrypted bundle.
-                crate::crypto::RsaPublicKey::from_pem(public_key)
-                    .ok()
-                    .filter(|key| key.size_bytes() == 256)
-                    .ok_or_else(|| {
+                // Any parseable RSA key loads, as on previous Android: a non-2048-bit key cannot
+                // verify CLI checksums (one 256-byte block), so encrypted updates fail their
+                // checksum, but the app still starts (previous iOS crashed at launch instead).
+                crate::crypto::RsaPublicKey::from_pem(public_key).map_err(|_| {
                     CoreError::new(
                         "invalid_public_key",
                         "Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.",

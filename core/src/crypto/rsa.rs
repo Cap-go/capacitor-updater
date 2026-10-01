@@ -115,11 +115,6 @@ impl RsaPublicKey {
         })
     }
 
-    /// Modulus size in bytes (the length of every ciphertext).
-    pub fn size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-
     /// Raw public operation `value^e mod n`, big-endian and left-padded to the key size.
     pub fn public_op(&self, value: &[u8]) -> CoreResult<Vec<u8>> {
         let failed = |message: &str| CoreError::new("decrypt_failed", message.to_string());

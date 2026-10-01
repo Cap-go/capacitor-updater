@@ -30,20 +30,26 @@ fn configure_applies_nothing_when_the_public_key_is_invalid() {
 }
 
 #[test]
-fn only_rsa_2048_public_keys_are_accepted() {
+fn non_2048_bit_keys_load_and_fail_encrypted_checksums() {
     let pem = |bits: usize| {
         let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), bits).unwrap();
         key.to_public_key().to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap()
     };
     let t = TestEngine::new(json!({}));
-    t.call("configure", json!({ "publicKey": pem(2048) }));
-    for bits in [1024, 3072] {
-        let error = t
-            .engine
-            .call("configure", &json!({ "publicKey": pem(bits) }))
-            .unwrap_err();
-        assert_eq!(error.code, "invalid_public_key", "{bits} bits");
-    }
+    // Loads (the app starts, as on previous Android); a 3072-bit key cannot verify a 256-byte
+    // CLI checksum, so encrypted updates fail instead.
+    t.call("configure", json!({ "publicKey": pem(3072) }));
+    let error = capgo_updater_core::crypto::decrypt_checksum(&"ab".repeat(256), &pem(3072)).unwrap_err();
+    assert!(
+        ["checksum_not_encrypted", "decrypt_failed"].contains(&error.code),
+        "{}",
+        error.code
+    );
+    let garbage = t
+        .engine
+        .call("configure", &json!({ "publicKey": "not a key" }))
+        .unwrap_err();
+    assert_eq!(garbage.code, "invalid_public_key");
 }
 
 #[test]
