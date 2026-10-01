@@ -7,7 +7,8 @@ bench_caffeinate "$@"
 bench_parse_args "$@"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-UDID="${BENCH_IOS_UDID:-D0FBCB9D-B6CE-4919-8A9D-BE785FFA4B2D}" # iPhone 17 Pro
+UDID="${BENCH_IOS_UDID:-$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 17 Pro \(/ { print $2; exit }')}"
+[[ -n "$UDID" ]] || { echo "[bench] no iPhone 17 Pro simulator: set BENCH_IOS_UDID" >&2; exit 1; }
 APP_ID="app.capgo.updater"
 DERIVED="$BENCH_DIR/derived/$LABEL-ios"
 

@@ -21,18 +21,28 @@ bench_caffeinate() {
 
 bench_acquire_lock() {
   [[ -z "$BENCH_DEVICE_LOCK" ]] && return 0
-  local waited=0
+  local waited=0 owner
   until mkdir "$BENCH_DEVICE_LOCK" 2>/dev/null; do
+    # A runner killed with SIGKILL leaves its lock behind: reclaim it when its owner is gone.
+    owner="$(cat "$BENCH_DEVICE_LOCK/pid" 2>/dev/null || true)"
+    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+      echo "[bench] removing stale device lock of PID $owner"
+      rm -f "$BENCH_DEVICE_LOCK/pid"
+      rmdir "$BENCH_DEVICE_LOCK" 2>/dev/null || true
+      continue
+    fi
     if ((waited % 300 == 0)); then echo "[bench] waiting for device lock $BENCH_DEVICE_LOCK (${waited}s)"; fi
     sleep 15
     waited=$((waited + 15))
   done
+  echo $$ >"$BENCH_DEVICE_LOCK/pid"
   BENCH_LOCK_HELD=1
   echo "[bench] device lock acquired"
 }
 
 bench_release_lock() {
   if [[ "$BENCH_LOCK_HELD" == "1" ]]; then
+    rm -f "$BENCH_DEVICE_LOCK/pid"
     rmdir "$BENCH_DEVICE_LOCK" 2>/dev/null || true
     BENCH_LOCK_HELD=0
     echo "[bench] device lock released"
@@ -99,10 +109,18 @@ bench_build_core() {
   fi
 }
 
+# Stops a bench server left on BENCH_PORT; anything else listening there aborts the run.
 bench_kill_port() {
-  local pids
+  local pids pid
   pids="$(lsof -ti "tcp:$BENCH_PORT" -sTCP:LISTEN 2>/dev/null || true)"
-  [[ -n "$pids" ]] && kill $pids 2>/dev/null || true
+  for pid in $pids; do
+    if ps -o command= -p "$pid" | grep -q "scripts/bench/server.mjs"; then
+      kill "$pid" 2>/dev/null || true
+    else
+      echo "[bench] port $BENCH_PORT is used by another process (PID $pid): set BENCH_PORT" >&2
+      exit 1
+    fi
+  done
 }
 
 bench_start_server() {

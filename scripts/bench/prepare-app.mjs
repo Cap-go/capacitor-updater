@@ -34,7 +34,12 @@ function run(cmd, args, cwd) {
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed with ${r.status}`);
 }
 
-const appDir = path.join(appsDir, label);
+const appDir = path.resolve(appsDir, label);
+// The label names a folder that rsync --delete rewrites: it must stay a direct child of appsDir.
+if (path.dirname(appDir) !== path.resolve(appsDir)) {
+  console.error(`label must be a plain folder name: ${label}`);
+  process.exit(2);
+}
 const src = path.join(checkout, 'example-app');
 
 if (!skipInstall) {

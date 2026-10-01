@@ -14,14 +14,16 @@ const required = [
     (abi) => `android/src/main/jniLibs/${abi}/libcapgo_updater_core.so`,
   ),
   'ios/Frameworks/CapgoUpdaterCore.xcframework/Info.plist',
-  'ios/Frameworks/CapgoUpdaterCore.xcframework/ios-arm64/CapgoUpdaterCore.framework/CapgoUpdaterCore',
-  'ios/Frameworks/CapgoUpdaterCore.xcframework/ios-arm64/CapgoUpdaterCore.framework/Modules/module.modulemap',
-  'ios/Frameworks/CapgoUpdaterCore.xcframework/ios-arm64_x86_64-simulator/CapgoUpdaterCore.framework/CapgoUpdaterCore',
+  ...['ios-arm64', 'ios-arm64_x86_64-simulator'].flatMap((slice) =>
+    ['CapgoUpdaterCore', 'Headers/capgo_updater_core.h', 'Modules/module.modulemap'].map(
+      (file) => `ios/Frameworks/CapgoUpdaterCore.xcframework/${slice}/CapgoUpdaterCore.framework/${file}`,
+    ),
+  ),
 ];
 
 const missing = required.filter((file) => {
   const stat = fs.statSync(path.join(root, file), { throwIfNoEntry: false });
-  return !stat || stat.size === 0;
+  return !stat?.isFile() || stat.size === 0;
 });
 
 if (missing.length > 0) {

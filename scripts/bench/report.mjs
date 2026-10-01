@@ -376,12 +376,12 @@ if (ab || aa || ib || ia) {
       const lb = ab?.libs.find((l) => l.abi === abi);
       const la = aa?.libs.find((l) => l.abi === abi);
       lines.push(
-        `| lib/${abi}/libcapgo_updater_core.so (in APK) | ${lb ? `${kib(lb.size)} (${kib(lb.compressed)})` : '-'} | ${la ? `${kib(la.size)} (${kib(la.compressed)})` : '-'} | ${sizeDelta(lb?.size ?? 0, la?.size ?? 0)} |`,
+        `| lib/${abi}/libcapgo_updater_core.so (in APK) | ${lb ? `${kib(lb.size)} (${kib(lb.compressed)})` : '-'} | ${la ? `${kib(la.size)} (${kib(la.compressed)})` : '-'} | ${sizeDelta(ab ? (lb?.size ?? 0) : null, aa ? (la?.size ?? 0) : null)} |`,
       );
     }
-    if (aa) {
-      const dexDiff = (aa.dexBytes ?? 0) - (ab?.dexBytes ?? 0);
-      const estimate = aa.arm64Gzip + dexDiff - (ab?.arm64Gzip ?? 0);
+    if (ab && aa) {
+      const dexDiff = (aa.dexBytes ?? 0) - (ab.dexBytes ?? 0);
+      const estimate = aa.arm64Gzip + dexDiff - (ab.arm64Gzip ?? 0);
       lines.push('');
       lines.push(
         `Estimated per-device download change (arm64 split): gzip -9 of the arm64 \`.so\` (${kib(aa.arm64Gzip)}) ${dexDiff >= 0 ? '+' : '-'} dex difference (${kib(Math.abs(dexDiff))}) = **${estimate >= 0 ? '+' : '-'}${kib(Math.abs(estimate))}**.`,
@@ -414,7 +414,7 @@ if (ab || aa || ib || ia) {
       const fb = ib?.frameworks.find((f) => f.name === name);
       const fa = ia?.frameworks.find((f) => f.name === name);
       lines.push(
-        `| Frameworks/${name} | ${kib(fb?.bytes)} | ${kib(fa?.bytes)} | ${sizeDelta(fb?.bytes ?? 0, fa?.bytes ?? 0)} |`,
+        `| Frameworks/${name} | ${kib(fb?.bytes)} | ${kib(fa?.bytes)} | ${sizeDelta(ib ? (fb?.bytes ?? 0) : null, ia ? (fa?.bytes ?? 0) : null)} |`,
       );
     }
     if (!fws.length) lines.push('| Frameworks/ | (none) | (none) | - |');

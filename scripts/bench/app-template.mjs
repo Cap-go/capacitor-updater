@@ -100,7 +100,9 @@ export function benchJs(marker) {
     if (c.mode === 'background') {
       return postRetry('/bench/result', Object.assign({}, base, { ok: true, t0: t0, t1: t1, bundleId: bundle && bundle.id, status: bundle && bundle.status }));
     }
-    await postRetry('/bench/downloaded', Object.assign({}, base, { t0: t0, t1: t1, bundleId: bundle && bundle.id, status: bundle && bundle.status }));
+    var ack = await postRetry('/bench/downloaded', Object.assign({}, base, { t0: t0, t1: t1, bundleId: bundle && bundle.id, status: bundle && bundle.status }));
+    // The case timed out meanwhile: do not activate an expired bundle over its retry.
+    if (ack && ack.stale) return postRetry('/bench/next', base);
     var tSet = Date.now();
     try { localStorage.setItem(TSET_KEY, JSON.stringify({ caseId: c.id, attempt: c.attempt, tSet: tSet })); } catch (e) {}
     try {

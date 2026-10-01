@@ -87,9 +87,13 @@ if [[ "$booted" != "1" ]]; then
 fi
 # Root is needed to clear the app's delta cache between cases on a release (non-debuggable) build.
 if [[ "$("$ADB" shell whoami | tr -d '\r')" != "root" ]]; then
-  "$ADB" root >/dev/null
+  "$ADB" root >/dev/null 2>&1 || true
   sleep 2
   "$ADB" wait-for-device
+  if [[ "$("$ADB" shell whoami | tr -d '\r')" != "root" ]]; then
+    echo "[bench] adb root is unavailable (production device): use an emulator or a userdebug build" >&2
+    exit 1
+  fi
 fi
 
 if [[ "$BENCH_ANDROID_TRANSPORT" == "host" && "$("$ADB" shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" != "1" \
@@ -137,7 +141,7 @@ for variant in "${VARIANT_LIST[@]}"; do
   "$ADB" uninstall "$APP_ID" >/dev/null 2>&1 || true
   "$ADB" install -r "$(apk_path "$variant")" >/dev/null
   reverse_port
-  bench_start_server android "$variant" "$ADB shell rm -rf /data/data/$APP_ID/cache/capgo_downloads"
+  bench_start_server android "$variant" "'$ADB' shell rm -rf /data/data/$APP_ID/cache/capgo_downloads"
   "$ADB" shell am start -n "$ACTIVITY" >/dev/null
   bench_monitor restart_app
   bench_stop_server

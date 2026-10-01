@@ -29,7 +29,13 @@ const pad = await ensureBuiltinPad();
 console.log(`[bench] builtin pad: ${pad.files.length} files`);
 
 // Zips embed bench.js: regenerate them whenever the app-side bench script changes.
-const benchStamp = crypto.createHash('sha256').update(benchJs('stamp')).digest('hex').slice(0, 16);
+// The encrypted zips are tied to the key pair too: a regenerated key regenerates them.
+const benchStamp = crypto
+  .createHash('sha256')
+  .update(benchJs('stamp'))
+  .update(keys.publicKey)
+  .digest('hex')
+  .slice(0, 16);
 
 await mkdir(zipDir, { recursive: true });
 
@@ -37,7 +43,9 @@ for (const size of zipSizes) {
   const plainBase = zipFixtureBase(size.key, 'plain');
   const encBase = zipFixtureBase(size.key, 'enc');
   const upToDate =
+    existsSync(`${plainBase}.zip`) &&
     existsSync(`${plainBase}.json`) &&
+    existsSync(`${encBase}.zip`) &&
     existsSync(`${encBase}.json`) &&
     JSON.parse(await readFile(`${encBase}.json`, 'utf8')).benchStamp === benchStamp;
   if (!force && upToDate) {

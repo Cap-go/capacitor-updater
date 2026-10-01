@@ -232,7 +232,11 @@ async function prepareCase(c) {
 function runCleanCmd() {
   if (!cleanCmd) return;
   const r = spawnSync('/bin/sh', ['-c', cleanCmd], { timeout: 60000, encoding: 'utf8' });
-  if (r.status !== 0) log(`clean cmd failed (${r.status}): ${(r.stderr || '').trim().slice(0, 200)}`);
+  if (r.status !== 0) {
+    // A stale delta cache would skew every following timing: stop the run.
+    log(`clean cmd failed (${r.status}): ${(r.stderr || '').trim().slice(0, 200)}`);
+    process.exit(1);
+  }
 }
 
 async function nextAction() {
@@ -426,7 +430,14 @@ const server = Bun.serve({
       log(`boot marker=${b.marker} bundle=${version}${b.readyError ? ` readyError=${b.readyError}` : ''}`);
       if (current?.phase === 'awaiting-ready') {
         const ps = b.pendingSet;
-        if (ps && ps.caseId === current.case.id && ps.attempt === current.attempt && version === current.version) {
+        if (b.readyError) {
+          record(current, { ok: false, error: `notifyAppReady failed: ${b.readyError}` });
+        } else if (
+          ps &&
+          ps.caseId === current.case.id &&
+          ps.attempt === current.attempt &&
+          version === current.version
+        ) {
           const downloadMs = current.t1 - current.t0;
           const applyMs = b.tReady - ps.tSet;
           // set() call until the new document starts loading / document load until
