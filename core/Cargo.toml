@@ -30,6 +30,9 @@ ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
 url = "2"
+# Pinned to the ASCII-only adapter so url/idna skip the ICU normalization tables (~200 KiB):
+# Unicode (IDN) host names are rejected, punycode (xn--) host names still work.
+idna_adapter = "=1.0.0"
 # No "tls" feature: it compiles in the webpki-roots CA table, which this client never uses;
 # TLS goes through our own rustls config (net.rs RustlsConnector) with platform verification.
 ureq = { version = "2.12", default-features = false }
