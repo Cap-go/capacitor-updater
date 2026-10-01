@@ -98,8 +98,9 @@ pub trait Host: Send + Sync + 'static {
     }
 
     /// Verifies a TLS server chain (DER, leaf first) with the platform trust
-    /// store. `None` means "not handled here": the engine then uses its
-    /// built-in platform verifier.
+    /// store (`server_name` lets platform policies such as pins apply; the
+    /// engine checks the name itself too). `None` (no verifier) refuses every
+    /// HTTPS connection: there is no built-in fallback.
     fn verify_server_certificate(&self, _chain: &[&[u8]], _server_name: &str) -> Option<Result<(), String>> {
         None
     }
@@ -141,6 +142,10 @@ pub struct MemoryHost {
     pub hooks: std::sync::Mutex<Vec<(String, Value)>>,
     /// Scripted hook replies by name.
     pub hook_replies: std::sync::Mutex<std::collections::BTreeMap<String, Value>>,
+    /// Scripted TLS verdict; unset uses the test machine's trust store.
+    pub certificate_verdict: std::sync::Mutex<Option<Option<Result<(), String>>>>,
+    /// `(chain, server name)` of every TLS verification request.
+    pub certificate_requests: std::sync::Mutex<Vec<(Vec<Vec<u8>>, String)>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -223,6 +228,20 @@ impl Host for MemoryHost {
     fn hook(&self, name: &str, payload: &Value) -> Option<Value> {
         self.hooks.lock().unwrap().push((name.to_string(), payload.clone()));
         self.hook_replies.lock().unwrap().get(name).cloned()
+    }
+
+    fn verify_server_certificate(&self, chain: &[&[u8]], server_name: &str) -> Option<Result<(), String>> {
+        self.certificate_requests.lock().unwrap().push((
+            chain.iter().map(|cert| cert.to_vec()).collect(),
+            server_name.to_string(),
+        ));
+        if let Some(verdict) = self.certificate_verdict.lock().unwrap().clone() {
+            return verdict;
+        }
+        #[cfg(feature = "test-support")]
+        return Some(crate::net::platform_verify_for_tests(chain, server_name));
+        #[cfg(not(feature = "test-support"))]
+        None
     }
 
     /// Tests talk to local plain-HTTP servers: allowed unless a reply says otherwise.

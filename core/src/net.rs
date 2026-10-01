@@ -1,7 +1,7 @@
 //! HTTP client used by the engine (update checks, channels, stats, bundle
-//! downloads). Plain HTTP/1.1 over rustls; certificates are verified by the
-//! operating system trust store (Security.framework on Apple platforms, the
-//! Android `X509TrustManager` through the host, rustls-native roots elsewhere).
+//! downloads). Plain HTTP/1.1 over rustls; certificate chains are verified by
+//! the operating system trust store through the host (Android
+//! `X509TrustManager`, iOS `SecTrust`), host names by rustls.
 
 use std::io::Read;
 use std::sync::{Arc, Mutex, RwLock};
@@ -424,36 +424,38 @@ fn tls_config(host: Arc<dyn Host>) -> ClientConfig {
     let builder = ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
         .expect("ring supports the default TLS versions");
-    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(HostVerifier {
-        host,
-        provider: provider.clone(),
-        fallback: platform_verifier(provider),
-    });
+    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(HostVerifier { host, provider });
     builder
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth()
 }
 
-#[cfg(not(target_os = "android"))]
-fn platform_verifier(provider: Arc<CryptoProvider>) -> Option<Arc<dyn ServerCertVerifier>> {
-    Some(Arc::new(
-        rustls_platform_verifier::Verifier::new().with_provider(provider),
-    ))
+/// A certificate rejection reported by the host trust store.
+#[derive(Debug)]
+struct CertificateRejected(String);
+
+impl std::fmt::Display for CertificateRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
-#[cfg(target_os = "android")]
-fn platform_verifier(_provider: Arc<CryptoProvider>) -> Option<Arc<dyn ServerCertVerifier>> {
-    None
+impl std::error::Error for CertificateRejected {}
+
+fn certificate_rejected(message: String) -> rustls::Error {
+    rustls::Error::InvalidCertificate(rustls::CertificateError::Other(rustls::OtherError(Arc::new(
+        CertificateRejected(message),
+    ))))
 }
 
-/// Asks the host first (Android trust manager, honouring network security
-/// config and user CAs), then falls back to the platform verifier.
+/// Chain trust comes from the host's platform trust store (Android
+/// `X509TrustManager` with the network security config and user CAs, iOS
+/// `SecTrust`); the host name is checked here. No answer fails closed.
 #[derive(Debug)]
 struct HostVerifier {
     host: Arc<dyn Host>,
     provider: Arc<CryptoProvider>,
-    fallback: Option<Arc<dyn ServerCertVerifier>>,
 }
 
 impl std::fmt::Debug for dyn Host {
@@ -468,8 +470,8 @@ impl ServerCertVerifier for HostVerifier {
         end_entity: &CertificateDer<'_>,
         intermediates: &[CertificateDer<'_>],
         server_name: &ServerName<'_>,
-        ocsp_response: &[u8],
-        now: UnixTime,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         let name = match server_name {
             ServerName::DnsName(name) => name.as_ref().to_string(),
@@ -480,19 +482,13 @@ impl ServerCertVerifier for HostVerifier {
         chain.extend(intermediates.iter().map(|cert| cert.as_ref()));
         match self.host.verify_server_certificate(&chain, &name) {
             Some(Ok(())) => {
-                // The host checks the chain against the platform trust store; the
-                // name is checked here.
+                // The host checked the chain; the name is always checked here too.
                 let parsed = rustls::server::ParsedCertificate::try_from(end_entity)?;
                 rustls::client::verify_server_name(&parsed, server_name)?;
                 Ok(ServerCertVerified::assertion())
             }
-            Some(Err(message)) => Err(rustls::Error::General(message)),
-            None => match &self.fallback {
-                Some(fallback) => {
-                    fallback.verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
-                }
-                None => Err(rustls::Error::General("No certificate verifier available".into())),
-            },
+            Some(Err(message)) => Err(certificate_rejected(message)),
+            None => Err(certificate_rejected("No certificate verifier available".into())),
         }
     }
 
@@ -574,4 +570,27 @@ impl ureq::TlsConnector for RustlsConnector {
         }
         Ok(Box::new(RustlsStream(rustls::StreamOwned::new(connection, io))))
     }
+}
+
+/// Verifies a chain with the OS trust store of the machine running the tests
+/// (what [`crate::host::MemoryHost`] answers); shipped hosts use their own.
+#[cfg(feature = "test-support")]
+pub fn platform_verify_for_tests(chain: &[&[u8]], server_name: &str) -> Result<(), String> {
+    let verifier = rustls_platform_verifier::Verifier::new().with_provider(provider());
+    let name = ServerName::try_from(server_name.to_string()).map_err(|error| error.to_string())?;
+    let (leaf, intermediates) = chain.split_first().ok_or("Empty certificate chain")?;
+    let intermediates: Vec<CertificateDer<'static>> = intermediates
+        .iter()
+        .map(|cert| CertificateDer::from(cert.to_vec()))
+        .collect();
+    verifier
+        .verify_server_cert(
+            &CertificateDer::from(leaf.to_vec()),
+            &intermediates,
+            &name,
+            &[],
+            UnixTime::now(),
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }

@@ -5,6 +5,7 @@
  */
 
 import Foundation
+import Security
 import CapgoUpdaterCore
 
 /// Platform services the Rust engine calls back into, from any thread.
@@ -86,7 +87,8 @@ final class CapgoEngine {
             release: { context in
                 guard let context else { return }
                 Unmanaged<HostBox>.fromOpaque(context).release()
-            }
+            },
+            verify_server_certificate: CapgoEngine.verifyServerCertificateCallback
         )
         guard let handle = capgo_engine_new(configJson, callbacks) else {
             return nil
@@ -96,6 +98,67 @@ final class CapgoEngine {
 
     deinit {
         capgo_engine_free(handle)
+    }
+
+    typealias VerifyServerCertificateCallback = @convention(c) (
+        UnsafeMutableRawPointer?,
+        UnsafePointer<CChar>?,
+        UnsafePointer<UnsafePointer<UInt8>?>?,
+        UnsafePointer<Int>?,
+        Int,
+        UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+    ) -> Int32
+
+    /// `verify_server_certificate` host callback: 1 when the system trust store accepts the
+    /// DER chain (leaf first) for the server name; otherwise 0 and the reason in `error`.
+    static let verifyServerCertificateCallback: VerifyServerCertificateCallback = { _, serverName, certificates, lengths, count, error in
+        guard let serverName, let certificates, let lengths, count > 0 else {
+            error?.pointee = strdup("Empty certificate chain")
+            return 0
+        }
+        var chain: [Data] = []
+        for index in 0..<count {
+            guard let certificate = certificates[index], lengths[index] > 0 else {
+                error?.pointee = strdup("Invalid certificate in chain")
+                return 0
+            }
+            chain.append(Data(bytes: certificate, count: lengths[index]))
+        }
+        if let reason = verifyServerCertificate(chain: chain, serverName: String(cString: serverName)) {
+            error?.pointee = strdup(reason)
+            return 0
+        }
+        return 1
+    }
+
+    /// Evaluates a TLS server chain (DER, leaf first) like URLSession's default handling:
+    /// `SecTrust` with the SSL policy for `serverName` against the system trust store
+    /// (including user-installed and MDM roots). Returns nil when trusted, else the reason.
+    /// `date` overrides the evaluation time (tests only).
+    static func verifyServerCertificate(chain: [Data], serverName: String, date: Date? = nil) -> String? {
+        var certificates: [SecCertificate] = []
+        for der in chain {
+            guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+                return "Invalid certificate in chain"
+            }
+            certificates.append(certificate)
+        }
+        guard !certificates.isEmpty else {
+            return "Empty certificate chain"
+        }
+        var trust: SecTrust?
+        let policy = SecPolicyCreateSSL(true, serverName as CFString)
+        guard SecTrustCreateWithCertificates(certificates as CFArray, policy, &trust) == errSecSuccess, let trust else {
+            return "Cannot evaluate the certificate chain"
+        }
+        if let date, SecTrustSetVerifyDate(trust, date as CFDate) != errSecSuccess {
+            return "Cannot set the evaluation date"
+        }
+        var failure: CFError?
+        if SecTrustEvaluateWithError(trust, &failure) {
+            return nil
+        }
+        return failure.map { ($0 as Error).localizedDescription } ?? "Certificate not trusted"
     }
 
     private static func box(_ context: UnsafeMutableRawPointer) -> HostBox {

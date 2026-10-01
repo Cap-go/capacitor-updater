@@ -18,7 +18,9 @@ default = []
 # JNI entry points used by the Android plugin (and by the JVM unit tests on the host).
 jni = ["dep:jni"]
 # Test helpers (MemoryHost, *_for_tests); enabled for this crate's own tests through the dev-dependency below.
-test-support = []
+# MemoryHost verifies TLS chains with rustls-platform-verifier; shipped builds always ask the host
+# (Android TrustManager, iOS SecTrust), so they never link Security.framework bindings.
+test-support = ["dep:rustls-platform-verifier"]
 
 [dependencies]
 aes = "0.8"
@@ -40,8 +42,7 @@ zip = { version = "2", default-features = false, features = ["deflate-flate2", "
 # zlib-rs: fast pure-Rust inflate (miniz_oxide was 3-4x slower than the system zlib on iOS).
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rustls-platform-verifier = "0.5"
+rustls-platform-verifier = { version = "0.5", optional = true }
 
 [dev-dependencies]
 capgo-updater-core = { path = ".", features = ["test-support"] }

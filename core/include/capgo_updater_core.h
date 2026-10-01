@@ -7,6 +7,9 @@
 #ifndef CAPGO_UPDATER_CORE_H
 #define CAPGO_UPDATER_CORE_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +39,11 @@ void capgo_core_free(char *value);
  * hook (optional) receives platform hooks by name with a JSON payload
  * (willSwitchBundle, cancelVersionDownload, beforeDownload, cancelAllDownloads,
  * sendStats) and returns a host-allocated JSON object reply or NULL.
+ * verify_server_certificate checks a TLS server chain (certificates[i] is a
+ * DER certificate of lengths[i] bytes, leaf first) with the platform trust
+ * store for server_name. It returns 1 when trusted; any other value rejects
+ * the connection, and *error may receive a host-allocated reason. The engine
+ * checks the host name itself as well. NULL refuses every HTTPS connection.
  */
 typedef struct CapgoHostCallbacks {
     void *context;
@@ -47,6 +55,9 @@ typedef struct CapgoHostCallbacks {
     void (*free_string)(void *context, char *value);
     char *(*hook)(void *context, const char *name, const char *payload_json);
     void (*release)(void *context);
+    int32_t (*verify_server_certificate)(void *context, const char *server_name,
+                                         const uint8_t *const *certificates, const size_t *lengths,
+                                         size_t count, char **error);
 } CapgoHostCallbacks;
 
 typedef struct CapgoEngine CapgoEngine;

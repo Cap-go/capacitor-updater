@@ -92,7 +92,17 @@ pub struct CapgoHostCallbacks {
     pub hook: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_char>,
     /// Called once when the engine is destroyed, to release `context`.
     pub release: Option<unsafe extern "C" fn(*mut c_void)>,
+    /// Verifies a TLS server chain with the platform trust store:
+    /// `(context, server_name, certificates, lengths, count, error)`, where
+    /// `certificates[i]` is a DER certificate of `lengths[i]` bytes, leaf first.
+    /// Returns 1 when the chain is trusted; any other value rejects it and
+    /// `*error` may receive a host-allocated reason (released with
+    /// `free_string`). NULL refuses every HTTPS connection.
+    pub verify_server_certificate: Option<VerifyServerCertificate>,
 }
+
+pub type VerifyServerCertificate =
+    unsafe extern "C" fn(*mut c_void, *const c_char, *const *const u8, *const usize, usize, *mut *mut c_char) -> i32;
 
 struct CHost(CapgoHostCallbacks);
 
@@ -206,6 +216,31 @@ impl Host for CHost {
         self.hook("cancelAllDownloads", &serde_json::json!({}));
     }
 
+    fn verify_server_certificate(&self, chain: &[&[u8]], server_name: &str) -> Option<Result<(), String>> {
+        let verify = self.0.verify_server_certificate?;
+        let server_name = c_string(server_name);
+        let pointers: Vec<*const u8> = chain.iter().map(|cert| cert.as_ptr()).collect();
+        let lengths: Vec<usize> = chain.iter().map(|cert| cert.len()).collect();
+        let mut error: *mut c_char = std::ptr::null_mut();
+        let verdict = unsafe {
+            verify(
+                self.0.context,
+                server_name.as_ptr(),
+                pointers.as_ptr(),
+                lengths.as_ptr(),
+                chain.len(),
+                &mut error,
+            )
+        };
+        let message = self.take_string(error);
+        // Only an explicit 1 trusts the chain.
+        Some(if verdict == 1 {
+            Ok(())
+        } else {
+            Err(message.unwrap_or_else(|| "Certificate rejected by the platform trust store".to_string()))
+        })
+    }
+
     fn send_stats(&self, action: &str, version_name: &str, old_version_name: &str) -> bool {
         self.hook(
             "sendStats",
@@ -214,6 +249,12 @@ impl Host for CHost {
         .and_then(|reply| reply.get("handled").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)
     }
+}
+
+/// The [`Host`] a C-ABI host gets, for tests of the callback marshalling.
+#[cfg(feature = "test-support")]
+pub fn host_from_callbacks_for_tests(host: CapgoHostCallbacks) -> Arc<dyn Host> {
+    Arc::new(CHost(host))
 }
 
 /// Creates an engine. Returns NULL on invalid configuration (the error is logged to the host).
