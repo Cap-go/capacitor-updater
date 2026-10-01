@@ -111,10 +111,6 @@ impl RsaPublicKey {
         })
     }
 
-    pub fn size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-
     pub fn modulus_bits(&self) -> u64 {
         self.modulus.bits()
     }

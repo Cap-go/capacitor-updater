@@ -66,10 +66,6 @@ impl Engine {
         Ok(engine)
     }
 
-    pub fn host(&self) -> &Arc<dyn Host> {
-        &self.host
-    }
-
     pub fn config(&self) -> RwLockReadGuard<'_, EngineConfig> {
         self.config.read().unwrap_or_else(|poison| poison.into_inner())
     }

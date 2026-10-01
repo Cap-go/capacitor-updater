@@ -114,6 +114,7 @@ dependencies = [
  "base64",
  "brotli",
  "brotli-decompressor",
+ "capgo-updater-core",
  "flate2",
  "jni",
  "libc",

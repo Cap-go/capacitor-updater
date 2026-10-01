@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use super::archive::{self, ExtractError};
 use super::fsutil;
@@ -698,6 +698,3 @@ pub(crate) fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
         }
     }
 }
-
-#[allow(dead_code)]
-fn _json(_: Map<String, Value>) {}

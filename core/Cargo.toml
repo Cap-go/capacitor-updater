@@ -17,6 +17,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 default = []
 # JNI entry points used by the Android plugin (and by the JVM unit tests on the host).
 jni = ["dep:jni"]
+# Test helpers (MemoryHost, *_for_tests); enabled for this crate's own tests through the dev-dependency below.
+test-support = []
 
 [dependencies]
 aes = "0.8"
@@ -38,6 +40,7 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 rustls-platform-verifier = "0.5"
 
 [dev-dependencies]
+capgo-updater-core = { path = ".", features = ["test-support"] }
 brotli = "7"
 rand = "0.8"
 rsa = "0.9"

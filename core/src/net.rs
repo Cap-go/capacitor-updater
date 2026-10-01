@@ -212,10 +212,6 @@ impl Http {
         self.user_agent.read().unwrap().clone()
     }
 
-    pub fn timeout(&self) -> Duration {
-        *self.timeout.read().unwrap()
-    }
-
     /// Updates connect/read/write timeouts (0 keeps the 20 s default).
     pub fn set_timeout(&self, timeout: Duration) {
         let timeout = if timeout.is_zero() {

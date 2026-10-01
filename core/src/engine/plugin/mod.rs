@@ -18,7 +18,7 @@ mod preview;
 mod ready;
 mod telemetry;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -30,9 +30,8 @@ use crate::error::{CoreError, CoreResult};
 use crate::host::HostLog;
 use crate::policy;
 
-pub use delay::{DelayCondition, DelaySource};
+use delay::DelaySource;
 pub use methods::ENGINE_METHODS;
-pub use telemetry::{sanitize_stats_url, webview_error_metadata};
 
 pub const DEFAULT_UPDATE_URL: &str = "https://plugin.capgo.app/updates";
 pub const DEFAULT_STATS_URL: &str = "https://plugin.capgo.app/stats";
@@ -514,17 +513,17 @@ impl Engine {
     }
 
     /// Synchronous foreground handling (tests; hosts use the `appForeground` operation).
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn plugin_foreground_for_tests(&self) {
         self.app_moved_to_foreground();
     }
 
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn wait_for_cleanup_for_tests(&self) {
         let _ = self.wait_for_cleanup();
     }
 
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn plugin_terminate_for_tests(&self) {
         self.app_terminated();
     }
@@ -594,10 +593,3 @@ impl From<CoreError> for Rejection {
 }
 
 pub(crate) type MethodResult = Result<Value, Rejection>;
-
-#[allow(dead_code)]
-fn _assert_sync() {
-    fn check<T: Send + Sync>() {}
-    check::<Plugin>();
-    let _ = Ordering::SeqCst;
-}

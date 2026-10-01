@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use super::Engine;
 use crate::bundle::BundleInfo;
@@ -369,6 +369,3 @@ impl Engine {
         }
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: Map<String, Value>) {}

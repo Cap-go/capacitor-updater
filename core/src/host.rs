@@ -8,23 +8,14 @@
 
 use serde_json::Value;
 
+use crate::engine::plugin::hooks::CLEARTEXT_PERMITTED;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
     Debug = 0,
     Info = 1,
     Warn = 2,
     Error = 3,
-}
-
-impl LogLevel {
-    pub fn from_i32(value: i32) -> Self {
-        match value {
-            0 => LogLevel::Debug,
-            1 => LogLevel::Info,
-            2 => LogLevel::Warn,
-            _ => LogLevel::Error,
-        }
-    }
 }
 
 /// Platform services used by the engine. Implementations must be thread-safe:
@@ -60,7 +51,7 @@ pub trait Host: Send + Sync + 'static {
     /// security config, iOS App Transport Security). `None` (no answer) is
     /// treated as "not allowed".
     fn cleartext_permitted(&self, host: &str) -> Option<bool> {
-        self.hook("cleartextPermitted", &serde_json::json!({ "host": host }))
+        self.hook(CLEARTEXT_PERMITTED, &serde_json::json!({ "host": host }))
             .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
     }
 
@@ -120,7 +111,8 @@ impl<T: Host + ?Sized> HostLog for T {
     }
 }
 
-/// In-memory host for tests and for embedding the engine in tools.
+/// In-memory host for tests.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 pub struct MemoryHost {
     pub store: std::sync::Mutex<std::collections::BTreeMap<String, String>>,
@@ -132,6 +124,7 @@ pub struct MemoryHost {
     pub hook_replies: std::sync::Mutex<std::collections::BTreeMap<String, Value>>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl MemoryHost {
     pub fn events_named(&self, name: &str) -> Vec<Value> {
         self.events
@@ -158,6 +151,7 @@ impl MemoryHost {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl Host for MemoryHost {
     fn log(&self, level: LogLevel, message: &str) {
         self.logs.lock().unwrap().push((level, message.to_string()));
@@ -199,7 +193,7 @@ impl Host for MemoryHost {
 
     /// Tests talk to local plain-HTTP servers: allowed unless a reply says otherwise.
     fn cleartext_permitted(&self, host: &str) -> Option<bool> {
-        let reply = self.hook("cleartextPermitted", &serde_json::json!({ "host": host }));
+        let reply = self.hook(CLEARTEXT_PERMITTED, &serde_json::json!({ "host": host }));
         Some(
             reply
                 .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))

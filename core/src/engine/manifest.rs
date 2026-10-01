@@ -8,7 +8,6 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -674,9 +673,6 @@ impl Engine {
         }
     }
 }
-
-#[allow(dead_code)]
-const _UNUSED: Duration = Duration::from_secs(0);
 
 #[cfg(test)]
 mod token_tests {
