@@ -9,10 +9,10 @@
 //! - [`crypto`]: RSA session-key/checksum recovery, AES bundle decryption, SHA-256
 //! - [`bundle`]: bundle model rules
 //!
-//! Hosts talk to the core through one language-neutral entry point,
-//! [`api::call`], exposed as a C ABI ([`ffi`]) and, on Android, JNI ([`jni`]).
-//! Every operation takes and returns JSON; the operation names and payloads
-//! are pinned by the shared fixtures in `native-contract-tests/`.
+//! Hosts drive the [`engine`] through a C ABI ([`ffi`]) and, on Android, JNI
+//! ([`jni`]); every operation takes and returns JSON. The stateless
+//! [`api::call`] only exposes the bundle path guard. The pure rules are pinned
+//! by the shared fixtures in `native-contract-tests/` (`tests/contract.rs`).
 
 pub mod api;
 pub mod bundle;

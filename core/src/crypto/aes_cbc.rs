@@ -146,11 +146,6 @@ pub fn decrypt_file_in_place_hashed(path: &Path, key: &[u8; 16], iv: &[u8; 16]) 
     result
 }
 
-/// Decrypts `path` in place: streams into a sibling temp file, then atomically replaces it.
-pub fn decrypt_file_in_place(path: &Path, key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<()> {
-    decrypt_file_in_place_hashed(path, key, iv).map(|_| ())
-}
-
 /// Plaintext reader over an AES-128-CBC ciphertext stream (PKCS#7 checked at the end).
 pub struct CbcDecryptReader<R: Read> {
     inner: R,

@@ -13,7 +13,7 @@ import org.json.JSONObject;
  * Java binding for the shared Rust updater core ({@code core/}).
  *
  * <p>Every call is "operation name + JSON object in, JSON object out", the same surface the iOS plugin uses
- * through the C ABI. Operation names and payloads are pinned by {@code native-contract-tests/}.
+ * through the C ABI ({@code resolvePathInside}).
  */
 final class CapgoCore {
 
@@ -63,21 +63,5 @@ final class CapgoCore {
         } catch (JSONException e) {
             throw new Failure("internal", "Core returned invalid JSON: " + e.getMessage());
         }
-    }
-
-    static String hex(final byte[] bytes) {
-        final StringBuilder out = new StringBuilder(bytes.length * 2);
-        for (final byte b : bytes) {
-            out.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
-        }
-        return out.toString();
-    }
-
-    static byte[] bytes(final String hex) {
-        final byte[] out = new byte[hex.length() / 2];
-        for (int index = 0; index < out.length; index++) {
-            out[index] = (byte) Integer.parseInt(hex.substring(index * 2, index * 2 + 2), 16);
-        }
-        return out;
     }
 }

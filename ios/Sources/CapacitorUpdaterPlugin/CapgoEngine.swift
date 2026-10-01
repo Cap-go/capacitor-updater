@@ -136,23 +136,4 @@ final class CapgoEngine {
     func call(_ operation: String, _ input: [String: Any?] = [:]) throws -> [String: Any] {
         try callValue(operation, input) as? [String: Any] ?? [:]
     }
-
-    /// Operations that cannot fail on well-formed input: a failure is a binding bug.
-    func callUnchecked(_ operation: String, _ input: [String: Any?] = [:]) -> [String: Any] {
-        do {
-            return try call(operation, input)
-        } catch {
-            assertionFailure("Capgo engine \(operation) failed: \(error)")
-            return [:]
-        }
-    }
-
-    func callValueUnchecked(_ operation: String, _ input: [String: Any?] = [:]) -> Any {
-        do {
-            return try callValue(operation, input)
-        } catch {
-            assertionFailure("Capgo engine \(operation) failed: \(error)")
-            return NSNull()
-        }
-    }
 }

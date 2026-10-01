@@ -14,8 +14,8 @@ extern "C" {
 /**
  * Runs one Capgo updater core operation.
  *
- * `operation` is an operation name (see native-contract-tests/ group names),
- * `input_json` a UTF-8 JSON object (NULL or "" means `{}`).
+ * `operation` is an operation name (`resolvePathInside`: `{base, path}` ->
+ * `{path}`), `input_json` a UTF-8 JSON object (NULL or "" means `{}`).
  *
  * Returns a UTF-8 JSON envelope, never NULL:
  *   {"ok":true,"value":{...}}

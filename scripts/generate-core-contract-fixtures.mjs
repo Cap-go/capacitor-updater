@@ -5,8 +5,8 @@
  * - native-contract-tests/security.json  (path, cache and bundle-id guards)
  * - native-contract-tests/crypto.json    (session keys, checksums, AES bundle decryption)
  *
- * Every native implementation (Rust core, Android, iOS, and any future host)
- * must return exactly `expect` for each `input`. Expected values are written
+ * The Rust core must return exactly `expect` for each `input`
+ * (core/tests/contract.rs runs every case). Expected values are written
  * here by hand from the behavior shipped by the Android and iOS plugins, so a
  * regeneration never silently changes the contract.
  *

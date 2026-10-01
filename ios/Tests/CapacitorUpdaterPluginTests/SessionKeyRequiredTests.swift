@@ -83,15 +83,6 @@ final class SessionKeyRequiredTests: XCTestCase {
         XCTAssertTrue(implementation.sentStatsActions.contains("session_key_required"))
     }
 
-    func testIsValidSessionKeyRejectsEmptyComponents() {
-        XCTAssertFalse(CryptoCipher.isValidSessionKey(""))
-        XCTAssertFalse(CryptoCipher.isValidSessionKey(":"))
-        XCTAssertFalse(CryptoCipher.isValidSessionKey("abc:"))
-        XCTAssertFalse(CryptoCipher.isValidSessionKey(":xyz"))
-        XCTAssertFalse(CryptoCipher.isValidSessionKey("invalid-format"))
-        XCTAssertTrue(CryptoCipher.isValidSessionKey("abc:def"))
-    }
-
     func testAllowsUpdateWhenNoPublicKeyConfigured() throws {
         implementation.setPublicKey("")
         let manifest = [ManifestEntry(file_name: "index.html", file_hash: "abc", download_url: "http://[")]

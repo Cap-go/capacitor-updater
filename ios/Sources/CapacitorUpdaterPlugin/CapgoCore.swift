@@ -10,8 +10,7 @@ import CapgoUpdaterCore
 /// Swift binding for the shared Rust updater core (`core/`).
 ///
 /// Every call is `operation name + JSON object in -> JSON object out`, the
-/// same surface the Android plugin uses through JNI. Operation names and
-/// payloads are pinned by `native-contract-tests/`.
+/// same surface the Android plugin uses through JNI (`resolvePathInside`).
 enum CapgoCore {
     struct Failure: Error, CustomStringConvertible {
         let code: String
@@ -48,52 +47,5 @@ enum CapgoCore {
             code: error?["code"] as? String ?? "internal",
             message: error?["message"] as? String ?? "Unknown core error"
         )
-    }
-
-    /// Operations that cannot fail for well-formed input. A failure here is a
-    /// binding bug: it asserts in debug builds and returns `fallback` in release.
-    static func value<T>(_ operation: String, _ input: [String: Any?], _ key: String, fallback: T) -> T {
-        do {
-            if let value = try call(operation, input)[key] as? T {
-                return value
-            }
-            assertionFailure("Capgo core \(operation) returned no `\(key)`")
-        } catch {
-            assertionFailure("Capgo core \(operation) failed: \(error)")
-        }
-        return fallback
-    }
-
-    static func bool(_ operation: String, _ input: [String: Any?], _ key: String, fallback: Bool = false) -> Bool {
-        value(operation, input, key, fallback: fallback)
-    }
-
-    static func string(_ operation: String, _ input: [String: Any?], _ key: String, fallback: String = "") -> String {
-        value(operation, input, key, fallback: fallback)
-    }
-
-    static func int(_ operation: String, _ input: [String: Any?], _ key: String, fallback: Int = 0) -> Int {
-        (value(operation, input, key, fallback: NSNumber(value: fallback)) as NSNumber).intValue
-    }
-
-    static func hex(_ data: Data) -> String {
-        data.map { String(format: "%02x", $0) }.joined()
-    }
-
-    static func data(hex: String) -> Data? {
-        guard hex.count.isMultiple(of: 2) else {
-            return nil
-        }
-        var data = Data(capacity: hex.count / 2)
-        var index = hex.startIndex
-        while index < hex.endIndex {
-            let next = hex.index(index, offsetBy: 2)
-            guard let byte = UInt8(hex[index..<next], radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-            index = next
-        }
-        return data
     }
 }

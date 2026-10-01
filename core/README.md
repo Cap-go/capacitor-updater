@@ -15,7 +15,7 @@ implements a handful of platform hooks.
 | `engine::download`, `engine::manifest`, `engine::archive` | Zip and manifest downloads: resume, retries, checksum before extraction, decryption, brotli, delta cache, zip-slip / symlink guards |
 | `engine::backend`, `engine::stats` | Update, channel and stats endpoints, 429 handling, batched and persisted stats |
 | `net` | HTTP client (rustls, no cookies, HTTPS -> HTTP redirect guard) |
-| `policy`, `http`, `paths`, `crypto` | Pure rules shared by the engine and the contract fixtures |
+| `policy`, `http`, `paths`, `crypto` | Pure rules used by the engine, pinned by the contract fixtures |
 
 Hosts keep only what needs the platform: the Capacitor bridge (method
 registration, resolve / reject, listener dispatch), the WebView (applying a
@@ -44,9 +44,8 @@ key-value storage, event delivery and `hook(name, payload)` for platform work:
 `applyBundle`, `splash`, `previewLoader`, `previewNotice`, `shakeMenu`,
 `keepUrlPath`, `backgroundTask`, `excludeFromBackup` (see `engine::plugin::hooks`).
 
-Stateless rules are also exposed through `capgo_core_call(operation, json)`;
-their names and payloads are the groups of the shared fixtures in
-[`native-contract-tests/`](../native-contract-tests).
+`capgo_core_call(operation, json)` exposes one stateless rule to the hosts:
+`resolvePathInside {base, path}` (bundle ids stay under the bundle root).
 
 Bindings in this repository:
 
@@ -65,6 +64,12 @@ bun run core:build:ios       # ios/Frameworks/CapgoUpdaterCore.xcframework (need
 `tests/plugin.rs` drives the engine like a Capacitor host does (hooks, events,
 a fake update server) and covers the update lifecycle end to end.
 
+Rust runs the fixtures; platforms smoke-test the binding. `tests/contract.rs`
+runs every case of [`native-contract-tests/`](../native-contract-tests) against
+the Rust functions the engine uses. The Android and iOS test suites only check
+that their binding reaches the core and the engine (`CoreBindingTest.java`,
+`CoreBindingTests.swift`).
+
 The binaries are build outputs (git-ignored). CI builds them for every
 Android/iOS job and the release workflows ship them in the npm package, so app
 developers never need a Rust toolchain. Android JVM unit tests build a host
@@ -77,14 +82,14 @@ library automatically (`buildCapgoCoreHost` Gradle task).
 2. Implement the host callbacks: storage, events, logging and the hooks above.
 3. Forward the framework's plugin methods to `pluginMethod` and its lifecycle
    events to `appForeground` / `appBackground`.
-4. Run the contract fixtures through your binding (see `CoreContractTests.swift` /
-   `CoreContractTest.java`).
+4. Add a binding smoke test: one core call and one engine call (see
+   `CoreBindingTests.swift` / `CoreBindingTest.java`). The fixtures already run in Rust.
 
 ## Changing behavior
 
 Change behavior in Rust with a test (`tests/plugin.rs` for plugin flows, the
-fixtures for pure rules: `scripts/generate-core-contract-fixtures.mjs`). Hosts
-must not reimplement engine logic.
+fixtures for pure rules: `scripts/generate-core-contract-fixtures.mjs`, mapped in
+`tests/contract.rs`). Hosts must not reimplement engine logic.
 
 Security boundaries (path guards, signature/checksum/session-key checks) must
 not be weakened without an explicit product decision and tests.

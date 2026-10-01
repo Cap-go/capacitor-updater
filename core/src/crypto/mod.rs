@@ -124,30 +124,3 @@ fn decrypt_session_key(public_key: &str, session_key: &str) -> CoreResult<Sessio
     })?;
     Ok(SessionKey { iv, key })
 }
-
-/// Outcome of [`decrypt_bundle_file`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DecryptOutcome {
-    Decrypted,
-    /// No public key or no session key: the bundle is not encrypted.
-    NotEncrypted,
-}
-
-/// Decrypts an encrypted bundle file in place (AES-128-CBC, PKCS#7), streaming.
-///
-/// Fails closed: an unusable public key is an error, never a silent skip.
-/// Hosts must separately refuse unencrypted downloads when a public key is
-/// configured (see `requireSessionKey` in the plugins); this function only
-/// performs the decryption step.
-pub fn decrypt_bundle_file(
-    path: &std::path::Path,
-    public_key: &str,
-    session_key: Option<&str>,
-) -> CoreResult<DecryptOutcome> {
-    if public_key.is_empty() || !is_valid_session_key(session_key) {
-        return Ok(DecryptOutcome::NotEncrypted);
-    }
-    let session = decrypt_session_key(public_key, session_key.unwrap_or_default())?;
-    aes_cbc::decrypt_file_in_place(path, &session.key, &session.iv)?;
-    Ok(DecryptOutcome::Decrypted)
-}

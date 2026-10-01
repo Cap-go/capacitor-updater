@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import CapacitorUpdaterPlugin
@@ -23,7 +24,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     }
 
     // Loaded from the same RSA fixture native-contract-tests/crypto-rsa.json uses
-    // (see RsaContractTests.swift), so the encrypted-manifest path is exercised
+    // (see core/tests/contract.rs), so the encrypted-manifest path is exercised
     // against real contract data rather than an invented key/ciphertext pair.
     private enum Fixture {
         static let contract: [String: Any] = {
@@ -78,7 +79,6 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        CryptoCipher.setLogger(Logger(withTag: "PopulateDeltaCacheTests", options: Logger.Options(level: .silent)))
         implementation = TestableCapgoUpdater()
         bundleId = "delta-cache-\(UUID().uuidString)"
         bundleDir = try implementation.bundleDirectory(id: bundleId)
@@ -95,11 +95,15 @@ final class PopulateDeltaCacheTests: XCTestCase {
         }
         registeredCacheFiles = []
         implementation = nil
-        // CryptoCipher's logger is shared/static with no getter to snapshot the prior
-        // value, so restore a normal (non-silent) default rather than leaving other
-        // test suites silenced by this one.
-        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
         super.tearDown()
+    }
+
+    /// Lowercase hex SHA-256 of a file (the delta cache key).
+    private func sha256(_ file: URL) -> String {
+        guard let data = try? Data(contentsOf: file) else {
+            return ""
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private enum FixtureError: Error {
@@ -131,7 +135,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
     func testPopulateDeltaCacheCachesBundleFilesByContentHash() throws {
         let fileURL = try write("hello world \(bundleId!)", named: "app.js", in: bundleDir)
-        let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let realHash = sha256(fileURL)
         let realCacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
         implementation.populateDeltaCache(for: bundleId)
@@ -144,7 +148,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     func testPopulateDeltaCacheSkipsFilesAlreadyAvailableFromBuiltin() throws {
         let content = "shared builtin content \(bundleId!)"
         let fileURL = try write(content, named: "shared.js", in: bundleDir)
-        let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let realHash = sha256(fileURL)
         try write(content, named: "shared.js", in: builtinFolder)
         let cacheFile = expectedCacheFile(hash: realHash, name: "shared.js")
 
@@ -155,7 +159,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
 
     func testPopulateDeltaCacheStillCachesFilesNotPresentInBuiltin() throws {
         let fileURL = try write("only in this bundle \(bundleId!)", named: "new.js", in: bundleDir)
-        let realHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let realHash = sha256(fileURL)
         let cacheFile = expectedCacheFile(hash: realHash, name: "new.js")
 
         implementation.populateDeltaCache(for: bundleId)
@@ -258,7 +262,7 @@ extension PopulateDeltaCacheTests {
         let testId = try XCTUnwrap(bundleId)
         let name = "\(testId).js"
         let source = try write("builtin \(testId)", named: name, in: builtinFolder.appendingPathComponent("assets"))
-        let hash = CryptoCipher.calcChecksum(filePath: source)
+        let hash = sha256(source)
         let manifest = [ManifestEntry(file_name: "assets/\(name).br", file_hash: hash, download_url: nil)]
 
         XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
@@ -274,7 +278,7 @@ extension PopulateDeltaCacheTests {
         let name = "\(try XCTUnwrap(bundleId)).js"
         let source = try write("", named: name, in: builtinFolder.appendingPathComponent("assets"))
         let (signedHash, plainHash) = Fixture.firstDecryptChecksumCase
-        XCTAssertEqual(CryptoCipher.calcChecksum(filePath: source), plainHash)
+        XCTAssertEqual(sha256(source), plainHash)
         let manifest = [ManifestEntry(
             file_name: "assets/\(name).br",
             file_hash: signedHash,
@@ -298,7 +302,7 @@ extension PopulateDeltaCacheTests {
         let name = "\(try XCTUnwrap(bundleId))-outside.js"
         let source = try write("outside", named: name, in: builtinFolder.deletingLastPathComponent())
         defer { try? FileManager.default.removeItem(at: source) }
-        let hash = CryptoCipher.calcChecksum(filePath: source)
+        let hash = sha256(source)
         let manifest = [ManifestEntry(file_name: "../\(name).br", file_hash: hash, download_url: nil)]
 
         XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
