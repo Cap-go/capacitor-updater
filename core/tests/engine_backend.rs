@@ -55,6 +55,47 @@ fn get_latest_error_body_keeps_kind_message_and_status() {
 }
 
 #[test]
+fn get_latest_error_body_keeps_every_server_field() {
+    let server = FakeServer::start(|_| {
+        FakeServer::json(
+            200,
+            json!({
+                "error": "disable_auto_update_to_major",
+                "kind": "blocked",
+                "message": "major",
+                "version": "3.0.0",
+                "major": true,
+                "breaking": true,
+                "link": "https://example.com/notes",
+                "comment": "big one",
+                "data": { "team": "a" },
+                "session_key": "iv:key",
+                "manifest": [{ "file_name": "a.js", "file_hash": "h", "download_url": "https://x/a.js" }],
+                "url": "https://x/b.zip",
+                "checksum": "abc",
+            }),
+        )
+    });
+    let t = engine_with(&server);
+    let result = t.call("getLatest", json!({}));
+    assert_eq!(result["error"], "disable_auto_update_to_major");
+    assert_eq!(result["kind"], "blocked");
+    assert_eq!(result["message"], "major");
+    assert_eq!(result["version"], "3.0.0");
+    assert_eq!(result["statusCode"], 200);
+    assert_eq!(result["major"], true);
+    assert_eq!(result["breaking"], true);
+    assert_eq!(result["link"], "https://example.com/notes");
+    assert_eq!(result["comment"], "big one");
+    assert_eq!(result["data"]["team"], "a");
+    assert_eq!(result["sessionKey"], "iv:key");
+    assert!(result.get("session_key").is_none());
+    assert_eq!(result["manifest"][0]["file_name"], "a.js");
+    assert_eq!(result["url"], "https://x/b.zip");
+    assert_eq!(result["checksum"], "abc");
+}
+
+#[test]
 fn server_error_and_network_error() {
     let server = FakeServer::start(|_| (500, vec![], b"oops".to_vec()));
     let t = engine_with(&server);

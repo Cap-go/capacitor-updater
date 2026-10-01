@@ -192,6 +192,8 @@ impl Engine {
     /// POSTs `body` and normalizes the reply like every previous plugin version:
     /// errors carry `error`, `message`, `kind` and `statusCode`; success returns the
     /// JSON fields (with `session_key` renamed `sessionKey`) plus `statusCode`.
+    /// A JSON reply with `error` or `kind` keeps every other server field too
+    /// (`breaking`, `major`, `link`, `comment`, `data`, `manifest`, ...).
     fn json_request(&self, url: &str, body: &Json) -> Json {
         let response = match self.http.post_json(url, &Value::Object(body.clone())) {
             Ok(response) => response,
@@ -214,6 +216,17 @@ impl Engine {
                     .map(|value| value.as_str().map_or_else(|| value.to_string(), str::to_string))
             };
             let mut ret = Json::new();
+            for (key, value) in object {
+                match key.as_str() {
+                    "error" | "kind" | "message" | "version" | "statusCode" => {}
+                    "session_key" => {
+                        ret.insert("sessionKey".into(), value.clone());
+                    }
+                    _ => {
+                        ret.insert(key.clone(), value.clone());
+                    }
+                }
+            }
             if status == 429 {
                 let block = self.handle_rate_limit(&response);
                 ret.insert(

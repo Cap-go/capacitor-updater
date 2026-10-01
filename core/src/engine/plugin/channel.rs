@@ -512,6 +512,9 @@ impl Engine {
             if version.is_empty() {
                 result.insert("version".into(), json!(self.current_bundle().version_name()));
             }
+            if include_size {
+                self.attach_bundle_size(&mut result);
+            }
             self.host.info(format!("getLatest returned {kind}: {message}"));
             return Ok(Value::Object(result));
         }

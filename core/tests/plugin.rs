@@ -366,6 +366,17 @@ fn up_to_date_and_failed_checks_report_results() {
 }
 
 #[test]
+fn breaking_flag_with_a_failed_check_emits_both_events() {
+    let p = Plugin::load(json!({}));
+    *p.backend.latest.lock().unwrap() = json!({ "error": "no_channel", "breaking": true, "version": "3.0.0" });
+    p.foreground();
+    p.wait_for_event("appReady", 1);
+    assert_eq!(p.events("breakingAvailable")[0]["version"], "3.0.0");
+    assert_eq!(p.events("majorAvailable")[0]["version"], "3.0.0");
+    assert_eq!(p.events("downloadFailed").len(), 1);
+}
+
+#[test]
 fn breaking_update_emits_both_events() {
     let p = Plugin::load(json!({}));
     *p.backend.latest.lock().unwrap() =
@@ -903,6 +914,26 @@ fn get_latest_method_rejections_and_breaking_events() {
     let up_to_date = p.resolve("getLatest", json!({}));
     assert_eq!(up_to_date["kind"], "up_to_date");
     assert_eq!(up_to_date["version"], "1.0.0", "current version filled in");
+    assert_eq!(p.events("breakingAvailable").len(), 1);
+
+    // breaking with any error fires both events (current version when the server sends none)
+    // and the resolved result keeps every server field.
+    *p.backend.latest.lock().unwrap() = json!({
+        "error": "some_block", "kind": "blocked", "breaking": true, "major": true,
+        "link": "https://example.com", "comment": "note", "data": { "k": "v" },
+    });
+    let blocked = p.resolve("getLatest", json!({}));
+    assert_eq!(blocked["kind"], "blocked");
+    assert_eq!(blocked["breaking"], true);
+    assert_eq!(blocked["major"], true);
+    assert_eq!(blocked["link"], "https://example.com");
+    assert_eq!(blocked["comment"], "note");
+    assert_eq!(blocked["data"]["k"], "v");
+    assert_eq!(p.events("breakingAvailable")[1]["version"], "1.0.0");
+    assert_eq!(p.events("majorAvailable")[1]["version"], "1.0.0");
+    *p.backend.latest.lock().unwrap() = json!({ "error": "boom", "breaking": true, "version": "4.0.0" });
+    assert_eq!(p.reject("getLatest", json!({}))["message"], "boom");
+    assert_eq!(p.events("breakingAvailable")[2]["version"], "4.0.0");
     assert!(p.reject("getLatest", json!({ "appId": "other" }))["message"]
         .as_str()
         .unwrap()
