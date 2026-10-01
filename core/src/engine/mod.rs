@@ -14,6 +14,7 @@ pub mod fsutil;
 pub mod manifest;
 mod ops;
 pub mod plugin;
+mod scheduled;
 pub mod stats;
 pub mod store;
 
@@ -38,6 +39,8 @@ pub struct Engine {
     /// e.g. `download()` overlapping the update cycle).
     pub(crate) downloads: Mutex<std::collections::HashMap<String, Vec<download::Cancel>>>,
     pub(crate) plugin: plugin::Plugin,
+    /// Set when the host releases the engine: callers waiting for a scheduled download return.
+    pub(crate) downloads_detached: std::sync::atomic::AtomicBool,
     weak: Weak<Engine>,
 }
 
@@ -60,6 +63,7 @@ impl Engine {
             delete_lock: Mutex::new(()),
             downloads: Mutex::new(Default::default()),
             plugin: plugin::Plugin::default(),
+            downloads_detached: Default::default(),
             weak: weak.clone(),
         });
         engine.http.set_allow_https_to_http_redirect(allow_downgrade);

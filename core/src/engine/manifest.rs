@@ -13,7 +13,6 @@ use serde_json::{json, Value};
 
 use super::download::{Cancel, DownloadRequest};
 use super::fsutil;
-use super::store::remove_path;
 use super::Engine;
 use crate::bundle::BundleInfo;
 use crate::crypto;
@@ -236,21 +235,11 @@ impl Engine {
                 ));
             }
         }
-        let cancel = self.register_download_token(&request.version);
-        let record = self.start_record(request);
+        let mut request = request.clone();
+        request.manifest = Some(manifest);
+        let record = self.start_record(&request);
         self.progress(record.id(), 0);
-        let result = self.download_manifest_inner(request, &manifest, &record, &cancel);
-        self.unregister_download_token(&request.version, &cancel);
-        match result {
-            Ok(installed) => Ok(installed),
-            Err(error) => {
-                if let Ok(dir) = self.bundle_directory(record.id()) {
-                    let _ = remove_path(&dir);
-                }
-                self.fail_download(&record, &error, request.emit_events);
-                Err(error)
-            }
-        }
+        self.run_download(&request, &record)
     }
 
     fn manifest_path_fail(&self, version: &str, file_name: &str) {
@@ -355,7 +344,7 @@ impl Engine {
         }
     }
 
-    fn download_manifest_inner(
+    pub(crate) fn download_manifest_inner(
         &self,
         request: &DownloadRequest,
         manifest: &[Value],
@@ -567,7 +556,26 @@ impl Engine {
             if error.message == "download_stopped" {
                 return Err(CoreError::new("download_stopped", "Download cancelled"));
             }
-            return Err(file_fail(format!("Failed to download {}: {error}", task.file_name)));
+            let message = format!("Failed to download {}: {error}", task.file_name);
+            let status = error
+                .message
+                .strip_prefix("Unexpected response code: ")
+                .and_then(|status| status.trim().parse::<i64>().ok());
+            let retryable = match status {
+                Some(status) => crate::http::is_retryable_http_status(status),
+                None => super::download::net_error_retryable(&error),
+            };
+            if retryable {
+                // The partial stays for the next attempt; the code says it can succeed later.
+                self.send_stats("download_manifest_file_fail", Some(&stat_name), None, None);
+                let code = if status.is_some() {
+                    "network_error"
+                } else {
+                    super::download::net_error_code(&error)
+                };
+                return Err(CoreError::new(code, message));
+            }
+            return Err(file_fail(message));
         }
         // The partial stays encrypted (resumable, reusable): decrypt while reading it.
         let decrypt_failed = |error: &dyn std::fmt::Display| {

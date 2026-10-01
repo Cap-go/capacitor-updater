@@ -272,6 +272,15 @@ impl Engine {
                         .unwrap_or_default();
                     self.missing_bundle_files(&manifest, opt_str(input, "sessionKey").unwrap_or_default())
                 }
+                "runScheduledDownload" => self.run_scheduled_download(req_str(input, "id")?),
+                "stopScheduledDownload" => {
+                    self.stop_scheduled_download(req_str(input, "id")?);
+                    json!({})
+                }
+                "detachScheduledDownloads" => {
+                    self.detach_scheduled_downloads();
+                    json!({})
+                }
                 "populateDeltaCache" => {
                     self.populate_delta_cache(req_str(input, "id")?);
                     json!({})

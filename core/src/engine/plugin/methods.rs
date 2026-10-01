@@ -168,6 +168,8 @@ impl Engine {
                 self.emit_bundle_event("updateAvailable", &bundle);
                 Ok(bundle.to_js())
             }
+            // Plugin released while the scheduled job waits: nobody listens anymore.
+            Err(error) if error.code == "download_detached" => Err(Rejection::new(error.message)),
             Err(error) => {
                 self.host
                     .error(format!("Failed to download from: {url} {}", error.message));

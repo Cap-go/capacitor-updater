@@ -70,6 +70,60 @@ impl DownloadRequest {
             emit_events: input.get("emitEvents").and_then(Value::as_bool).unwrap_or(true),
         })
     }
+
+    /// Inverse of [`DownloadRequest::from_json`] (scheduled download jobs persist it).
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "url": self.url,
+            "version": self.version,
+            "sessionKey": self.session_key,
+            "checksum": self.checksum,
+            "manifest": self.manifest,
+            "link": self.link,
+            "comment": self.comment,
+            "setNext": self.set_next,
+            "directUpdate": self.direct_update,
+            "emitEvents": self.emit_events,
+        })
+    }
+}
+
+/// Transfer failures a later attempt can fix: no network, timeouts, truncated bodies and
+/// 5xx / 408 / 429 answers. Everything else (checksum, decryption, 4xx, invalid manifest,
+/// disk space) is definitive.
+pub(crate) fn is_retryable_download_error(error: &CoreError) -> bool {
+    match error.code {
+        "network_error" | "timeout" | "incomplete_download" => true,
+        "http_error" => error
+            .message
+            .strip_prefix("HTTP error: ")
+            .and_then(|status| status.trim().parse::<i64>().ok())
+            .is_some_and(crate::http::is_retryable_http_status),
+        _ => false,
+    }
+}
+
+/// Whether a transport failure can succeed on a later attempt (TLS, invalid URLs and
+/// refused redirects cannot).
+pub(crate) fn net_error_retryable(error: &NetError) -> bool {
+    !matches!(
+        error.kind,
+        crate::net::NetErrorKind::InvalidUrl
+            | crate::net::NetErrorKind::Tls
+            | crate::net::NetErrorKind::InsecureRedirect
+    )
+}
+
+/// Error code of a transport failure.
+pub(crate) fn net_error_code(error: &NetError) -> &'static str {
+    match error.kind {
+        crate::net::NetErrorKind::InvalidUrl => "invalid_url",
+        crate::net::NetErrorKind::Tls => "tls_error",
+        crate::net::NetErrorKind::InsecureRedirect => "blocked_redirect",
+        _ if error.is_timeout() => "timeout",
+        _ => "network_error",
+    }
 }
 
 /// Cancellation token for one in-flight download.
@@ -239,16 +293,62 @@ impl Engine {
             .before_download()
             .map_err(|message| CoreError::new("download_blocked", message))?;
         self.clear_failed_version(&request.version)?;
-        let cancel = self.register_download_token(&request.version);
         let record = self.start_record(request);
         self.progress(record.id(), 0);
         self.progress(record.id(), 5);
-        let result = self.download_zip_inner(request, &record, &cancel);
+        self.run_download(request, &record)
+    }
+
+    /// Transfers and installs a started download (`record` is DOWNLOADING): through the
+    /// host's job scheduler when it takes the job (Android WorkManager), else in-process.
+    /// Failures leave an ERROR record (see [`Engine::settle_download`]).
+    pub(crate) fn run_download(&self, request: &DownloadRequest, record: &BundleInfo) -> CoreResult<BundleInfo> {
+        let cancel = self.register_download_token(&request.version);
+        let result = match self.schedule_download(request, record, &cancel) {
+            Some(scheduled) => self.scheduled_result(request, record, scheduled),
+            None => {
+                let result = self.transfer_and_install(request, record, &cancel, false);
+                self.settle_download(request, record, result)
+            }
+        };
         self.unregister_download_token(&request.version, &cancel);
+        result
+    }
+
+    /// One transfer + install attempt of a started download. `resumable` (scheduled jobs)
+    /// makes a single network attempt and keeps the partial file of a retryable failure
+    /// for the next attempt; otherwise retries run here and failures clean up.
+    pub(crate) fn transfer_and_install(
+        &self,
+        request: &DownloadRequest,
+        record: &BundleInfo,
+        cancel: &Cancel,
+        resumable: bool,
+    ) -> CoreResult<BundleInfo> {
+        match &request.manifest {
+            Some(manifest) => self.download_manifest_inner(request, manifest, record, cancel),
+            None => self.download_zip_inner(request, record, cancel, resumable),
+        }
+    }
+
+    /// Final bookkeeping of a download result: a failed download gets an ERROR record
+    /// (`downloadFailed` / `download_fail` when the request emits events) and loses its
+    /// partially written bundle folder.
+    pub(crate) fn settle_download(
+        &self,
+        request: &DownloadRequest,
+        record: &BundleInfo,
+        result: CoreResult<BundleInfo>,
+    ) -> CoreResult<BundleInfo> {
         match result {
             Ok(installed) => Ok(installed),
             Err(error) => {
-                self.fail_download(&record, &error, request.emit_events);
+                if request.manifest.is_some() {
+                    if let Ok(dir) = self.bundle_directory(record.id()) {
+                        let _ = remove_path(&dir);
+                    }
+                }
+                self.fail_download(record, &error, request.emit_events);
                 Err(error)
             }
         }
@@ -259,6 +359,7 @@ impl Engine {
         request: &DownloadRequest,
         record: &BundleInfo,
         cancel: &Cancel,
+        resumable: bool,
     ) -> CoreResult<BundleInfo> {
         let id = record.id().to_string();
         self.check_disk_space(MIN_FREE_BYTES, &request.version)?;
@@ -291,12 +392,34 @@ impl Engine {
         } else {
             fsutil::StreamSink::Hash
         };
-        let transfer = self.transfer_zip(&request.url, &request.version, &id, &temp, &info, cancel, sink);
-        cleanup(&[&info]);
+        let attempts = if resumable { 1 } else { MAX_ZIP_ATTEMPTS };
+        let transfer = self.transfer_zip(
+            &request.url,
+            &request.version,
+            &id,
+            &temp,
+            &info,
+            cancel,
+            sink,
+            attempts,
+            resumable,
+        );
         let streamed_hash = match transfer {
-            Ok(hash) => hash,
+            Ok(hash) => {
+                cleanup(&[&info]);
+                hash
+            }
             Err(error) => {
-                cleanup(&[&temp, &plain]);
+                // A scheduled job keeps a consistent partial file: its next attempt resumes it.
+                let inconsistent = error.code == "incomplete_download" || error.message == "invalid_content_range";
+                if resumable
+                    && !inconsistent
+                    && (is_retryable_download_error(&error) || error.code == "download_stopped")
+                {
+                    cleanup(&[&plain]);
+                } else {
+                    cleanup(&[&info, &temp, &plain]);
+                }
                 return Err(error);
             }
         };
@@ -455,8 +578,9 @@ impl Engine {
         Ok(actual)
     }
 
-    /// GET with resume and bounded retries into `temp`. With `hash`, returns the
-    /// SHA-256 of the body when it arrived in one response.
+    /// GET with resume and up to `attempts` tries into `temp`. With `hash`, returns the
+    /// SHA-256 of the body when it arrived in one response. With `resume`, a partial
+    /// `temp` left by an earlier attempt for the same version (`info`) is continued.
     #[allow(clippy::too_many_arguments)]
     fn transfer_zip(
         &self,
@@ -467,16 +591,29 @@ impl Engine {
         info: &Path,
         cancel: &Cancel,
         sink: fsutil::StreamSink,
+        attempts: u32,
+        resume: bool,
     ) -> CoreResult<Option<String>> {
-        let _ = fs::write(info, version);
-        let _ = fs::remove_file(temp);
+        let resumable = resume && temp.exists() && fs::read_to_string(info).is_ok_and(|saved| saved == version);
+        if !resumable {
+            let _ = fs::write(info, version);
+            let _ = fs::remove_file(temp);
+        }
         let mut attempt = 0;
+        let mut restarted = false;
         loop {
             attempt += 1;
             match self.transfer_zip_once(url, version, id, temp, cancel, &sink) {
                 Ok(hash) => return Ok(hash),
+                // The resumed partial already holds the whole body (the previous attempt
+                // ended before it was verified): start over once.
+                Err((error, _)) if resumable && !restarted && error.message == "HTTP error: 416" => {
+                    restarted = true;
+                    attempt -= 1;
+                    let _ = fs::remove_file(temp);
+                }
                 Err((error, retryable)) => {
-                    if !retryable || attempt >= MAX_ZIP_ATTEMPTS || cancel.is_cancelled() {
+                    if !retryable || attempt >= attempts || cancel.is_cancelled() {
                         return Err(error);
                     }
                     self.host.warn(format!(
@@ -620,10 +757,8 @@ impl Engine {
                 };
                 let code = if error.message.starts_with("HTTP error") {
                     "http_error"
-                } else if error.is_timeout() {
-                    "timeout"
                 } else {
-                    "network_error"
+                    net_error_code(&error)
                 };
                 return Err((CoreError::new(code, error.message), retryable));
             }
@@ -694,12 +829,18 @@ impl Engine {
         let age = Duration::from_secs(3600);
         let storage = self.config().storage_root.clone();
         let cache = self.config().cache_dir.clone();
+        // Partial files of scheduled downloads wait for their next attempt.
+        let jobs = self.pending_job_ids();
+        let pending = |name: &str| jobs.iter().any(|id| name.contains(id.as_str()));
         for dir in [storage, cache] {
             let Ok(entries) = fs::read_dir(&dir) else {
                 continue;
             };
             for entry in entries.filter_map(Result::ok) {
                 let name = entry.file_name().to_string_lossy().into_owned();
+                if pending(&name) {
+                    continue;
+                }
                 let stale = (name.starts_with("temp_") && name.ends_with(".tmp"))
                     || (name.starts_with("update_") && name.ends_with(".dat"))
                     || (name.starts_with("partial_") && name.ends_with(".tmp"))

@@ -65,6 +65,11 @@ pub mod hooks {
     pub const EXCLUDE_FROM_BACKUP: &str = "excludeFromBackup";
     /// `{ host }` -> `{ permitted }`: plain HTTP allowed by the app's policy. No answer = refused.
     pub const CLEARTEXT_PERMITTED: &str = "cleartextPermitted";
+    /// `{ id, version }` -> `{ scheduled }`: run the transfer of download `id` as a job of the
+    /// platform scheduler (Android WorkManager: waits for the network, retries with backoff,
+    /// survives the process). The job calls the `runScheduledDownload {id}` operation and
+    /// `stopScheduledDownload {id}` when the scheduler stops it. No answer = in-process download.
+    pub const SCHEDULE_DOWNLOAD: &str = "scheduleDownload";
 }
 
 /// Persisted keys owned by the plugin layer (names kept from every previous version).
@@ -328,6 +333,21 @@ pub struct PluginState {
     pub ready_guard_armed: bool,
     /// Between `appBackground` and `appForeground`: rollback checks wait for the next foreground.
     pub in_background: bool,
+    /// The bundle the running update cycle downloads.
+    pub cycle_download: Option<CycleDownload>,
+}
+
+/// Download of the running update cycle.
+#[derive(Debug, Default, Clone)]
+pub struct CycleDownload {
+    pub version: String,
+    /// The cycle planned a direct update.
+    pub planned: bool,
+    /// Waiting for a scheduled (WorkManager) job: not stuck however long it takes.
+    pub waiting_scheduled: bool,
+    /// The job is retrying (no network): the launch went on with the current bundle, so
+    /// the bundle installs at the next background instead of right away.
+    pub launch_released: bool,
 }
 
 /// `notifyAppReady` signal: waiters record the count they saw and wake when it grows.

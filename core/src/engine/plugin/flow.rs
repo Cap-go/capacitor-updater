@@ -406,7 +406,13 @@ impl Engine {
     }
 
     fn direct_update_allowed_now(&self, planned: bool) -> bool {
-        planned && !self.plugin_state().auto_splashscreen_timed_out
+        let state = self.plugin_state();
+        planned
+            && !state.auto_splashscreen_timed_out
+            && !state
+                .cycle_download
+                .as_ref()
+                .is_some_and(|download| download.launch_released)
     }
 
     pub(crate) fn consume_on_launch_direct_update(&self, planned: bool) {
@@ -421,8 +427,14 @@ impl Engine {
     /// A cycle is running and younger than the stuck timeout.
     pub(crate) fn is_update_cycle_running(&self) -> bool {
         let mut state = self.plugin_state();
+        let waiting_scheduled = state
+            .cycle_download
+            .as_ref()
+            .is_some_and(|download| download.waiting_scheduled);
         match state.download_started_at {
             None => false,
+            // A scheduled download waits for the network as long as it needs: not stuck.
+            Some(_) if waiting_scheduled => true,
             Some(started) if started.elapsed() > DOWNLOAD_STUCK_TIMEOUT => {
                 self.host.warn(format!(
                     "Download has been in progress for {} ms, exceeding timeout of {} ms. Clearing stuck state.",
@@ -437,7 +449,11 @@ impl Engine {
     }
 
     fn clear_update_cycle(&self) {
-        self.plugin_state().download_started_at = None;
+        {
+            let mut state = self.plugin_state();
+            state.download_started_at = None;
+            state.cycle_download = None;
+        }
         self.hook(
             hooks::BACKGROUND_TASK,
             json!({ "action": "end", "name": "Finish Download Tasks" }),
@@ -501,7 +517,15 @@ impl Engine {
         if end.notify_no_need_update {
             self.emit_bundle_event("noNeedUpdate", end.current);
         }
-        self.send_ready_to_js(end.current, end.message);
+        let launch_released = self
+            .plugin_state()
+            .cycle_download
+            .as_ref()
+            .is_some_and(|download| download.launch_released);
+        // Already sent when a retrying scheduled download released the launch.
+        if !launch_released {
+            self.send_ready_to_js(end.current, end.message);
+        }
         self.clear_update_cycle();
         self.host.info(format!("endBackGroundTaskWithNotif {}", end.message));
     }
@@ -636,6 +660,11 @@ impl Engine {
                     self.delete_bundle(bundle.id(), true, true);
                 }
                 self.consume_on_launch_direct_update(planned);
+                self.plugin_state().cycle_download = Some(super::CycleDownload {
+                    version: latest_version.clone(),
+                    planned,
+                    ..Default::default()
+                });
                 let request = DownloadRequest {
                     url: url.clone(),
                     version: latest_version.clone(),
@@ -654,6 +683,13 @@ impl Engine {
                 };
                 match result {
                     Ok(bundle) => bundle,
+                    Err(error) if error.code == "download_detached" => {
+                        // Plugin released: the scheduled job records the bundle; the next
+                        // update check installs it.
+                        self.host.info(error.message);
+                        self.clear_update_cycle();
+                        return;
+                    }
                     Err(error) => {
                         self.host.error(format!("Error downloading file {}", error.message));
                         let message = match error.code {
@@ -689,6 +725,44 @@ impl Engine {
             return;
         }
         self.install_downloaded(&next, &current, &latest_version, planned);
+    }
+
+    /// A caller starts / stops waiting for the scheduled download of `version`.
+    pub(crate) fn scheduled_download_waiting(&self, version: &str, waiting: bool) {
+        let mut state = self.plugin_state();
+        if let Some(download) = state
+            .cycle_download
+            .as_mut()
+            .filter(|download| download.version == version)
+        {
+            download.waiting_scheduled = waiting;
+        }
+    }
+
+    /// The scheduled download of `version` failed an attempt and waits for its retry (no
+    /// network, server error). An update cycle that planned a direct update stops holding
+    /// the launch: the app goes on with the current bundle, and the bundle installs at the
+    /// next background once downloaded (previous Android plugins did the same).
+    pub(crate) fn scheduled_download_retrying(&self, version: &str) {
+        let release = {
+            let mut state = self.plugin_state();
+            let timed_out = state.auto_splashscreen_timed_out;
+            match state.cycle_download.as_mut() {
+                Some(download)
+                    if download.version == version && download.planned && !download.launch_released && !timed_out =>
+                {
+                    download.launch_released = true;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if release {
+            let message = "Direct update download is retrying, continuing launch on the current bundle";
+            self.host.warn(message);
+            let current = self.current_bundle();
+            self.send_ready_to_js(&current, message);
+        }
     }
 
     /// Valid session key (or no public key): encrypted bundles cannot be reused otherwise.

@@ -394,7 +394,7 @@ impl Engine {
                 .error("Failed to persist DELETING marker, aborting disk delete");
             return false;
         }
-        if cancel_active_download && !self.host.cancel_version_download(deleted.version_name()) {
+        if cancel_active_download && !self.cancel_version_download(deleted.version_name()) {
             self.host.error("Failed to cancel active download before delete");
             return false;
         }
@@ -549,6 +549,7 @@ impl Engine {
 
     pub fn finalize_reset_transition(&self, previous_bundle_name: &str, internal: bool) {
         self.host.cancel_all_downloads();
+        self.cancel_scheduled_downloads(None);
         if !internal {
             let current = self.current_bundle().version_name().to_string();
             self.send_stats("reset", Some(&current), Some(previous_bundle_name), None);
@@ -637,7 +638,7 @@ impl Engine {
         if delete_previous {
             let engine = self.clone();
             std::thread::spawn(move || {
-                if !engine.host.cancel_version_download(&previous_version) {
+                if !engine.cancel_version_download(&previous_version) {
                     engine
                         .host
                         .error("Failed to cancel previous version download before delete");
@@ -733,6 +734,12 @@ impl Engine {
             let name = entry.file_name().to_string_lossy().into_owned();
             if !entry.path().is_dir() || !name.starts_with(TEMP_UNZIP_PREFIX) {
                 continue;
+            }
+            if super::scheduled::running_jobs() > 0 {
+                // A scheduled download of this process may be extracting into it.
+                self.host
+                    .info("Scheduled download running, orphaned temp folders are swept next launch");
+                return;
             }
             match remove_path(&entry.path()) {
                 Ok(()) => self.host.info("Deleted orphaned temp unzip folder"),

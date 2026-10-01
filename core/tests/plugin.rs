@@ -347,6 +347,157 @@ fn only_download_mode_never_schedules() {
     assert!(p.events("noNeedUpdate").is_empty());
 }
 
+// ---- scheduled downloads (Android WorkManager) ---------------------------------------------------
+
+impl Plugin {
+    /// The host runs downloads as scheduled jobs (`scheduleDownload` answered).
+    fn schedule_downloads(&self) {
+        self.t
+            .host
+            .reply_to_hook("scheduleDownload", json!({ "scheduled": true }));
+    }
+
+    fn scheduled_job(&self, count: usize) -> String {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let hooks = self.t.host.hooks_named("scheduleDownload");
+            if hooks.len() >= count {
+                return hooks[count - 1]["id"].as_str().unwrap().to_string();
+            }
+            assert!(Instant::now() < deadline, "no scheduleDownload hook");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn run_job(&self, id: &str) -> Value {
+        self.t.call("runScheduledDownload", json!({ "id": id }))
+    }
+
+    /// Points the stored job of `id` at another bundle URL (the server comes back elsewhere).
+    fn retarget_job(&self, id: &str, url: &str) {
+        let path = self.t.root().join("capgo_download_jobs").join(format!("{id}.json"));
+        let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        job["request"]["url"] = json!(url);
+        std::fs::write(&path, job.to_string()).unwrap();
+    }
+}
+
+#[test]
+fn scheduled_cycle_download_finishes_the_cycle_like_an_in_process_one() {
+    let p = Plugin::load(json!({}));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    let id = p.scheduled_job(1);
+    std::thread::sleep(Duration::from_millis(100));
+    // The cycle waits for the job (offline: as long as it takes).
+    assert!(p.events("appReady").is_empty());
+    assert_eq!(p.resolve("triggerUpdateCheck", json!({}))["status"], "already_running");
+    assert_eq!(p.run_job(&id)["result"], "success");
+    let ready = p.wait_for_event("appReady", 1);
+    assert_eq!(ready[0]["status"], "update downloaded, will install next background");
+    assert_eq!(p.events("updateAvailable")[0]["bundle"]["version"], "2.0.0");
+    assert_eq!(p.resolve("getNextBundle", json!({}))["id"], id.as_str());
+}
+
+#[test]
+fn manual_download_resolves_when_its_job_succeeds() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.schedule_downloads();
+    let bundle = web_bundle("manual");
+    p.backend.offer("2.0.0", bundle.clone());
+    let engine = p.t.engine.clone();
+    let args =
+        json!({ "url": format!("{}/b.zip", p.backend.server.url), "version": "2.0.0", "checksum": sha256(&bundle) });
+    let call = std::thread::spawn(move || {
+        engine
+            .call("pluginMethod", &json!({ "name": "download", "args": args }))
+            .unwrap()
+    });
+    let id = p.scheduled_job(1);
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!call.is_finished(), "download() stays pending until the job ends");
+    assert_eq!(p.run_job(&id)["result"], "success");
+    let result = call.join().unwrap();
+    assert_eq!(result["resolve"]["version"], "2.0.0");
+    assert_eq!(result["resolve"]["status"], "pending");
+    assert_eq!(p.events("updateAvailable").len(), 1);
+}
+
+#[test]
+fn retrying_scheduled_download_releases_a_direct_update_launch() {
+    let p = Plugin::load(json!({ "autoUpdate": "always" }));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    let online = format!("{}/b.zip", p.backend.server.url);
+    // Offline: nothing listens there.
+    p.backend.latest.lock().unwrap()["url"] = json!("http://127.0.0.1:9/b.zip");
+    p.foreground();
+    let id = p.scheduled_job(1);
+    assert_eq!(p.run_job(&id)["result"], "retry");
+    let ready = p.wait_for_event("appReady", 1);
+    assert_eq!(
+        ready[0]["status"],
+        "Direct update download is retrying, continuing launch on the current bundle"
+    );
+    // The network is back: the bundle waits for the next background instead of reloading now.
+    p.retarget_job(&id, &online);
+    assert_eq!(p.run_job(&id)["result"], "success");
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while p.resolve("getNextBundle", json!({})).is_null() {
+        assert!(Instant::now() < deadline, "bundle not queued");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(p.resolve("getNextBundle", json!({}))["id"], id.as_str());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(p.events("set").is_empty());
+    assert_eq!(p.events("appReady").len(), 1);
+    assert_eq!(p.current()["id"], "builtin");
+}
+
+/// Plugin released while its download waits (process killed, activity destroyed): the job
+/// still records the bundle, and the next update check installs it without downloading.
+#[test]
+fn a_job_finished_without_its_cycle_is_installed_by_the_next_check() {
+    let p = Plugin::load(json!({}));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    let id = p.scheduled_job(1);
+    p.t.call("detachScheduledDownloads", json!({}));
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while p
+        .t
+        .engine
+        .call("pluginMethod", &json!({ "name": "triggerUpdateCheck", "args": {} }))
+        .unwrap()["resolve"]["status"]
+        == "already_running"
+    {
+        assert!(Instant::now() < deadline, "cycle still waiting");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(p.events("downloadFailed").is_empty());
+    assert_eq!(p.run_job(&id)["result"], "success");
+    assert_eq!(p.t.call("bundleGet", json!({ "id": id }))["status"], "pending");
+    let zip_requests = || {
+        p.backend
+            .server
+            .requests()
+            .iter()
+            .filter(|request| request.url.starts_with("/b.zip"))
+            .count()
+    };
+    let downloads = zip_requests();
+    p.foreground();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while p.resolve("getNextBundle", json!({})).is_null() {
+        assert!(Instant::now() < deadline, "bundle not queued");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(p.resolve("getNextBundle", json!({}))["id"], id.as_str());
+    assert_eq!(zip_requests(), downloads, "no second download");
+}
+
 #[test]
 fn up_to_date_and_failed_checks_report_results() {
     let p = Plugin::load(json!({}));
