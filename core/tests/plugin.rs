@@ -111,6 +111,8 @@ impl Plugin {
             "versionName": "1.0.0",
             "versionCode": "10",
             "noBackupDir": t.root().join("nobackup").to_string_lossy(),
+            // Tests use short readiness windows; the 30 s pending-bundle minimum has its own test.
+            "pendingBundleMinAppReadyTimeoutMs": 0,
         });
         for (key, value) in native.as_object().unwrap() {
             native_info[key] = value.clone();
@@ -763,6 +765,25 @@ fn missing_notify_app_ready_rolls_back() {
     assert_eq!(failed_update["bundle"]["id"], id);
     assert_eq!(p.resolve("getFailedUpdate", json!({})), Value::Null, "one-shot");
     assert!(p.stats_actions().contains(&"update_fail".to_string()));
+}
+
+/// An unconfirmed bundle gets at least 30 s on both platforms (no host override), even with a
+/// short appReadyTimeout: a slow first load is not rolled back.
+#[test]
+fn pending_bundle_gets_the_shared_minimum_before_rollback() {
+    let p = Plugin::load_with(
+        json!({ "autoUpdate": false, "appReadyTimeout": 1000 }),
+        json!({ "pendingBundleMinAppReadyTimeoutMs": null }),
+    );
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("set", json!({ "id": id }));
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(p.events("updateFailed").is_empty(), "still inside the 30 s window");
+    assert_eq!(p.current()["id"], id);
+    let generation = p.t.host.hooks_named("applyBundle").last().unwrap()["readyGeneration"].clone();
+    p.resolve("notifyAppReady", json!({ "loadGeneration": generation }));
+    assert_eq!(p.current()["status"], "success");
 }
 
 #[test]

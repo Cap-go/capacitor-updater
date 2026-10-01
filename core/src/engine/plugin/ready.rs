@@ -100,8 +100,8 @@ impl Engine {
 
     // ---- rollback timer ----------------------------------------------------------------------
 
-    /// Rollback delay: `appReadyTimeout`, longer while the current bundle is unconfirmed on hosts
-    /// that ask for it.
+    /// Rollback delay: `appReadyTimeout`, and at least the pending-bundle minimum while the current
+    /// bundle is unconfirmed.
     pub(crate) fn app_ready_check_timeout(&self) -> Duration {
         let config = self.plugin_config();
         let current = self.current_bundle();

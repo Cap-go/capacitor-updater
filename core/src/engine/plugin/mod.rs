@@ -42,6 +42,10 @@ pub const DOWNLOAD_STUCK_TIMEOUT: Duration = Duration::from_secs(600);
 const OBSOLETE_DELETE_PACING: Duration = Duration::from_millis(75);
 
 /// Hook names the plugin layer calls on the host ([`crate::host::Host::hook`]).
+/// A bundle that has not confirmed itself yet (`notifyAppReady`) gets at least this long before
+/// it is rolled back, on both platforms: its first load can be slow on a busy or old device.
+pub const PENDING_BUNDLE_MIN_APP_READY_TIMEOUT_MS: u64 = 30_000;
+
 pub mod hooks {
     /// `{ path, isBuiltin, readyGeneration, readyScript }` -> `{ ok, guard? }`: inject `readyScript`
     /// at document start, point the WebView at the bundle and reload it. `guard: false` means
@@ -282,7 +286,7 @@ impl PluginConfig {
             pending_bundle_min_timeout_ms: native
                 .get("pendingBundleMinAppReadyTimeoutMs")
                 .and_then(Value::as_u64)
-                .unwrap_or(0),
+                .unwrap_or(PENDING_BUNDLE_MIN_APP_READY_TIMEOUT_MS),
             track_unclean_exits: native
                 .get("trackUncleanExits")
                 .and_then(Value::as_bool)

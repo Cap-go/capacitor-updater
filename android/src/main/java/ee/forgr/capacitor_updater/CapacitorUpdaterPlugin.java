@@ -74,7 +74,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
-    private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
     private static final long PREVIEW_TRANSITION_LOADER_TIMEOUT_MS = 60000L;
     private static final long MAIN_THREAD_TIMEOUT_SECONDS = 10;
 
@@ -264,8 +263,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             .put("versionCode", versionCode)
             .put("serverUrlConfigured", serverUrl != null && !serverUrl.isEmpty())
             .put("noBackupDir", this.getContext().getNoBackupFilesDir().getAbsolutePath())
-            .put("reloadWaitsForAppReady", true)
-            .put("pendingBundleMinAppReadyTimeoutMs", PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS);
+            .put("reloadWaitsForAppReady", true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             info.put("previousExits", AndroidAppExitReporter.previousExits(this.getContext(), logger));
         }
