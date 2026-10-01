@@ -86,8 +86,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let pluginVersion: String = "8.52.1"
     static let shakeMenuGestureShake = "shake"
     static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
-    /// Events kept for listeners registered after they fired.
-    private static let retainedEvents: Set<String> = ["set", "appReady", "updateAvailable"]
     static let previewLoaderTimeoutMs = 60000
     let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     var keepUrlPathAfterReload = false
@@ -143,8 +141,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.pluginVersion = pluginVersion
         implementation.versionBuild = versionName
         implementation.setLogger(logger)
-        implementation.onEvent = { [weak self] event, payload in
-            self?.notifyListenersOnMain(event, data: payload, retainUntilConsumed: Self.retainedEvents.contains(event))
+        implementation.onEvent = { [weak self] event, payload, retain in
+            self?.notifyListenersOnMain(event, data: payload, retainUntilConsumed: retain)
         }
         implementation.onHook = { [weak self] name, payload in
             self?.handleEngineHook(name, payload)

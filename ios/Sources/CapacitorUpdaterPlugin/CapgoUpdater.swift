@@ -34,8 +34,10 @@ import UIKit
     /// Tests point the builtin web assets somewhere else.
     var builtinFolderOverride: URL?
 
-    /// JavaScript events emitted by the engine.
-    var onEvent: ((String, [String: Any]) -> Void)?
+    /// JavaScript events emitted by the engine: name, payload, keep for late listeners.
+    var onEvent: ((String, [String: Any], Bool) -> Void)?
+    /// Engine payload flag (`host::RETAIN_EVENT_KEY`): deliver with `retainUntilConsumed`.
+    static let retainEventKey = "__retainUntilConsumed"
     /// Engine hooks that need the Capacitor bridge or UI.
     var onHook: ((String, [String: Any]) -> [String: Any]?)?
 
@@ -283,7 +285,9 @@ import UIKit
         guard event != "statsSent" else {
             return
         }
-        onEvent?(event, payload)
+        var payload = payload
+        let retain = payload.removeValue(forKey: Self.retainEventKey) as? Bool ?? false
+        onEvent?(event, payload, retain)
     }
 
     func engineHook(_ name: String, _ payload: [String: Any]) -> [String: Any]? {

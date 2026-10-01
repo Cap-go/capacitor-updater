@@ -76,7 +76,7 @@ impl Engine {
             move |engine: &Engine| {
                 engine
                     .host
-                    .emit("appReady", &json!({ "bundle": current.to_js(), "status": message }));
+                    .emit_retained("appReady", &json!({ "bundle": current.to_js(), "status": message }));
                 if engine.plugin_config().auto_splashscreen {
                     engine.hide_splashscreen();
                 }
@@ -355,7 +355,7 @@ impl Engine {
         } else if !self.reload_app() {
             return Err(format!("Reload failed after setting bundle {id}"));
         }
-        self.emit_bundle_event("set", &bundle);
+        self.emit_set_event(&bundle);
         self.show_preview_notice_if_needed();
         Ok(bundle)
     }
@@ -385,7 +385,7 @@ impl Engine {
                 } else {
                     self.finalize_pending_reload(&next, &previous_name);
                 }
-                self.emit_bundle_event("set", &next);
+                self.emit_set_event(&next);
                 self.set_next_bundle(None);
                 self.show_preview_notice_if_needed();
                 return Ok(());
@@ -427,7 +427,7 @@ impl Engine {
             let applied = pending.is_builtin() || self.set_bundle(pending.id());
             if applied && self.reload_app() {
                 self.finalize_reset_transition(&previous_name, internal);
-                self.emit_bundle_event("set", &pending);
+                self.emit_set_event(&pending);
                 self.set_next_bundle(None);
                 return true;
             }
@@ -442,7 +442,7 @@ impl Engine {
                 self.host.info(format!("Resetting to: {}", fallback.version_name()));
                 if self.set_bundle(fallback.id()) && self.reload_app() {
                     self.finalize_reset_transition(&previous_name, internal);
-                    self.emit_bundle_event("set", &fallback);
+                    self.emit_set_event(&fallback);
                     return true;
                 }
                 if !internal {

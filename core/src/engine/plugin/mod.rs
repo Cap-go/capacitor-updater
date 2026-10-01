@@ -401,6 +401,18 @@ impl Engine {
         self.host.emit(event, &json!({ "bundle": bundle.to_js() }));
     }
 
+    /// `set`: kept for listeners registered after the reload.
+    pub(crate) fn emit_set_event(&self, bundle: &BundleInfo) {
+        self.host.emit_retained("set", &json!({ "bundle": bundle.to_js() }));
+    }
+
+    /// `updateAvailable` of an `onlyDownload` (or auto update off) check: nothing installs
+    /// the bundle, so the event is kept for listeners registered later.
+    pub(crate) fn emit_only_download_update_available(&self, bundle: &BundleInfo) {
+        self.host
+            .emit_retained("updateAvailable", &json!({ "bundle": bundle.to_js() }));
+    }
+
     pub(crate) fn kv_flag(&self, key: &str) -> Option<bool> {
         self.host.kv_get(key, None).map(|value| value == "true" || value == "1")
     }

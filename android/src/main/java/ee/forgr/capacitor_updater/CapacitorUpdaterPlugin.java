@@ -72,6 +72,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final String SHAKE_MENU_GESTURE_THREE_FINGER_PINCH = "threeFingerPinch";
 
     private static final String KEEP_URL_FLAG_KEY = "__capgo_keep_url_path_after_reload";
+    /** Engine payload flag ({@code host::RETAIN_EVENT_KEY}): deliver with {@code retainUntilConsumed}. */
+    static final String RETAIN_EVENT_KEY = "__retainUntilConsumed";
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
@@ -616,8 +618,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("Invalid payload for event " + event + ": " + e.getMessage());
             return;
         }
-        // Kept for listeners registered after they fired.
-        final boolean retain = "set".equals(event) || "appReady".equals(event) || "updateAvailable".equals(event);
+        // The engine flags the events kept for listeners registered after they fired.
+        final boolean retain = payload.optBoolean(RETAIN_EVENT_KEY, false);
+        payload.remove(RETAIN_EVENT_KEY);
         this.runOnMain(() -> this.notifyListeners(event, payload, retain));
     }
 

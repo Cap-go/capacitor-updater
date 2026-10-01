@@ -237,10 +237,14 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testEngineEventsAreForwarded() throws {
         var events: [String] = []
+        var retained: [String: Bool] = [:]
+        var payloads: [String: [String: Any]] = [:]
         let lock = NSLock()
-        implementation.onEvent = { name, _ in
+        implementation.onEvent = { name, payload, retain in
             lock.lock()
             events.append(name)
+            retained[name] = retain
+            payloads[name] = payload
             lock.unlock()
         }
         try loadEngine()
@@ -261,6 +265,10 @@ class CapacitorUpdaterTests: XCTestCase {
         lock.lock()
         defer { lock.unlock() }
         XCTAssertTrue(events.contains("appReady"), "\(events)")
+        // The engine flags appReady as retained; the flag never reaches JavaScript.
+        XCTAssertEqual(retained["appReady"], true)
+        XCTAssertNil(payloads["appReady"]?[CapgoUpdater.retainEventKey])
+        XCTAssertNotNil(payloads["appReady"]?["bundle"])
     }
 
     // MARK: - WebView scripts

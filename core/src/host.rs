@@ -10,6 +10,10 @@ use serde_json::Value;
 
 use crate::engine::plugin::hooks::CLEARTEXT_PERMITTED;
 
+/// Payload flag of [`Host::emit_retained`] events: keep the event for listeners
+/// registered after it fired. Hosts strip it from the payload.
+pub const RETAIN_EVENT_KEY: &str = "__retainUntilConsumed";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
     Debug = 0,
@@ -40,6 +44,19 @@ pub trait Host: Send + Sync + 'static {
 
     /// Delivers an event (`download`, `updateAvailable`, ...) to the app.
     fn emit(&self, event: &str, payload: &Value);
+
+    /// Delivers an event the app must still receive when its listener is registered
+    /// later (Capacitor `retainUntilConsumed`). Bridged hosts get it through [`emit`]
+    /// with [`RETAIN_EVENT_KEY`] set in the payload and remove that key before delivery.
+    ///
+    /// [`emit`]: Host::emit
+    fn emit_retained(&self, event: &str, payload: &Value) {
+        let mut payload = payload.clone();
+        if let Value::Object(object) = &mut payload {
+            object.insert(RETAIN_EVENT_KEY.into(), Value::Bool(true));
+        }
+        self.emit(event, &payload);
+    }
 
     /// Platform hook by name (see [`crate::engine::plugin::hooks`]): WebView,
     /// splash screen, loaders, alerts. `None` means "not handled".
@@ -117,6 +134,8 @@ impl<T: Host + ?Sized> HostLog for T {
 pub struct MemoryHost {
     pub store: std::sync::Mutex<std::collections::BTreeMap<String, String>>,
     pub events: std::sync::Mutex<Vec<(String, Value)>>,
+    /// Names of the events emitted with [`Host::emit_retained`], in order.
+    pub retained_events: std::sync::Mutex<Vec<String>>,
     pub logs: std::sync::Mutex<Vec<(LogLevel, String)>>,
     /// Hooks the engine called, in order.
     pub hooks: std::sync::Mutex<Vec<(String, Value)>>,
@@ -134,6 +153,16 @@ impl MemoryHost {
             .filter(|(event, _)| event == name)
             .map(|(_, payload)| payload.clone())
             .collect()
+    }
+
+    /// How many `name` events were emitted with [`Host::emit_retained`].
+    pub fn retained_count(&self, name: &str) -> usize {
+        self.retained_events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| *event == name)
+            .count()
     }
 
     pub fn hooks_named(&self, name: &str) -> Vec<Value> {
@@ -186,6 +215,11 @@ impl Host for MemoryHost {
         self.events.lock().unwrap().push((event.to_string(), payload.clone()));
     }
 
+    fn emit_retained(&self, event: &str, payload: &Value) {
+        self.retained_events.lock().unwrap().push(event.to_string());
+        self.emit(event, payload);
+    }
+
     fn hook(&self, name: &str, payload: &Value) -> Option<Value> {
         self.hooks.lock().unwrap().push((name.to_string(), payload.clone()));
         self.hook_replies.lock().unwrap().get(name).cloned()
@@ -199,5 +233,40 @@ impl Host for MemoryHost {
                 .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
                 .unwrap_or(true),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Bridged {
+        events: std::sync::Mutex<Vec<(String, Value)>>,
+    }
+
+    impl Host for Bridged {
+        fn log(&self, _level: LogLevel, _message: &str) {}
+        fn kv_get(&self, _key: &str, default: Option<&str>) -> Option<String> {
+            default.map(str::to_string)
+        }
+        fn kv_set(&self, _key: &str, _value: Option<&str>) {}
+        fn kv_keys(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn emit(&self, event: &str, payload: &Value) {
+            self.events.lock().unwrap().push((event.to_string(), payload.clone()));
+        }
+    }
+
+    #[test]
+    fn retained_events_reach_bridged_hosts_with_the_retain_flag() {
+        let host = Bridged::default();
+        host.emit_retained("set", &serde_json::json!({ "bundle": { "id": "abc" } }));
+        host.emit("download", &serde_json::json!({ "percent": 5 }));
+        let events = host.events.lock().unwrap();
+        assert_eq!(events[0].1[RETAIN_EVENT_KEY], true);
+        assert_eq!(events[0].1["bundle"]["id"], "abc");
+        assert!(events[1].1.get(RETAIN_EVENT_KEY).is_none());
     }
 }

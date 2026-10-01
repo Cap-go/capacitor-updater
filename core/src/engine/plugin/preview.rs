@@ -422,7 +422,7 @@ impl Engine {
         ));
         if self.stage_preview_fallback_reload(&fallback) && self.reload_without_waiting() {
             self.finalize_reset_transition(&previous_name, false);
-            self.emit_bundle_event("set", &fallback);
+            self.emit_set_event(&fallback);
             return true;
         }
         self.restore_reset_state(&previous_state);
@@ -580,7 +580,7 @@ impl Engine {
             ));
         }
         self.record_preview_bundle(&next, Some(current.id()));
-        self.emit_bundle_event("set", &next);
+        self.emit_set_event(&next);
         Ok(self.reload_without_waiting())
     }
 
@@ -822,7 +822,7 @@ impl Engine {
             self.preview_loader(false, &format!("{reason}-reload-failed"));
             return Err(Rejection::new(format!("Reload failed after setting preview {id}")));
         }
-        self.emit_bundle_event("set", &bundle);
+        self.emit_set_event(&bundle);
         self.show_preview_notice_if_needed();
         Ok(())
     }
@@ -926,7 +926,7 @@ impl Engine {
             if !self.reload_without_waiting() {
                 return Err(CoreError::new("reload_failed", "Reload failed after updating preview"));
             }
-            self.emit_bundle_event("set", &next);
+            self.emit_set_event(&next);
             self.show_preview_notice_if_needed();
         }
         Ok(json!({

@@ -370,7 +370,7 @@ impl Engine {
         self.host.debug(format!("Next bundle is: {}", next.version_name()));
         if self.set_bundle(next.id()) && self.reload_app() {
             self.host.info(format!("Updated to bundle: {}", next.version_name()));
-            self.emit_bundle_event("set", &next);
+            self.emit_set_event(&next);
             self.set_next_bundle(None);
         } else {
             self.host
@@ -725,7 +725,7 @@ impl Engine {
             let available = !current.is_builtin();
             if available {
                 let builtin = self.get_bundle_info(Some(ID_BUILTIN));
-                self.emit_bundle_event("updateAvailable", &builtin);
+                self.emit_only_download_update_available(&builtin);
             }
             let mut end = CycleEnd::new(
                 "Latest version is builtin, autoUpdate onlyDownload",
@@ -754,7 +754,7 @@ impl Engine {
                 return;
             }
             if self.apply_downloaded_bundle(next) {
-                self.emit_bundle_event("set", next);
+                self.emit_set_event(next);
                 let end = CycleEnd::new("update installed", latest_version, next, false, planned);
                 self.end_update_cycle(end);
             } else if self.queue_next(next) {
@@ -807,7 +807,7 @@ impl Engine {
         } else {
             self.host
                 .info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle");
-            self.emit_bundle_event("updateAvailable", next);
+            self.emit_only_download_update_available(next);
             let mut end = CycleEnd::new(
                 "update downloaded, autoUpdate onlyDownload",
                 latest_version,

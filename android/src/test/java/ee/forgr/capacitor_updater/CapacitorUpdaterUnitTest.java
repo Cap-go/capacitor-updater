@@ -108,12 +108,16 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void eventsAreForwardedAndRetainedForLateListeners() throws Exception {
         onMainThread((plugin, bridge) -> {
-            plugin.forwardEvent("set", "{\"bundle\":{\"id\":\"abc\"}}");
+            plugin.forwardEvent("set", "{\"bundle\":{\"id\":\"abc\"},\"__retainUntilConsumed\":true}");
             plugin.forwardEvent("download", "{\"percent\":50}");
+            plugin.forwardEvent("updateAvailable", "{\"bundle\":{\"id\":\"def\"}}");
             plugin.forwardEvent("statsSent", "{\"callbackId\":\"x\"}");
-            assertEquals(List.of("set", "download"), plugin.events);
+            assertEquals(List.of("set", "download", "updateAvailable"), plugin.events);
             assertTrue(plugin.retained.get("set"));
+            assertFalse(plugin.payloads.get("set").has("__retainUntilConsumed"));
             assertFalse(plugin.retained.get("download"));
+            // Only the engine decides: updateAvailable is retained only when flagged.
+            assertFalse(plugin.retained.get("updateAvailable"));
             assertEquals(50, plugin.payloads.get("download").getInt("percent"));
         });
     }

@@ -300,6 +300,9 @@ fn background_mode_downloads_then_installs_at_background() {
     assert_eq!(ready[0]["status"], "update downloaded, will install next background");
     let available = p.events("updateAvailable");
     assert_eq!(available[0]["bundle"]["version"], "2.0.0");
+    // Only onlyDownload checks keep updateAvailable for late listeners.
+    assert_eq!(p.t.host.retained_count("updateAvailable"), 0);
+    assert_eq!(p.t.host.retained_count("appReady"), p.events("appReady").len());
     let next = p.resolve("getNextBundle", json!({}));
     assert_eq!(next["version"], "2.0.0");
     assert!(p.events("download").iter().any(|event| event["percent"] == 100));
@@ -307,6 +310,7 @@ fn background_mode_downloads_then_installs_at_background() {
     p.background();
     let set = p.wait_for_event("set", 1);
     assert_eq!(set[0]["bundle"]["version"], "2.0.0");
+    assert_eq!(p.t.host.retained_count("set"), 1);
     assert_eq!(p.current()["version"], "2.0.0");
     assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
     let applied = p.t.host.hooks_named("applyBundle");
@@ -338,6 +342,7 @@ fn only_download_mode_never_schedules() {
     let ready = p.wait_for_event("appReady", 1);
     assert_eq!(ready[0]["status"], "update downloaded, autoUpdate onlyDownload");
     assert_eq!(p.events("updateAvailable").len(), 1);
+    assert_eq!(p.t.host.retained_count("updateAvailable"), 1);
     assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
     assert!(p.events("noNeedUpdate").is_empty());
 }
@@ -614,6 +619,7 @@ fn download_method_events_and_errors() {
     );
     assert_eq!(installed["status"], "pending");
     assert_eq!(p.events("updateAvailable").len(), 1);
+    assert_eq!(p.t.host.retained_count("updateAvailable"), 0);
     assert_eq!(p.events("downloadComplete").len(), 1);
 
     let rejection = p.reject("download", json!({ "url": url, "version": "3.0.0" }));
@@ -879,6 +885,7 @@ fn only_download_builtin_latest() {
     p.foreground();
     p.wait_for_event("appReady", 1);
     assert_eq!(p.events("updateAvailable")[0]["bundle"]["id"], "builtin");
+    assert_eq!(p.t.host.retained_count("updateAvailable"), 1);
     assert!(p.events("noNeedUpdate").is_empty());
     assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
 }
