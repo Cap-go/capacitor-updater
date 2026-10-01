@@ -87,6 +87,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let shakeMenuGestureShake = "shake"
     static let shakeMenuGestureThreeFingerPinch = "threeFingerPinch"
     static let previewLoaderTimeoutMs = 60000
+    /// JavaScript engine methods run in call order; network / reload methods are detached from the lane.
+    let methodLanes = EngineMethodLanes()
     let keepUrlPathFlagKey = "__capgo_keep_url_path_after_reload"
     var keepUrlPathAfterReload = false
     var keepUrlPathFlagLastValue: Bool?
@@ -170,6 +172,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             fatalError("Capgo updater failed to load: \(error)")
         }
         logger.info("appId \(loaded["appId"] as? String ?? "")")
+        methodLanes.setDetachedMethods(engineOp("detachedPluginMethods") as? [String] ?? [])
 
         // iOS sets the server base path during plugin init (Android uses the
         // serverBasePath preference) so a bundle is stored only once.

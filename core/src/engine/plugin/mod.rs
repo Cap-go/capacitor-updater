@@ -31,7 +31,7 @@ use crate::host::HostLog;
 use crate::policy;
 
 use delay::DelaySource;
-pub use methods::ENGINE_METHODS;
+pub use methods::{DETACHED_METHODS, ENGINE_METHODS};
 
 pub const DEFAULT_UPDATE_URL: &str = "https://plugin.capgo.app/updates";
 pub const DEFAULT_STATS_URL: &str = "https://plugin.capgo.app/stats";

@@ -7,18 +7,59 @@
 import Foundation
 import Capacitor
 
+/// Runs JavaScript engine methods in call order, like the bridge queue ran every previous version.
+///
+/// Every method runs on one serial lane. Detached methods (`detachedPluginMethods`: network calls and
+/// `set` / `reload` / `reset`, which can wait for `notifyAppReady` from the new page) start in call
+/// order, then run on a global queue so they never block the calls that follow.
+final class EngineMethodLanes {
+    private let lane = DispatchQueue(label: "app.capgo.updater.methods", qos: .userInitiated)
+    private let lock = NSLock()
+    private var detachedMethods: Set<String> = []
+
+    func setDetachedMethods(_ names: [String]) {
+        lock.lock()
+        detachedMethods = Set(names)
+        lock.unlock()
+    }
+
+    func isDetached(_ name: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return detachedMethods.contains(name)
+    }
+
+    func submit(_ name: String, _ task: @escaping () -> Void) {
+        let detached = isDetached(name)
+        lane.async {
+            if detached {
+                DispatchQueue.global(qos: .userInitiated).async(execute: task)
+            } else {
+                task()
+            }
+        }
+    }
+}
+
 /// JavaScript methods implemented by the engine (`pluginMethod`).
 extension CapacitorUpdaterPlugin {
-    /// Forwards a plugin call to the engine off the main thread and settles it.
+    /// Runs an engine method through the method lanes, then reports its outcome.
+    func dispatchEngineMethod(_ name: String, _ args: [String: Any], completion: @escaping (MethodOutcome) -> Void) {
+        methodLanes.submit(name) { [weak self] in
+            guard let self else {
+                completion(.rejected(message: "Plugin unavailable", code: nil, data: nil))
+                return
+            }
+            completion(self.runEngineMethod(name, args))
+        }
+    }
+
+    /// Forwards a plugin call to the engine off the main thread, in call order, and settles it.
     func forward(_ call: CAPPluginCall) {
         let name = call.methodName ?? ""
         let args = (call.options as? [String: Any]) ?? [:]
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else {
-                call.reject("Plugin unavailable")
-                return
-            }
-            switch self.runEngineMethod(name, args) {
+        dispatchEngineMethod(name, args) { outcome in
+            switch outcome {
             case .resolved(let value):
                 if let value = value as? [String: Any] {
                     call.resolve(value)

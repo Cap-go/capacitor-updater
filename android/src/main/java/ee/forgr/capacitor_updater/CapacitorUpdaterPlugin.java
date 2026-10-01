@@ -51,9 +51,6 @@ import java.net.URL;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
@@ -88,8 +85,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile CapgoEngine engine;
     private boolean jsLoggingEnabled = true;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    /** Engine methods can block (set / reload wait for notifyAppReady), so each call gets its own thread. */
-    private final ExecutorService methodExecutor = Executors.newCachedThreadPool();
+    /** JavaScript engine methods run in call order; network / reload methods are detached from the lane. */
+    private final EngineMethodLanes methodLanes = new EngineMethodLanes();
 
     volatile boolean shakeMenuEnabled = false;
     volatile boolean shakeChannelSelectorEnabled = false;
@@ -219,6 +216,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             throw new IllegalStateException("Invalid plugin configuration", e);
         }
         logger.info("appId: " + result.optString("appId", appId));
+        try {
+            this.methodLanes.setDetachedMethods(this.engine.callArray("detachedPluginMethods", null));
+        } catch (final CapgoCore.Failure e) {
+            logger.error("Engine detachedPluginMethods failed: " + e.getMessage());
+        }
 
         this.installWebViewStatsReporter();
 
@@ -338,16 +340,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    /** Every JavaScript method implemented by the engine: runs off the bridge thread, then settles the call. */
+    /** Every JavaScript method implemented by the engine: runs off the bridge thread, in call order, then settles the call. */
     private void engineMethod(final PluginCall call) {
         this.ensureBridgeSet();
         final String name = call.getMethodName();
         final JSObject args = call.getData();
-        try {
-            this.methodExecutor.execute(() -> settle(call, this.runEngineMethod(name, args)));
-        } catch (final RejectedExecutionException e) {
-            call.reject("CapacitorUpdater was destroyed");
-        }
+        this.methodLanes.submit(
+            name,
+            () -> settle(call, this.runEngineMethod(name, args)),
+            () -> call.reject("CapacitorUpdater was destroyed")
+        );
     }
 
     static void settle(final PluginCall call, final JSONObject result) {
@@ -1439,7 +1441,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void releaseEngine() {
         final CapgoEngine engine = this.engine;
         this.engine = null;
-        this.methodExecutor.shutdown();
+        this.methodLanes.shutdown();
         if (engine != null) {
             new Thread(engine::close, "capgo-engine-close").start();
         }

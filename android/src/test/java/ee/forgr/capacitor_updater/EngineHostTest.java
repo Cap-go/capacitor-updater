@@ -15,7 +15,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
@@ -172,6 +174,138 @@ public class EngineHostTest {
             Thread.sleep(20);
         }
         assertTrue(this.events.toString(), this.events.contains("updateCheckResult"));
+    }
+
+    // ---- call order -------------------------------------------------------------------------------
+
+    private EngineMethodLanes lanes() throws Exception {
+        final EngineMethodLanes lanes = new EngineMethodLanes();
+        lanes.setDetachedMethods(this.engine.callArray("detachedPluginMethods", null));
+        return lanes;
+    }
+
+    /** Calls JavaScript does not await run in call order, like Capacitor's plugin thread ran them. */
+    @Test
+    public void quickMethodsRunInCallOrder() throws Exception {
+        this.load(CapgoCore.input("autoUpdate", false, "statsUrl", ""));
+        final EngineMethodLanes lanes = this.lanes();
+        final int rounds = 200;
+        final Boolean[] seen = new Boolean[rounds];
+        final CountDownLatch done = new CountDownLatch(rounds);
+        for (int round = 0; round < rounds; round++) {
+            final int index = round;
+            final boolean enabled = round % 2 == 0;
+            lanes.submit("setShakeMenu", () -> call("setShakeMenu", CapgoCore.input("enabled", enabled)), () -> {});
+            lanes.submit(
+                "isShakeMenuEnabled",
+                () -> {
+                    seen[index] = call("isShakeMenuEnabled", new JSONObject()).optJSONObject("resolve").optBoolean("enabled");
+                    done.countDown();
+                },
+                () -> {}
+            );
+        }
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        for (int round = 0; round < rounds; round++) {
+            assertEquals("round " + round, round % 2 == 0, seen[round]);
+        }
+        lanes.shutdown();
+    }
+
+    /** reset waits for notifyAppReady from the new page: it runs off the lane, so notifyAppReady is not stuck behind it. */
+    @Test
+    public void reloadingMethodsDoNotBlockNotifyAppReady() throws Exception {
+        this.load(CapgoCore.input("autoUpdate", false, "statsUrl", "", "appReadyTimeout", 8000));
+        method("notifyAppReady", new JSONObject());
+        final EngineMethodLanes lanes = this.lanes();
+        assertTrue(lanes.isDetached("reset"));
+        assertTrue(lanes.isDetached("set"));
+        assertTrue(lanes.isDetached("reload"));
+        final long appliedBefore = this.hooks
+            .stream()
+            .filter((hook) -> hook.startsWith("applyBundle "))
+            .count();
+        final List<String> finished = new CopyOnWriteArrayList<>();
+        final AtomicReference<JSONObject> reset = new AtomicReference<>();
+        final CountDownLatch done = new CountDownLatch(3);
+        final long started = System.nanoTime();
+        lanes.submit(
+            "reset",
+            () -> {
+                reset.set(call("reset", new JSONObject()));
+                finished.add("reset");
+                done.countDown();
+            },
+            () -> {}
+        );
+        // The reloaded page confirms itself.
+        lanes.submit(
+            "notifyAppReady",
+            () -> {
+                final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (
+                    this.hooks
+                        .stream()
+                        .filter((hook) -> hook.startsWith("applyBundle "))
+                        .count() == appliedBefore
+                ) {
+                    if (System.nanoTime() > deadline) {
+                        break;
+                    }
+                    sleepQuietly();
+                }
+                final String applied = this.hooks
+                    .stream()
+                    .filter((hook) -> hook.startsWith("applyBundle "))
+                    .reduce((a, b) -> b)
+                    .orElse("");
+                final long generation = parse(applied.substring("applyBundle ".length())).optLong("readyGeneration");
+                call("notifyAppReady", CapgoCore.input("loadGeneration", generation));
+                finished.add("notifyAppReady");
+                done.countDown();
+            },
+            () -> {}
+        );
+        lanes.submit(
+            "current",
+            () -> {
+                call("current", new JSONObject());
+                finished.add("current");
+                done.countDown();
+            },
+            () -> {}
+        );
+        assertTrue(done.await(6, TimeUnit.SECONDS));
+        assertTrue("reset resolved: " + reset.get(), reset.get().has("resolve"));
+        assertTrue("well before the 8 s appReadyTimeout", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(5));
+        // reset was called first but only finishes once the lane delivered notifyAppReady.
+        assertEquals("notifyAppReady", finished.get(0));
+        assertEquals(Set.of("notifyAppReady", "current", "reset"), Set.copyOf(finished));
+        lanes.shutdown();
+    }
+
+    private JSONObject call(final String name, final JSONObject args) {
+        try {
+            return method(name, args);
+        } catch (final Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static JSONObject parse(final String json) {
+        try {
+            return new JSONObject(json);
+        } catch (final org.json.JSONException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void sleepQuietly() {
+        try {
+            Thread.sleep(5);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** The engine holds its host through a JNI global ref: only close() lets the plugin (and Activity) go. */

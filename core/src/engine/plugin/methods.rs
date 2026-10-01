@@ -59,6 +59,33 @@ pub const ENGINE_METHODS: &[&str] = &[
     "reportWebViewError",
 ];
 
+/// Engine methods hosts must not run on their serial method lane.
+///
+/// Hosts run every engine method one at a time, in call order, so calls that
+/// JavaScript does not await (`next()` then `reload()`) behave like every
+/// previous version, where Capacitor ran them in order on one plugin thread
+/// (Android) or the bridge queue (iOS). These methods are network bound or wait
+/// for `notifyAppReady` from the new page (`set`, `reload`, `reset`): hosts start
+/// them in call order, then run them off the lane, like both previous plugins ran
+/// them on their own threads, so they never block the calls that come after.
+pub const DETACHED_METHODS: &[&str] = &[
+    "download",
+    "set",
+    "reload",
+    "reset",
+    "setPreview",
+    "resetPreview",
+    "checkPreviewUpdate",
+    "updatePreview",
+    "getLatest",
+    "getMissingBundleFiles",
+    "getBundleDownloadSize",
+    "setChannel",
+    "unsetChannel",
+    "getChannel",
+    "listChannels",
+];
+
 fn string_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
     args.get(key).and_then(Value::as_str)
 }
@@ -350,6 +377,29 @@ impl Engine {
                 Ok(Value::Null)
             }
             _ => Err(Rejection::new(format!("Unknown plugin method: {name}"))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detached_methods_are_engine_methods() {
+        for method in DETACHED_METHODS {
+            assert!(ENGINE_METHODS.contains(method), "{method}");
+        }
+        // Quick state methods stay ordered on the lane.
+        for method in [
+            "notifyAppReady",
+            "next",
+            "getNextBundle",
+            "current",
+            "delete",
+            "triggerUpdateCheck",
+        ] {
+            assert!(!DETACHED_METHODS.contains(&method), "{method}");
         }
     }
 }
