@@ -22,7 +22,6 @@ import com.getcapacitor.JSObject;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetector.Listener {
@@ -573,136 +572,34 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 progressDialog.show();
 
                 new Thread(() -> {
-                    final String setError = rejection(
-                        plugin.runEngineMethod("setChannel", jsonOf("channel", channelName, "triggerAutoUpdate", false))
-                    );
-                    if (setError != null) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Failed to set channel: " + setError);
-                        });
-                        return;
+                    // The engine runs setChannel, getLatest, download and next; progress arrives
+                    // through the shakeMenuProgress hook.
+                    plugin.shakeMenuProgressListener = (message) -> activity.runOnUiThread(() -> progressDialog.setMessage(message));
+                    final JSONObject result;
+                    try {
+                        result = plugin.switchChannelFromShakeMenu(channelName);
+                    } finally {
+                        plugin.shakeMenuProgressListener = null;
                     }
-
-                    activity.runOnUiThread(() -> progressDialog.setMessage("Checking for updates..."));
-
-                    final JSONObject latestResult = plugin.runEngineMethod("getLatest", jsonOf("channel", channelName));
-                    final String latestFailure = rejection(latestResult);
-                    if (latestFailure != null) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check failed: " + latestFailure);
-                        });
-                        return;
-                    }
-                    final JSONObject latest = latestResult.optJSONObject("resolve");
-                    if (latest == null) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showSuccess("Channel set to " + channelName + ". Could not check for updates.");
-                        });
-                        return;
-                    }
-
-                    final String latestError = latest.optString("error", "");
-                    final String latestKind = latest.optString("kind", "");
-                    final String latestMessage = latest.optString("message", "");
-                    final String detail = !latestMessage.isEmpty()
-                        ? latestMessage
-                        : !latestError.isEmpty()
-                            ? latestError
-                            : !latestKind.isEmpty()
-                                ? latestKind
-                                : "server did not provide a message";
-
-                    if (!latestError.isEmpty() && !"up_to_date".equals(latestKind) && !"blocked".equals(latestKind)) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check failed: " + detail);
-                        });
-                        return;
-                    }
-
-                    if ("blocked".equals(latestKind)) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check blocked: " + detail);
-                        });
-                        return;
-                    }
-
-                    final String latestUrl = latest.optString("url", "");
-                    final JSONArray manifest = latest.optJSONArray("manifest");
-                    final boolean hasManifest = manifest != null && manifest.length() > 0;
-
-                    // A manifest-only response legitimately has no URL (the files come from the
-                    // manifest, not a zip), so only report "already on latest" when the URL is
-                    // empty AND there is no manifest to download from.
-                    if ("up_to_date".equals(latestKind) || (latestUrl.isEmpty() && !hasManifest)) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showSuccess("Channel set to " + channelName + ". Already on latest version.");
-                        });
-                        return;
-                    }
-
-                    final String version = latest.optString("version", "");
-                    if (version.isEmpty()) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Channel set to " + channelName + ". Update check failed: missing version.");
-                        });
-                        return;
-                    }
-
-                    activity.runOnUiThread(() -> progressDialog.setMessage("Downloading update " + version + "..."));
-
-                    // A manifest-only response has no zip URL; the engine tolerates this placeholder.
-                    final JSONObject downloadArgs = jsonOf(
-                        "url",
-                        latestUrl.isEmpty() ? "https://404.capgo.app/no.zip" : latestUrl,
-                        "version",
-                        version,
-                        "sessionKey",
-                        latest.optString("sessionKey", ""),
-                        "checksum",
-                        latest.optString("checksum", "")
-                    );
-                    if (hasManifest) {
-                        try {
-                            downloadArgs.put("manifest", manifest);
-                        } catch (JSONException ignored) {
-                            // Constant key.
-                        }
-                    }
-                    final JSONObject downloaded = plugin.runEngineMethod("download", downloadArgs);
-                    final String downloadError = rejection(downloaded);
-                    final JSONObject bundle = downloaded.optJSONObject("resolve");
-                    final String bundleId = bundle == null ? "" : bundle.optString("id", "");
-                    if (downloadError != null || bundleId.isEmpty()) {
-                        activity.runOnUiThread(() -> {
-                            progressDialog.dismiss();
-                            showError("Failed to download update: " + (downloadError != null ? downloadError : "missing bundle"));
-                        });
-                        return;
-                    }
-
-                    // Set as next bundle
-                    final String nextError = rejection(plugin.runEngineMethod("next", jsonOf("id", bundleId)));
-                    if (nextError != null) {
-                        logger.warn("Could not queue downloaded bundle: " + nextError);
-                    }
-
+                    final String status = result.optString("status", "error");
+                    final String message = result.optString("message", "Failed to set channel");
+                    final String bundleId = result.optString("bundleId", "");
                     activity.runOnUiThread(() -> {
                         progressDialog.dismiss();
-                        showSuccessWithReload("Update downloaded! Reload to apply version " + version + "?", () ->
-                            new Thread(() -> {
-                                final String setBundleError = rejection(plugin.runEngineMethod("set", jsonOf("id", bundleId)));
-                                if (setBundleError != null) {
-                                    logger.error("Error applying bundle before reload: " + setBundleError);
-                                }
-                            }).start()
-                        );
+                        if ("updateReady".equals(status)) {
+                            showSuccessWithReload(message, () ->
+                                new Thread(() -> {
+                                    final String setBundleError = rejection(plugin.runEngineMethod("set", jsonOf("id", bundleId)));
+                                    if (setBundleError != null) {
+                                        logger.error("Error applying bundle before reload: " + setBundleError);
+                                    }
+                                }).start()
+                            );
+                        } else if ("success".equals(status)) {
+                            showSuccess(message);
+                        } else {
+                            showError(message);
+                        }
                     });
                 }).start();
             } catch (Exception e) {

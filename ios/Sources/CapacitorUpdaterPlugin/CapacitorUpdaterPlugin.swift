@@ -110,6 +110,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var shakeMenuGesture = CapacitorUpdaterPlugin.shakeMenuGestureShake
     var shakeMenuPinchGestureRecognizer: ThreeFingerPinchGestureRecognizer?
     var shakeMenuPinchGestureTriggered = false
+    /// Progress of the running shake-menu channel switch (`shakeMenuProgress` hook).
+    var shakeMenuProgress: ((String) -> Void)?
 
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
@@ -320,6 +322,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.shakeMenuGesture = payload["gesture"] as? String ?? Self.shakeMenuGestureShake
                 self.syncShakeMenuGestureRecognizer()
             }
+        case "shakeMenuProgress":
+            shakeMenuProgress?(payload["message"] as? String ?? "")
         case "keepUrlPath":
             let enabled = payload["enabled"] as? Bool ?? false
             onMainAsync {

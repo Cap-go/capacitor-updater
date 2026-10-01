@@ -93,6 +93,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     volatile boolean shakeChannelSelectorEnabled = false;
     volatile String shakeMenuGesture = SHAKE_MENU_GESTURE_SHAKE;
     private ShakeMenu shakeMenu;
+    /** Progress of the running shake-menu channel switch ({@code shakeMenuProgress} hook). */
+    volatile java.util.function.Consumer<String> shakeMenuProgressListener;
 
     private volatile boolean keepUrlPathAfterReload = false;
     private boolean autoSplashscreenLoader = false;
@@ -308,6 +310,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private JSONObject engineCall(final String operation) {
         return this.engineCall(operation, new JSONObject());
+    }
+
+    /** Shake-menu channel switch, blocking: {@code {status, message, bundleId?, version?}}. */
+    JSONObject switchChannelFromShakeMenu(final String channel) {
+        return this.engineCall("shakeMenuSwitchChannel", CapgoCore.input("channel", channel));
     }
 
     /** Runs a JavaScript method in the engine, blocking: {@code {resolve: value}} or {@code {reject: {...}}}. */
@@ -651,6 +658,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.shakeMenuGesture = payload.optString("gesture", SHAKE_MENU_GESTURE_SHAKE);
                 this.runOnMain(this::syncShakeMenuLifecycle);
                 return null;
+            case "shakeMenuProgress": {
+                final java.util.function.Consumer<String> listener = this.shakeMenuProgressListener;
+                if (listener != null) {
+                    listener.accept(payload.optString("message", ""));
+                }
+                return null;
+            }
             case "keepUrlPath":
                 this.keepUrlPathAfterReload = payload.optBoolean("enabled", false);
                 this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);

@@ -546,4 +546,93 @@ impl Engine {
         latest.insert("missing".into(), missing);
         latest.insert("downloadSize".into(), Value::Object(size));
     }
+
+    // ---- shake menu ----------------------------------------------------------------------------
+
+    /// Shake-menu channel switch: `setChannel`, `getLatest`, `download`, then `next`.
+    /// Reports progress through the `shakeMenuProgress` hook and answers what the menu
+    /// shows: `{ status: "error" | "success" | "updateReady", message, bundleId?, version? }`.
+    /// The host applies the bundle (`set`) only when the user chooses to reload.
+    pub(crate) fn shake_menu_switch_channel(&self, channel: &str) -> Value {
+        let error = |message: String| json!({ "status": "error", "message": message });
+        let success = |message: String| json!({ "status": "success", "message": message });
+        let progress = |message: String| {
+            self.hook(hooks::SHAKE_MENU_PROGRESS, json!({ "message": message }));
+        };
+
+        if let Err(rejection) =
+            self.run_plugin_method("setChannel", &json!({ "channel": channel, "triggerAutoUpdate": false }))
+        {
+            return error(format!("Failed to set channel: {}", rejection.message));
+        }
+        progress("Checking for updates...".to_string());
+
+        let latest = match self.run_plugin_method("getLatest", &json!({ "channel": channel })) {
+            Err(rejection) => {
+                return error(format!(
+                    "Channel set to {channel}. Update check failed: {}",
+                    rejection.message
+                ))
+            }
+            Ok(Value::Object(latest)) => latest,
+            Ok(_) => return success(format!("Channel set to {channel}. Could not check for updates.")),
+        };
+        let field = |key: &str| latest.get(key).and_then(Value::as_str).unwrap_or_default();
+        let (latest_error, kind) = (field("error"), field("kind"));
+        let detail = [field("message"), latest_error, kind]
+            .into_iter()
+            .find(|value| !value.is_empty())
+            .unwrap_or("server did not provide a message");
+        if !latest_error.is_empty() && kind != "up_to_date" && kind != "blocked" {
+            return error(format!("Channel set to {channel}. Update check failed: {detail}"));
+        }
+        if kind == "blocked" {
+            return error(format!("Channel set to {channel}. Update check blocked: {detail}"));
+        }
+
+        let url = field("url");
+        let manifest = latest
+            .get("manifest")
+            .and_then(Value::as_array)
+            .filter(|manifest| !manifest.is_empty());
+        // A manifest-only response legitimately has no URL (the files come from the manifest).
+        if kind == "up_to_date" || (url.is_empty() && manifest.is_none()) {
+            return success(format!("Channel set to {channel}. Already on latest version."));
+        }
+        let version = field("version");
+        if version.is_empty() {
+            return error(format!(
+                "Channel set to {channel}. Update check failed: missing version."
+            ));
+        }
+        progress(format!("Downloading update {version}..."));
+
+        let mut request = json!({
+            // Manifest-only responses have no zip URL; the download tolerates this placeholder.
+            "url": if url.is_empty() { "https://404.capgo.app/no.zip" } else { url },
+            "version": version,
+            "sessionKey": field("sessionKey"),
+            "checksum": field("checksum"),
+        });
+        if let Some(manifest) = manifest {
+            request["manifest"] = Value::Array(manifest.clone());
+        }
+        let bundle_id = match self.run_plugin_method("download", &request) {
+            Err(rejection) => return error(format!("Failed to download update: {}", rejection.message)),
+            Ok(bundle) => bundle.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+        };
+        if bundle_id.is_empty() {
+            return error("Failed to download update: missing bundle".to_string());
+        }
+        if let Err(rejection) = self.run_plugin_method("next", &json!({ "id": bundle_id })) {
+            self.host
+                .warn(format!("Could not queue downloaded bundle: {}", rejection.message));
+        }
+        json!({
+            "status": "updateReady",
+            "message": format!("Update downloaded! Reload to apply version {version}?"),
+            "bundleId": bundle_id,
+            "version": version,
+        })
+    }
 }

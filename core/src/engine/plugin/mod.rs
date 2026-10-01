@@ -54,6 +54,8 @@ pub mod hooks {
     pub const PREVIEW_NOTICE: &str = "previewNotice";
     /// `{ enabled, channelSelector, gesture }`
     pub const SHAKE_MENU: &str = "shakeMenu";
+    /// `{ message }`: progress text of the shake-menu channel switch (`shakeMenuSwitchChannel`).
+    pub const SHAKE_MENU_PROGRESS: &str = "shakeMenuProgress";
     /// `{ enabled }`: `keepUrlPathAfterReload` flag for the page.
     pub const KEEP_URL_PATH: &str = "keepUrlPath";
     /// `{ action: "begin" | "end", name }`: keep the app alive while an update runs.

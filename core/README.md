@@ -38,10 +38,12 @@ The main operations a plugin host uses:
 - `pluginMethod {name, args}`: every JavaScript method; answers
   `{"resolve": value}` or `{"reject": {message, code?, data?}}`.
 - `appForeground`, `appBackground`, `appTerminate`, `openUrl {url}`.
+- `shakeMenuSwitchChannel {channel}`: the shake-menu channel switch (set channel,
+  check, download, queue as next); answers `{status, message, bundleId?, version?}`.
 
 The host callbacks (`CapgoHostCallbacks`, JNI `CapgoEngineHost`) provide logging,
 key-value storage, event delivery and `hook(name, payload)` for platform work:
-`applyBundle`, `splash`, `previewLoader`, `previewNotice`, `shakeMenu`,
+`applyBundle`, `splash`, `previewLoader`, `previewNotice`, `shakeMenu`, `shakeMenuProgress`,
 `keepUrlPath`, `backgroundTask`, `excludeFromBackup` (see `engine::plugin::hooks`).
 
 `capgo_core_call(operation, json)` exposes one stateless rule to the hosts:

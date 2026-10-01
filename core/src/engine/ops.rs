@@ -99,6 +99,7 @@ impl Engine {
                 "previewMenuLeave" => json!({ "ok": self.leave_preview_session() }),
                 "previewMenuReload" => json!({ "ok": self.reload_preview_session() }),
                 "previewSessionActive" => json!({ "active": self.plugin_state().preview_session_enabled }),
+                "shakeMenuSwitchChannel" => self.shake_menu_switch_channel(req_str(input, "channel")?),
                 "pluginMethods" => json!(super::plugin::ENGINE_METHODS),
 
                 // ---- store

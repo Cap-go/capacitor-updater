@@ -625,81 +625,35 @@ extension UIWindow {
             }
             topVC.present(progressAlert, animated: true) {
                 DispatchQueue.global(qos: .userInitiated).async {
-                    // The engine applies allowSetDefaultChannel and persists the channel.
-                    if case .rejected(let message, _, _) = plugin.runEngineMethod("setChannel", ["channel": name]) {
-                        finish { self.showError(message: "Failed to set channel: \(message)", plugin: plugin) }
-                        return
-                    }
-
-                    DispatchQueue.main.async {
-                        progressAlert.message = "Checking for updates..."
-                    }
-
-                    let latest: [String: Any]
-                    switch plugin.runEngineMethod("getLatest", ["channel": name]) {
-                    case .rejected(let message, _, _):
-                        finish { self.showError(message: "Channel set to \(name). Update check failed: \(message)", plugin: plugin) }
-                        return
-                    case .resolved(let value):
-                        latest = value as? [String: Any] ?? [:]
-                    }
-                    let kind = latest["kind"] as? String
-                    let detail = [latest["message"] as? String, latest["error"] as? String, kind]
-                        .compactMap { value in
-                            guard let value, !value.isEmpty else { return nil }
-                            return value
+                    // The engine runs setChannel, getLatest, download and next; progress
+                    // arrives through the shakeMenuProgress hook.
+                    plugin.shakeMenuProgress = { message in
+                        DispatchQueue.main.async {
+                            progressAlert.message = message
                         }
-                        .first ?? "server did not provide a message"
-                    if kind == "blocked" {
-                        finish { self.showError(message: "Channel set to \(name). Update check blocked: \(detail)", plugin: plugin) }
-                        return
                     }
-
-                    // A manifest-only response legitimately has no URL (the files come
-                    // from the manifest), so "already on latest" needs neither.
-                    let url = latest["url"] as? String ?? ""
-                    let manifest = latest["manifest"] as? [[String: Any]] ?? []
-                    if kind == "up_to_date" || (url.isEmpty && manifest.isEmpty) {
-                        finish { self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin) }
-                        return
-                    }
-
-                    let version = latest["version"] as? String ?? ""
-                    DispatchQueue.main.async {
-                        progressAlert.message = "Downloading update \(version)..."
-                    }
-
-                    // The engine verifies checksum / signature before installing anything.
-                    var request: [String: Any] = [
-                        "url": url,
-                        "version": version,
-                        "sessionKey": latest["sessionKey"] as? String ?? "",
-                        "checksum": latest["checksum"] as? String ?? ""
-                    ]
-                    if !manifest.isEmpty {
-                        request["manifest"] = manifest
-                    }
-                    let bundleId: String
-                    switch plugin.runEngineMethod("download", request) {
-                    case .rejected(let message, _, _):
-                        finish { self.showError(message: "Failed to download update: \(message)", plugin: plugin) }
-                        return
-                    case .resolved(let value):
-                        bundleId = (value as? [String: Any])?["id"] as? String ?? ""
-                    }
-                    _ = plugin.runEngineMethod("next", ["id": bundleId])
-
-                    finish {
-                        self.showSuccessWithReload(
-                            message: "Update downloaded! Reload to apply version \(version)?",
-                            plugin: plugin,
-                            bridge: bridge,
-                            onReload: {
-                                DispatchQueue.global(qos: .userInitiated).async {
-                                    _ = plugin.runEngineMethod("set", ["id": bundleId])
+                    let result = plugin.engineOp("shakeMenuSwitchChannel", ["channel": name]) as? [String: Any] ?? [:]
+                    plugin.shakeMenuProgress = nil
+                    let message = result["message"] as? String ?? "Failed to set channel"
+                    let bundleId = result["bundleId"] as? String ?? ""
+                    switch result["status"] as? String {
+                    case "updateReady":
+                        finish {
+                            self.showSuccessWithReload(
+                                message: message,
+                                plugin: plugin,
+                                bridge: bridge,
+                                onReload: {
+                                    DispatchQueue.global(qos: .userInitiated).async {
+                                        _ = plugin.runEngineMethod("set", ["id": bundleId])
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
+                    case "success":
+                        finish { self.showSuccess(message: message, plugin: plugin) }
+                    default:
+                        finish { self.showError(message: message, plugin: plugin) }
                     }
                 }
             }

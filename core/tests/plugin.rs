@@ -1119,3 +1119,109 @@ fn a_failed_download_is_one_stat_on_the_failed_version() {
     assert_eq!(body["version_name"], "9.9.9");
     assert_eq!(p.events("downloadFailed").len(), 1);
 }
+
+// ---- shake menu channel switch ----------------------------------------------------------------
+
+fn switch_channel(p: &Plugin, channel: &str) -> Value {
+    p.t.call("shakeMenuSwitchChannel", json!({ "channel": channel }))
+}
+
+#[test]
+fn shake_menu_switch_channel_downloads_and_queues_the_update() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.backend.offer("2.0.0", web_bundle("two"));
+    let result = switch_channel(&p, "beta");
+    assert_eq!(result["status"], "updateReady", "{result}");
+    assert_eq!(result["message"], "Update downloaded! Reload to apply version 2.0.0?");
+    assert_eq!(result["version"], "2.0.0");
+    let id = result["bundleId"].as_str().unwrap();
+    assert_eq!(p.t.call("bundleNext", json!({}))["id"], id);
+    let progress: Vec<Value> = p.t.host.hooks_named("shakeMenuProgress");
+    assert_eq!(
+        progress,
+        vec![
+            json!({ "message": "Checking for updates..." }),
+            json!({ "message": "Downloading update 2.0.0..." }),
+        ]
+    );
+    assert!(p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .any(|request| request.url.starts_with("/channel_self") && request.json()["channel"] == "beta"));
+}
+
+#[test]
+fn shake_menu_switch_channel_reports_each_outcome() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    // Already up to date.
+    let result = switch_channel(&p, "beta");
+    assert_eq!(
+        result,
+        json!({ "status": "success", "message": "Channel set to beta. Already on latest version." })
+    );
+
+    // Blocked.
+    *p.backend.latest.lock().unwrap() =
+        json!({ "error": "disabled_auto_update", "kind": "blocked", "message": "blocked by policy" });
+    let result = switch_channel(&p, "beta");
+    assert_eq!(
+        result["message"],
+        "Channel set to beta. Update check blocked: blocked by policy"
+    );
+    assert_eq!(result["status"], "error");
+
+    // An update without a version.
+    *p.backend.latest.lock().unwrap() = json!({ "url": format!("{}/b.zip", p.backend.server.url) });
+    let result = switch_channel(&p, "beta");
+    assert_eq!(
+        result["message"],
+        "Channel set to beta. Update check failed: missing version."
+    );
+
+    // Server error.
+    *p.backend.latest.lock().unwrap() = json!({ "error": "server_down", "message": "try later" });
+    let result = switch_channel(&p, "beta");
+    assert_eq!(result["status"], "error");
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Channel set to beta. Update check failed: "),
+        "{result}"
+    );
+
+    // Channel refused by the backend.
+    *p.backend.channel_reply.lock().unwrap() = (
+        400,
+        json!({ "error": "channel_not_found", "message": "no such channel" }),
+    );
+    let result = switch_channel(&p, "nope");
+    assert_eq!(result["status"], "error");
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Failed to set channel: "),
+        "{result}"
+    );
+}
+
+#[test]
+fn shake_menu_switch_channel_reports_download_failures() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.backend.offer("2.0.0", web_bundle("two"));
+    // The checksum no longer matches what is served.
+    *p.backend.bundle.lock().unwrap() = web_bundle("tampered");
+    let result = switch_channel(&p, "beta");
+    assert_eq!(result["status"], "error");
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Failed to download update: "),
+        "{result}"
+    );
+    assert!(p.t.call("bundleNext", json!({})).is_null(), "nothing is queued");
+}
