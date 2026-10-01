@@ -301,12 +301,56 @@ import UIKit
         case "cleartextPermitted":
             let ats = Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]
             return ["permitted": Self.atsAllowsCleartext(host: payload["host"] as? String ?? "", ats: ats)]
+        case "proxyForUrl":
+            let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue()
+            return Self.systemProxy(for: payload["url"] as? String ?? "", settings: settings) { [weak self] message in
+                self?.logger?.info(message)
+            }
         default:
             return onHook?(name, payload)
         }
     }
 
     // MARK: - Platform services
+
+    /// System proxy for an engine request, as URLSession used it (Wi-Fi / MDM proxy settings):
+    /// `{"type":"http","host":...,"port":...}` for an HTTP(S) proxy (HTTPS goes through CONNECT),
+    /// else `{"type":"direct"}`. PAC configurations are not evaluated: direct, and logged.
+    static func systemProxy(for url: String, settings: CFDictionary?, log: (String) -> Void = { _ in }) -> [String: Any] {
+        guard let settings, let url = URL(string: url) else {
+            return ["type": "direct"]
+        }
+        let proxies = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as? [[String: Any]] ?? []
+        return proxyReply(proxies, log: log)
+    }
+
+    /// Picks the first usable entry of a `CFNetworkCopyProxiesForURL` list.
+    static func proxyReply(_ proxies: [[String: Any]], log: (String) -> Void = { _ in }) -> [String: Any] {
+        let direct: [String: Any] = ["type": "direct"]
+        let isType = { (type: String?, candidates: [CFString]) in
+            candidates.contains { type == $0 as String }
+        }
+        for proxy in proxies {
+            let type = proxy[kCFProxyTypeKey as String] as? String
+            if isType(type, [kCFProxyTypeNone]) {
+                return direct
+            }
+            if isType(type, [kCFProxyTypeAutoConfigurationURL, kCFProxyTypeAutoConfigurationJavaScript]) {
+                log("Proxy auto-configuration (PAC) is not supported by the updater: connecting directly")
+                return direct
+            }
+            // SOCKS / FTP proxies are not supported: try the next entry.
+            guard isType(type, [kCFProxyTypeHTTP, kCFProxyTypeHTTPS]) else {
+                continue
+            }
+            let host = (proxy[kCFProxyHostNameKey as String] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let port = (proxy[kCFProxyPortNumberKey as String] as? NSNumber)?.intValue ?? 0
+            if !host.isEmpty, (1...65535).contains(port) {
+                return ["type": "http", "host": host, "port": port]
+            }
+        }
+        return direct
+    }
 
     /// App Transport Security decision for plain HTTP to `host` (the engine's HTTP client
     /// is not URLSession, so it applies the app's ATS settings itself), with Apple's precedence:

@@ -70,6 +70,8 @@ pub mod hooks {
     /// survives the process). The job calls the `runScheduledDownload {id}` operation and
     /// `stopScheduledDownload {id}` when the scheduler stops it. No answer = in-process download.
     pub const SCHEDULE_DOWNLOAD: &str = "scheduleDownload";
+    /// `{url}` -> `{type:"http"|"direct", host, port}`: the system proxy for a request.
+    pub const PROXY_FOR_URL: &str = "proxyForUrl";
 }
 
 /// Persisted keys owned by the plugin layer (names kept from every previous version).

@@ -1,11 +1,12 @@
 //! TLS trust is a host decision (Android TrustManager, iOS SecTrust): these
 //! tests run a local HTTPS server and check that the engine's client only
 //! talks to it when the host trusts the chain AND the name matches, and fails
-//! closed otherwise (rejection, no answer, no callback).
+//! closed otherwise (rejection, no answer, no callback). Requests go through
+//! the system HTTP proxy the host reports, with the same TLS rules.
 
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -230,4 +231,166 @@ fn c_abi_verifier_marshals_the_chain_and_only_one_trusts() {
     let error = http(c_host(&CallbackState::default(), false)).get(&url).unwrap_err();
     assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+}
+
+// ---------------------------------------------------------------------------
+// System proxy (host `proxyForUrl` hook): plain HTTP is sent to the proxy in
+// absolute form, HTTPS is tunnelled with CONNECT (TLS still verified end to end).
+
+/// HTTP proxy recording request lines: answers absolute-form requests itself
+/// and tunnels `CONNECT` to the target.
+struct ProxyServer {
+    port: u16,
+    seen: Arc<Mutex<Vec<String>>>,
+}
+
+impl ProxyServer {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let recorded = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let recorded = recorded.clone();
+                std::thread::spawn(move || {
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut request_line = String::new();
+                    if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                            break;
+                        }
+                    }
+                    let request_line = request_line.trim().to_string();
+                    recorded.lock().unwrap().push(request_line.clone());
+                    if let Some(target) = request_line.strip_prefix("CONNECT ") {
+                        let target = target.split(' ').next().unwrap().replace("localhost", "127.0.0.1");
+                        let Ok(upstream) = TcpStream::connect(target) else {
+                            return;
+                        };
+                        stream
+                            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                            .unwrap();
+                        let (mut client_read, mut upstream_write) =
+                            (stream.try_clone().unwrap(), upstream.try_clone().unwrap());
+                        let forward = std::thread::spawn(move || {
+                            let _ = std::io::copy(&mut client_read, &mut upstream_write);
+                            let _ = upstream_write.shutdown(std::net::Shutdown::Write);
+                        });
+                        let (mut upstream_read, mut client_write) = (upstream, stream);
+                        let _ = std::io::copy(&mut upstream_read, &mut client_write);
+                        let _ = client_write.shutdown(std::net::Shutdown::Both);
+                        let _ = forward.join();
+                    } else {
+                        let _ = stream
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\nvia-proxy");
+                    }
+                });
+            }
+        });
+        Self { port, seen }
+    }
+
+    fn seen(&self) -> Vec<String> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+fn proxied_host(proxy: &ProxyServer) -> Arc<MemoryHost> {
+    let host = memory_host(Some(Ok(())));
+    host.reply_to_hook(
+        "proxyForUrl",
+        serde_json::json!({ "type": "http", "host": "127.0.0.1", "port": proxy.port }),
+    );
+    host
+}
+
+#[test]
+fn plain_http_goes_through_the_system_proxy() {
+    let proxy = ProxyServer::start();
+    let host = proxied_host(&proxy);
+    // `.invalid` never resolves: only the proxy can answer.
+    let response = http(host.clone()).get("http://updates.invalid/latest?x=1").unwrap();
+    assert_eq!(response.text(), "via-proxy");
+    assert_eq!(
+        proxy.seen(),
+        vec!["GET http://updates.invalid/latest?x=1 HTTP/1.1".to_string()]
+    );
+    assert_eq!(
+        host.hooks_named("proxyForUrl"),
+        vec![serde_json::json!({ "url": "http://updates.invalid/latest?x=1" })]
+    );
+}
+
+#[test]
+fn https_is_tunnelled_with_connect_and_still_verified() {
+    let server = TlsServer::start();
+    let proxy = ProxyServer::start();
+    let host = proxied_host(&proxy);
+    let response = http(host.clone())
+        .get(&format!("https://localhost:{}/", server.port))
+        .unwrap();
+    assert_eq!(response.text(), "ok");
+    assert_eq!(proxy.seen()[0], format!("CONNECT localhost:{} HTTP/1.1", server.port));
+    assert_eq!(host.certificate_requests.lock().unwrap()[0].1, "localhost");
+
+    // Through the proxy too, a host rejection fails closed (a new client: no TLS session to resume).
+    *host.certificate_verdict.lock().unwrap() = Some(Some(Err("pinned".into())));
+    let error = http(host.clone())
+        .get(&format!("https://localhost:{}/again", server.port))
+        .unwrap_err();
+    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn direct_or_unusable_proxy_replies_connect_directly() {
+    let proxy = ProxyServer::start();
+    let target = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = target.server_addr().to_ip().unwrap().port();
+    std::thread::spawn(move || {
+        for request in target.incoming_requests() {
+            let _ = request.respond(tiny_http::Response::from_string("direct"));
+        }
+    });
+    for reply in [
+        serde_json::json!({ "type": "direct" }),
+        serde_json::json!({ "type": "socks", "host": "127.0.0.1", "port": proxy.port }),
+        serde_json::json!({ "type": "http", "host": "", "port": proxy.port }),
+        serde_json::json!({ "type": "http", "host": "127.0.0.1", "port": 0 }),
+        serde_json::json!({ "type": "http", "host": "::1", "port": proxy.port }),
+        serde_json::json!({}),
+    ] {
+        let host = memory_host(None);
+        host.reply_to_hook("proxyForUrl", reply.clone());
+        let response = http(host).get(&format!("http://127.0.0.1:{port}/")).unwrap();
+        assert_eq!(response.text(), "direct", "{reply}");
+    }
+    assert!(proxy.seen().is_empty());
+}
+
+#[test]
+fn proxy_replies_parse() {
+    use capgo_updater_core::host::HttpProxy;
+    assert_eq!(
+        HttpProxy::from_reply(&serde_json::json!({ "type": "HTTP", "host": " proxy.corp ", "port": 3128 })),
+        Some(HttpProxy {
+            host: "proxy.corp".into(),
+            port: 3128
+        })
+    );
+    for reply in [
+        serde_json::json!({ "type": "direct", "host": "proxy.corp", "port": 3128 }),
+        serde_json::json!({ "type": "http", "host": "proxy.corp", "port": 65536 }),
+        serde_json::json!({ "type": "http", "host": "proxy.corp", "port": "3128" }),
+        serde_json::json!({ "type": "http", "port": 3128 }),
+        serde_json::Value::Null,
+    ] {
+        assert_eq!(HttpProxy::from_reply(&reply), None, "{reply}");
+    }
 }

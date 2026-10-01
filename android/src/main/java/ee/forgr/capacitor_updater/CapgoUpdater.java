@@ -28,11 +28,16 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -249,6 +254,9 @@ public class CapgoUpdater {
                 if ("scheduleDownload".equals(name)) {
                     return scheduleDownload(payloadJson);
                 }
+                if ("proxyForUrl".equals(name)) {
+                    return proxyForUrlReply(payloadJson, ProxySelector.getDefault());
+                }
                 return listener.onHook(name, payloadJson);
             } catch (RuntimeException e) {
                 logger.error("Hook " + name + " failed: " + e.getMessage());
@@ -300,6 +308,36 @@ public class CapgoUpdater {
         } catch (JSONException e) {
             return null;
         }
+    }
+
+    /**
+     * System proxy for an engine request, like OkHttp used: the first HTTP proxy {@link ProxySelector} returns
+     * (Wi-Fi / MDM proxy settings), else direct. SOCKS proxies are not supported and connect directly.
+     */
+    static String proxyForUrlReply(final String payloadJson, final ProxySelector selector) {
+        try {
+            final String url = new JSONObject(payloadJson).optString("url", "");
+            final List<Proxy> proxies = selector == null ? null : selector.select(new URI(url));
+            return proxyReply(proxies).toString();
+        } catch (JSONException | RuntimeException | java.net.URISyntaxException e) {
+            return "{\"type\":\"direct\"}";
+        }
+    }
+
+    /** {@code {"type":"http","host":...,"port":...}} for the first usable HTTP proxy, else {@code {"type":"direct"}}. */
+    static JSONObject proxyReply(final List<Proxy> proxies) throws JSONException {
+        if (proxies != null) {
+            for (final Proxy proxy : proxies) {
+                if (proxy == null || proxy.type() == Proxy.Type.DIRECT) {
+                    break;
+                }
+                if (proxy.type() == Proxy.Type.HTTP && proxy.address() instanceof InetSocketAddress) {
+                    final InetSocketAddress address = (InetSocketAddress) proxy.address();
+                    return new JSONObject().put("type", "http").put("host", address.getHostString()).put("port", address.getPort());
+                }
+            }
+        }
+        return new JSONObject().put("type", "direct");
     }
 
     /** Keys earlier plugin versions read with getBoolean / getLong: keep the type so a downgrade still reads them. */

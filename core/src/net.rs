@@ -13,7 +13,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
 use serde_json::Value;
 
-use crate::host::Host;
+use crate::host::{Host, HttpProxy};
 
 /// Largest non-download response body accepted (JSON API responses).
 const MAX_API_BODY_BYTES: u64 = 16 * 1024 * 1024;
@@ -103,6 +103,9 @@ pub struct Http {
     host: Arc<dyn Host>,
     /// Cleartext decisions per host name.
     cleartext: Mutex<std::collections::HashMap<String, bool>>,
+    /// Agents for system HTTP proxies (ureq sets the proxy per agent), keyed
+    /// by (download agent, proxy). Rebuilt when the timeout changes.
+    proxied: Mutex<std::collections::HashMap<(bool, HttpProxy), ureq::Agent>>,
 }
 
 fn classify_io(error: &std::io::Error) -> NetErrorKind {
@@ -167,7 +170,54 @@ impl Http {
             allow_https_to_http_redirect: std::sync::atomic::AtomicBool::new(false),
             host,
             cleartext: Mutex::new(std::collections::HashMap::new()),
+            proxied: Mutex::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// The agent for `url`: through the system HTTP proxy the host reports
+    /// (Android `ProxySelector`, iOS system proxy settings), else direct.
+    fn agent_for(&self, download: bool, url: &str) -> ureq::Agent {
+        let direct = || {
+            if download {
+                self.download_agent.read().unwrap().clone()
+            } else {
+                self.agent.read().unwrap().clone()
+            }
+        };
+        let Some(proxy) = self.host.proxy_for_url(url) else {
+            return direct();
+        };
+        let mut proxied = self.proxied.lock().unwrap();
+        if let Some(agent) = proxied.get(&(download, proxy.clone())) {
+            return agent.clone();
+        }
+        // ureq parses `host:port` by splitting on ':', so IPv6 proxy literals cannot be expressed.
+        let ureq_proxy = Some(&proxy)
+            .filter(|proxy| !proxy.host.contains(':') && !proxy.host.contains('@'))
+            .and_then(|proxy| ureq::Proxy::new(format!("http://{}:{}", proxy.host, proxy.port)).ok());
+        let Some(ureq_proxy) = ureq_proxy else {
+            self.host.log(
+                crate::host::LogLevel::Warn,
+                &format!(
+                    "Unsupported HTTP proxy {}:{}, connecting directly",
+                    proxy.host, proxy.port
+                ),
+            );
+            return direct();
+        };
+        let timeout = *self.timeout.read().unwrap();
+        let timeout = if download {
+            timeout.max(Duration::from_secs(60))
+        } else {
+            timeout
+        };
+        self.host.log(
+            crate::host::LogLevel::Debug,
+            &format!("Using system HTTP proxy {}:{}", proxy.host, proxy.port),
+        );
+        let agent = agent_builder(self.tls.clone(), timeout).proxy(ureq_proxy).build();
+        proxied.insert((download, proxy), agent.clone());
+        agent
     }
 
     /// Plain HTTP must be allowed by the app's own policy (the OS stacks enforce
@@ -226,10 +276,10 @@ impl Http {
         *current = timeout;
         *self.agent.write().unwrap() = build_agent(self.tls.clone(), timeout);
         *self.download_agent.write().unwrap() = build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
+        self.proxied.lock().unwrap().clear();
     }
 
-    fn prepare(&self, agent: &RwLock<ureq::Agent>, method: &str, url: &str, headers: &[(&str, &str)]) -> ureq::Request {
-        let agent = agent.read().unwrap().clone();
+    fn prepare(&self, agent: ureq::Agent, method: &str, url: &str, headers: &[(&str, &str)]) -> ureq::Request {
         let mut request = agent.request(method, url).set("User-Agent", &self.user_agent());
         for (name, value) in headers {
             request = request.set(name, value);
@@ -241,7 +291,7 @@ impl Http {
     /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set.
     fn execute(
         &self,
-        agent: &RwLock<ureq::Agent>,
+        download: bool,
         method: &str,
         url: &str,
         headers: &[(&str, &str)],
@@ -252,7 +302,7 @@ impl Http {
         let mut body = body;
         for _ in 0..=MAX_REDIRECTS {
             self.check_cleartext(&current)?;
-            let request = self.prepare(agent, &method, &current, headers);
+            let request = self.prepare(self.agent_for(download, &current), &method, &current, headers);
             let response = Self::finish(match body {
                 Some(body) => request.send_bytes(body),
                 None => request.call(),
@@ -320,7 +370,7 @@ impl Http {
     ) -> Result<Response, NetError> {
         // Transparent gzip, as OkHttp and URLSession did for API calls.
         let headers = with_accept_encoding(headers, "gzip");
-        let response = self.execute(&self.agent, method, url, &headers, body)?;
+        let response = self.execute(false, method, url, &headers, body)?;
         let status = response.status();
         let mut headers = headers_of(&response);
         let gzip = response.header("Content-Encoding").is_some_and(|value| {
@@ -388,7 +438,7 @@ impl Http {
     ) -> Result<StreamHead, NetError> {
         // Bundle files are stored byte for byte (checksums, Range resume): no content coding.
         let headers = with_accept_encoding(headers, "identity");
-        let response = self.execute(&self.download_agent, "GET", url, &headers, None)?;
+        let response = self.execute(true, "GET", url, &headers, None)?;
         let head = StreamHead {
             status: response.status(),
             headers: headers_of(&response),
@@ -437,6 +487,10 @@ pub enum Stream<'a> {
 }
 
 fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
+    agent_builder(tls, timeout).try_proxy_from_env(true).build()
+}
+
+fn agent_builder(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::AgentBuilder {
     ureq::AgentBuilder::new()
         .tls_connector(Arc::new(RustlsConnector(tls)))
         .timeout_connect(timeout)
@@ -444,9 +498,7 @@ fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
         .timeout_write(timeout)
         .max_idle_connections(64)
         .max_idle_connections_per_host(64)
-        .try_proxy_from_env(true)
         .redirects(0)
-        .build()
 }
 
 fn provider() -> Arc<CryptoProvider> {

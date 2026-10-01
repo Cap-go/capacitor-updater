@@ -8,7 +8,7 @@
 
 use serde_json::Value;
 
-use crate::engine::plugin::hooks::CLEARTEXT_PERMITTED;
+use crate::engine::plugin::hooks::{CLEARTEXT_PERMITTED, PROXY_FOR_URL};
 
 /// Payload flag of [`Host::emit_retained`] events: keep the event for listeners
 /// registered after it fired. Hosts strip it from the payload.
@@ -20,6 +20,32 @@ pub enum LogLevel {
     Info = 1,
     Warn = 2,
     Error = 3,
+}
+
+/// An HTTP proxy (plain HTTP to the proxy; HTTPS goes through `CONNECT`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HttpProxy {
+    pub host: String,
+    pub port: u16,
+}
+
+impl HttpProxy {
+    /// Parses a `proxyForUrl` hook reply: `{"type":"http","host":...,"port":...}`;
+    /// `{"type":"direct"}` or anything else means no proxy.
+    pub fn from_reply(reply: &Value) -> Option<Self> {
+        if !reply.get("type")?.as_str()?.eq_ignore_ascii_case("http") {
+            return None;
+        }
+        let host = reply.get("host")?.as_str()?.trim();
+        let port = reply.get("port")?.as_u64()?;
+        if host.is_empty() || !(1..=u64::from(u16::MAX)).contains(&port) {
+            return None;
+        }
+        Some(Self {
+            host: host.to_string(),
+            port: port as u16,
+        })
+    }
 }
 
 /// Platform services used by the engine. Implementations must be thread-safe:
@@ -70,6 +96,12 @@ pub trait Host: Send + Sync + 'static {
     fn cleartext_permitted(&self, host: &str) -> Option<bool> {
         self.hook(CLEARTEXT_PERMITTED, &serde_json::json!({ "host": host }))
             .and_then(|reply| reply.get("permitted").and_then(Value::as_bool))
+    }
+
+    /// System HTTP proxy for `url` (Android `ProxySelector`, iOS system proxy
+    /// settings), asked before every request; `None` connects directly.
+    fn proxy_for_url(&self, url: &str) -> Option<HttpProxy> {
+        HttpProxy::from_reply(&self.hook(PROXY_FOR_URL, &serde_json::json!({ "url": url }))?)
     }
 
     /// Called right before the current bundle path changes (Android reschedules
