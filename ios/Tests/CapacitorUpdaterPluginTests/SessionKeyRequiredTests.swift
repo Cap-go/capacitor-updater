@@ -43,11 +43,11 @@ final class SessionKeyRequiredTests: XCTestCase {
 
     private var implementation: StatsRecordingCapgoUpdater!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         implementation = StatsRecordingCapgoUpdater()
         implementation.setLogger(Logger(withTag: "SessionKeyRequiredTests", options: Logger.Options(level: .silent)))
-        implementation.setPublicKey(Fixture.publicKeyPem)
+        try implementation.setPublicKey(Fixture.publicKeyPem)
     }
 
     override func tearDown() {
@@ -84,7 +84,7 @@ final class SessionKeyRequiredTests: XCTestCase {
     }
 
     func testAllowsUpdateWhenNoPublicKeyConfigured() throws {
-        implementation.setPublicKey("")
+        try implementation.setPublicKey("")
         let manifest = [ManifestEntry(file_name: "index.html", file_hash: "abc", download_url: "http://[")]
 
         // Invalid URL fails fast after the session-key gate, proving the gate did not block.

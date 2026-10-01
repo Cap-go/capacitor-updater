@@ -138,7 +138,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         let realHash = sha256(fileURL)
         let realCacheFile = expectedCacheFile(hash: realHash, name: "app.js")
 
-        implementation.populateDeltaCache(for: bundleId)
+        try implementation.populateDeltaCache(for: bundleId)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: realCacheFile.path))
     }
@@ -152,7 +152,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try write(content, named: "shared.js", in: builtinFolder)
         let cacheFile = expectedCacheFile(hash: realHash, name: "shared.js")
 
-        implementation.populateDeltaCache(for: bundleId)
+        try implementation.populateDeltaCache(for: bundleId)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }
@@ -162,7 +162,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         let realHash = sha256(fileURL)
         let cacheFile = expectedCacheFile(hash: realHash, name: "new.js")
 
-        implementation.populateDeltaCache(for: bundleId)
+        try implementation.populateDeltaCache(for: bundleId)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile.path))
     }
@@ -180,7 +180,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertTrue(missing.isEmpty)
     }
@@ -194,7 +194,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertEqual(missing.count, 1)
         XCTAssertEqual(missing.first?.file_name, "app.js")
@@ -209,7 +209,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "empty.txt", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertTrue(missing.isEmpty)
     }
@@ -223,7 +223,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertEqual(missing.count, 1)
     }
@@ -237,7 +237,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertEqual(missing.count, 1)
     }
@@ -251,7 +251,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
             ManifestEntry(file_name: "app.js.br", file_hash: hash, download_url: nil)
         ]
 
-        let missing = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+        let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertTrue(missing.isEmpty)
     }
@@ -265,16 +265,16 @@ extension PopulateDeltaCacheTests {
         let hash = sha256(source)
         let manifest = [ManifestEntry(file_name: "assets/\(name).br", file_hash: hash, download_url: nil)]
 
-        XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+        XCTAssertTrue(try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
 
         // A decoded filename match alone must not bypass checksum verification.
         try "different content".write(to: source, atomically: true, encoding: .utf8)
-        XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
+        XCTAssertEqual(try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
     }
 
     func testDownloadManifestReusesSignedUncompressedBuiltinForBrotliEntry() throws {
         implementation.setLogger(Logger(withTag: "BrotliBuiltinTest", options: Logger.Options(level: .silent)))
-        implementation.setPublicKey(Fixture.publicKeyPem)
+        try implementation.setPublicKey(Fixture.publicKeyPem)
         let name = "\(try XCTUnwrap(bundleId)).js"
         let source = try write("", named: name, in: builtinFolder.appendingPathComponent("assets"))
         let (signedHash, plainHash) = Fixture.firstDecryptChecksumCase
@@ -305,6 +305,6 @@ extension PopulateDeltaCacheTests {
         let hash = sha256(source)
         let manifest = [ManifestEntry(file_name: "../\(name).br", file_hash: hash, download_url: nil)]
 
-        XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
+        XCTAssertEqual(try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
     }
 }

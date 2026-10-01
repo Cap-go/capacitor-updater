@@ -4,11 +4,11 @@ import XCTest
 final class ChecksumRequiredTests: XCTestCase {
     private var implementation: StatsRecordingCapgoUpdater!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         implementation = StatsRecordingCapgoUpdater()
         implementation.setLogger(Logger(withTag: "ChecksumRequiredTests", options: Logger.Options(level: .silent)))
-        implementation.setPublicKey("")
+        try implementation.setPublicKey("")
     }
 
     override func tearDown() {

@@ -52,16 +52,16 @@ extension CapgoUpdater {
         return try engine.call(operation, input)
     }
 
-    func setPublicKey(_ publicKey: String) {
-        _ = try? engineCall("configure", ["publicKey": publicKey])
+    func setPublicKey(_ publicKey: String) throws {
+        try engineCall("configure", ["publicKey": publicKey])
     }
 
-    func populateDeltaCache(for id: String) {
-        _ = try? engineCall("populateDeltaCache", ["id": id])
+    func populateDeltaCache(for id: String) throws {
+        try engineCall("populateDeltaCache", ["id": id])
     }
 
-    func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
-        let result = (try? engineCall("missingBundleFiles", ["manifest": manifest.map(\.dict), "sessionKey": sessionKey])) ?? [:]
+    func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) throws -> [ManifestEntry] {
+        let result = try engineCall("missingBundleFiles", ["manifest": manifest.map(\.dict), "sessionKey": sessionKey])
         return (result["missing"] as? [[String: Any]] ?? []).map {
             ManifestEntry(
                 file_name: $0["file_name"] as? String,
