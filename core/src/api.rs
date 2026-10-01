@@ -57,7 +57,6 @@ fn req_i64(input: &Value, key: &str) -> CoreResult<i64> {
 
 /// Every operation understood by [`call`].
 pub const OPERATIONS: &[&str] = &[
-    "coreInfo",
     // update policy
     "periodCheckDelay",
     "autoUpdateMode",
@@ -87,7 +86,6 @@ pub const OPERATIONS: &[&str] = &[
     "builtinAssetPath",
     "safeCacheHash",
     "reusableCacheFile",
-    "cacheFileName",
     "manifestPartialName",
     "shortPathKey",
     // crypto
@@ -100,20 +98,7 @@ pub const OPERATIONS: &[&str] = &[
     "decryptFile",
     "rsaPublicDecrypt",
     "rsaUnpadSignature",
-    "publicKeyInfo",
-    "aesDecrypt",
-    "aesDecryptFile",
 ];
-
-fn aes_key_and_iv(input: &Value) -> CoreResult<([u8; 16], [u8; 16])> {
-    let key: [u8; 16] = hex_decode(req_str(input, "keyHex")?)
-        .and_then(|key| key.try_into().ok())
-        .ok_or_else(|| CoreError::new("invalid_session_key", "AES key must be 16 bytes of hex"))?;
-    let iv: [u8; 16] = hex_decode(req_str(input, "ivHex")?)
-        .and_then(|iv| iv.try_into().ok())
-        .ok_or_else(|| CoreError::new("invalid_iv", "IV must be 16 bytes of hex"))?;
-    Ok((key, iv))
-}
 
 /// Runs one core operation.
 pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
@@ -124,8 +109,6 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
     }
 
     Ok(match operation {
-        "coreInfo" => json!({ "version": crate::CORE_VERSION, "operations": OPERATIONS }),
-
         "periodCheckDelay" => json!({
             "normalizedSeconds": policy::normalized_period_check_delay_seconds(req_i64(input, "seconds")?)
         }),
@@ -252,9 +235,6 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
         "reusableCacheFile" => json!({
             "reusable": paths::is_reusable_cache_file(opt_str(input, "hash")?, opt_i64(input, "size")?)
         }),
-        "cacheFileName" => json!({
-            "name": paths::cache_file_name(req_str(input, "hash")?, req_str(input, "fileName")?)
-        }),
         "manifestPartialName" => json!({
             "name": paths::manifest_partial_name(opt_str(input, "hash")?, opt_str(input, "fileName")?.unwrap_or_default())
         }),
@@ -312,26 +292,6 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
                 .flatten()
                 .ok_or_else(|| CoreError::new("decrypt_failed", "Invalid PKCS#1 signature padding"))?;
             json!({ "payloadHex": hex_encode(&payload) })
-        }
-
-        "publicKeyInfo" => {
-            use base64::Engine;
-            let key = RsaPublicKey::from_pem(req_str(input, "publicKey")?)?;
-            json!({
-                "modulusBits": key.modulus_bits(),
-                "spkiDerBase64": base64::engine::general_purpose::STANDARD.encode(key.to_spki_der()),
-            })
-        }
-        "aesDecrypt" => {
-            let (key, iv) = aes_key_and_iv(input)?;
-            let ciphertext = hex_decode(req_str(input, "ciphertextHex")?)
-                .ok_or_else(|| CoreError::invalid_input("`ciphertextHex` must be hex"))?;
-            json!({ "plaintextHex": hex_encode(&crypto::aes_cbc::decrypt(&ciphertext, &key, &iv)?) })
-        }
-        "aesDecryptFile" => {
-            let (key, iv) = aes_key_and_iv(input)?;
-            crypto::aes_cbc::decrypt_file_in_place(Path::new(req_str(input, "path")?), &key, &iv)?;
-            json!({})
         }
 
         other => {

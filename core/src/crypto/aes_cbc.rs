@@ -87,15 +87,6 @@ impl CbcDecryptor {
     }
 }
 
-/// Decrypts whole buffers (used by tests and small payloads).
-pub fn decrypt(ciphertext: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> CoreResult<Vec<u8>> {
-    let mut decryptor = CbcDecryptor::new(key, iv);
-    let mut out = Vec::with_capacity(ciphertext.len());
-    decryptor.update(ciphertext, &mut out);
-    decryptor.finish(&mut out)?;
-    Ok(out)
-}
-
 fn temp_path_for(path: &Path) -> CoreResult<PathBuf> {
     let parent = path
         .parent()

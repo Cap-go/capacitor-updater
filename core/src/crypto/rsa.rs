@@ -111,26 +111,6 @@ impl RsaPublicKey {
         })
     }
 
-    pub fn modulus_bits(&self) -> u64 {
-        self.modulus.bits()
-    }
-
-    /// DER `SubjectPublicKeyInfo` (X.509) encoding, as expected by JCA `X509EncodedKeySpec`.
-    pub fn to_spki_der(&self) -> Vec<u8> {
-        let mut rsa_key = der_unsigned_integer(&self.modulus.to_bytes_be());
-        rsa_key.extend(der_unsigned_integer(&self.exponent.to_bytes_be()));
-        let pkcs1 = der(TAG_SEQUENCE, &rsa_key);
-
-        let mut algorithm = der(0x06, RSA_ENCRYPTION_OID);
-        algorithm.extend([0x05, 0x00]);
-        let mut bit_string = vec![0u8];
-        bit_string.extend(pkcs1);
-
-        let mut spki = der(TAG_SEQUENCE, &algorithm);
-        spki.extend(der(TAG_BIT_STRING, &bit_string));
-        der(TAG_SEQUENCE, &spki)
-    }
-
     /// Recovers the payload of a PKCS#1 v1.5 type-1 block (`privateEncrypt`).
     pub fn public_decrypt(&self, ciphertext: &[u8]) -> CoreResult<Vec<u8>> {
         let failed = |message: &str| CoreError::new("decrypt_failed", message.to_string());
@@ -146,30 +126,6 @@ impl RsaPublicKey {
         block.extend_from_slice(&recovered);
         unpad_type1(&block).ok_or_else(|| failed("Invalid PKCS#1 signature padding"))
     }
-}
-
-fn der(tag: u8, content: &[u8]) -> Vec<u8> {
-    let mut out = vec![tag];
-    let len = content.len();
-    if len < 0x80 {
-        out.push(len as u8);
-    } else {
-        let bytes: Vec<u8> = len.to_be_bytes().into_iter().skip_while(|byte| *byte == 0).collect();
-        out.push(0x80 | bytes.len() as u8);
-        out.extend(bytes);
-    }
-    out.extend_from_slice(content);
-    out
-}
-
-fn der_unsigned_integer(big_endian: &[u8]) -> Vec<u8> {
-    let trimmed: Vec<u8> = big_endian.iter().copied().skip_while(|byte| *byte == 0).collect();
-    let mut content = Vec::with_capacity(trimmed.len() + 1);
-    if trimmed.first().map_or(true, |byte| byte & 0x80 != 0) {
-        content.push(0);
-    }
-    content.extend(trimmed);
-    der(TAG_INTEGER, &content)
 }
 
 /// RFC 8017: `00 01`, at least eight `FF`, `00`, then a non-empty payload.
@@ -200,18 +156,6 @@ mod tests {
         block.push(0);
         block.push(42);
         assert_eq!(unpad_type1(&block), Some(vec![42]));
-    }
-
-    #[test]
-    fn spki_round_trips() {
-        let modulus = BigUint::from_bytes_be(&[0xc3; 128]);
-        let key = RsaPublicKey {
-            size_bytes: 128,
-            modulus,
-            exponent: BigUint::from(65537u32),
-        };
-        let parsed = RsaPublicKey::from_der(&key.to_spki_der()).unwrap();
-        assert_eq!(parsed, key);
     }
 
     #[test]
