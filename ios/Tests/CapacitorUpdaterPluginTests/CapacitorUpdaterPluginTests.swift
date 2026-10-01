@@ -265,14 +265,6 @@ class CapacitorUpdaterTests: XCTestCase {
 
     // MARK: - WebView scripts
 
-    func testReadyGenerationScriptStampsNotifyAppReady() {
-        let script = CapacitorUpdaterPlugin.readyGenerationScript(2)
-        XCTAssertTrue(script.contains("window.__CAPGO_READY_GEN=2"))
-        XCTAssertTrue(script.contains("cap.nativePromise"))
-        XCTAssertTrue(script.contains("next.loadGeneration=window.__CAPGO_READY_GEN"))
-        XCTAssertFalse(script.contains("plugin.notifyAppReady="))
-    }
-
     func testWebViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
         let script = WebViewStatsReporter.script
 

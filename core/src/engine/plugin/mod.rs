@@ -43,8 +43,9 @@ const OBSOLETE_DELETE_PACING: Duration = Duration::from_millis(75);
 
 /// Hook names the plugin layer calls on the host ([`crate::host::Host::hook`]).
 pub mod hooks {
-    /// `{ path, isBuiltin, readyGeneration }` -> `{ ok, guard? }`: point the WebView at a bundle
-    /// and reload it. `guard: false` means the page cannot report its generation.
+    /// `{ path, isBuiltin, readyGeneration, readyScript }` -> `{ ok, guard? }`: inject `readyScript`
+    /// at document start, point the WebView at the bundle and reload it. `guard: false` means
+    /// the page cannot report its generation.
     pub const APPLY_BUNDLE: &str = "applyBundle";
     /// `{ action: "show" | "hide" }`
     pub const SPLASH: &str = "splash";

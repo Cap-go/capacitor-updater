@@ -50,8 +50,7 @@ extension CapacitorUpdaterPlugin {
             logger.error("Cannot get capBridge")
             return ["ok": false]
         }
-        let generation = (payload["readyGeneration"] as? NSNumber)?.intValue ?? 0
-        let guarded = stampReadyGeneration(generation, webView: viewController.webView)
+        let guarded = stampReadyGeneration(payload["readyScript"] as? String ?? "", webView: viewController.webView)
         let dest = bundleFolder(path: payload["path"] as? String ?? "", isBuiltin: payload["isBuiltin"] as? Bool ?? false)
         if keepUrlPathAfterReload {
             if let currentURL = viewController.webView?.url {
@@ -76,20 +75,18 @@ extension CapacitorUpdaterPlugin {
         return ["ok": true, "guard": guarded]
     }
 
-    static func readyGenerationScript(_ generation: Int) -> String {
-        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
-        // ignores assignments to notifyAppReady. Each document keeps its own generation.
-        return "(function(){window.__CAPGO_READY_GEN=\(generation);if(window.__capgoReadyBridge)return;function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;var orig=cap.nativePromise.bind(cap);cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();"
-    }
-
-    /// Makes the next document report `generation` with notifyAppReady; false without a webview.
-    func stampReadyGeneration(_ generation: Int, webView: WKWebView?) -> Bool {
+    /// Makes the next document report its generation with notifyAppReady (`script` is the
+    /// engine's `readyScript`); false without a webview or a script.
+    func stampReadyGeneration(_ script: String, webView: WKWebView?) -> Bool {
         guard let webView else {
             logger.warn("Cannot stamp notifyAppReady generation without a webview")
             return false
         }
+        guard !script.isEmpty else {
+            return false
+        }
         let userScript = WKUserScript(
-            source: Self.readyGenerationScript(generation),
+            source: script,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )

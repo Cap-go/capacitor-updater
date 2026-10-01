@@ -1225,3 +1225,15 @@ fn shake_menu_switch_channel_reports_download_failures() {
     );
     assert!(p.t.call("bundleNext", json!({})).is_null(), "nothing is queued");
 }
+
+#[test]
+fn apply_bundle_carries_the_ready_generation_script() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.install_bundle("abcdefghij", "2.0.0", "pending");
+    p.resolve("set", json!({ "id": "abcdefghij" }));
+    let hook = p.t.host.hooks_named("applyBundle").last().cloned().unwrap();
+    let generation = hook["readyGeneration"].as_i64().unwrap();
+    let script = hook["readyScript"].as_str().unwrap();
+    assert!(script.starts_with(&format!("(function(){{window.__CAPGO_READY_GEN={generation};")));
+    assert!(script.contains("next.loadGeneration=window.__CAPGO_READY_GEN"));
+}

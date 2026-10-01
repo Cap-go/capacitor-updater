@@ -10,6 +10,16 @@ use crate::bundle::{BundleInfo, BundleStatus};
 use crate::engine::Engine;
 use crate::host::HostLog;
 
+/// Wraps `Capacitor.nativePromise` (not the plugin proxy: registerPlugin's get trap
+/// ignores assignments to notifyAppReady) so `notifyAppReady` reports the page's
+/// generation. Each document keeps its own generation.
+const READY_SCRIPT_TAIL: &str = ";if(window.__capgoReadyBridge)return;function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;var orig=cap.nativePromise.bind(cap);cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();";
+
+/// Document-start script the host injects with `applyBundle` (`readyScript`).
+pub(crate) fn ready_generation_script(generation: i64) -> String {
+    format!("(function(){{window.__CAPGO_READY_GEN={generation}{READY_SCRIPT_TAIL}")
+}
+
 impl Engine {
     // ---- notifyAppReady signal ---------------------------------------------------------------
 
@@ -237,7 +247,12 @@ impl Engine {
         self.host.info(format!("Reloading: {path}"));
         let reply = self.hook(
             hooks::APPLY_BUNDLE,
-            json!({ "path": path, "isBuiltin": is_builtin, "readyGeneration": generation }),
+            json!({
+                "path": path,
+                "isBuiltin": is_builtin,
+                "readyGeneration": generation,
+                "readyScript": ready_generation_script(generation),
+            }),
         );
         let ok = reply
             .as_ref()
@@ -531,5 +546,24 @@ impl Engine {
             .splash_timer
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.hook(hooks::SPLASH, json!({ "action": "hide" }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ready_generation_script;
+
+    /// Byte-identical to the script the Android and iOS hosts used to build.
+    #[test]
+    fn ready_generation_script_stamps_notify_app_ready() {
+        let script = ready_generation_script(7);
+        assert_eq!(
+            script,
+            "(function(){window.__CAPGO_READY_GEN=7;if(window.__capgoReadyBridge)return;function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;var orig=cap.nativePromise.bind(cap);cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}})();"
+        );
+        assert!(script.contains("window.__CAPGO_READY_GEN=7;"));
+        assert!(script.contains("methodName==='notifyAppReady'"));
+        assert!(script.contains("next.loadGeneration=window.__CAPGO_READY_GEN"));
+        assert!(!script.contains("plugin.notifyAppReady="));
     }
 }

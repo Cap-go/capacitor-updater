@@ -634,7 +634,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return this.applyBundle(
                     payload.optString("path", "public"),
                     payload.optBoolean("isBuiltin", true),
-                    payload.optInt("readyGeneration", 0)
+                    payload.optInt("readyGeneration", 0),
+                    payload.optString("readyScript", "")
                 ).toString();
             case "splash":
                 if ("show".equals(payload.optString("action"))) {
@@ -716,8 +717,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // ---- WebView: apply a bundle -------------------------------------------------------------------
 
-    /** {@code applyBundle} hook: stamp the next page's ready generation, point the WebView at the bundle and reload. */
-    private JSONObject applyBundle(final String path, final boolean usingBuiltin, final int generation) {
+    /**
+     * {@code applyBundle} hook: stamp the next page's ready generation (the engine's {@code readyScript}), point the
+     * WebView at the bundle and reload.
+     */
+    private JSONObject applyBundle(final String path, final boolean usingBuiltin, final int generation, final String readyScript) {
         final JSONObject reply = new JSONObject();
         final Bridge bridge = this.bridge;
         final android.webkit.WebView webView = bridge == null ? null : bridge.getWebView();
@@ -726,7 +730,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return reply.put("ok", false);
             }
             webView.post(() -> {
-                if (!this.installReadyGenerationScript(webView, generation)) {
+                if (!this.installReadyGenerationScript(webView, readyScript)) {
                     this.engineCall("readyGuardDisarm", CapgoCore.input("generation", generation));
                 }
             });
@@ -792,30 +796,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    static String readyGenerationScript(final int generation) {
-        // Wrap Capacitor.nativePromise, not the plugin proxy. registerPlugin's get trap
-        // ignores assignments to notifyAppReady. Each document keeps its own generation.
-        return (
-            "(function(){window.__CAPGO_READY_GEN=" +
-            generation +
-            ";if(window.__capgoReadyBridge)return;" +
-            "function arm(){var cap=window.Capacitor;if(!cap||typeof cap.nativePromise!=='function'||cap.__capgoNativePromise)return false;" +
-            "var orig=cap.nativePromise.bind(cap);" +
-            "cap.nativePromise=function(pluginName,methodName,options){if(pluginName==='CapacitorUpdater'&&methodName==='notifyAppReady'){" +
-            "var next={};if(options&&typeof options==='object'){for(var k in options){if(Object.prototype.hasOwnProperty.call(options,k))next[k]=options[k];}}" +
-            "next.loadGeneration=window.__CAPGO_READY_GEN;options=next;}return orig(pluginName,methodName,options);};" +
-            "cap.__capgoNativePromise=true;window.__capgoReadyBridge=true;return true;}" +
-            "if(!arm()){var n=0;var t=setInterval(function(){if(arm()||++n>100)clearInterval(t);},20);}" +
-            "})();"
-        );
-    }
-
-    private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {
+    private boolean installReadyGenerationScript(final android.webkit.WebView webView, final String script) {
         try {
-            if (this.bridge == null || this.bridge.getAppUrl() == null) {
+            if (script.isEmpty() || this.bridge == null || this.bridge.getAppUrl() == null) {
                 return false;
             }
-            return this.addDocumentStartScript(webView, readyGenerationScript(generation));
+            return this.addDocumentStartScript(webView, script);
         } catch (final Exception e) {
             logger.warn("Unable to stamp notifyAppReady generation: " + e.getMessage());
             return false;

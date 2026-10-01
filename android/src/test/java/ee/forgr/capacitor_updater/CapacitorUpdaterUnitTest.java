@@ -216,15 +216,6 @@ public class CapacitorUpdaterUnitTest {
     // ---- injected scripts ------------------------------------------------------------------------
 
     @Test
-    public void readyGenerationScriptStampsNotifyAppReady() {
-        final String script = CapacitorUpdaterPlugin.readyGenerationScript(7);
-        assertTrue(script.contains("window.__CAPGO_READY_GEN=7;"));
-        assertTrue(script.contains("methodName==='notifyAppReady'"));
-        assertTrue(script.contains("next.loadGeneration=window.__CAPGO_READY_GEN"));
-        assertTrue(script.contains("cap.nativePromise"));
-    }
-
-    @Test
     public void webViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
         final String script = CapacitorUpdaterPlugin.buildWebViewStatsReporterScript();
         assertTrue(script.contains("unhandledrejection"));
