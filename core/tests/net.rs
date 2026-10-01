@@ -97,3 +97,80 @@ fn punycode_hosts_parse_and_unicode_hosts_are_rejected() {
         "{error:?}"
     );
 }
+
+/// API calls ask for gzip and decode it transparently (OkHttp / URLSession did).
+#[test]
+fn api_responses_are_gzip_decoded_transparently() {
+    use std::io::Write;
+    let json = br#"{"version":"1.2.3","message":"compressed"}"#.repeat(50);
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&json).unwrap();
+    let compressed = encoder.finish().unwrap();
+    assert!(compressed.len() < json.len());
+
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let handle = std::thread::spawn(move || {
+        let mut accepted = Vec::new();
+        for body in [compressed, Vec::new()] {
+            let request = server.recv().unwrap();
+            accepted.push(
+                request
+                    .headers()
+                    .iter()
+                    .find(|h| h.field.equiv("Accept-Encoding"))
+                    .map(|h| h.value.to_string()),
+            );
+            let response = tiny_http::Response::from_data(body)
+                .with_header("Content-Encoding: gzip".parse::<tiny_http::Header>().unwrap());
+            request.respond(response).unwrap();
+        }
+        accepted
+    });
+    let http = http();
+    let response = http.get(&format!("http://127.0.0.1:{port}/latest")).unwrap();
+    assert_eq!(response.body, json);
+    assert_eq!(response.header("Content-Encoding"), None);
+    // An empty gzip-labelled body (e.g. 204) is just empty.
+    let empty = http
+        .send_json(
+            "POST",
+            &format!("http://127.0.0.1:{port}/stats"),
+            &serde_json::json!({}),
+        )
+        .unwrap();
+    assert!(empty.body.is_empty());
+    let accepted = handle.join().unwrap();
+    assert_eq!(accepted, vec![Some("gzip".to_string()), Some("gzip".to_string())]);
+}
+
+/// Bundle downloads ask for the identity encoding: stored bytes must match the
+/// checksum and Content-Length / Content-Range offsets.
+#[test]
+fn downloads_request_identity_encoding() {
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let handle = std::thread::spawn(move || {
+        let request = server.recv().unwrap();
+        let accepted = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Accept-Encoding"))
+            .map(|h| h.value.to_string());
+        request
+            .respond(tiny_http::Response::from_data(b"zip bytes".to_vec()))
+            .unwrap();
+        accepted
+    });
+    let mut body = Vec::new();
+    http()
+        .download(&format!("http://127.0.0.1:{port}/b.zip"), &[], &mut |event| {
+            if let capgo_updater_core::net::Stream::Chunk(chunk) = event {
+                body.extend_from_slice(chunk);
+            }
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(body, b"zip bytes");
+    assert_eq!(handle.join().unwrap().as_deref(), Some("identity"));
+}

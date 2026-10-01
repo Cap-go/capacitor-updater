@@ -318,18 +318,38 @@ impl Http {
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Result<Response, NetError> {
-        let response = self.execute(&self.agent, method, url, headers, body)?;
+        // Transparent gzip, as OkHttp and URLSession did for API calls.
+        let headers = with_accept_encoding(headers, "gzip");
+        let response = self.execute(&self.agent, method, url, &headers, body)?;
         let status = response.status();
-        let headers = headers_of(&response);
+        let mut headers = headers_of(&response);
+        let gzip = response.header("Content-Encoding").is_some_and(|value| {
+            value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip")
+        });
+        let read_error = |error: std::io::Error| NetError {
+            kind: classify_io(&error),
+            message: error.to_string(),
+        };
         let mut buffer = Vec::new();
         response
             .into_reader()
             .take(MAX_API_BODY_BYTES)
             .read_to_end(&mut buffer)
-            .map_err(|error| NetError {
-                kind: classify_io(&error),
-                message: error.to_string(),
-            })?;
+            .map_err(read_error)?;
+        if gzip {
+            // The decoded size is capped too (gzip bomb).
+            let mut decoded = Vec::new();
+            if !buffer.is_empty() {
+                flate2::read::MultiGzDecoder::new(buffer.as_slice())
+                    .take(MAX_API_BODY_BYTES)
+                    .read_to_end(&mut decoded)
+                    .map_err(read_error)?;
+            }
+            buffer = decoded;
+            headers.retain(|(name, _)| {
+                !name.eq_ignore_ascii_case("Content-Encoding") && !name.eq_ignore_ascii_case("Content-Length")
+            });
+        }
         Ok(Response {
             status,
             headers,
@@ -366,7 +386,9 @@ impl Http {
         headers: &[(&str, &str)],
         handler: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
     ) -> Result<StreamHead, NetError> {
-        let response = self.execute(&self.download_agent, "GET", url, headers, None)?;
+        // Bundle files are stored byte for byte (checksums, Range resume): no content coding.
+        let headers = with_accept_encoding(headers, "identity");
+        let response = self.execute(&self.download_agent, "GET", url, &headers, None)?;
         let head = StreamHead {
             status: response.status(),
             headers: headers_of(&response),
@@ -389,6 +411,18 @@ impl Http {
         }
         Ok(head)
     }
+}
+
+/// `headers` plus `Accept-Encoding: <value>` unless the caller set one.
+fn with_accept_encoding<'a>(headers: &[(&'a str, &'a str)], value: &'a str) -> Vec<(&'a str, &'a str)> {
+    let mut headers = headers.to_vec();
+    if !headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+    {
+        headers.push(("Accept-Encoding", value));
+    }
+    headers
 }
 
 /// A redirect may never downgrade HTTPS to plain HTTP unless explicitly allowed.

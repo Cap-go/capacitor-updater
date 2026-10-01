@@ -247,18 +247,22 @@ fn populate_delta_cache_rejects_traversal_ids() {
 
 // ---- zip resume -------------------------------------------------------------------------------
 
+/// Requests seen by [`truncating_server`]: (`Range` start, `Accept-Encoding`).
+type SeenRequests = Arc<Mutex<Vec<(Option<String>, Option<String>)>>>;
+
 /// Serves `body`: the first request advertises the full length but drops the
 /// connection halfway; later requests honour `Range` with a 206.
-fn truncating_server(body: Vec<u8>) -> (String, Arc<Mutex<Vec<Option<String>>>>) {
+fn truncating_server(body: Vec<u8>) -> (String, SeenRequests) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/b.zip", listener.local_addr().unwrap());
-    let ranges: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let ranges: SeenRequests = Arc::default();
     let seen = ranges.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut range = None;
+            let mut encoding = None;
             loop {
                 let mut line = String::new();
                 if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
@@ -267,9 +271,12 @@ fn truncating_server(body: Vec<u8>) -> (String, Arc<Mutex<Vec<Option<String>>>>)
                 if let Some(value) = line.to_ascii_lowercase().strip_prefix("range: bytes=") {
                     range = Some(value.trim().trim_end_matches('-').to_string());
                 }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("accept-encoding:") {
+                    encoding = Some(value.trim().to_string());
+                }
             }
             let first = seen.lock().unwrap().is_empty();
-            seen.lock().unwrap().push(range.clone());
+            seen.lock().unwrap().push((range.clone(), encoding));
             let total = body.len();
             if first {
                 let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
@@ -315,7 +322,13 @@ fn interrupted_zip_download_resumes_with_range() {
     );
     let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("blob.bin")).unwrap(), noise);
-    let ranges = ranges.lock().unwrap().clone();
+    let seen = ranges.lock().unwrap().clone();
+    // Byte-exact resume: no content coding on any bundle request.
+    assert!(
+        seen.iter().all(|(_, encoding)| encoding.as_deref() == Some("identity")),
+        "{seen:?}"
+    );
+    let ranges: Vec<Option<String>> = seen.into_iter().map(|(range, _)| range).collect();
     assert!(ranges.len() >= 2, "{ranges:?}");
     assert_eq!(ranges[0], None);
     let resumed_at: usize = ranges[1].as_deref().unwrap().parse().unwrap();
