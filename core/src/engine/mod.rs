@@ -86,7 +86,10 @@ impl Engine {
     pub fn configure(&self, value: &Value) -> CoreResult<()> {
         let (user_agent, timeout, allow_downgrade) = {
             let mut config = self.config_mut();
-            config.apply(value)?;
+            // All or nothing: an invalid public key must not leave half the settings applied.
+            let mut updated = config.clone();
+            updated.apply(value)?;
+            *config = updated;
             let allow_downgrade = config.allow_https_to_http_redirect;
             (
                 crate::http::user_agent(
@@ -110,6 +113,9 @@ impl Engine {
     pub fn call(&self, operation: &str, input: &Value) -> CoreResult<Value> {
         let empty = Value::Object(Default::default());
         let input = if input.is_null() { &empty } else { input };
+        if !input.is_object() {
+            return Err(CoreError::invalid_input("input must be a JSON object"));
+        }
         match self.call_engine(operation, input) {
             Some(result) => result,
             None => crate::api::call(operation, input).map_err(|error| {

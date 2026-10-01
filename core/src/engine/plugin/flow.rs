@@ -131,7 +131,8 @@ impl Engine {
             runtime.insert("versionBuild".into(), json!(config.native_version));
         }
         if let Err(error) = self.configure(&Value::Object(runtime)) {
-            // An invalid public key must not make the plugin inert: encryption stays required.
+            // An invalid public key fails the load and the hosts crash, like every previous
+            // version: the updater never runs without the encryption the app asked for.
             self.host.error(error.message.clone());
             return Err(error);
         }

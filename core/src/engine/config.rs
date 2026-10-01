@@ -173,7 +173,12 @@ impl EngineConfig {
                 self.public_key.clear();
                 self.key_id.clear();
             } else {
-                crate::crypto::RsaPublicKey::from_pem(public_key).map_err(|_| {
+                // RSA-2048 only, like the previous iOS plugin: checksums are one 256-byte block,
+                // so any other size could never verify an encrypted bundle.
+                crate::crypto::RsaPublicKey::from_pem(public_key)
+                    .ok()
+                    .filter(|key| key.size_bytes() == 256)
+                    .ok_or_else(|| {
                     CoreError::new(
                         "invalid_public_key",
                         "Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.",

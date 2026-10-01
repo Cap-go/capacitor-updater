@@ -171,6 +171,9 @@ impl<R: Read> CbcDecryptReader<R> {
 
 impl<R: Read> Read for CbcDecryptReader<R> {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if out.is_empty() {
+            return Ok(0);
+        }
         let invalid = |message: String| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
         loop {
             if self.position < self.plain.len() {
@@ -226,5 +229,18 @@ mod tests {
         // The final block is withheld until finish(); these blocks carry no padding.
         assert_eq!(crate::text::hex_encode(&out), "6bc1bee22e409f96e93d7e117393172a");
         assert!(decryptor.finish(&mut out).is_err());
+    }
+
+    /// An empty read never touches the input (which may block or fail).
+    #[test]
+    fn empty_read_does_not_read_the_input() {
+        struct Failing;
+        impl Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("input must not be read"))
+            }
+        }
+        let mut reader = CbcDecryptReader::new(Failing, &[0; 16], &[0; 16]);
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
     }
 }

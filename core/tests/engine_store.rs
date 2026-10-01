@@ -1,7 +1,50 @@
 mod support;
 
+use rsa::pkcs1::EncodeRsaPublicKey;
 use serde_json::json;
 use support::TestEngine;
+
+#[test]
+fn engine_operations_reject_non_object_input() {
+    let t = TestEngine::new(json!({}));
+    t.install_bundle("b1", "1.0.1", "success");
+    t.call("bundleSet", json!({ "id": "b1" }));
+    for input in [json!([]), json!("internal"), json!(1)] {
+        assert_eq!(t.engine.call("bundleReset", &input).unwrap_err().code, "invalid_input");
+    }
+    assert_eq!(t.call("bundleCurrent", json!({}))["id"], "b1");
+}
+
+#[test]
+fn configure_applies_nothing_when_the_public_key_is_invalid() {
+    let t = TestEngine::new(json!({ "updateUrl": "https://old.example.com" }));
+    let error = t
+        .engine
+        .call(
+            "configure",
+            &json!({ "updateUrl": "https://new.example.com", "publicKey": "not a key" }),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "invalid_public_key");
+    assert_eq!(t.call("config", json!({}))["updateUrl"], "https://old.example.com");
+}
+
+#[test]
+fn only_rsa_2048_public_keys_are_accepted() {
+    let pem = |bits: usize| {
+        let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), bits).unwrap();
+        key.to_public_key().to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap()
+    };
+    let t = TestEngine::new(json!({}));
+    t.call("configure", json!({ "publicKey": pem(2048) }));
+    for bits in [1024, 3072] {
+        let error = t
+            .engine
+            .call("configure", &json!({ "publicKey": pem(bits) }))
+            .unwrap_err();
+        assert_eq!(error.code, "invalid_public_key", "{bits} bits");
+    }
+}
 
 #[test]
 fn builtin_and_unknown_records() {
