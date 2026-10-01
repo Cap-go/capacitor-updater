@@ -272,3 +272,32 @@ fn cleartext_http_follows_the_app_policy() {
     assert!(server.requests().is_empty(), "nothing sent in clear text");
     assert_eq!(t.host.hooks_named("cleartextPermitted")[0]["host"], "127.0.0.1");
 }
+
+#[test]
+fn preview_payloads_get_the_long_transfer_timeout() {
+    // Answers after 1.5 s: past a 1 s responseTimeout, well within the 60 s preview budget.
+    let server = FakeServer::start(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        FakeServer::json(200, json!({ "version": "2.0.0" }))
+    });
+    let t = TestEngine::new(json!({
+        "updateUrl": format!("{}/updates", server.url),
+        "timeoutMs": 1000,
+    }));
+    let payload = t.engine.fetch_json(&format!("{}/preview.json", server.url)).unwrap();
+    assert_eq!(payload["version"], "2.0.0");
+    // API calls keep responseTimeout.
+    assert_eq!(t.call("getLatest", json!({}))["error"], "network_error");
+}
+
+#[test]
+fn preview_payload_errors_keep_the_server_message() {
+    let server = FakeServer::start(|_| FakeServer::json(404, json!({ "message": "Preview expired" })));
+    let t = engine_with(&server);
+    let error = t
+        .engine
+        .fetch_json(&format!("{}/preview.json", server.url))
+        .unwrap_err();
+    assert_eq!(error.code, "response_error");
+    assert_eq!(error.message, "Preview expired");
+}

@@ -597,17 +597,39 @@ impl Engine {
 
 impl Engine {
     /// GETs a JSON document (preview payloads). Non-2xx bodies become the error message.
+    ///
+    /// Runs on the bundle-transfer client: like every previous version, a preview payload
+    /// gets at least 60 s (connect and read) whatever `responseTimeout` is.
     pub fn fetch_json(&self, url: &str) -> crate::error::CoreResult<Value> {
         use crate::error::CoreError;
+        use crate::net::{NetError, NetErrorKind, Stream};
+        const MAX_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
         let parsed =
             url::Url::parse(url).map_err(|_| CoreError::new("invalid_url", "Expected an http or https URL"))?;
         if parsed.scheme() != "http" && parsed.scheme() != "https" {
             return Err(CoreError::new("invalid_url", "Expected an http or https URL"));
         }
-        let response = self
+        let mut body = Vec::new();
+        let head = self
             .http
-            .send("GET", url, &[("Accept", "application/json")], None)
+            .download(url, &[("Accept", "application/json")], &mut |event| {
+                if let Stream::Chunk(chunk) = event {
+                    if body.len() + chunk.len() > MAX_PAYLOAD_BYTES {
+                        return Err(NetError {
+                            kind: NetErrorKind::Io,
+                            message: "Preview payload is too large".into(),
+                        });
+                    }
+                    body.extend_from_slice(chunk);
+                }
+                Ok(())
+            })
             .map_err(|error| CoreError::new("network_error", error.message))?;
+        let response = Response {
+            status: head.status,
+            headers: head.headers,
+            body,
+        };
         let json = response.json().unwrap_or(Value::Null);
         if !response.is_success() {
             let message = json
