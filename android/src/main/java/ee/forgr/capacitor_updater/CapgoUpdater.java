@@ -20,8 +20,12 @@ import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
+import com.getcapacitor.plugin.WebView;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -51,6 +55,8 @@ public class CapgoUpdater {
     }
 
     static final String BUNDLE_DIRECTORY = "versions";
+    /** Engine configuration persisted at plugin load for downloads WorkManager runs without the plugin. */
+    static final String ENGINE_CONFIG_FILE = "CapacitorUpdater.engineConfig.json";
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
@@ -96,7 +102,91 @@ public class CapgoUpdater {
         } catch (JSONException e) {
             throw new IllegalStateException("Invalid engine config", e);
         }
+        this.persistEngineConfig(config);
         return new CapgoEngine(config, this.host);
+    }
+
+    /** Saved for {@link #createWorkerEngine}: identity and storage paths only (no secret). */
+    private void persistEngineConfig(final JSONObject config) {
+        try {
+            final JSONObject saved = new JSONObject().put("engine", config).put("osLogging", this.logger.usesSystemLog());
+            final File file = new File(this.context.getNoBackupFilesDir(), ENGINE_CONFIG_FILE);
+            final File temp = new File(file.getParentFile(), ENGINE_CONFIG_FILE + ".tmp");
+            try (FileOutputStream output = new FileOutputStream(temp)) {
+                output.write(saved.toString().getBytes(StandardCharsets.UTF_8));
+                output.getFD().sync();
+            }
+            if (!temp.renameTo(file)) {
+                temp.delete();
+                throw new IOException("rename failed");
+            }
+        } catch (IOException | JSONException e) {
+            logger.warn("Cannot persist the engine configuration for background downloads: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Engine for a download WorkManager runs in a process without the plugin (the app was killed mid-download). It uses
+     * the configuration and preferences the plugin last loaded with; events have no listener. {@code null} when the
+     * plugin never ran.
+     */
+    static CapgoEngine createWorkerEngine(final Context context) {
+        final File file = new File(context.getNoBackupFilesDir(), ENGINE_CONFIG_FILE);
+        final JSONObject saved;
+        try (FileInputStream input = new FileInputStream(file)) {
+            final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            final byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                bytes.write(buffer, 0, read);
+            }
+            saved = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+        } catch (IOException | JSONException e) {
+            return null;
+        }
+        final JSONObject config = saved.optJSONObject("engine");
+        if (config == null) {
+            return null;
+        }
+        final Logger logger = new Logger("CapgoUpdater", new Logger.Options(saved.optBoolean("osLogging", true)));
+        final SharedPreferences prefs = context.getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Context.MODE_PRIVATE);
+        final CapgoUpdater updater = new CapgoUpdater(
+            context,
+            prefs,
+            logger,
+            new Listener() {
+                @Override
+                public void onEvent(final String event, final String payloadJson) {}
+
+                @Override
+                public String onHook(final String name, final String payloadJson) {
+                    return null;
+                }
+            }
+        );
+        try {
+            return new CapgoEngine(config, updater.host);
+        } catch (IllegalStateException e) {
+            logger.error("Cannot create the engine for a background download: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** {@code scheduleDownload}: the engine's download becomes a WorkManager job. {@code null} keeps it in-process. */
+    private String scheduleDownload(final String payloadJson) {
+        try {
+            final JSONObject payload = new JSONObject(payloadJson);
+            final String id = payload.optString("id", "");
+            if (id.isEmpty()) {
+                return null;
+            }
+            CapgoDownloadWorker.enqueue(this.context, id, payload.optString("version", ""), isEmulator());
+            return new JSONObject().put("scheduled", true).toString();
+        } catch (JSONException | RuntimeException e) {
+            // WorkManager unavailable (not initialized, disabled): download in-process.
+            logger.warn("Cannot schedule the download, running it in-process: " + e.getMessage());
+            return null;
+        }
     }
 
     final CapgoEngineHost host = new CapgoEngineHost() {
@@ -156,6 +246,9 @@ public class CapgoUpdater {
                 if ("cleartextPermitted".equals(name)) {
                     return cleartextPermittedReply(payloadJson);
                 }
+                if ("scheduleDownload".equals(name)) {
+                    return scheduleDownload(payloadJson);
+                }
                 return listener.onHook(name, payloadJson);
             } catch (RuntimeException e) {
                 logger.error("Hook " + name + " failed: " + e.getMessage());
@@ -166,6 +259,16 @@ public class CapgoUpdater {
         @Override
         void willSwitchBundle(final String path) {
             resetBackgroundRunnerWorkForBundleSwitch(new File(path));
+        }
+
+        @Override
+        boolean cancelVersionDownload(final String version) {
+            return CapgoDownloadWorker.cancelVersion(context, version, logger);
+        }
+
+        @Override
+        void cancelAllDownloads() {
+            CapgoDownloadWorker.cancelAll(context);
         }
     };
 
@@ -185,7 +288,14 @@ public class CapgoUpdater {
     static String cleartextPermittedReply(final String payloadJson) {
         try {
             final String host = new JSONObject(payloadJson).optString("host", "");
-            final boolean permitted = android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host);
+            final android.security.NetworkSecurityPolicy policy = android.security.NetworkSecurityPolicy.getInstance();
+            boolean permitted;
+            try {
+                permitted = policy.isCleartextTrafficPermitted(host);
+            } catch (final LinkageError e) {
+                // Platforms without the per-host check (JVM unit tests): the app-wide policy decides.
+                permitted = policy.isCleartextTrafficPermitted();
+            }
             return new JSONObject().put("permitted", permitted).toString();
         } catch (JSONException e) {
             return null;

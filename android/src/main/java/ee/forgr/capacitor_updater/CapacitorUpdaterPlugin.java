@@ -215,6 +215,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (final JSONException e) {
             throw new IllegalStateException("Invalid plugin configuration", e);
         }
+        // Scheduled downloads (WorkManager jobs) of this process now run on this engine.
+        CapgoEngineHolder.setPluginEngine(this.engine);
         logger.info("appId: " + result.optString("appId", appId));
         try {
             this.methodLanes.setDetachedMethods(this.engine.callArray("detachedPluginMethods", null));
@@ -1443,7 +1445,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.engine = null;
         this.methodLanes.shutdown();
         if (engine != null) {
-            new Thread(engine::close, "capgo-engine-close").start();
+            CapgoEngineHolder.clearPluginEngine(engine);
+            new Thread(() -> {
+                // Calls waiting for a scheduled download return; the WorkManager jobs go on and record their bundle.
+                try {
+                    engine.call("detachScheduledDownloads", null);
+                } catch (final CapgoCore.Failure ignored) {
+                    // Already closed.
+                }
+                engine.close();
+            }, "capgo-engine-close").start();
         }
     }
 
