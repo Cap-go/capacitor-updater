@@ -105,9 +105,6 @@ fn run(group: &str, input: &Value, temp: &Path) -> Result<Value, String> {
         "legacyDirectUpdateAutoMode" => json!({
             "mode": policy::auto_update_mode_for_legacy_direct_update_mode(req_str(input, "directUpdateMode"))
         }),
-        "isDirectUpdateMode" => json!({
-            "direct": policy::is_direct_update_mode(req_str(input, "directUpdateMode"))
-        }),
         "onLaunchDirectUpdateConsumption" => json!({
             "consume": policy::should_consume_on_launch_direct_update(
                 req_str(input, "mode"),
@@ -117,28 +114,12 @@ fn run(group: &str, input: &Value, temp: &Path) -> Result<Value, String> {
         "updateResponseKind" => json!({
             "kind": policy::normalized_update_response_kind(opt_str(input, "kind"))
         }),
-        "shakeMenuGesture" => {
-            let value = opt_str(input, "value");
-            json!({
-                "gesture": policy::normalized_shake_menu_gesture(value),
-                "supported": policy::is_supported_shake_menu_gesture(value),
-            })
-        }
+        "shakeMenuGesture" => json!({
+            "gesture": policy::normalized_shake_menu_gesture(opt_str(input, "value"))
+        }),
         "webViewErrorStatsAction" => json!({
             "action": policy::stats_action_for_webview_error_type(str_or_empty(input, "type"))
         }),
-        "launchDownloadReady" => {
-            let success = req_bool(input, "success");
-            json!({
-                "notify": policy::should_notify_launch_download_ready(
-                    req_bool(input, "awaitedByCaller"),
-                    success,
-                    req_bool(input, "directInstall"),
-                    req_bool(input, "previewSession"),
-                ),
-                "status": policy::launch_download_ready_status(success, req_bool(input, "setNext")),
-            })
-        }
         "foreignBundleReset" => json!({
             "reset": policy::should_reset_for_foreign_bundle(
                 opt_str(input, "bundlePath"),
@@ -225,9 +206,6 @@ fn run(group: &str, input: &Value, temp: &Path) -> Result<Value, String> {
         "keyId" => json!({ "keyId": crypto::key_id(str_or_empty(input, "publicKey")) }),
         "publicKeyValid" => json!({
             "valid": RsaPublicKey::from_pem(str_or_empty(input, "publicKey")).is_ok()
-        }),
-        "checksumAlgorithm" => json!({
-            "algorithm": crypto::detect_checksum_algorithm(str_or_empty(input, "checksum"))
         }),
         "checksumFile" => {
             let content = hex_decode(req_str(input, "contentHex")).unwrap();

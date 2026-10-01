@@ -65,13 +65,6 @@ pub fn auto_update_mode_for_legacy_direct_update_mode(direct_update_mode: &str) 
     }
 }
 
-pub fn is_direct_update_mode(direct_update_mode: &str) -> bool {
-    matches!(
-        direct_update_mode,
-        AUTO_UPDATE_INSTALL | AUTO_UPDATE_LAUNCH | AUTO_UPDATE_ALWAYS
-    )
-}
-
 /// `onLaunch` direct updates are one-shot: consume the attempt once planned.
 pub fn should_consume_on_launch_direct_update(direct_update_mode: &str, planned: bool) -> bool {
     planned && direct_update_mode == AUTO_UPDATE_LAUNCH
@@ -92,14 +85,6 @@ pub fn normalized_shake_menu_gesture(value: Option<&str>) -> &'static str {
     }
 }
 
-/// Missing values fall back to the default gesture; blank or unknown values are rejected.
-pub fn is_supported_shake_menu_gesture(value: Option<&str>) -> bool {
-    match value.map(str::trim) {
-        None => true,
-        Some(normalized) => normalized == SHAKE_GESTURE_SHAKE || normalized == SHAKE_GESTURE_THREE_FINGER_PINCH,
-    }
-}
-
 pub fn stats_action_for_webview_error_type(error_type: &str) -> &'static str {
     match error_type {
         "unhandled_rejection" => "webview_unhandled_rejection",
@@ -111,33 +96,6 @@ pub fn stats_action_for_webview_error_type(error_type: &str) -> &'static str {
         "webview_dom_content_loaded" => "webview_dom_content_loaded",
         "webview_page_loaded" => "webview_page_loaded",
         _ => "webview_javascript_error",
-    }
-}
-
-/// Launch downloads have no waiter; the host emits `appReady` for them unless
-/// the bundle is applied right away (direct install / preview session).
-pub fn should_notify_launch_download_ready(
-    awaited_by_caller: bool,
-    success: bool,
-    direct_install: bool,
-    preview_session: bool,
-) -> bool {
-    if awaited_by_caller {
-        return false;
-    }
-    if !success {
-        return true;
-    }
-    !direct_install && !preview_session
-}
-
-pub fn launch_download_ready_status(success: bool, set_next: bool) -> &'static str {
-    if !success {
-        "Error downloading file"
-    } else if set_next {
-        "update downloaded, will install next background"
-    } else {
-        "update downloaded, autoUpdate onlyDownload"
     }
 }
 

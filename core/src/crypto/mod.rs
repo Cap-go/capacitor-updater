@@ -32,15 +32,6 @@ pub fn key_id(public_key: &str) -> String {
     cleaned.chars().take(20).collect()
 }
 
-pub fn detect_checksum_algorithm(checksum: &str) -> String {
-    match checksum.chars().count() {
-        0 => "empty".to_string(),
-        64 => "SHA-256".to_string(),
-        8 => "CRC32 (deprecated)".to_string(),
-        other => format!("unknown ({other} hex chars)"),
-    }
-}
-
 /// Decrypts a bundle checksum signed with the private key.
 ///
 /// With no public key configured the checksum is returned unchanged. The

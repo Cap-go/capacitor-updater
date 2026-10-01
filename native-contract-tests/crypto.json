@@ -134,44 +134,6 @@
       }
     }
   ],
-  "checksumAlgorithm": [
-    {
-      "id": "checksum-algorithm.empty",
-      "input": {
-        "checksum": ""
-      },
-      "expect": {
-        "algorithm": "empty"
-      }
-    },
-    {
-      "id": "checksum-algorithm.sha256",
-      "input": {
-        "checksum": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
-      },
-      "expect": {
-        "algorithm": "SHA-256"
-      }
-    },
-    {
-      "id": "checksum-algorithm.crc32",
-      "input": {
-        "checksum": "deadbeef"
-      },
-      "expect": {
-        "algorithm": "CRC32 (deprecated)"
-      }
-    },
-    {
-      "id": "checksum-algorithm.unknown",
-      "input": {
-        "checksum": "0123456789"
-      },
-      "expect": {
-        "algorithm": "unknown (10 hex chars)"
-      }
-    }
-  ],
   "checksumFile": [
     {
       "id": "checksum-file.empty",
