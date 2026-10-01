@@ -389,6 +389,9 @@ pub struct Plugin {
     periodic_started: AtomicBool,
     /// Serializes starting the update cycle.
     cycle: Mutex<()>,
+    /// Serializes `notifyAppReady` confirming the current bundle with the rollback
+    /// check failing it: a confirmation never loses against a concurrent rollback.
+    confirmation: Mutex<()>,
 }
 
 pub(crate) fn now_ms() -> i64 {

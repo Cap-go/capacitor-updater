@@ -254,6 +254,8 @@ impl Engine {
                 // ---- downloads
                 "download" => {
                     let request = super::download::DownloadRequest::from_json(input)?;
+                    // Like every other download path: never write while the launch cleanup sweeps.
+                    self.wait_for_cleanup()?;
                     let installed = if request.manifest.is_some() {
                         self.download_manifest(&request)?
                     } else {

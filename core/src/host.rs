@@ -178,6 +178,9 @@ pub struct MemoryHost {
     pub certificate_verdict: std::sync::Mutex<Option<Option<Result<(), String>>>>,
     /// `(chain, server name)` of every TLS verification request.
     pub certificate_requests: std::sync::Mutex<Vec<(Vec<Vec<u8>>, String)>>,
+    /// Called with every log message, after it is recorded (lets tests act at a precise point).
+    #[allow(clippy::type_complexity)]
+    pub on_log: std::sync::Mutex<Option<std::sync::Arc<dyn Fn(&str) + Send + Sync>>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -221,6 +224,10 @@ impl MemoryHost {
 impl Host for MemoryHost {
     fn log(&self, level: LogLevel, message: &str) {
         self.logs.lock().unwrap().push((level, message.to_string()));
+        let on_log = self.on_log.lock().unwrap().clone();
+        if let Some(on_log) = on_log {
+            on_log(message);
+        }
     }
 
     fn kv_get(&self, key: &str, default: Option<&str>) -> Option<String> {

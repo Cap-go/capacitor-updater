@@ -260,6 +260,64 @@ fn url_and_app_id_setters_are_gated() {
 }
 
 #[test]
+fn url_setters_change_the_live_endpoints() {
+    let p = Plugin::load(json!({ "autoUpdate": false, "allowModifyUrl": true }));
+    let url = &p.backend.server.url;
+    p.resolve("setUpdateUrl", json!({ "url": format!("{url}/updates2") }));
+    p.resolve("setChannelUrl", json!({ "url": format!("{url}/channel2") }));
+    p.resolve("setStatsUrl", json!({ "url": format!("{url}/stats2") }));
+    p.method("getLatest", json!({}));
+    p.method("getChannel", json!({}));
+    p.t.call("statsSend", json!({ "action": "set" }));
+    p.t.engine.flush_stats();
+    wait_until("requests to the new urls", || {
+        let paths: Vec<String> = p.backend.server.requests().iter().map(|r| r.url.clone()).collect();
+        ["/updates2", "/channel2", "/stats2"]
+            .iter()
+            .all(|path| paths.iter().any(|url| url.starts_with(path)))
+    });
+}
+
+/// The engine `download` operation waits for the launch cleanup like the plugin paths.
+#[test]
+fn download_operation_waits_for_the_launch_cleanup() {
+    let backend = Backend::start();
+    let bundle = web_bundle("v2");
+    backend.offer("2.0.0", bundle.clone());
+    let t = TestEngine::new(json!({ "platform": "ios", "builtinServerPath": "" }));
+    t.host.reply_to_hook("applyBundle", json!({ "ok": true }));
+    // A native update with resetWhenUpdate: the cleanup deletes every bundle, 75 ms apart.
+    for index in 0..20 {
+        t.install_bundle(&format!("bundle{index:04}"), &format!("1.0.{index}"), "success");
+    }
+    t.host
+        .store
+        .lock()
+        .unwrap()
+        .insert("LatestNativeBuildVersion".into(), "9".into());
+    let config = json!({ "autoUpdate": false, "updateUrl": format!("{}/updates", backend.server.url) });
+    let native = json!({ "versionName": "1.0.0", "versionCode": "10", "noBackupDir": t.root().join("nobackup").to_string_lossy() });
+    t.call("pluginLoad", json!({ "config": config, "native": native }));
+    t.call(
+        "download",
+        json!({ "url": format!("{}/b.zip", backend.server.url), "version": "2.0.0", "checksum": sha256(&bundle) }),
+    );
+    let logs: Vec<String> = t
+        .host
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, message)| message.clone())
+        .collect();
+    let cleaned = logs.iter().position(|message| message == "Cleanup complete");
+    let proceeded = logs
+        .iter()
+        .position(|message| message == "Cleanup finished, proceeding with download");
+    assert!(cleaned.is_some() && proceeded > cleaned, "{logs:?}");
+}
+
+#[test]
 fn custom_id_persists_only_when_configured() {
     let p = Plugin::load(json!({ "autoUpdate": false, "persistCustomId": true }));
     p.resolve("setCustomId", json!({ "customId": "user-1" }));
@@ -786,6 +844,34 @@ fn pending_bundle_gets_the_shared_minimum_before_rollback() {
     assert_eq!(p.current()["status"], "success");
 }
 
+/// notifyAppReady arriving while the rollback check runs (after it saw the bundle
+/// unconfirmed) wins: the bundle stays.
+#[test]
+fn notify_app_ready_racing_the_rollback_check_keeps_the_bundle() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    p.resolve("set", json!({ "id": id }));
+    let generation = p.last_generation();
+    let engine = Arc::downgrade(&p.t.engine);
+    let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let fired_in_hook = fired.clone();
+    *p.t.host.on_log.lock().unwrap() = Some(Arc::new(move |message: &str| {
+        if message.starts_with("notifyAppReady was not called")
+            && !fired_in_hook.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            let engine = engine.upgrade().unwrap();
+            let args = json!({ "name": "notifyAppReady", "args": { "loadGeneration": generation } });
+            engine.call("pluginMethod", &args).unwrap();
+        }
+    }));
+    wait_until("rollback check", || fired.load(std::sync::atomic::Ordering::SeqCst));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(p.events("updateFailed").is_empty());
+    assert_eq!(p.current()["id"], id);
+    assert_eq!(p.current()["status"], "success");
+}
+
 #[test]
 fn notify_app_ready_confirms_and_ignores_stale_pages() {
     let p = Plugin::load(json!({ "autoUpdate": false }));
@@ -988,6 +1074,57 @@ fn channel_state_file_failures_do_not_reject() {
         .unwrap()
         .iter()
         .any(|(_, message)| message.contains("default channel state file could not be updated")));
+}
+
+/// The restored channel is only final once the preview snapshot is invalidated: when that
+/// write fails, the restore stays pending (like the previous iOS plugin) instead of
+/// leaving a snapshot that would override a later setChannel on the next launch.
+#[test]
+fn preview_channel_restore_retries_when_the_snapshot_cannot_be_invalidated() {
+    use std::os::unix::fs::PermissionsExt;
+    let nobackup = tempfile::tempdir().unwrap();
+    let snapshot = nobackup.path().join("CapacitorUpdater.defaultChannelPreviewSnapshot");
+    std::fs::write(&snapshot, b"\x02beta").unwrap();
+    std::fs::set_permissions(nobackup.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    let p = Plugin::load_with(
+        json!({ "autoUpdate": false }),
+        json!({ "noBackupDir": nobackup.path().to_string_lossy() }),
+    );
+    std::fs::set_permissions(nobackup.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let logs: Vec<String> =
+        p.t.host
+            .logs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, message)| message.clone())
+            .collect();
+    assert!(logs
+        .iter()
+        .any(|message| message == "Default channel preview restore will retry on next launch"));
+    assert!(!logs
+        .iter()
+        .any(|message| message == "Restored defaultChannel after preview"));
+    assert_eq!(std::fs::read(&snapshot).unwrap(), b"\x02beta");
+}
+
+/// A preview session that cannot snapshot the default channel does not start, and leaves
+/// no preview fallback behind.
+#[test]
+fn failed_preview_start_leaves_no_preview_state() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Plugin::load(json!({ "autoUpdate": false, "allowPreview": true }));
+    let nobackup = p.t.root().join("nobackup");
+    std::fs::create_dir_all(&nobackup).unwrap();
+    std::fs::set_permissions(&nobackup, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let rejection = p.reject("startPreviewSession", json!({}));
+    std::fs::set_permissions(&nobackup, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        rejection["message"],
+        "Could not save current bundle as preview fallback"
+    );
+    assert!(p.resolve("listPreviews", json!({})).get("liveBundle").is_none());
+    assert!(p.t.kv("CapacitorUpdater.previewPreviousAppId").is_none());
 }
 
 #[test]

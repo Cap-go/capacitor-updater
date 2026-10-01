@@ -338,7 +338,15 @@ impl Engine {
                 .warn("Default channel preview restore will retry on next launch");
             return;
         }
-        let _ = self.write_channel_snapshot(&ChannelSnapshot::Invalidated);
+        // Until the snapshot is invalidated the restore is not final: the next launch would
+        // apply it again over a later setChannel. Retry then, like the previous iOS plugin.
+        if self.write_channel_snapshot(&ChannelSnapshot::Invalidated).is_err()
+            && !matches!(self.channel_snapshot(), ChannelSnapshot::Invalidated)
+        {
+            self.host
+                .warn("Default channel preview restore will retry on next launch");
+            return;
+        }
         self.kv_write(keys::PREVIEW_PREVIOUS_DEFAULT_CHANNEL, None);
         self.kv_write(keys::PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET, None);
         self.config_mut().default_channel = previous.filter(|channel| !channel.is_empty()).unwrap_or(config_channel);

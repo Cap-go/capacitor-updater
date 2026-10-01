@@ -67,13 +67,12 @@ impl TestEngine {
 }
 
 pub type Reply = (u16, Vec<(String, String)>, Vec<u8>);
-type Responder = Arc<Mutex<Box<dyn FnMut(&RecordedRequest) -> Reply + Send>>>;
+type Responder = Arc<dyn Fn(&RecordedRequest) -> Reply + Send + Sync>;
 
 /// Minimal HTTP server answering with scripted responses and recording requests.
 pub struct FakeServer {
     pub url: String,
     pub requests: Arc<Mutex<Vec<RecordedRequest>>>,
-    responder: Responder,
 }
 
 #[derive(Clone, Debug)]
@@ -98,17 +97,17 @@ impl RecordedRequest {
 
 impl FakeServer {
     pub fn start(
-        responder: impl FnMut(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + 'static,
+        responder: impl Fn(&RecordedRequest) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + Sync + 'static,
     ) -> Self {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let url = format!("http://{}", server.server_addr().to_ip().unwrap());
         let requests: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
-        let responder: Responder = Arc::new(Mutex::new(Box::new(responder)));
-        let (requests_clone, responder_clone) = (requests.clone(), responder.clone());
+        let responder: Responder = Arc::new(responder);
+        let requests_clone = requests.clone();
         std::thread::spawn(move || {
             for mut request in server.incoming_requests() {
                 // One thread per request: a slow response must not stall other connections.
-                let (requests_clone, responder_clone) = (requests_clone.clone(), responder_clone.clone());
+                let (requests_clone, responder) = (requests_clone.clone(), responder.clone());
                 std::thread::spawn(move || {
                     let mut body = Vec::new();
                     let _ = std::io::Read::read_to_end(request.as_reader(), &mut body);
@@ -123,7 +122,8 @@ impl FakeServer {
                         body,
                     };
                     requests_clone.lock().unwrap().push(recorded.clone());
-                    let (status, headers, body) = (responder_clone.lock().unwrap())(&recorded);
+                    // No lock around the responder: a slow response must not delay the others.
+                    let (status, headers, body) = responder(&recorded);
                     // No keep-alive: tiny_http can stall a reused connection under load.
                     let mut response = tiny_http::Response::from_data(body)
                         .with_status_code(status)
@@ -135,11 +135,7 @@ impl FakeServer {
                 });
             }
         });
-        Self {
-            url,
-            requests,
-            responder,
-        }
+        Self { url, requests }
     }
 
     pub fn json(status: u16, body: Value) -> (u16, Vec<(String, String)>, Vec<u8>) {

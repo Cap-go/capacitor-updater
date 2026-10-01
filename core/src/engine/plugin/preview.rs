@@ -267,6 +267,10 @@ impl Engine {
         let app_id = self.config().app_id.clone();
         self.kv_write(keys::PREVIEW_PREVIOUS_APP_ID, Some(&app_id));
         if !self.snapshot_default_channel_for_preview() {
+            // No session starts: nothing may stay behind (a stale liveBundle, a protected fallback).
+            self.set_preview_fallback_bundle(None);
+            self.kv_write(keys::PREVIEW_PREVIOUS_NEXT_BUNDLE, None);
+            self.kv_write(keys::PREVIEW_PREVIOUS_APP_ID, None);
             return false;
         }
         let (menu, selector) = {

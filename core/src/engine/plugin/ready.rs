@@ -174,13 +174,29 @@ impl Engine {
             "notifyAppReady was not called, roll back current bundle: {}",
             current.id()
         ));
-        self.host
-            .info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
-        self.kv_write(keys::LAST_FAILED_BUNDLE, Some(&current.to_stored_json()));
-        self.emit_bundle_event("updateFailed", &current);
-        self.report_app_launch_timeout(&current);
-        self.send_stats("update_fail", Some(current.version_name()), None, None);
-        self.set_error(current.id());
+        {
+            let _confirmation = self
+                .plugin
+                .confirmation
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            // notifyAppReady may have confirmed the bundle since the check above.
+            let latest = self.current_bundle();
+            if latest.id() != current.id() || latest.status() == BundleStatus::Success {
+                self.host.info(format!(
+                    "notifyAppReady was called meanwhile, keeping: {}",
+                    current.id()
+                ));
+                return;
+            }
+            self.host
+                .info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
+            self.kv_write(keys::LAST_FAILED_BUNDLE, Some(&current.to_stored_json()));
+            self.emit_bundle_event("updateFailed", &current);
+            self.report_app_launch_timeout(&current);
+            self.send_stats("update_fail", Some(current.version_name()), None, None);
+            self.set_error(current.id());
+        }
         self.perform_reset(true, false, true);
         if self.plugin_config().auto_delete_failed && !current.is_builtin() {
             let failed_id = current.id().to_string();
@@ -480,6 +496,11 @@ impl Engine {
             return json!({ "bundle": current.to_js() });
         }
         if let Some(engine) = self.weak_self().upgrade() {
+            let _confirmation = self
+                .plugin
+                .confirmation
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
             engine.set_success(current.id(), self.plugin_config().auto_delete_previous);
         }
         self.report_app_launch_ready(&current);
