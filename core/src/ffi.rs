@@ -81,14 +81,14 @@ pub struct CapgoHostCallbacks {
     pub context: *mut c_void,
     pub log: Option<unsafe extern "C" fn(*mut c_void, i32, *const c_char)>,
     pub kv_get: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>,
+    /// Persists a value durably; a NULL value removes the key.
     pub kv_set: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char)>,
     /// Returns every persisted key as a JSON array string (host allocated, released with `free_string`).
     pub kv_keys: Option<unsafe extern "C" fn(*mut c_void) -> *mut c_char>,
     pub emit: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char)>,
     pub free_string: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
-    /// Optional platform hooks (`willSwitchBundle`, `cancelVersionDownload`,
-    /// `beforeDownload`, `cancelAllDownloads`, `sendStats`): hook name and JSON
-    /// payload in, JSON object reply (host allocated) or NULL out.
+    /// Optional platform hooks (full list in `include/capgo_updater_core.h`): hook
+    /// name and JSON payload in, JSON object reply (host allocated) or NULL out.
     pub hook: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_char>,
     /// Called once when the engine is destroyed, to release `context`.
     pub release: Option<unsafe extern "C" fn(*mut c_void)>,

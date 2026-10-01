@@ -36,9 +36,14 @@ void capgo_core_free(char *value);
  * thread. Strings passed in are valid only during the call. kv_get / kv_keys
  * return host-allocated strings (or NULL) that the engine releases with
  * free_string. release is called once when the engine is destroyed.
- * hook (optional) receives platform hooks by name with a JSON payload
- * (willSwitchBundle, cancelVersionDownload, beforeDownload, cancelAllDownloads,
- * sendStats) and returns a host-allocated JSON object reply or NULL.
+ * hook (optional) receives platform hooks by name with a JSON payload and
+ * returns a host-allocated JSON object reply or NULL ("not handled"). Host
+ * services: willSwitchBundle, cancelVersionDownload, beforeDownload,
+ * cancelAllDownloads, sendStats, cleartextPermitted, proxyForUrl,
+ * scheduleDownload. Plugin layer (payloads in core/src/engine/plugin/mod.rs,
+ * `hooks`): applyBundle (bundle switching), splash, previewLoader,
+ * previewNotice, shakeMenu, shakeMenuProgress, keepUrlPath, backgroundTask,
+ * excludeFromBackup.
  * verify_server_certificate checks a TLS server chain (certificates[i] is a
  * DER certificate of lengths[i] bytes, leaf first) with the platform trust
  * store for server_name. It returns 1 when trusted; any other value rejects
@@ -49,6 +54,7 @@ typedef struct CapgoHostCallbacks {
     void *context;
     void (*log)(void *context, int level, const char *message);
     char *(*kv_get)(void *context, const char *key);
+    /** Persists value durably; a NULL value removes the key. */
     void (*kv_set)(void *context, const char *key, const char *value);
     char *(*kv_keys)(void *context);
     void (*emit)(void *context, const char *event, const char *payload_json);

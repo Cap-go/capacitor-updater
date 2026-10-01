@@ -89,7 +89,9 @@ library automatically (`buildCapgoCoreHost` Gradle task).
 
 1. Build the crate for the target (`staticlib` or `cdylib`) and bind the engine
    functions (header: `include/capgo_updater_core.h`).
-2. Implement the host callbacks: storage, events, logging and the hooks above.
+2. Implement the host callbacks: storage, events, logging, the hooks above and
+   TLS verification (`verify_server_certificate`). There is no built-in
+   verifier: without it every HTTPS request fails.
 3. Forward the framework's plugin methods to `pluginMethod` and its lifecycle
    events to `appForeground` / `appBackground`.
 4. Add a binding smoke test: one core call and one engine call (see
