@@ -78,6 +78,52 @@ final class ServerTrustTests: XCTestCase {
         ))
     }
 
+    // SPKI SHA-256 (base64) computed with openssl from the chain above.
+    private static let appleLeafPin = "Y4IXG8Fr0usWRIkGqnw30wN1W7aRBNVbnhizvQ2tlXI="
+    private static let appleIntermediatePin = "9C7mf4J789KvLX59lcMyYpsH6bpdmoAGTByZNhcusLA="
+
+    func testSpkiHashMatchesOpenssl() {
+        XCTAssertEqual(CapgoEngine.spkiSha256Base64(certificate: Self.appleChain[0]), Self.appleLeafPin)
+        XCTAssertEqual(CapgoEngine.spkiSha256Base64(certificate: Self.appleChain[1]), Self.appleIntermediatePin)
+        XCTAssertNil(CapgoEngine.spkiSha256Base64(certificate: Data([0x30, 0x03, 0x02, 0x01])))
+    }
+
+    /// NSPinnedDomains, as URLSession applies it.
+    func testPinnedDomainsAreEnforced() {
+        func verify(_ pinned: [String: Any], host: String = "www.apple.com") -> String? {
+            CapgoEngine.verifyServerCertificate(
+                chain: Self.appleChain, serverName: host, date: Self.insideValidity, pinnedDomains: pinned
+            )
+        }
+        let leaf: [String: Any] = ["www.apple.com": ["NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": Self.appleLeafPin]]]]
+        XCTAssertNil(verify(leaf))
+        let wrongLeaf: [String: Any] = ["www.apple.com": ["NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": Self.appleIntermediatePin]]]]
+        XCTAssertNotNil(verify(wrongLeaf))
+        let ca: [String: Any] = ["apple.com": ["NSIncludesSubdomains": true, "NSPinnedCAIdentities": [["SPKI-SHA256-BASE64": Self.appleIntermediatePin]]]]
+        XCTAssertNil(verify(ca))
+        let wrongCa: [String: Any] = ["apple.com": ["NSIncludesSubdomains": true, "NSPinnedCAIdentities": [["SPKI-SHA256-BASE64": Self.appleLeafPin]]]]
+        XCTAssertNotNil(verify(wrongCa))
+        // Without NSIncludesSubdomains the parent domain does not pin www.apple.com.
+        let parentOnly: [String: Any] = ["apple.com": ["NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": "AAAA"]]]]
+        XCTAssertNil(verify(parentOnly))
+        // Both lists present: both must match.
+        let both: [String: Any] = ["www.apple.com": [
+            "NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": Self.appleLeafPin]],
+            "NSPinnedCAIdentities": [["SPKI-SHA256-BASE64": "AAAA"]]
+        ]]
+        XCTAssertNotNil(verify(both))
+        // The most specific domain applies.
+        let nested: [String: Any] = [
+            "apple.com": ["NSIncludesSubdomains": true, "NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": "AAAA"]]],
+            "www.apple.com": ["NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": Self.appleLeafPin]]]
+        ]
+        XCTAssertNil(verify(nested))
+        // Pinning never makes an untrusted chain acceptable.
+        XCTAssertNotNil(CapgoEngine.verifyServerCertificate(
+            chain: Self.appleChain, serverName: "www.apple.com", date: Self.afterExpiry, pinnedDomains: leaf
+        ))
+    }
+
     func testRejectsAnotherNameAnExpiredLeafAndAnIncompleteChain() {
         XCTAssertNotNil(CapgoEngine.verifyServerCertificate(
             chain: Self.appleChain, serverName: "capgo.app", date: Self.insideValidity

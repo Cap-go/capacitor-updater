@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import CommonCrypto
 import Foundation
 import Security
 import CapgoUpdaterCore
@@ -135,7 +136,12 @@ final class CapgoEngine {
     /// `SecTrust` with the SSL policy for `serverName` against the system trust store
     /// (including user-installed and MDM roots). Returns nil when trusted, else the reason.
     /// `date` overrides the evaluation time (tests only).
-    static func verifyServerCertificate(chain: [Data], serverName: String, date: Date? = nil) -> String? {
+    static func verifyServerCertificate(
+        chain: [Data],
+        serverName: String,
+        date: Date? = nil,
+        pinnedDomains: [String: Any]? = pinnedDomainsFromInfoPlist()
+    ) -> String? {
         var certificates: [SecCertificate] = []
         for der in chain {
             guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
@@ -155,10 +161,123 @@ final class CapgoEngine {
             return "Cannot set the evaluation date"
         }
         var failure: CFError?
-        if SecTrustEvaluateWithError(trust, &failure) {
+        guard SecTrustEvaluateWithError(trust, &failure) else {
+            return failure.map { ($0 as Error).localizedDescription } ?? "Certificate not trusted"
+        }
+        let evaluated = (SecTrustCopyCertificateChain(trust) as? [SecCertificate]) ?? certificates
+        return pinningFailure(
+            chain: evaluated.map { SecCertificateCopyData($0) as Data },
+            serverName: serverName,
+            pinnedDomains: pinnedDomains
+        )
+    }
+
+    // MARK: - ATS certificate pinning (NSPinnedDomains)
+
+    static func pinnedDomainsFromInfoPlist() -> [String: Any]? {
+        let ats = Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]
+        return ats?["NSPinnedDomains"] as? [String: Any]
+    }
+
+    /// URLSession enforces the app's `NSPinnedDomains`; the engine's client is not URLSession, so
+    /// apply the same rule: for a pinned host, the leaf must match one of `NSPinnedLeafIdentities`
+    /// and a CA certificate of the evaluated chain one of `NSPinnedCAIdentities` (each list that is
+    /// present), by the base64 SHA-256 of the certificate's SubjectPublicKeyInfo. The most specific
+    /// matching domain applies. Returns nil when allowed, else the reason.
+    static func pinningFailure(chain: [Data], serverName: String, pinnedDomains: [String: Any]?) -> String? {
+        guard let pinnedDomains, !pinnedDomains.isEmpty else {
             return nil
         }
-        return failure.map { ($0 as Error).localizedDescription } ?? "Certificate not trusted"
+        let host = serverName.lowercased()
+        let match = pinnedDomains
+            .compactMap { domain, value -> (domain: String, settings: [String: Any])? in
+                guard let settings = value as? [String: Any] else {
+                    return nil
+                }
+                return (domain.lowercased(), settings)
+            }
+            .filter { entry in
+                host == entry.domain
+                    || (entry.settings["NSIncludesSubdomains"] as? Bool == true && host.hasSuffix("." + entry.domain))
+            }
+            .max { $0.domain.count < $1.domain.count }
+        guard let settings = match?.settings else {
+            return nil
+        }
+        func pins(_ key: String) -> Set<String>? {
+            guard let identities = settings[key] as? [[String: Any]] else {
+                return nil
+            }
+            return Set(identities.compactMap { $0["SPKI-SHA256-BASE64"] as? String })
+        }
+        let hashes = chain.map { spkiSha256Base64(certificate: $0) }
+        if let leafPins = pins("NSPinnedLeafIdentities") {
+            guard let leaf = hashes.first, let leafHash = leaf, leafPins.contains(leafHash) else {
+                return "Certificate does not match the pinned leaf identities for \(host)"
+            }
+        }
+        if let caPins = pins("NSPinnedCAIdentities") {
+            guard hashes.dropFirst().contains(where: { $0.map(caPins.contains) ?? false }) else {
+                return "Certificate does not match the pinned CA identities for \(host)"
+            }
+        }
+        return nil
+    }
+
+    /// Base64 SHA-256 of the DER SubjectPublicKeyInfo of an X.509 certificate.
+    static func spkiSha256Base64(certificate der: Data) -> String? {
+        let bytes = [UInt8](der)
+        // Certificate ::= SEQUENCE { tbsCertificate SEQUENCE { [0] version OPTIONAL, serialNumber,
+        // signature, issuer, validity, subject, subjectPublicKeyInfo, ... } ... }
+        guard let certificate = derElement(bytes, at: 0), bytes[0] == 0x30,
+              let tbs = derElement(bytes, at: certificate.contentStart), bytes[certificate.contentStart] == 0x30 else {
+            return nil
+        }
+        var offset = tbs.contentStart
+        if bytes.indices.contains(offset), bytes[offset] == 0xA0, let version = derElement(bytes, at: offset) {
+            offset = version.end
+        }
+        // serialNumber, signature, issuer, validity, subject
+        for _ in 0..<5 {
+            guard let element = derElement(bytes, at: offset) else {
+                return nil
+            }
+            offset = element.end
+        }
+        guard bytes.indices.contains(offset), bytes[offset] == 0x30, let spki = derElement(bytes, at: offset),
+              spki.end <= tbs.end else {
+            return nil
+        }
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        let slice = Array(bytes[offset..<spki.end])
+        _ = CC_SHA256(slice, CC_LONG(slice.count), &digest)
+        return Data(digest).base64EncodedString()
+    }
+
+    /// One DER TLV at `offset`: where its content starts and where it ends.
+    private static func derElement(_ bytes: [UInt8], at offset: Int) -> (contentStart: Int, end: Int)? {
+        guard offset + 1 < bytes.count else {
+            return nil
+        }
+        var index = offset + 1
+        var length = Int(bytes[index])
+        index += 1
+        if length & 0x80 != 0 {
+            let count = length & 0x7F
+            guard count > 0, count <= 4, index + count <= bytes.count else {
+                return nil
+            }
+            length = 0
+            for _ in 0..<count {
+                length = (length << 8) | Int(bytes[index])
+                index += 1
+            }
+        }
+        let end = index + length
+        guard end <= bytes.count else {
+            return nil
+        }
+        return (index, end)
     }
 
     private static func box(_ context: UnsafeMutableRawPointer) -> HostBox {
