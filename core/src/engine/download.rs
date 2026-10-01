@@ -300,28 +300,59 @@ impl Engine {
                 return Err(error);
             }
         };
+        let finalized = self.finish_zip_download(request, record, &temp, &plain, streamed_hash, encrypted, cancel);
+        if let Err(error) = &finalized {
+            // The transfer succeeded but the bundle could not be finalized
+            // (decrypt, checksum, unzip, move or install).
+            if error.code != "download_stopped" {
+                self.send_stats("finish_download_fail", Some(&request.version), None, None);
+            }
+        }
+        finalized
+    }
+
+    /// Everything after a successful zip transfer: decrypted-file move, verification,
+    /// extraction and install.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_zip_download(
+        &self,
+        request: &DownloadRequest,
+        record: &BundleInfo,
+        temp: &Path,
+        plain: &Path,
+        streamed_hash: Option<String>,
+        encrypted: bool,
+        cancel: &Cancel,
+    ) -> CoreResult<BundleInfo> {
+        let id = record.id().to_string();
+        let storage = self.config().storage_root.clone();
+        let cleanup = |paths: &[&Path]| {
+            for path in paths {
+                let _ = fs::remove_file(path);
+            }
+        };
         // Decrypted while downloading: the plaintext replaces the ciphertext.
         let streamed_hash = match streamed_hash {
-            Some(hash) if encrypted => match fs::rename(&plain, &temp) {
+            Some(hash) if encrypted => match fs::rename(plain, temp) {
                 Ok(()) => Some(hash),
                 Err(_) => {
-                    cleanup(&[&temp, &plain]);
+                    cleanup(&[temp, plain]);
                     return Err(CoreError::new("unzip_fail", "Cannot move the decrypted bundle"));
                 }
             },
             other => {
-                cleanup(&[&plain]);
+                cleanup(&[plain]);
                 other
             }
         };
         self.send_stats("download_zip_complete", Some(&request.version), None, None);
         self.progress(&id, 71);
 
-        let verified = self.verify_zip(&temp, request, streamed_hash, encrypted);
+        let verified = self.verify_zip(temp, request, streamed_hash, encrypted);
         let checksum = match verified {
             Ok(checksum) => checksum,
             Err(error) => {
-                cleanup(&[&temp]);
+                cleanup(&[temp]);
                 return Err(error);
             }
         };
@@ -330,7 +361,7 @@ impl Engine {
         self.progress(&id, 75);
         let mut last = 75;
         let extracted = archive::extract_zip(
-            &temp,
+            temp,
             &extract_dir,
             &mut |done, total| {
                 let percent = 75 + (done * 15 / total.max(1)) as i64;
@@ -341,7 +372,7 @@ impl Engine {
             },
             &|| cancel.is_cancelled(),
         );
-        cleanup(&[&temp]);
+        cleanup(&[temp]);
         if let Err(error) = extracted {
             let _ = remove_path(&extract_dir);
             if let Some(stat) = error.stat() {

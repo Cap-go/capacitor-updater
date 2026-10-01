@@ -1256,6 +1256,61 @@ fn a_failed_download_is_one_stat_on_the_failed_version() {
     assert_eq!(p.events("downloadFailed").len(), 1);
 }
 
+fn stat_events(p: &Plugin, action: &str) -> Vec<Value> {
+    p.stats_actions();
+    p.backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with("/stats"))
+        .map(|request| request.json())
+        .flat_map(|body| match body {
+            Value::Array(events) => events,
+            other => vec![other],
+        })
+        .filter(|event| event["action"] == action)
+        .collect()
+}
+
+#[test]
+fn finalize_failures_after_the_transfer_send_finish_download_fail() {
+    // Checksum mismatch after a complete transfer.
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    *p.backend.bundle.lock().unwrap() = web_bundle("v2");
+    let url = format!("{}/b.zip", p.backend.server.url);
+    p.reject(
+        "download",
+        json!({ "url": url, "version": "9.9.9", "checksum": sha256(b"wrong") }),
+    );
+    let finish = stat_events(&p, "finish_download_fail");
+    assert_eq!(finish.len(), 1);
+    assert_eq!(finish[0]["version_name"], "9.9.9");
+    assert_eq!(stat_events(&p, "checksum_fail").len(), 1);
+
+    // Not a zip: unzip fails.
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    let garbage = b"definitely not a zip".to_vec();
+    *p.backend.bundle.lock().unwrap() = garbage.clone();
+    let url = format!("{}/b.zip", p.backend.server.url);
+    p.reject(
+        "download",
+        json!({ "url": url, "version": "8.8.8", "checksum": sha256(&garbage) }),
+    );
+    assert_eq!(stat_events(&p, "unzip_fail").len(), 1);
+    let finish = stat_events(&p, "finish_download_fail");
+    assert_eq!(finish.len(), 1);
+    assert_eq!(finish[0]["version_name"], "8.8.8");
+
+    // The transfer itself failed: no finish_download_fail.
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.reject(
+        "download",
+        json!({ "url": "http://127.0.0.1:1/b.zip", "version": "7.7.7", "checksum": sha256(b"x") }),
+    );
+    assert_eq!(stat_events(&p, "download_fail").len(), 1);
+    assert!(stat_events(&p, "finish_download_fail").is_empty());
+}
+
 // ---- shake menu channel switch ----------------------------------------------------------------
 
 fn switch_channel(p: &Plugin, channel: &str) -> Value {
