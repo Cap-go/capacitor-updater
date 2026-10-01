@@ -183,3 +183,26 @@ final class ServerTrustTests: XCTestCase {
         XCTAssertEqual(call([Data([1, 2, 3])], "localhost").0, 0)
     }
 }
+
+/// End to end: a real HTTPS request from the engine, verified by the Swift trust callback.
+final class EngineHttpsTests: XCTestCase {
+    func testEngineReachesARealHttpsServerThroughTheTrustCallback() throws {
+        let probe = expectation(description: "network probe")
+        var online = false
+        URLSession.shared.dataTask(with: URL(string: "https://plugin.capgo.app/ok")!) { _, response, _ in
+            online = response != nil
+            probe.fulfill()
+        }.resume()
+        wait(for: [probe], timeout: 20)
+        try XCTSkipUnless(online, "No network: cannot reach plugin.capgo.app")
+
+        let updater = StatsRecordingCapgoUpdater()
+        defer {
+            updater.shutdown()
+        }
+        let reply = try updater.engineCall("getLatest", ["updateUrl": "https://plugin.capgo.app/updates"])
+        // Any server answer proves TLS worked; a TLS or transport failure is a network_error.
+        XCTAssertNotEqual(reply["error"] as? String, "network_error", "\(reply)")
+        XCTAssertNotNil(reply["statusCode"] ?? reply["version"] ?? reply["error"], "\(reply)")
+    }
+}
