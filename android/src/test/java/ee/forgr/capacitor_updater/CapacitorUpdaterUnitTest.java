@@ -235,17 +235,6 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(script.contains("reportWebViewError"));
     }
 
-    @Test
-    public void pageLoadedUrlIsSanitized() {
-        assertEquals(
-            "https://app.example.com/users/redacted/profile",
-            CapacitorUpdaterPlugin.sanitizeStatsMetadataUrl("https://user:pass@app.example.com/users/123456789/profile?token=secret#frag")
-        );
-        assertEquals("http://localhost/", CapacitorUpdaterPlugin.sanitizeStatsMetadataUrl("http://localhost/?a=1"));
-        assertEquals("not a url", CapacitorUpdaterPlugin.sanitizeStatsMetadataUrl("not a url?secret=1"));
-        assertEquals("", CapacitorUpdaterPlugin.sanitizeStatsMetadataUrl(null));
-    }
-
     // ---- reflection safety -----------------------------------------------------------------------
 
     /** Capacitor reflects every plugin method: types missing on old Android versions must not appear in signatures. */
@@ -319,15 +308,17 @@ public class CapacitorUpdaterUnitTest {
     public void backgroundRunnerLabelIsReadFromConfig() {
         assertEquals(
             "com.example.runner",
-            CapgoUpdater.getBackgroundRunnerLabelFromConfig(
+            CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig(
                 "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"com.example.runner\",\"src\":\"runner.js\",\"autoStart\":true}}}"
+            ).label
+        );
+        assertNull(CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig("{\"plugins\":{\"CapacitorUpdater\":{\"autoUpdate\":true}}}"));
+        assertNull(
+            CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig(
+                "{\"plugins\":{\"BackgroundRunner\":{\"label\":\"  \",\"src\":\"runner.js\"}}}"
             )
         );
-        assertNull(CapgoUpdater.getBackgroundRunnerLabelFromConfig("{\"plugins\":{\"CapacitorUpdater\":{\"autoUpdate\":true}}}"));
-        assertNull(
-            CapgoUpdater.getBackgroundRunnerLabelFromConfig("{\"plugins\":{\"BackgroundRunner\":{\"label\":\"  \",\"src\":\"runner.js\"}}}")
-        );
-        assertNull(CapgoUpdater.getBackgroundRunnerLabelFromConfig(""));
+        assertNull(CapgoUpdater.getBackgroundRunnerWorkConfigFromConfig(""));
     }
 
     @Test

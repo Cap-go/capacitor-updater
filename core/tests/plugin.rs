@@ -1002,7 +1002,7 @@ fn page_load_stats_are_sanitized() {
     let p = Plugin::load(json!({ "autoUpdate": false }));
     p.t.call(
         "reportWebViewStats",
-        json!({ "action": "webview_page_loaded", "metadata": { "href": "https://a.b/p/1234567?t=1", "source": "android_webview_listener" } }),
+        json!({ "action": "webview_page_loaded", "metadata": { "href": format!("https://u:secret@a.b/p/1234567/{}?t=1", "x".repeat(600)), "source": "android_webview_listener" } }),
     );
     assert!(p.stats_actions().contains(&"webview_page_loaded".to_string()));
     let body = p
@@ -1014,6 +1014,11 @@ fn page_load_stats_are_sanitized() {
         .collect::<String>();
     assert!(body.contains("https://a.b/p/redacted"));
     assert!(!body.contains("t=1"));
+    assert!(!body.contains("secret"));
+    assert!(body.contains(&format!(
+        "\"https://a.b/p/redacted/{}\"",
+        "x".repeat(512 - "https://a.b/p/redacted/".len())
+    )));
 }
 
 /// Android freezes backgrounded apps: a rollback timer that expires while the

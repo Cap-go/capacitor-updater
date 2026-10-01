@@ -1217,7 +1217,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             final String url = view == null ? null : view.getUrl();
             if (url != null && !url.isEmpty()) {
-                metadata.put("href", truncate(sanitizeStatsMetadataUrl(url), 512));
+                // The engine sanitizes and truncates URL fields (reportWebViewStats).
+                metadata.put("href", url);
             }
         } catch (final JSONException ignored) {
             // Constant keys.
@@ -1241,60 +1242,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             // Constant keys.
         }
         return metadata;
-    }
-
-    private static String truncate(final String value, final int maxLength) {
-        return value.length() <= maxLength ? value : value.substring(0, maxLength);
-    }
-
-    /** Drops user info, query and fragment, and redacts id-like path segments. */
-    static String sanitizeStatsMetadataUrl(final String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        try {
-            final java.net.URI uri = new java.net.URI(value);
-            if (uri.getScheme() != null && uri.getHost() != null) {
-                final String path = sanitizeStatsMetadataUrlPath(uri.getPath());
-                return new java.net.URI(
-                    uri.getScheme(),
-                    null,
-                    uri.getHost(),
-                    uri.getPort(),
-                    path.isEmpty() ? null : path,
-                    null,
-                    null
-                ).toString();
-            }
-        } catch (final Exception ignored) {}
-        int end = value.length();
-        final int queryIndex = value.indexOf('?');
-        final int fragmentIndex = value.indexOf('#');
-        if (queryIndex >= 0) {
-            end = Math.min(end, queryIndex);
-        }
-        if (fragmentIndex >= 0) {
-            end = Math.min(end, fragmentIndex);
-        }
-        return value.substring(0, end);
-    }
-
-    private static String sanitizeStatsMetadataUrlPath(final String path) {
-        if (path == null || path.isEmpty()) {
-            return "";
-        }
-        final String[] segments = path.split("/", -1);
-        for (int index = 0; index < segments.length; index++) {
-            final String segment = segments[index];
-            if (
-                segment.matches("[0-9]{6,}") ||
-                segment.matches("[0-9a-fA-F]{16,}") ||
-                segment.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-            ) {
-                segments[index] = "redacted";
-            }
-        }
-        return String.join("/", segments);
     }
 
     static String buildWebViewStatsReporterScript() {

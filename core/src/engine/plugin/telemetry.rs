@@ -492,6 +492,14 @@ mod tests {
         );
         assert_eq!(sanitize_stats_url("not a url?x=1"), "not a url");
         assert_eq!(sanitize_stats_url("https://example.com"), "https://example.com");
+        // Cases from the former Android page-load sanitizer.
+        assert_eq!(
+            sanitize_stats_url("https://user:pass@app.example.com/users/123456789/profile?token=secret#frag"),
+            "https://app.example.com/users/redacted/profile"
+        );
+        assert_eq!(sanitize_stats_url("http://localhost/?a=1"), "http://localhost/");
+        assert_eq!(sanitize_stats_url("not a url?secret=1"), "not a url");
+        assert_eq!(sanitize_stats_url(""), "");
     }
 
     #[test]

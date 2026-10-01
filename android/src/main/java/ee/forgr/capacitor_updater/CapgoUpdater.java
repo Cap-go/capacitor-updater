@@ -42,8 +42,6 @@ import org.json.JSONObject;
  */
 public class CapgoUpdater {
 
-    public static final String TAG = "Capacitor-updater";
-
     /** Receives engine events and hooks. Both can arrive on any thread. */
     interface Listener {
         void onEvent(String event, String payloadJson);
@@ -378,11 +376,6 @@ public class CapgoUpdater {
         } catch (JSONException ignored) {
             return null;
         }
-    }
-
-    static String getBackgroundRunnerLabelFromConfig(final String configJson) {
-        final BackgroundRunnerWorkConfig config = getBackgroundRunnerWorkConfigFromConfig(configJson);
-        return config == null ? null : config.label;
     }
 
     private String readAssetAsString(final String assetPath) throws IOException {
