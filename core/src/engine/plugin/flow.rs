@@ -831,14 +831,16 @@ impl Engine {
 
     // ---- triggers ----------------------------------------------------------------------------
 
-    /// `triggerUpdateCheck()`.
+    /// `triggerUpdateCheck()`: queues a full update cycle whatever the `autoUpdate`
+    /// mode (with auto update off the cycle only downloads, like `onlyDownload`).
+    /// Returns `queued`, `already_running`, `preview_session` or `unavailable`.
     pub(crate) fn trigger_update_check(&self) -> &'static str {
         if !is_http_url(&self.config().update_url) {
             self.host.error("Error no url or wrong format");
             return "unavailable";
         }
-        if !self.is_auto_update_enabled() {
-            return "unavailable";
+        if self.block_for_preview() {
+            return "preview_session";
         }
         self.background_download()
     }
