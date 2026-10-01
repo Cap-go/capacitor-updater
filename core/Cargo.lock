@@ -118,7 +118,6 @@ dependencies = [
  "flate2",
  "jni",
  "libc",
- "num-bigint",
  "rand",
  "ring",
  "rsa",
@@ -597,16 +596,6 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
-]
-
-[[package]]
-name = "num-bigint"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
-dependencies = [
- "num-integer",
- "num-traits",
 ]
 
 [[package]]

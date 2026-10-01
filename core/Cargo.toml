@@ -26,7 +26,6 @@ base64 = "0.22"
 brotli-decompressor = "4"
 libc = "0.2"
 jni = { version = "0.21", default-features = false, optional = true }
-num-bigint = "0.4"
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
@@ -75,3 +74,7 @@ opt-level = 3
 opt-level = 3
 # Only applies to linked outputs (Android .so); iOS static libs are stripped by scripts/build-core.sh.
 strip = true
+
+# Test-only: RSA key generation (rsa dev-dependency) is very slow unoptimized.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

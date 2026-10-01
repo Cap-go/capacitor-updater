@@ -1,9 +1,8 @@
 //! Minimal RSA public-key support: PEM/DER parsing and the raw public
 //! operation used to recover data signed with Node's `privateEncrypt`
 //! (PKCS#1 v1.5 block type 1). Only public data is handled here, so the
-//! operation does not need to be constant time.
-
-use num_bigint::BigUint;
+//! operation does not need to be constant time: a small Montgomery modular
+//! exponentiation over 64-bit limbs replaces a general big-integer crate.
 
 use crate::error::{CoreError, CoreResult};
 use crate::text::base64_decode;
@@ -17,8 +16,9 @@ const MAX_MODULUS_BITS: u64 = 8192;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RsaPublicKey {
-    modulus: BigUint,
-    exponent: BigUint,
+    modulus: Montgomery,
+    /// Big-endian, without leading zero bytes.
+    exponent: Vec<u8>,
     size_bytes: usize,
 }
 
@@ -95,36 +95,45 @@ impl RsaPublicKey {
         // RSAPublicKey { modulus INTEGER, publicExponent INTEGER }
         let (modulus, rest) = expect_tlv(sequence, TAG_INTEGER)?;
         let (exponent, _) = expect_tlv(rest, TAG_INTEGER)?;
-        let modulus = BigUint::from_bytes_be(modulus);
-        let exponent = BigUint::from_bytes_be(exponent);
-        let bits = modulus.bits();
+        let modulus = limbs_from_be(modulus);
+        let exponent = strip_leading_zeros(exponent);
+        let bits = bit_length(&modulus);
         if !(MIN_MODULUS_BITS..=MAX_MODULUS_BITS).contains(&bits) {
             return Err(invalid_key("Unsupported RSA modulus size"));
         }
-        if exponent <= BigUint::from(1u8) || !exponent.bit(0) {
+        // An RSA modulus is a product of two odd primes.
+        if modulus[0] & 1 == 0 {
+            return Err(invalid_key("Invalid RSA modulus"));
+        }
+        if exponent.is_empty() || exponent == [1] || exponent[exponent.len() - 1] & 1 == 0 {
             return Err(invalid_key("Invalid RSA public exponent"));
         }
         Ok(Self {
             size_bytes: bits.div_ceil(8) as usize,
-            modulus,
-            exponent,
+            modulus: Montgomery::new(modulus),
+            exponent: exponent.to_vec(),
         })
+    }
+
+    /// Raw public operation `value^e mod n`, big-endian and left-padded to the key size.
+    pub fn public_op(&self, value: &[u8]) -> CoreResult<Vec<u8>> {
+        let failed = |message: &str| CoreError::new("decrypt_failed", message.to_string());
+        if value.len() != self.size_bytes {
+            return Err(failed("Ciphertext length does not match the RSA key size"));
+        }
+        let mut limbs = limbs_from_be(value);
+        if limbs.len() > self.modulus.n.len() || compare(&limbs, &self.modulus.n) != std::cmp::Ordering::Less {
+            return Err(failed("Ciphertext is out of range for the RSA key"));
+        }
+        limbs.resize(self.modulus.n.len(), 0);
+        let recovered = self.modulus.pow(&limbs, &self.exponent);
+        Ok(limbs_to_be(&recovered, self.size_bytes))
     }
 
     /// Recovers the payload of a PKCS#1 v1.5 type-1 block (`privateEncrypt`).
     pub fn public_decrypt(&self, ciphertext: &[u8]) -> CoreResult<Vec<u8>> {
-        let failed = |message: &str| CoreError::new("decrypt_failed", message.to_string());
-        if ciphertext.len() != self.size_bytes {
-            return Err(failed("Ciphertext length does not match the RSA key size"));
-        }
-        let value = BigUint::from_bytes_be(ciphertext);
-        if value >= self.modulus {
-            return Err(failed("Ciphertext is out of range for the RSA key"));
-        }
-        let recovered = value.modpow(&self.exponent, &self.modulus).to_bytes_be();
-        let mut block = vec![0u8; self.size_bytes - recovered.len()];
-        block.extend_from_slice(&recovered);
-        unpad_type1(&block).ok_or_else(|| failed("Invalid PKCS#1 signature padding"))
+        let block = self.public_op(ciphertext)?;
+        unpad_type1(&block).ok_or_else(|| CoreError::new("decrypt_failed", "Invalid PKCS#1 signature padding"))
     }
 }
 
@@ -138,6 +147,165 @@ pub fn unpad_type1(block: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     Some(block[separator + 1..].to_vec())
+}
+
+fn strip_leading_zeros(bytes: &[u8]) -> &[u8] {
+    let zeros = bytes.iter().take_while(|byte| **byte == 0).count();
+    &bytes[zeros..]
+}
+
+/// Little-endian 64-bit limbs of a big-endian unsigned integer, without high zero limbs.
+fn limbs_from_be(bytes: &[u8]) -> Vec<u64> {
+    let bytes = strip_leading_zeros(bytes);
+    let mut limbs = vec![0u64; bytes.len().div_ceil(8)];
+    for (index, byte) in bytes.iter().rev().enumerate() {
+        limbs[index / 8] |= u64::from(*byte) << (8 * (index % 8));
+    }
+    limbs
+}
+
+/// Big-endian bytes of `limbs`, left-padded (or truncated from the top) to `len`.
+fn limbs_to_be(limbs: &[u64], len: usize) -> Vec<u8> {
+    let mut out = vec![0u8; len];
+    for (index, slot) in out.iter_mut().rev().enumerate() {
+        if let Some(limb) = limbs.get(index / 8) {
+            *slot = (limb >> (8 * (index % 8))) as u8;
+        }
+    }
+    out
+}
+
+fn bit_length(limbs: &[u64]) -> u64 {
+    match limbs.iter().rposition(|limb| *limb != 0) {
+        Some(top) => top as u64 * 64 + u64::from(64 - limbs[top].leading_zeros()),
+        None => 0,
+    }
+}
+
+/// Compares two limb slices of any length.
+fn compare(a: &[u64], b: &[u64]) -> std::cmp::Ordering {
+    let len = a.len().max(b.len());
+    for index in (0..len).rev() {
+        let (x, y) = (a.get(index).copied().unwrap_or(0), b.get(index).copied().unwrap_or(0));
+        if x != y {
+            return x.cmp(&y);
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+/// `a -= b` over equal-length slices; returns the final borrow.
+fn sub_assign(a: &mut [u64], b: &[u64]) -> bool {
+    let mut borrow = false;
+    for (x, y) in a.iter_mut().zip(b) {
+        let (value, under1) = x.overflowing_sub(*y);
+        let (value, under2) = value.overflowing_sub(u64::from(borrow));
+        *x = value;
+        borrow = under1 || under2;
+    }
+    borrow
+}
+
+/// Montgomery arithmetic modulo an odd `n` (R = 2^(64 * limbs)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Montgomery {
+    n: Vec<u64>,
+    /// `-n^-1 mod 2^64`.
+    n_prime: u64,
+    /// `R^2 mod n`, to enter the Montgomery domain.
+    r_squared: Vec<u64>,
+}
+
+impl Montgomery {
+    fn new(n: Vec<u64>) -> Self {
+        // Newton iteration for n[0]^-1 mod 2^64: n0 * n0 == 1 mod 8, then 3 -> 6 -> ... -> 96 bits.
+        let mut inverse = n[0];
+        for _ in 0..5 {
+            inverse = inverse.wrapping_mul(2u64.wrapping_sub(n[0].wrapping_mul(inverse)));
+        }
+        // R^2 mod n by doubling 1, reducing after each step (2x < 2n needs one subtraction).
+        let mut r_squared = vec![0u64; n.len()];
+        r_squared[0] = 1;
+        for _ in 0..2 * 64 * n.len() {
+            let mut carry = 0u64;
+            for limb in r_squared.iter_mut() {
+                let next = *limb >> 63;
+                *limb = (*limb << 1) | carry;
+                carry = next;
+            }
+            if carry != 0 || compare(&r_squared, &n) != std::cmp::Ordering::Less {
+                sub_assign(&mut r_squared, &n);
+            }
+        }
+        Self {
+            n,
+            n_prime: inverse.wrapping_neg(),
+            r_squared,
+        }
+    }
+
+    /// `a * b * R^-1 mod n` for `a, b < n` (CIOS).
+    fn mul(&self, a: &[u64], b: &[u64]) -> Vec<u64> {
+        let n = &self.n;
+        let k = n.len();
+        let mut t = vec![0u64; k + 2];
+        for &a_i in a {
+            let mut carry = 0u128;
+            for j in 0..k {
+                let sum = u128::from(t[j]) + u128::from(a_i) * u128::from(b[j]) + carry;
+                t[j] = sum as u64;
+                carry = sum >> 64;
+            }
+            let sum = u128::from(t[k]) + carry;
+            t[k] = sum as u64;
+            t[k + 1] = (sum >> 64) as u64;
+
+            let m = u128::from(t[0].wrapping_mul(self.n_prime));
+            let mut carry = (u128::from(t[0]) + m * u128::from(n[0])) >> 64;
+            for j in 1..k {
+                let sum = u128::from(t[j]) + m * u128::from(n[j]) + carry;
+                t[j - 1] = sum as u64;
+                carry = sum >> 64;
+            }
+            let sum = u128::from(t[k]) + carry;
+            t[k - 1] = sum as u64;
+            t[k] = t[k + 1] + (sum >> 64) as u64;
+            t[k + 1] = 0;
+        }
+        // t < 2n: one conditional subtraction.
+        let overflow = t[k] != 0;
+        t.truncate(k);
+        if overflow || compare(&t, n) != std::cmp::Ordering::Less {
+            sub_assign(&mut t, n);
+        }
+        t
+    }
+
+    /// `base^exponent mod n`; `base < n` with `n.len()` limbs, exponent big-endian and non-zero.
+    fn pow(&self, base: &[u64], exponent: &[u8]) -> Vec<u64> {
+        let base = self.mul(base, &self.r_squared);
+        let mut acc: Option<Vec<u64>> = None;
+        for byte in exponent {
+            for shift in (0..8).rev() {
+                if let Some(value) = acc.as_mut() {
+                    *value = self.mul(value, value);
+                }
+                if (byte >> shift) & 1 == 1 {
+                    acc = Some(match acc {
+                        Some(value) => self.mul(&value, &base),
+                        None => base.clone(),
+                    });
+                }
+            }
+        }
+        let mut one = vec![0u64; self.n.len()];
+        one[0] = 1;
+        match acc {
+            Some(value) => self.mul(&value, &one),
+            // x^0 = 1 (never reached: exponents are validated as > 1).
+            None => one,
+        }
+    }
 }
 
 #[cfg(test)]
