@@ -101,8 +101,11 @@ fi
 # (virtual Wi-Fi through netsimd). With Wi-Fi on, the default route to 10.0.2.2 is wlan0,
 # where the first bytes from the host reach the guest ~1 s late on every new connection.
 # Turn Wi-Fi off for the run so traffic takes eth0 (~5 ms); it is turned back on at the end.
+# Check the Wi-Fi state, not only the route: right after a previous run turned Wi-Fi back on,
+# wlan0 is still associating (route still eth0) and becomes the default route mid-run.
 if [[ "$BENCH_ANDROID_TRANSPORT" == "host" ]]; then
-  if "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q wlan0; then
+  if "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q wlan0 \
+    || [[ "$("$ADB" shell settings get global wifi_on 2>/dev/null | tr -d '\r')" != "0" ]]; then
     "$ADB" shell svc wifi disable >/dev/null
     WIFI_DISABLED=1
     for _ in $(seq 1 30); do
