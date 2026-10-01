@@ -82,8 +82,21 @@ abstract class CapgoEngineHost {
         }
     }
 
+    /** Key exchange the server's leaf key implies, as a TLS stack would pass it. */
+    static String authType(final X509Certificate leaf) {
+        final String algorithm = leaf.getPublicKey().getAlgorithm();
+        if ("EC".equals(algorithm)) {
+            return "ECDHE_ECDSA";
+        }
+        if ("RSA".equals(algorithm)) {
+            return "ECDHE_RSA";
+        }
+        return "GENERIC";
+    }
+
     private static void checkServerTrusted(final X509TrustManager trustManager, final X509Certificate[] chain, final String host)
         throws Exception {
+        final String authType = authType(chain[0]);
         try {
             // Android: honours network security config (per-domain pins, user CAs).
             final Class<?> extensions = Class.forName("android.net.http.X509TrustManagerExtensions");
@@ -91,9 +104,9 @@ abstract class CapgoEngineHost {
             @SuppressWarnings("unchecked")
             final List<X509Certificate> ignored = (List<X509Certificate>) extensions
                 .getMethod("checkServerTrusted", X509Certificate[].class, String.class, String.class)
-                .invoke(instance, chain, "RSA", host);
+                .invoke(instance, chain, authType, host);
         } catch (ClassNotFoundException | NoSuchMethodException e) {
-            trustManager.checkServerTrusted(chain, "RSA");
+            trustManager.checkServerTrusted(chain, authType);
         } catch (java.lang.reflect.InvocationTargetException e) {
             final Throwable cause = e.getCause();
             if (cause instanceof Exception) {

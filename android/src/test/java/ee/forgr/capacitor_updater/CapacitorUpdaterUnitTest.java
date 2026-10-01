@@ -285,6 +285,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void tlsAuthTypeFollowsTheLeafKey() {
+        assertEquals("ECDHE_ECDSA", CapgoEngineHost.authType(leafWithKey("EC")));
+        assertEquals("ECDHE_RSA", CapgoEngineHost.authType(leafWithKey("RSA")));
+        assertEquals("GENERIC", CapgoEngineHost.authType(leafWithKey("Ed25519")));
+    }
+
+    private static java.security.cert.X509Certificate leafWithKey(final String algorithm) {
+        final java.security.PublicKey key = mock(java.security.PublicKey.class);
+        when(key.getAlgorithm()).thenReturn(algorithm);
+        final java.security.cert.X509Certificate leaf = mock(java.security.cert.X509Certificate.class);
+        when(leaf.getPublicKey()).thenReturn(key);
+        return leaf;
+    }
+
+    @Test
     public void preferencesKeepTheTypesEarlierVersionsRead() {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         CapgoUpdater.putPreference(editor, "CapacitorUpdater.previewSession", "true");
