@@ -31,7 +31,9 @@ ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
 url = "2"
-ureq = { version = "2.12", default-features = false, features = ["tls"] }
+# No "tls" feature: it compiles in the webpki-roots CA table, which this client never uses;
+# TLS goes through our own rustls config (net.rs RustlsConnector) with platform verification.
+ureq = { version = "2.12", default-features = false }
 zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2"] }
 # zlib-rs: fast pure-Rust inflate (miniz_oxide was 3-4x slower than the system zlib on iOS).
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }

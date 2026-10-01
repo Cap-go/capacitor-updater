@@ -404,7 +404,7 @@ pub enum Stream<'a> {
 
 fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
     ureq::AgentBuilder::new()
-        .tls_config(tls)
+        .tls_connector(Arc::new(RustlsConnector(tls)))
         .timeout_connect(timeout)
         .timeout_read(timeout)
         .timeout_write(timeout)
@@ -516,5 +516,62 @@ impl ServerCertVerifier for HostVerifier {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         self.provider.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// TLS for ureq over our own rustls config (ureq's `tls` feature would also
+/// compile in the webpki-roots CA table, which this client never uses).
+struct RustlsConnector(Arc<ClientConfig>);
+
+struct RustlsStream(rustls::StreamOwned<rustls::ClientConnection, Box<dyn ureq::ReadWrite>>);
+
+impl std::fmt::Debug for RustlsStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RustlsStream")
+    }
+}
+
+impl std::io::Read for RustlsStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl std::io::Write for RustlsStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl ureq::ReadWrite for RustlsStream {
+    fn socket(&self) -> Option<&std::net::TcpStream> {
+        self.0.get_ref().socket()
+    }
+}
+
+impl ureq::TlsConnector for RustlsConnector {
+    fn connect(
+        &self,
+        dns_name: &str,
+        mut io: Box<dyn ureq::ReadWrite>,
+    ) -> Result<Box<dyn ureq::ReadWrite>, ureq::Error> {
+        let host = dns_name.trim_start_matches('[').trim_end_matches(']');
+        let name = ServerName::try_from(host.to_string()).map_err(|_| {
+            ureq::Error::from(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid TLS server name {host}"),
+            ))
+        })?;
+        let mut connection = rustls::ClientConnection::new(self.0.clone(), name)
+            .map_err(|error| ureq::Error::from(std::io::Error::other(error)))?;
+        // Handshake now, so certificate errors surface as connection errors.
+        while connection.is_handshaking() {
+            connection.complete_io(&mut io).map_err(ureq::Error::from)?;
+        }
+        Ok(Box::new(RustlsStream(rustls::StreamOwned::new(connection, io))))
     }
 }

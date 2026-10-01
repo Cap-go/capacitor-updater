@@ -46,7 +46,18 @@ fn connection_refused_is_a_network_error() {
 fn https_uses_platform_trust_store() {
     let response = http().get("https://capgo.app/").unwrap();
     assert!(response.status < 500);
-    assert!(http().get("https://self-signed.badssl.com/").is_err());
+    for untrusted in [
+        "https://self-signed.badssl.com/",
+        "https://wrong.host.badssl.com/",
+        "https://expired.badssl.com/",
+    ] {
+        let error = http().get(untrusted).unwrap_err();
+        assert_eq!(
+            error.kind,
+            capgo_updater_core::net::NetErrorKind::Tls,
+            "{untrusted}: {error:?}"
+        );
+    }
 }
 
 /// A host without a cleartext policy answer (no hook, hook error): plain HTTP is refused.
