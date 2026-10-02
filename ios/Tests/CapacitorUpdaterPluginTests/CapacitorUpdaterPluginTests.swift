@@ -2669,6 +2669,36 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(resetImplementation.resetIsInternal)
     }
 
+    func testAppLaunchStartReportsBuiltinAfterNativeBuildReset() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        UserDefaults.standard.set("9", forKey: nativeBuildKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+        }
+
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let statsImplementation = ResettingHealthStatsCapgoUpdater()
+        statsImplementation.statsUrl = "https://example.com/stats"
+        statsImplementation.currentBundleValue = BundleInfo(
+            id: "ota-id",
+            version: "2.8.35",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "ota"
+        )
+        resetPlugin.implementation = statsImplementation
+        resetPlugin.setCurrentBuildVersionForTesting("15")
+
+        statsImplementation.autoReset()
+        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
+        resetPlugin.reportAppLaunchStartForTesting()
+
+        XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
+        XCTAssertEqual(statsImplementation.lastStatsVersionName, "builtin")
+        XCTAssertEqual(statsImplementation.lastStatsMetadata?["source"], "plugin_load")
+        XCTAssertNotNil(statsImplementation.lastStatsMetadata?["launch_started_at"])
+    }
+
     func testShowSplashscreenOptionsDisableAutoHide() {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
 

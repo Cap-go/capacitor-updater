@@ -411,7 +411,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            state?.exists != true || (!defaultChannelPersistenceDisabled && state?.isReadable != true) {
             _ = self.persistDefaultChannelStateFromDefaults()
         }
-        self.reportAppLaunchStart()
         self.implementation.autoReset()
         let appHealthTracker = AppHealthTracker(implementation: self.implementation)
         self.appHealthTracker = appHealthTracker
@@ -440,6 +439,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             resetWhenUpdate: resetWhenUpdate,
             didResetCurrentBundle: didResetCurrentBundle
         )
+        self.reportAppLaunchStart()
         self.reportNativeVersionStatsIfChanged()
 
         // Load the server
@@ -4276,6 +4276,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
         self.currentBuildVersion = currentBuildVersion
+    }
+
+    func reportAppLaunchStartForTesting() {
+        self.reportAppLaunchStart()
     }
 
     func setAppReadyTimeoutForTesting(_ timeout: Int) {

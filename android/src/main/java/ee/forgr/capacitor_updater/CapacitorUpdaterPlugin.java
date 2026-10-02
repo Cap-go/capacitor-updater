@@ -870,7 +870,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
-        this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
@@ -928,6 +927,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.clearPreviewSessionForNativeBuildChange();
         }
         this.leavePreviewSessionForLaunchIntentIfNeeded();
+        this.reportAppLaunchStart();
         this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
@@ -2341,6 +2341,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     void setLoggerForTesting(final Logger logger) {
         this.logger = logger;
+    }
+
+    void reportAppLaunchStartForTesting() {
+        this.reportAppLaunchStart();
     }
 
     void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {

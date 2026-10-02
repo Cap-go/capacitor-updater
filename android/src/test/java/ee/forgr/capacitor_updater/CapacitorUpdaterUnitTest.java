@@ -994,6 +994,52 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class LaunchStartAfterNativeResetCapgoUpdater extends CapgoUpdater {
+
+        private BundleInfo currentBundle = new BundleInfo("ota-id", "2.8.35", BundleStatus.SUCCESS, new Date(), "checksum");
+        private String lastStatsAction;
+        private String lastStatsVersionName;
+        private Map<String, String> lastStatsMetadata;
+
+        LaunchStartAfterNativeResetCapgoUpdater() {
+            super(mock(Logger.class));
+            this.statsUrl = "https://example.com/stats";
+        }
+
+        @Override
+        public BundleInfo getCurrentBundle() {
+            return this.currentBundle;
+        }
+
+        @Override
+        public void reset() {
+            this.reset(false);
+        }
+
+        @Override
+        public void reset(final boolean internal) {
+            this.currentBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+        }
+
+        @Override
+        public void sendStats(
+            final String action,
+            final String versionName,
+            final String oldVersionName,
+            final Map<String, String> metadata
+        ) {
+            this.lastStatsAction = action;
+            this.lastStatsVersionName = versionName;
+            this.lastStatsMetadata = metadata;
+        }
+    }
+
     private static final class FixedPathCapgoUpdater extends CapgoUpdater {
 
         private final String currentBundlePath;
@@ -1808,6 +1854,39 @@ public class CapacitorUpdaterUnitTest {
         updater.autoReset("8", false);
 
         assertFalse(updater.resetCalled);
+    }
+
+    @Test
+    public void testAppLaunchStartUsesPostResetBuiltinVersionAfterNativeBuildChange() throws Exception {
+        final String bundleId = "legacy-bundle-id";
+        final Path tempDir = createExistingBundleDirectory("capgo-launch-start", bundleId);
+        final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
+
+        final LaunchStartAfterNativeResetCapgoUpdater updater = new LaunchStartAfterNativeResetCapgoUpdater();
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final BundleInfo storedBundle = new BundleInfo(bundleId, "2.8.35", BundleStatus.SUCCESS, new Date(), "checksum");
+
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+
+        when(prefs.getString("server-path", "public")).thenReturn(bundleDir.toString());
+        when(prefs.getString("server-path", null)).thenReturn(bundleDir.toString());
+        when(prefs.contains(bundleId + "_info")).thenReturn(true);
+        when(prefs.getString(bundleId + "_info", "")).thenReturn(storedBundle.toString());
+        when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("9");
+        when(prefs.getString("LatestVersionNative", "")).thenReturn("9");
+
+        updater.autoReset("15", true);
+
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        plugin.implementation = updater;
+        plugin.reportAppLaunchStartForTesting();
+
+        assertEquals("app_launch_start", updater.lastStatsAction);
+        assertEquals("builtin", updater.lastStatsVersionName);
+        assertEquals("plugin_load", updater.lastStatsMetadata.get("source"));
+        assertNotNull(updater.lastStatsMetadata.get("launch_started_at"));
     }
 
     @Test
