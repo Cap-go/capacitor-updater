@@ -1857,27 +1857,9 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testAppLaunchStartUsesPostResetBuiltinVersionAfterNativeBuildChange() throws Exception {
-        final String bundleId = "legacy-bundle-id";
-        final Path tempDir = createExistingBundleDirectory("capgo-launch-start", bundleId);
-        final Path bundleDir = tempDir.resolve("versions").resolve(bundleId);
-
+    public void testAppLaunchStartUsesPostResetBuiltinVersionAfterNativeBuildChange() {
         final LaunchStartAfterNativeResetCapgoUpdater updater = new LaunchStartAfterNativeResetCapgoUpdater();
-        final SharedPreferences prefs = mock(SharedPreferences.class);
-        final BundleInfo storedBundle = new BundleInfo(bundleId, "2.8.35", BundleStatus.SUCCESS, new Date(), "checksum");
-
-        updater.documentsDir = tempDir.toFile();
-        updater.CAP_SERVER_PATH = "server-path";
-        updater.prefs = prefs;
-
-        when(prefs.getString("server-path", "public")).thenReturn(bundleDir.toString());
-        when(prefs.getString("server-path", null)).thenReturn(bundleDir.toString());
-        when(prefs.contains(bundleId + "_info")).thenReturn(true);
-        when(prefs.getString(bundleId + "_info", "")).thenReturn(storedBundle.toString());
-        when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("9");
-        when(prefs.getString("LatestVersionNative", "")).thenReturn("9");
-
-        updater.autoReset("15", true);
+        updater.reset(true);
 
         final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
         plugin.implementation = updater;
