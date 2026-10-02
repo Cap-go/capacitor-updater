@@ -273,6 +273,8 @@ impl Engine {
         };
         let bytes = Value::Array(events).to_string();
         if let Err(error) = write_atomically(&file, bytes.as_bytes()) {
+            // Not on disk yet: the next timer tick tries again.
+            self.stats.unsaved.store(true, Ordering::SeqCst);
             self.host.error("Failed to persist stats queue");
             self.host.debug(format!("Error: {error}"));
         }

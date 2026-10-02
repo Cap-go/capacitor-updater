@@ -39,9 +39,21 @@ fn rate_limit_blocks_following_requests() {
     assert!(server.requests().len() >= before);
 
     // Stats queued while Retry-After defers sending still reach the disk at the next timer
-    // tick: a kill during the block does not lose them.
-    t.call("statsSend", json!({ "action": "set" }));
+    // tick: a kill during the block does not lose them, even when a write fails once.
     let file = t.root().join("capgo_pending_stats.json");
+    let blocker = std::path::PathBuf::from(format!("{}.tmp", file.display()));
+    std::fs::create_dir_all(&blocker).unwrap();
+    let stats_requests = || {
+        server
+            .requests()
+            .iter()
+            .filter(|request| request.url.contains("/stats"))
+            .count()
+    };
+    let stats_before = stats_requests();
+    t.call("statsSend", json!({ "action": "set" }));
+    std::thread::sleep(Duration::from_millis(1500));
+    std::fs::remove_dir_all(&blocker).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let stored = std::fs::read_to_string(&file)
@@ -57,4 +69,9 @@ fn rate_limit_blocks_following_requests() {
         assert!(std::time::Instant::now() < deadline, "stats never persisted");
         std::thread::sleep(Duration::from_millis(50));
     }
+    assert_eq!(
+        stats_requests(),
+        stats_before,
+        "no stats request while Retry-After is active"
+    );
 }

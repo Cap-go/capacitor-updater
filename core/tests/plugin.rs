@@ -583,12 +583,15 @@ fn a_stopped_scheduled_download_releases_a_direct_update_launch() {
     // A transfer that never ends: headers, then a byte every 20 ms.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let slow = format!("http://{}/b.zip", listener.local_addr().unwrap());
+    let (connected_tx, connected) = std::sync::mpsc::channel::<()>();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
+            let connected_tx = connected_tx.clone();
             std::thread::spawn(move || {
                 let mut buffer = [0u8; 1024];
                 let _ = stream.read(&mut buffer);
+                let _ = connected_tx.send(());
                 let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
                 while stream.write_all(b"x").and_then(|()| stream.flush()).is_ok() {
                     std::thread::sleep(Duration::from_millis(20));
@@ -602,7 +605,10 @@ fn a_stopped_scheduled_download_releases_a_direct_update_launch() {
     let engine = p.t.engine.clone();
     let job = id.clone();
     let attempt = std::thread::spawn(move || engine.call("runScheduledDownload", &json!({ "id": job })).unwrap());
-    std::thread::sleep(Duration::from_millis(300));
+    // The attempt is transferring (its cancel token is registered) once the server sees it.
+    connected
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the attempt reached the server");
     assert!(p.events("appReady").is_empty(), "the launch waits for the download");
     p.t.call("stopScheduledDownload", json!({ "id": id }));
     assert_eq!(attempt.join().unwrap()["result"], "retry");
@@ -1024,8 +1030,8 @@ fn a_repeated_foreground_runs_one_update_check() {
     };
     p.foreground();
     wait_until("first check", || checks() >= 1);
-    // The first cycle has ended when the repeated event arrives (a fast up-to-date reply).
-    std::thread::sleep(Duration::from_millis(500));
+    // The first cycle has ended when the repeated event arrives.
+    p.wait_for_event("appReady", 1);
     p.foreground();
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(checks(), 1, "the repeated foreground is ignored");
