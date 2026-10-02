@@ -1317,6 +1317,35 @@ fn default_channel_is_cleared_on_native_update_when_not_persisted() {
 
 // ---- previews -----------------------------------------------------------------------------------
 
+/// Leaving a preview restores the channel in use at once, even when the restore must be
+/// retried at the next launch (the previous iOS plugin applied it the same way).
+#[test]
+fn leaving_a_preview_uses_the_restored_channel_even_when_the_restore_retries() {
+    let p = Plugin::load(json!({ "autoUpdate": false, "allowPreview": true }));
+    assert_eq!(p.resolve("setChannel", json!({ "channel": "beta" }))["status"], "ok");
+    p.resolve("startPreviewSession", json!({}));
+    assert_eq!(
+        p.resolve("setChannel", json!({ "channel": "preview-channel" }))["status"],
+        "ok"
+    );
+    // A non-empty directory where the channel state file goes: the restore cannot be final.
+    let state = p.t.root().join("nobackup/CapacitorUpdater.defaultChannelState");
+    let _ = std::fs::remove_file(&state);
+    std::fs::create_dir_all(state.join("blocker")).unwrap();
+    p.resolve("resetPreview", json!({}));
+    assert_eq!(p.t.kv("CapacitorUpdater.defaultChannel").unwrap(), "beta");
+    p.method("getLatest", json!({}));
+    let request = p
+        .backend
+        .server
+        .requests()
+        .into_iter()
+        .rev()
+        .find(|request| request.url.starts_with("/updates"))
+        .unwrap();
+    assert_eq!(request.json()["defaultChannel"], "beta");
+}
+
 #[test]
 fn preview_session_lifecycle() {
     let p = Plugin::load(json!({ "autoUpdate": false }));
@@ -1845,6 +1874,8 @@ fn finalize_failures_after_the_transfer_send_finish_download_fail() {
     assert_eq!(finish.len(), 1);
     assert_eq!(finish[0]["version_name"], "9.9.9");
     assert_eq!(stat_events(&p, "checksum_fail").len(), 1);
+    // The previous Android plugin: checksum_fail, finish_download_fail and download_fail.
+    assert_eq!(stat_events(&p, "download_fail").len(), 1);
 
     // Not a zip: unzip fails.
     let p = Plugin::load(json!({ "autoUpdate": false }));

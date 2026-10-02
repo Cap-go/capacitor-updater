@@ -646,3 +646,31 @@ impl From<CoreError> for Rejection {
 }
 
 pub(crate) type MethodResult = Result<Value, Rejection>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An invalid download answers at once, without waiting for the launch cleanup.
+    #[test]
+    fn invalid_downloads_do_not_wait_for_the_launch_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::new(
+            std::sync::Arc::new(crate::host::MemoryHost::default()),
+            &json!({ "bundleRoot": dir.path().join("versions").to_string_lossy() }),
+        )
+        .unwrap();
+        engine.plugin_state().loaded = true;
+        engine.mark_cleanup(false);
+        let (done, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(engine.call("download", &json!({ "version": "2.0.0" })));
+        });
+        let error = answer
+            .recv_timeout(Duration::from_secs(5))
+            .expect("waited for the cleanup")
+            .unwrap_err();
+        assert_eq!(error.code, "invalid_input");
+        assert_eq!(error.message, "Download called without url");
+    }
+}

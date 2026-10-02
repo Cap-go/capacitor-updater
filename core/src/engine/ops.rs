@@ -254,14 +254,14 @@ impl Engine {
                 // ---- downloads
                 "download" => {
                     let request = super::download::DownloadRequest::from_json(input)?;
+                    if request.manifest.is_none() && request.url.is_empty() {
+                        return Err(CoreError::invalid_input("Download called without url"));
+                    }
                     // Like every other download path: never write while the launch cleanup sweeps.
                     self.wait_for_cleanup()?;
                     let installed = if request.manifest.is_some() {
                         self.download_manifest(&request)?
                     } else {
-                        if request.url.is_empty() {
-                            return Err(CoreError::invalid_input("Download called without url"));
-                        }
                         self.download_zip(&request)?
                     };
                     bundle(installed)

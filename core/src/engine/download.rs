@@ -245,6 +245,7 @@ impl Engine {
     pub(crate) fn fail_download(&self, record: &BundleInfo, error: &CoreError, emit_events: bool) {
         self.host.error(format!("Download failed: {}", error.message));
         self.save_bundle_info(record.id(), Some(&record.with_status(BundleStatus::Error)));
+        self.forget_download_progress(record.id());
         // Callers that report failures themselves (plugin methods, the update cycle)
         // send the event and the stat once.
         if emit_events {

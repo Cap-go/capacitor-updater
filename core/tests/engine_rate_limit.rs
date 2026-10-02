@@ -1,5 +1,5 @@
 //! The 429 block is process-wide by design (shared by every engine), so this
-//! test lives in its own test binary.
+//! test lives in its own test binary (one test: tests run in parallel).
 mod support;
 
 use std::time::Duration;
@@ -37,4 +37,24 @@ fn rate_limit_blocks_following_requests() {
         "blocked request never sent: {urls:?}"
     );
     assert!(server.requests().len() >= before);
+
+    // Stats queued while Retry-After defers sending still reach the disk at the next timer
+    // tick: a kill during the block does not lose them.
+    t.call("statsSend", json!({ "action": "set" }));
+    let file = t.root().join("capgo_pending_stats.json");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let stored = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+        if stored
+            .as_ref()
+            .and_then(|stored| stored.as_array())
+            .is_some_and(|events| events.iter().any(|event| event["action"] == "set"))
+        {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "stats never persisted");
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

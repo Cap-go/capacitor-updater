@@ -1,6 +1,6 @@
 //! Statistics events: queued, batched (one POST per second at most),
-//! persisted across launches (`capgo_pending_stats.json`) and retried on
-//! transient failures.
+//! persisted across launches (`capgo_pending_stats.json`, written by the same
+//! 1 s timer, at background and at exit) and retried on transient failures.
 
 use std::fs;
 use std::path::PathBuf;
@@ -35,6 +35,8 @@ pub(crate) struct StatsState {
     pub flush_in_flight: AtomicBool,
     pub stopped: AtomicBool,
     pub timer_started: AtomicBool,
+    /// Events queued since the last write of the stats file.
+    pub unsaved: AtomicBool,
     /// Engine-owned acknowledgements: persisted key/value writes applied once the
     /// event reached the server (snapshots that must retry until delivered).
     pub acks: Mutex<std::collections::HashMap<String, KvWrites>>,
@@ -122,6 +124,8 @@ impl Engine {
                 callback_id,
             });
         }
+        // Written by the next timer tick (at most one write a second), sent or not.
+        self.stats.unsaved.store(true, Ordering::SeqCst);
         self.ensure_stats_timer();
     }
 
@@ -154,9 +158,12 @@ impl Engine {
         if self.stats.stopped.load(Ordering::SeqCst) || self.stats.queue.lock().unwrap().is_empty() {
             return;
         }
-        // While Retry-After is active, keep stats queued and skip the network call.
+        // While Retry-After is active, keep stats queued (on disk too) and skip the network call.
         if self.is_remote_blocked() {
             self.host.debug("Deferring stats flush until Retry-After expires.");
+            if self.stats.unsaved.load(Ordering::SeqCst) {
+                self.persist_stats(false);
+            }
             return;
         }
         let stats_url = self.config().stats_url.clone();
@@ -252,6 +259,7 @@ impl Engine {
         if self.stats.stopped.load(Ordering::SeqCst) && !force {
             return;
         }
+        self.stats.unsaved.store(false, Ordering::SeqCst);
         let events: Vec<Value> = {
             let queue = self.stats.queue.lock().unwrap();
             let in_flight = self.stats.in_flight.lock().unwrap();

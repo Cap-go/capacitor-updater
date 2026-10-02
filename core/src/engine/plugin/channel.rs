@@ -333,6 +333,11 @@ impl Engine {
             Some(channel) => self.kv_write(keys::DEFAULT_CHANNEL, Some(channel)),
             None => self.kv_write(keys::DEFAULT_CHANNEL, None),
         }
+        // In use right away, even when the restore is not final yet (the previous iOS plugin).
+        self.config_mut().default_channel = previous
+            .clone()
+            .filter(|channel| !channel.is_empty())
+            .unwrap_or(config_channel);
         if !self.persist_default_channel_state_from_store() {
             self.host
                 .warn("Default channel preview restore will retry on next launch");
@@ -349,7 +354,6 @@ impl Engine {
         }
         self.kv_write(keys::PREVIEW_PREVIOUS_DEFAULT_CHANNEL, None);
         self.kv_write(keys::PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET, None);
-        self.config_mut().default_channel = previous.filter(|channel| !channel.is_empty()).unwrap_or(config_channel);
         self.host.info("Restored defaultChannel after preview");
     }
 

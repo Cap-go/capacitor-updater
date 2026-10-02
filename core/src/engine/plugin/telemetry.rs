@@ -494,6 +494,11 @@ impl Engine {
             self.send_stats(&format!("download_{bucket}"), Some(bundle.version_name()), None, None);
         }
     }
+
+    /// A download failed: its progress buckets go (new attempts get new ids).
+    pub(crate) fn forget_download_progress(&self, id: &str) {
+        self.plugin_state().last_notified_stat_percent.remove(id);
+    }
 }
 
 #[cfg(test)]
@@ -578,6 +583,26 @@ mod tests {
             .map(|queued| queued.event["action"].as_str().unwrap().to_string())
             .collect();
         assert_eq!(actions, ["download_10", "download_10", "download_20", "download_20"]);
+        // Failed downloads leave no progress entry behind.
+        engine.fail_download(
+            &crate::bundle::BundleInfo::new(
+                "a",
+                Some("1.0.0".into()),
+                crate::bundle::BundleStatus::Downloading,
+                "",
+                "",
+            ),
+            &crate::error::CoreError::new("network_error", "lost"),
+            false,
+        );
+        assert_eq!(
+            engine
+                .plugin_state()
+                .last_notified_stat_percent
+                .keys()
+                .collect::<Vec<_>>(),
+            ["b"]
+        );
     }
 
     #[test]
