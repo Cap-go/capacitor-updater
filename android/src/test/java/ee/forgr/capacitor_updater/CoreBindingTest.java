@@ -86,6 +86,19 @@ public class CoreBindingTest {
             assertEquals("1.2.3", engine.call("bundleGet", CapgoCore.input("id", "abc")).getString("version"));
         } finally {
             engine.close();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void deleteRecursively(final File file) {
+        final File[] children = file.listFiles();
+        if (children != null) {
+            for (final File child : children) {
+                deleteRecursively(child);
+            }
+        }
+        if (!file.delete() && file.exists()) {
+            fail("cannot delete " + file);
         }
     }
 }

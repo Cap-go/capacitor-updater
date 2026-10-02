@@ -101,6 +101,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
     /// Lowercase hex SHA-256 of a file (the delta cache key).
     private func sha256(_ file: URL) -> String {
         guard let data = try? Data(contentsOf: file) else {
+            XCTFail("Could not read file for SHA-256: \(file.path)")
             return ""
         }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

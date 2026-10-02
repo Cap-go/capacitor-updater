@@ -47,8 +47,10 @@ void capgo_core_free(char *value);
  * verify_server_certificate checks a TLS server chain (certificates[i] is a
  * DER certificate of lengths[i] bytes, leaf first) with the platform trust
  * store for server_name. It returns 1 when trusted; any other value rejects
- * the connection, and *error may receive a host-allocated reason. The engine
- * checks the host name itself as well. NULL refuses every HTTPS connection.
+ * the connection, and *error may receive a host-allocated reason: the engine
+ * owns it and releases it with free_string (the host must not free it). The
+ * engine checks the host name itself as well. NULL refuses every HTTPS
+ * connection.
  */
 typedef struct CapgoHostCallbacks {
     void *context;

@@ -426,10 +426,9 @@ public class EngineHostTest {
         collectGarbage();
         assertNotNull("held by the engine while it is open", listener[0].get());
         owned.close();
-        // GC is never guaranteed by one request: keep asking under allocation pressure until the
-        // reference clears (normally the first attempt) or a generous deadline passes.
-        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (listener[0].get() != null && System.nanoTime() < deadline) {
+        // GC is never guaranteed by one request: ask again (normally the first attempt clears it),
+        // a bounded number of times so a collector that never runs costs at most 40 x 16 MiB.
+        for (int attempt = 0; attempt < 40 && listener[0].get() != null; attempt++) {
             collectGarbage();
         }
         assertNull("released after close()", listener[0].get());
@@ -487,6 +486,6 @@ public class EngineHostTest {
         pressure = null;
         System.gc();
         System.runFinalization();
-        Thread.sleep(20);
+        Thread.sleep(50);
     }
 }

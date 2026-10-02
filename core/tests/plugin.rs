@@ -964,7 +964,15 @@ fn pending_bundle_gets_the_shared_minimum_before_rollback() {
     let id = "abcdefghij";
     p.t.install_bundle(id, "2.0.0", "pending");
     p.resolve("set", json!({ "id": id }));
-    std::thread::sleep(Duration::from_millis(2500));
+    wait_until("the 30 s readiness check", || {
+        p.t.host
+            .logs
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, message)| message == "Wait for 30000 ms, then check for notifyAppReady")
+    });
+    std::thread::sleep(Duration::from_millis(1200));
     assert!(p.events("updateFailed").is_empty(), "still inside the 30 s window");
     assert_eq!(p.current()["id"], id);
     let generation = p.t.host.hooks_named("applyBundle").last().unwrap()["readyGeneration"].clone();
@@ -1250,6 +1258,21 @@ fn channel_state_file_failures_do_not_reject() {
         .any(|(_, message)| message.contains("default channel state file could not be updated")));
 }
 
+/// Makes `dir` read-only. False (and `dir` left writable) when permissions are not
+/// enforced, as for tests running as root.
+fn make_read_only(dir: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = dir.join(".write-probe");
+    if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("skipped: permissions are not enforced (running as root)");
+        return false;
+    }
+    true
+}
+
 /// The restored channel is only final once the preview snapshot is invalidated: when that
 /// write fails, the restore stays pending (like the previous iOS plugin) instead of
 /// leaving a snapshot that would override a later setChannel on the next launch.
@@ -1259,7 +1282,9 @@ fn preview_channel_restore_retries_when_the_snapshot_cannot_be_invalidated() {
     let nobackup = tempfile::tempdir().unwrap();
     let snapshot = nobackup.path().join("CapacitorUpdater.defaultChannelPreviewSnapshot");
     std::fs::write(&snapshot, b"\x02beta").unwrap();
-    std::fs::set_permissions(nobackup.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    if !make_read_only(nobackup.path()) {
+        return;
+    }
     let p = Plugin::load_with(
         json!({ "autoUpdate": false }),
         json!({ "noBackupDir": nobackup.path().to_string_lossy() }),
@@ -1286,13 +1311,13 @@ fn preview_channel_restore_retries_when_the_snapshot_cannot_be_invalidated() {
 /// no preview fallback behind.
 #[test]
 fn failed_preview_start_leaves_no_preview_state() {
-    use std::os::unix::fs::PermissionsExt;
     let p = Plugin::load(json!({ "autoUpdate": false, "allowPreview": true }));
-    let nobackup = p.t.root().join("nobackup");
-    std::fs::create_dir_all(&nobackup).unwrap();
-    std::fs::set_permissions(&nobackup, std::fs::Permissions::from_mode(0o555)).unwrap();
+    // A non-empty directory where the snapshot goes: it cannot be written, as root too.
+    let snapshot =
+        p.t.root()
+            .join("nobackup/CapacitorUpdater.defaultChannelPreviewSnapshot");
+    std::fs::create_dir_all(snapshot.join("blocker")).unwrap();
     let rejection = p.reject("startPreviewSession", json!({}));
-    std::fs::set_permissions(&nobackup, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         rejection["message"],
         "Could not save current bundle as preview fallback"
@@ -1300,22 +1325,6 @@ fn failed_preview_start_leaves_no_preview_state() {
     assert!(p.resolve("listPreviews", json!({})).get("liveBundle").is_none());
     assert!(p.t.kv("CapacitorUpdater.previewPreviousAppId").is_none());
 }
-
-#[test]
-fn default_channel_is_cleared_on_native_update_when_not_persisted() {
-    let backend_config =
-        json!({ "autoUpdate": false, "persistDefaultChannelOnReinstall": false, "defaultChannel": "prod" });
-    let p = Plugin::load(backend_config.clone());
-    p.resolve("setChannel", json!({ "channel": "beta" }));
-    assert_eq!(p.t.engine.config().default_channel, "beta");
-    // Same storage, new native build.
-    let native = json!({ "versionName": "1.1.0", "versionCode": "11", "noBackupDir": p.t.root().join("nobackup").to_string_lossy() });
-    p.t.call("pluginLoad", json!({ "config": backend_config, "native": native }));
-    assert!(p.t.kv("CapacitorUpdater.defaultChannel").is_none());
-    assert_eq!(p.t.engine.config().default_channel, "prod");
-}
-
-// ---- previews -----------------------------------------------------------------------------------
 
 /// Leaving a preview restores the channel in use at once, even when the restore must be
 /// retried at the next launch (the previous iOS plugin applied it the same way).
@@ -1345,6 +1354,22 @@ fn leaving_a_preview_uses_the_restored_channel_even_when_the_restore_retries() {
         .unwrap();
     assert_eq!(request.json()["defaultChannel"], "beta");
 }
+
+#[test]
+fn default_channel_is_cleared_on_native_update_when_not_persisted() {
+    let backend_config =
+        json!({ "autoUpdate": false, "persistDefaultChannelOnReinstall": false, "defaultChannel": "prod" });
+    let p = Plugin::load(backend_config.clone());
+    p.resolve("setChannel", json!({ "channel": "beta" }));
+    assert_eq!(p.t.engine.config().default_channel, "beta");
+    // Same storage, new native build.
+    let native = json!({ "versionName": "1.1.0", "versionCode": "11", "noBackupDir": p.t.root().join("nobackup").to_string_lossy() });
+    p.t.call("pluginLoad", json!({ "config": backend_config, "native": native }));
+    assert!(p.t.kv("CapacitorUpdater.defaultChannel").is_none());
+    assert_eq!(p.t.engine.config().default_channel, "prod");
+}
+
+// ---- previews -----------------------------------------------------------------------------------
 
 #[test]
 fn preview_session_lifecycle() {

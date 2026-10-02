@@ -84,12 +84,15 @@ fn cleartext_without_a_policy_answer_is_refused() {
 /// host names still parse and reach DNS, Unicode host names are invalid URLs.
 #[test]
 fn punycode_hosts_parse_and_unicode_hosts_are_rejected() {
-    let error = http().get("http://xn--bcher-kva.invalid/").unwrap_err();
-    assert_ne!(
-        error.kind,
-        capgo_updater_core::net::NetErrorKind::InvalidUrl,
-        "{error:?}"
-    );
+    // A proxy from the environment (HTTP_PROXY) may answer instead of DNS failing: either way
+    // the URL was accepted.
+    if let Err(error) = http().get("http://xn--bcher-kva.invalid/") {
+        assert_ne!(
+            error.kind,
+            capgo_updater_core::net::NetErrorKind::InvalidUrl,
+            "{error:?}"
+        );
+    }
     let error = http().get("http://b\u{fc}cher.invalid/").unwrap_err();
     assert_eq!(
         error.kind,
