@@ -191,18 +191,9 @@ impl Http {
         if let Some(agent) = proxied.get(&(download, proxy.clone())) {
             return agent.clone();
         }
-        // ureq parses `host:port` by splitting on ':', so IPv6 proxy literals cannot be expressed.
-        let ureq_proxy = Some(&proxy)
-            .filter(|proxy| !proxy.host.contains(':') && !proxy.host.contains('@'))
-            .and_then(|proxy| ureq::Proxy::new(format!("http://{}:{}", proxy.host, proxy.port)).ok());
-        let Some(ureq_proxy) = ureq_proxy else {
-            self.host.log(
-                crate::host::LogLevel::Warn,
-                &format!(
-                    "Unsupported HTTP proxy {}:{}, connecting directly",
-                    proxy.host, proxy.port
-                ),
-            );
+        // ureq parses the proxy `host:port` by splitting on ':', so it gets a placeholder name
+        // that `ProxyResolver` maps to the real host (IPv6 literals included).
+        let Ok(ureq_proxy) = ureq::Proxy::new(format!("http://{PROXY_PLACEHOLDER}:{}", proxy.port)) else {
             return direct();
         };
         let timeout = *self.timeout.read().unwrap();
@@ -215,7 +206,10 @@ impl Http {
             crate::host::LogLevel::Debug,
             &format!("Using system HTTP proxy {}:{}", proxy.host, proxy.port),
         );
-        let agent = agent_builder(self.tls.clone(), timeout).proxy(ureq_proxy).build();
+        let agent = agent_builder(self.tls.clone(), timeout)
+            .proxy(ureq_proxy)
+            .resolver(ProxyResolver(proxy.clone()))
+            .build();
         proxied.insert((download, proxy), agent.clone());
         agent
     }
@@ -276,6 +270,9 @@ impl Http {
         *current = timeout;
         *self.agent.write().unwrap() = build_agent(self.tls.clone(), timeout);
         *self.download_agent.write().unwrap() = build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
+        // `agent_for` reads the timeout while holding `proxied`: release the timeout first
+        // (lock order). Clearing afterwards drops any agent built with the old timeout.
+        drop(current);
         self.proxied.lock().unwrap().clear();
     }
 
@@ -486,6 +483,27 @@ pub enum Stream<'a> {
     Chunk(&'a [u8]),
 }
 
+/// Proxy server name given to ureq; [`ProxyResolver`] resolves it to the real proxy.
+const PROXY_PLACEHOLDER: &str = "capgo-system-proxy";
+
+/// Resolves the proxy of a proxied agent (the only name such an agent resolves:
+/// the target host is sent to the proxy). Host names go through DNS, IPv4 and
+/// IPv6 literals are used as they are.
+struct ProxyResolver(HttpProxy);
+
+impl ureq::Resolver for ProxyResolver {
+    fn resolve(&self, netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+        use std::net::ToSocketAddrs;
+        if netloc.split(':').next() == Some(PROXY_PLACEHOLDER) {
+            (self.0.host.as_str(), self.0.port)
+                .to_socket_addrs()
+                .map(Iterator::collect)
+        } else {
+            netloc.to_socket_addrs().map(Iterator::collect)
+        }
+    }
+}
+
 fn build_agent(tls: Arc<ClientConfig>, timeout: Duration) -> ureq::Agent {
     agent_builder(tls, timeout).try_proxy_from_env(true).build()
 }
@@ -679,4 +697,54 @@ pub fn platform_verify_for_tests(chain: &[&[u8]], server_name: &str) -> Result<(
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reports one HTTP proxy for every URL.
+    struct Proxied;
+
+    impl Host for Proxied {
+        fn log(&self, _level: crate::host::LogLevel, _message: &str) {}
+        fn kv_get(&self, _key: &str, default: Option<&str>) -> Option<String> {
+            default.map(str::to_string)
+        }
+        fn kv_set(&self, _key: &str, _value: Option<&str>) {}
+        fn kv_keys(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn emit(&self, _event: &str, _payload: &Value) {}
+        fn hook(&self, _name: &str, _payload: &Value) -> Option<Value> {
+            Some(serde_json::json!({ "type": "http", "host": "127.0.0.1", "port": 3128 }))
+        }
+    }
+
+    /// `agent_for` reads the timeout under the `proxied` lock, `set_timeout` clears `proxied`:
+    /// they must not take the two locks in opposite orders.
+    #[test]
+    fn proxy_agents_and_timeout_updates_do_not_deadlock() {
+        let http = Arc::new(Http::new(Arc::new(Proxied), "test".into(), Duration::from_secs(5)));
+        let (done, finished) = std::sync::mpsc::channel();
+        for worker in 0..2 {
+            let http = http.clone();
+            let done = done.clone();
+            std::thread::spawn(move || {
+                for round in 0..20_000u64 {
+                    if worker == 0 {
+                        http.set_timeout(Duration::from_secs(1 + round % 2));
+                    } else {
+                        let _ = http.agent_for(round % 2 == 0, "http://updates.invalid/");
+                    }
+                }
+                let _ = done.send(());
+            });
+        }
+        for _ in 0..2 {
+            finished
+                .recv_timeout(Duration::from_secs(30))
+                .expect("set_timeout and agent_for deadlocked");
+        }
+    }
 }

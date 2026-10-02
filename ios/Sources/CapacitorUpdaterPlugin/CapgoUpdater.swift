@@ -339,7 +339,9 @@ import UIKit
                 log("Proxy auto-configuration (PAC) is not supported by the updater: connecting directly")
                 return direct
             }
-            // SOCKS / FTP proxies are not supported: try the next entry.
+            // SOCKS / FTP proxies are not supported: try the next entry. kCFProxyTypeHTTPS is the
+            // proxy for HTTPS URLs ("Secure Web Proxy"), not a TLS proxy: URLSession sends it a
+            // cleartext CONNECT too, so both types are the same `http` proxy for the engine.
             guard isType(type, [kCFProxyTypeHTTP, kCFProxyTypeHTTPS]) else {
                 continue
             }

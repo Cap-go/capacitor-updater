@@ -22,7 +22,10 @@ pub enum LogLevel {
     Error = 3,
 }
 
-/// An HTTP proxy (plain HTTP to the proxy; HTTPS goes through `CONNECT`).
+/// An HTTP proxy (plain HTTP to the proxy; HTTPS goes through `CONNECT`). This is
+/// also what iOS reports as `kCFProxyTypeHTTPS`: the system proxy for HTTPS URLs,
+/// which URLSession reaches the same way (cleartext `CONNECT`, then end-to-end TLS).
+/// `host` is a name or an IPv4/IPv6 literal (IPv6 without brackets).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HttpProxy {
     pub host: String,
@@ -37,8 +40,18 @@ impl HttpProxy {
             return None;
         }
         let host = reply.get("host")?.as_str()?.trim();
+        let host = host
+            .strip_prefix('[')
+            .and_then(|host| host.strip_suffix(']'))
+            .unwrap_or(host);
         let port = reply.get("port")?.as_u64()?;
-        if host.is_empty() || !(1..=u64::from(u16::MAX)).contains(&port) {
+        // A ':' only belongs in an IPv6 literal; anything else that is not a host name is unusable.
+        let valid_host = if host.contains(':') {
+            host.parse::<std::net::Ipv6Addr>().is_ok()
+        } else {
+            !host.is_empty() && !host.contains(['@', '/', ' '])
+        };
+        if !valid_host || !(1..=u64::from(u16::MAX)).contains(&port) {
             return None;
         }
         Some(Self {

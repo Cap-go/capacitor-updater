@@ -246,7 +246,11 @@ struct ProxyServer {
 
 impl ProxyServer {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        Self::start_on("127.0.0.1:0")
+    }
+
+    fn start_on(address: &str) -> Self {
+        let listener = TcpListener::bind(address).unwrap();
         let port = listener.local_addr().unwrap().port();
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
         let recorded = seen.clone();
@@ -363,7 +367,8 @@ fn direct_or_unusable_proxy_replies_connect_directly() {
         serde_json::json!({ "type": "socks", "host": "127.0.0.1", "port": proxy.port }),
         serde_json::json!({ "type": "http", "host": "", "port": proxy.port }),
         serde_json::json!({ "type": "http", "host": "127.0.0.1", "port": 0 }),
-        serde_json::json!({ "type": "http", "host": "::1", "port": proxy.port }),
+        serde_json::json!({ "type": "http", "host": "127.0.0.1:1", "port": proxy.port }),
+        serde_json::json!({ "type": "http", "host": "user@127.0.0.1", "port": proxy.port }),
         serde_json::json!({}),
     ] {
         let host = memory_host(None);
@@ -372,6 +377,26 @@ fn direct_or_unusable_proxy_replies_connect_directly() {
         assert_eq!(response.text(), "direct", "{reply}");
     }
     assert!(proxy.seen().is_empty());
+}
+
+/// IPv6 proxy literals (Android `getHostString()` has no brackets, iOS may add them).
+#[test]
+fn ipv6_proxies_are_used() {
+    if TcpListener::bind("[::1]:0").is_err() {
+        eprintln!("skipped: no IPv6 loopback");
+        return;
+    }
+    for host_name in ["::1", "[::1]"] {
+        let proxy = ProxyServer::start_on("[::1]:0");
+        let host = memory_host(Some(Ok(())));
+        host.reply_to_hook(
+            "proxyForUrl",
+            serde_json::json!({ "type": "http", "host": host_name, "port": proxy.port }),
+        );
+        let response = http(host).get("http://updates.invalid/v6").unwrap();
+        assert_eq!(response.text(), "via-proxy", "{host_name}");
+        assert_eq!(proxy.seen(), vec!["GET http://updates.invalid/v6 HTTP/1.1".to_string()]);
+    }
 }
 
 #[test]
@@ -384,7 +409,15 @@ fn proxy_replies_parse() {
             port: 3128
         })
     );
+    assert_eq!(
+        HttpProxy::from_reply(&serde_json::json!({ "type": "http", "host": "[fe80::1]", "port": 8080 })),
+        Some(HttpProxy {
+            host: "fe80::1".into(),
+            port: 8080
+        })
+    );
     for reply in [
+        serde_json::json!({ "type": "http", "host": "fe80::zz", "port": 3128 }),
         serde_json::json!({ "type": "direct", "host": "proxy.corp", "port": 3128 }),
         serde_json::json!({ "type": "http", "host": "proxy.corp", "port": 65536 }),
         serde_json::json!({ "type": "http", "host": "proxy.corp", "port": "3128" }),
