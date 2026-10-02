@@ -118,6 +118,10 @@ final class ServerTrustTests: XCTestCase {
             "www.apple.com": ["NSPinnedLeafIdentities": [["SPKI-SHA256-BASE64": Self.appleLeafPin]]]
         ]
         XCTAssertNil(verify(nested))
+        // A malformed pin list fails closed instead of disabling the pin check.
+        XCTAssertNotNil(verify(["www.apple.com": ["NSPinnedLeafIdentities": Self.appleLeafPin]]))
+        let malformedCa = ["SPKI-SHA256-BASE64": Self.appleIntermediatePin]
+        XCTAssertNotNil(verify(["www.apple.com": ["NSPinnedCAIdentities": malformedCa]]))
         // Pinning never makes an untrusted chain acceptable.
         XCTAssertNotNil(CapgoEngine.verifyServerCertificate(
             chain: Self.appleChain, serverName: "www.apple.com", date: Self.afterExpiry, pinnedDomains: leaf

@@ -205,9 +205,11 @@ final class CapgoEngine {
             return nil
         }
         func pins(_ key: String) -> Set<String>? {
-            guard let identities = settings[key] as? [[String: Any]] else {
+            guard let value = settings[key] else {
                 return nil
             }
+            // A present but malformed list pins to nothing (fails closed) instead of disabling the check.
+            let identities = value as? [[String: Any]] ?? []
             return Set(identities.compactMap { $0["SPKI-SHA256-BASE64"] as? String })
         }
         let hashes = chain.map { spkiSha256Base64(certificate: $0) }
