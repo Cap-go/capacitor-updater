@@ -1877,14 +1877,13 @@ public class CapacitorUpdaterUnitTest {
         when(prefs.getString("LatestNativeBuildVersion", "")).thenReturn("9");
         when(prefs.getString("LatestVersionNative", "")).thenReturn("9");
 
-        updater.autoReset("15", true);
-
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
             final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
             plugin.implementation = updater;
-            plugin.reportAppLaunchStartForTesting();
+            plugin.setCurrentBuildVersionForTesting("15");
+            plugin.resetStartupBundleAndReportAppLaunchStartForTesting(true, false);
 
             assertEquals("app_launch_start", updater.lastStatsAction);
             assertEquals("builtin", updater.lastStatsVersionName);

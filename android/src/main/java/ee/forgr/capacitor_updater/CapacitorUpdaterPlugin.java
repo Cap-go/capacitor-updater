@@ -922,12 +922,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
-        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
-        if (nativeBuildVersionChanged) {
-            this.clearPreviewSessionForNativeBuildChange();
-        }
-        this.leavePreviewSessionForLaunchIntentIfNeeded();
-        this.reportAppLaunchStart();
+        this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
         this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
@@ -2344,6 +2339,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void reportAppLaunchStartForTesting() {
+        this.reportAppLaunchStart();
+    }
+
+    void setCurrentBuildVersionForTesting(final String currentBuildVersion) {
+        this.currentBuildVersion = currentBuildVersion;
+    }
+
+    void resetStartupBundleAndReportAppLaunchStartForTesting(final boolean resetWhenUpdate, final boolean nativeBuildVersionChanged) {
+        this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
+    }
+
+    private void resetStartupBundleAndReportAppLaunchStart(final boolean resetWhenUpdate, final boolean nativeBuildVersionChanged) {
+        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
+        if (nativeBuildVersionChanged) {
+            this.clearPreviewSessionForNativeBuildChange();
+        }
+        this.leavePreviewSessionForLaunchIntentIfNeeded();
         this.reportAppLaunchStart();
     }
 
