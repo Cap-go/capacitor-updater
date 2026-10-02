@@ -90,7 +90,8 @@ public final class CapgoDownloadWorker extends Worker {
 
     /**
      * Cancels the jobs of {@code version} and waits (bounded) until none runs, so the caller can delete the bundle.
-     * Returns {@code false} when they did not stop in time.
+     * Returns {@code false} when they did not stop in time, or when called on the main thread, which cannot wait:
+     * the caller keeps the files a job may still use.
      */
     static boolean cancelVersion(final Context context, final String version, final Logger logger) {
         final WorkManager workManager;
@@ -102,7 +103,8 @@ public final class CapgoDownloadWorker extends Worker {
         final String tag = versionTag(version);
         workManager.cancelAllWorkByTag(tag);
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            return true;
+            logger.warn("Cannot wait on the main thread for the scheduled download of " + version + " to stop");
+            return false;
         }
         final long deadline = System.currentTimeMillis() + CANCEL_WAIT_MS;
         while (System.currentTimeMillis() < deadline) {

@@ -104,23 +104,25 @@ pub(crate) fn is_retryable_download_error(error: &CoreError) -> bool {
     }
 }
 
-/// Whether a transport failure can succeed on a later attempt (TLS, invalid URLs and
-/// refused redirects cannot).
+/// Whether a transfer failure can succeed on a later attempt (TLS, invalid URLs, refused
+/// redirects and local file errors cannot; network reads fail as Network / Timeout).
 pub(crate) fn net_error_retryable(error: &NetError) -> bool {
     !matches!(
         error.kind,
         crate::net::NetErrorKind::InvalidUrl
             | crate::net::NetErrorKind::Tls
             | crate::net::NetErrorKind::InsecureRedirect
+            | crate::net::NetErrorKind::Io
     )
 }
 
-/// Error code of a transport failure.
+/// Error code of a transfer failure.
 pub(crate) fn net_error_code(error: &NetError) -> &'static str {
     match error.kind {
         crate::net::NetErrorKind::InvalidUrl => "invalid_url",
         crate::net::NetErrorKind::Tls => "tls_error",
         crate::net::NetErrorKind::InsecureRedirect => "blocked_redirect",
+        crate::net::NetErrorKind::Io => "io_error",
         _ if error.is_timeout() => "timeout",
         _ => "network_error",
     }
@@ -750,10 +752,7 @@ impl Engine {
                     .and_then(|code| code.parse::<i64>().ok())
                 {
                     Some(status) => crate::http::is_retryable_http_status(status),
-                    None => {
-                        error.kind != crate::net::NetErrorKind::InvalidUrl
-                            && error.kind != crate::net::NetErrorKind::Tls
-                    }
+                    None => net_error_retryable(&error),
                 };
                 let code = if error.message.starts_with("HTTP error") {
                     "http_error"
@@ -829,9 +828,13 @@ impl Engine {
         let age = Duration::from_secs(3600);
         let storage = self.config().storage_root.clone();
         let cache = self.config().cache_dir.clone();
-        // Partial files of scheduled downloads wait for their next attempt.
+        // Partial files of scheduled downloads wait for their next attempt. Manifest partials
+        // are named by file, not job: keep them all while a manifest job is pending.
         let jobs = self.pending_job_ids();
-        let pending = |name: &str| jobs.iter().any(|id| name.contains(id.as_str()));
+        let manifest_pending = jobs.iter().any(|id| self.job_has_manifest(id));
+        let pending = |name: &str| {
+            jobs.iter().any(|id| name.contains(id.as_str())) || (manifest_pending && name.starts_with("partial_"))
+        };
         for dir in [storage, cache] {
             let Ok(entries) = fs::read_dir(&dir) else {
                 continue;

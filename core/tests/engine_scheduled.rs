@@ -235,6 +235,44 @@ fn a_checksum_mismatch_fails_the_job() {
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 
+/// A local file error (the partial cannot be written) is no network error: the job fails
+/// instead of being retried by the scheduler forever.
+#[test]
+fn local_file_errors_fail_the_job() {
+    let bundle = web_bundle("local");
+    let served = bundle.clone();
+    let server = FakeServer::start(move |_| (200, vec![], served.clone()));
+    let content = b"<html>local</html>".to_vec();
+    let file_content = content.clone();
+    let files = FakeServer::start(move |_| (200, vec![], file_content.clone()));
+    let t = TestEngine::new(json!({}));
+    scheduling(&t);
+
+    let caller = download_async(
+        &t.engine,
+        json!({ "url": format!("{}/b.zip", server.url), "version": "2.0.0", "checksum": sha256(&bundle) }),
+    );
+    let id = scheduled_job(&t.host, 1);
+    // A directory where the partial file goes: opening it fails, as root too.
+    std::fs::create_dir_all(t.root().join(format!("temp_{id}.tmp"))).unwrap();
+    let reply = run_job(&t.engine, &id);
+    assert_eq!(reply["result"], "failure", "{reply}");
+    assert_eq!(caller.join().unwrap().unwrap_err().code, "io_error");
+
+    let manifest = json!([{
+        "file_name": "index.html",
+        "file_hash": sha256(&content),
+        "download_url": format!("{}/files/index.html", files.url),
+    }]);
+    let partial = capgo_updater_core::paths::manifest_partial_name(Some(&sha256(&content)), "index.html");
+    std::fs::create_dir_all(t.root().join("cache/capgo_downloads").join(partial)).unwrap();
+    let caller = download_async(&t.engine, json!({ "version": "3.0.0", "manifest": manifest }));
+    let id = scheduled_job(&t.host, 2);
+    let reply = run_job(&t.engine, &id);
+    assert_eq!(reply["result"], "failure", "{reply}");
+    assert!(caller.join().unwrap().is_err());
+}
+
 #[test]
 fn not_found_is_definitive_and_server_errors_retry() {
     let calls = Arc::new(Mutex::new(0));
@@ -299,6 +337,44 @@ fn manifest_jobs_retry_then_install() {
     assert_eq!(installed["status"], "pending");
     let dir = t.root().join("versions").join(&id);
     assert_eq!(std::fs::read(dir.join("index.html")).unwrap(), content);
+}
+
+/// The launch cleanup keeps the partial files of a pending manifest job (named by file, not
+/// job) so its next attempt resumes them; once no manifest job is pending they go.
+#[test]
+fn launch_cleanup_keeps_partials_of_pending_manifest_jobs() {
+    let t = TestEngine::new(json!({}));
+    scheduling(&t);
+    let content = b"<html>partial</html>".to_vec();
+    let manifest = json!([{
+        "file_name": "index.html",
+        "file_hash": sha256(&content),
+        "download_url": "http://127.0.0.1:9/files/index.html",
+    }]);
+    let caller = download_async(&t.engine, json!({ "version": "2.0.0", "manifest": manifest }));
+    let id = scheduled_job(&t.host, 1);
+    let two_hours_ago = std::time::SystemTime::now() - Duration::from_secs(7200);
+    let old_file = |name: &str| {
+        let path = t.root().join(name);
+        std::fs::write(&path, b"part").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(two_hours_ago)
+            .unwrap();
+        path
+    };
+    let partial = old_file(&format!("partial_{}_abcdef.tmp", sha256(&content)));
+    let leftover = old_file("temp_other.tmp");
+    t.engine.cleanup_download_temp_files();
+    assert!(partial.exists(), "kept for the pending manifest job");
+    assert!(!leftover.exists());
+
+    t.call("bundleDelete", json!({ "id": id }));
+    let _ = caller.join().unwrap();
+    t.engine.cleanup_download_temp_files();
+    assert!(!partial.exists(), "no manifest job pending");
 }
 
 #[test]

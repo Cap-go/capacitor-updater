@@ -73,6 +73,14 @@ fn jobs() -> MutexGuard<'static, Jobs> {
     registry().jobs.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
+/// Tells the caller waiting for job `id` (if any) that an attempt failed and is retried.
+fn count_retry(id: &str) {
+    if let Some(waiter) = jobs().waiters.get_mut(id) {
+        waiter.retries += 1;
+    }
+    registry().changed.notify_all();
+}
+
 /// Hands the final outcome to the caller waiting for job `id` (if any).
 fn publish(id: &str, outcome: Scheduled) {
     let mut jobs = jobs();
@@ -142,6 +150,14 @@ impl Engine {
             "timeoutMs": config.timeout_ms,
             "publicKey": config.public_key,
         })
+    }
+
+    /// Job `id` downloads a manifest (its partial files are named by file, not job).
+    pub(crate) fn job_has_manifest(&self, id: &str) -> bool {
+        fs::read(self.job_path(id))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|job| job["request"]["manifest"].is_array())
     }
 
     fn remove_job(&self, id: &str) {
@@ -352,6 +368,11 @@ impl Engine {
             // A cancel also lands here; the scheduler then drops the job.
             Err(error) if error.code == "download_stopped" => {
                 self.host.info(format!("Scheduled download {id} stopped"));
+                // Waiting for the constraints again is a retry for the caller too (a direct
+                // update stops holding the launch). A cancelled job is gone: nothing to retry.
+                if self.job_path(id).exists() {
+                    count_retry(id);
+                }
                 json!({ "result": "retry", "error": { "code": error.code, "message": error.message } })
             }
             Err(error) if is_retryable_download_error(&error) => {
@@ -359,12 +380,7 @@ impl Engine {
                     "Scheduled download {id} failed ({}), the scheduler retries it",
                     error.message
                 ));
-                let mut jobs = jobs();
-                if let Some(waiter) = jobs.waiters.get_mut(id) {
-                    waiter.retries += 1;
-                }
-                drop(jobs);
-                registry().changed.notify_all();
+                count_retry(id);
                 json!({ "result": "retry", "error": { "code": error.code, "message": error.message } })
             }
             Err(error) => {

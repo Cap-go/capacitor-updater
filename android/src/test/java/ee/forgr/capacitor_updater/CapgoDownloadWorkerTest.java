@@ -46,6 +46,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
+import org.robolectric.shadows.ShadowBuild;
 
 /**
  * Bundle downloads run as WorkManager jobs ({@link CapgoDownloadWorker}) whose runs call the Rust engine, like the
@@ -69,6 +70,14 @@ public class CapgoDownloadWorkerTest {
 
     @Before
     public void setUp() throws Exception {
+        // A phone, not an emulator: jobs wait for a connected network.
+        ShadowBuild.setBrand("google");
+        ShadowBuild.setDevice("oriole");
+        ShadowBuild.setFingerprint("google/oriole/oriole:14/AP2A.240805.005/12025142:user/release-keys");
+        ShadowBuild.setHardware("oriole");
+        ShadowBuild.setManufacturer("Google");
+        ShadowBuild.setModel("Pixel 6");
+        ShadowBuild.setProduct("oriole");
         this.context = RuntimeEnvironment.getApplication();
         WorkManagerTestInitHelper.initializeTestWorkManager(
             this.context,
@@ -312,6 +321,23 @@ public class CapgoDownloadWorkerTest {
         assertTrue(new File(this.context.getFilesDir(), "versions/" + id + "/index.html").exists());
     }
 
+    /** Emulators often report no validated network to background jobs: their jobs do not wait for one. */
+    @Test
+    public void emulatorJobsDoNotWaitForTheNetwork() throws Exception {
+        ShadowBuild.setProduct("sdk_gphone64_arm64");
+        this.download(sha256(this.bundle));
+        assertEquals(NetworkType.NOT_REQUIRED, this.awaitJob().getConstraints().getRequiredNetworkType());
+    }
+
+    /** The main thread cannot wait for a running job to stop: the caller must not delete its files yet. */
+    @Test
+    public void cancellingOnTheMainThreadDoesNotClaimTheJobStopped() throws Exception {
+        this.download(sha256(this.bundle));
+        this.awaitJob();
+        final Logger logger = new Logger("CapgoDownloadWorkerTest", new Logger.Options(Logger.LogLevel.silent));
+        assertFalse(CapgoDownloadWorker.cancelVersion(this.context, "2.0.0", logger));
+    }
+
     @Test
     public void aDroppedDownloadIsRetriedAndResumed() throws Exception {
         this.truncateNext.set(1);
@@ -392,7 +418,10 @@ public class CapgoDownloadWorkerTest {
             .filter((tag) -> tag.length() == 10)
             .findFirst()
             .orElse("");
-        final JSONObject deleted = this.engine.call("pluginMethod", CapgoCore.input("name", "delete", "args", CapgoCore.input("id", id)));
+        // Off the main thread, like the plugin's method lane: the delete waits for the job to stop.
+        final JSONObject deleted = this.callers
+            .submit(() -> this.engine.call("pluginMethod", CapgoCore.input("name", "delete", "args", CapgoCore.input("id", id))))
+            .get(15, TimeUnit.SECONDS);
         assertTrue(deleted.toString(), deleted.has("resolve"));
         assertEquals(WorkInfo.State.CANCELLED, this.job(job).getState());
         assertNotNull(call.get(10, TimeUnit.SECONDS).optJSONObject("reject"));

@@ -622,13 +622,14 @@ impl Engine {
         ));
         let session_key = text(&response, "sessionKey").unwrap_or_default();
         let existing = self.get_bundle_info_by_name(&latest_version);
-        let reusable = existing.as_ref().filter(|bundle| {
+        let is_reusable = |bundle: &&BundleInfo| {
             bundle.is_downloaded()
                 && !bundle.is_downloading()
                 && !bundle.is_deleted()
                 && !bundle.is_deleting()
                 && !bundle.is_error()
-        });
+        };
+        let reusable = existing.as_ref().filter(is_reusable);
         let next = match (reusable, &existing) {
             (Some(bundle), _) if self.require_session_key_quiet(&session_key) => {
                 self.host.info(format!(
@@ -662,31 +663,49 @@ impl Engine {
                 let result = match adopted {
                     Some(result) => result,
                     None => {
-                        if let Some(bundle) = &existing {
-                            self.host.info(format!(
-                                "Latest bundle already exists in incomplete state ({}) and will be deleted, download will overwrite it.",
-                                bundle.status().as_str()
-                            ));
-                            if self.next_bundle().is_some_and(|next| next.id() == bundle.id()) {
-                                self.set_next_bundle(None);
-                            }
-                            self.delete_bundle(bundle.id(), true, true);
+                        // A job of this version may have finished since `existing` was read: stop
+                        // any job left, then decide from the record as it is now.
+                        if existing.as_ref().is_some_and(BundleInfo::is_downloading) {
+                            self.cancel_version_download(&latest_version);
                         }
-                        let request = DownloadRequest {
-                            url: url.clone(),
-                            version: latest_version.clone(),
-                            session_key: session_key.clone(),
-                            checksum: text(&response, "checksum").unwrap_or_default(),
-                            manifest: response.get("manifest").and_then(Value::as_array).cloned(),
-                            link: text(&response, "link"),
-                            comment: text(&response, "comment"),
-                            emit_events: false,
-                            ..Default::default()
-                        };
-                        if request.manifest.is_some() {
-                            self.download_manifest(&request)
+                        let existing = self.get_bundle_info_by_name(&latest_version);
+                        let finished = existing
+                            .as_ref()
+                            .filter(is_reusable)
+                            .filter(|_| self.require_session_key_quiet(&session_key));
+                        if let Some(bundle) = finished {
+                            self.host.info(format!(
+                                "Latest bundle {} was downloaded by its scheduled download",
+                                bundle.id()
+                            ));
+                            Ok(bundle.clone())
                         } else {
-                            self.download_zip(&request)
+                            if let Some(bundle) = &existing {
+                                self.host.info(format!(
+                                    "Latest bundle already exists in incomplete state ({}) and will be deleted, download will overwrite it.",
+                                    bundle.status().as_str()
+                                ));
+                                if self.next_bundle().is_some_and(|next| next.id() == bundle.id()) {
+                                    self.set_next_bundle(None);
+                                }
+                                self.delete_bundle(bundle.id(), true, true);
+                            }
+                            let request = DownloadRequest {
+                                url: url.clone(),
+                                version: latest_version.clone(),
+                                session_key: session_key.clone(),
+                                checksum: text(&response, "checksum").unwrap_or_default(),
+                                manifest: response.get("manifest").and_then(Value::as_array).cloned(),
+                                link: text(&response, "link"),
+                                comment: text(&response, "comment"),
+                                emit_events: false,
+                                ..Default::default()
+                            };
+                            if request.manifest.is_some() {
+                                self.download_manifest(&request)
+                            } else {
+                                self.download_zip(&request)
+                            }
                         }
                     }
                 };

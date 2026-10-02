@@ -54,7 +54,25 @@ impl Backend {
             let path = request.url.split('?').next().unwrap_or_default().to_string();
             match path.as_str() {
                 "/updates" => FakeServer::json(200, l.lock().unwrap().clone()),
-                "/b.zip" => (200, vec![], b.lock().unwrap().clone()),
+                "/b.zip" => {
+                    let body = b.lock().unwrap().clone();
+                    // Resumed transfers (`Range: bytes=N-`) get the rest of the bundle.
+                    let start = request
+                        .header("Range")
+                        .and_then(|range| range.strip_prefix("bytes=")?.strip_suffix('-')?.parse::<usize>().ok())
+                        .filter(|start| *start < body.len());
+                    match start {
+                        Some(start) => (
+                            206,
+                            vec![(
+                                "Content-Range".into(),
+                                format!("bytes {start}-{}/{}", body.len() - 1, body.len()),
+                            )],
+                            body[start..].to_vec(),
+                        ),
+                        None => (200, vec![], body),
+                    }
+                }
                 "/channel_self" => {
                     let (status, body) = c.lock().unwrap().clone();
                     FakeServer::json(status, body)
@@ -433,6 +451,45 @@ impl Plugin {
         self.t.call("runScheduledDownload", json!({ "id": id }))
     }
 
+    /// A new process: same preferences and files, new engine and plugin load.
+    fn relaunch(&self) -> Arc<capgo_updater_core::engine::Engine> {
+        let root = self.t.root();
+        let engine = capgo_updater_core::engine::Engine::new(
+            self.t.host.clone(),
+            &json!({
+                "platform": "ios",
+                "appId": "app.capgo.test",
+                "pluginVersion": "8.0.0",
+                "versionBuild": "1.0.0",
+                "versionCode": "10",
+                "versionOs": "14",
+                "deviceId": "device-1",
+                "builtinServerPath": "",
+                "bundleRoot": root.join("versions").to_string_lossy(),
+                "storageRoot": root.to_string_lossy(),
+                "cacheDir": root.join("cache/capgo_downloads").to_string_lossy(),
+            }),
+        )
+        .unwrap();
+        let url = &self.backend.server.url;
+        engine
+            .call(
+                "pluginLoad",
+                &json!({
+                    "config": {
+                        "updateUrl": format!("{url}/updates"),
+                        "statsUrl": format!("{url}/stats"),
+                        "channelUrl": format!("{url}/channel_self"),
+                        "appReadyTimeout": 1000,
+                    },
+                    "native": { "versionName": "1.0.0", "versionCode": "10", "noBackupDir": root.join("nobackup").to_string_lossy() },
+                }),
+            )
+            .unwrap();
+        engine.wait_for_cleanup_for_tests();
+        engine
+    }
+
     /// Points the stored job of `id` at another bundle URL (the server comes back elsewhere).
     fn retarget_job(&self, id: &str, url: &str) {
         let path = self.t.root().join("capgo_download_jobs").join(format!("{id}.json"));
@@ -515,6 +572,47 @@ fn retrying_scheduled_download_releases_a_direct_update_launch() {
     assert_eq!(p.current()["id"], "builtin");
 }
 
+/// The scheduler stops a running attempt (network lost): like a failed attempt, the direct
+/// update stops holding the launch while the job waits to run again.
+#[test]
+fn a_stopped_scheduled_download_releases_a_direct_update_launch() {
+    use std::io::{Read, Write as _};
+    let p = Plugin::load(json!({ "autoUpdate": "always" }));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    // A transfer that never ends: headers, then a byte every 20 ms.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let slow = format!("http://{}/b.zip", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut buffer = [0u8; 1024];
+                let _ = stream.read(&mut buffer);
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
+                while stream.write_all(b"x").and_then(|()| stream.flush()).is_ok() {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            });
+        }
+    });
+    p.backend.latest.lock().unwrap()["url"] = json!(slow);
+    p.foreground();
+    let id = p.scheduled_job(1);
+    let engine = p.t.engine.clone();
+    let job = id.clone();
+    let attempt = std::thread::spawn(move || engine.call("runScheduledDownload", &json!({ "id": job })).unwrap());
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(p.events("appReady").is_empty(), "the launch waits for the download");
+    p.t.call("stopScheduledDownload", json!({ "id": id }));
+    assert_eq!(attempt.join().unwrap()["result"], "retry");
+    let ready = p.wait_for_event("appReady", 1);
+    assert_eq!(
+        ready[0]["status"],
+        "Direct update download is retrying, continuing launch on the current bundle"
+    );
+}
+
 /// Plugin released while its download waits (process killed, activity destroyed): the job
 /// still records the bundle, and the next update check installs it without downloading.
 #[test]
@@ -564,47 +662,17 @@ fn a_job_finished_without_its_cycle_is_installed_by_the_next_check() {
 fn the_next_launch_resumes_the_job_of_a_killed_process() {
     let p = Plugin::load(json!({}));
     p.schedule_downloads();
-    p.backend.offer("2.0.0", web_bundle("v2"));
+    let bundle = web_bundle("v2");
+    p.backend.offer("2.0.0", bundle.clone());
     p.foreground();
     let id = p.scheduled_job(1);
+    // A first attempt was dropped halfway: its partial file waits for the next one.
+    let half = bundle.len() / 2;
+    std::fs::write(p.t.root().join(format!("temp_{id}.tmp")), &bundle[..half]).unwrap();
+    std::fs::write(p.t.root().join(format!("update_{id}.dat")), "2.0.0").unwrap();
     // Process death: the cycle that waited is gone, the job stays.
     p.t.call("detachScheduledDownloads", json!({}));
-
-    // New process: same preferences and files, new engine and plugin load.
-    let root = p.t.root();
-    let engine = capgo_updater_core::engine::Engine::new(
-        p.t.host.clone(),
-        &json!({
-            "platform": "ios",
-            "appId": "app.capgo.test",
-            "pluginVersion": "8.0.0",
-            "versionBuild": "1.0.0",
-            "versionCode": "10",
-            "versionOs": "14",
-            "deviceId": "device-1",
-            "builtinServerPath": "",
-            "bundleRoot": root.join("versions").to_string_lossy(),
-            "storageRoot": root.to_string_lossy(),
-            "cacheDir": root.join("cache/capgo_downloads").to_string_lossy(),
-        }),
-    )
-    .unwrap();
-    let url = &p.backend.server.url;
-    engine
-        .call(
-            "pluginLoad",
-            &json!({
-                "config": {
-                    "updateUrl": format!("{url}/updates"),
-                    "statsUrl": format!("{url}/stats"),
-                    "channelUrl": format!("{url}/channel_self"),
-                    "appReadyTimeout": 1000,
-                },
-                "native": { "versionName": "1.0.0", "versionCode": "10", "noBackupDir": root.join("nobackup").to_string_lossy() },
-            }),
-        )
-        .unwrap();
-    engine.wait_for_cleanup_for_tests();
+    let engine = p.relaunch();
     let ready_before = p.events("appReady").len();
     engine.call("appForeground", &json!({})).unwrap();
     // Same job handed to the scheduler again (it keeps the one it has).
@@ -624,6 +692,66 @@ fn the_next_launch_resumes_the_job_of_a_killed_process() {
         .call("pluginMethod", &json!({ "name": "getNextBundle", "args": {} }))
         .unwrap();
     assert_eq!(next["resolve"]["id"], id.as_str());
+    let zip_requests: Vec<Option<String>> = p
+        .backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with("/b.zip"))
+        .map(|request| request.header("Range"))
+        .collect();
+    assert_eq!(
+        zip_requests,
+        [Some(format!("bytes={half}-"))],
+        "the job resumed the partial file"
+    );
+}
+
+/// The job of an earlier process finishes while the next launch's check finds no job to
+/// adopt: the check uses the finished bundle instead of deleting it and downloading again.
+#[test]
+fn a_job_that_finishes_during_the_check_is_not_deleted() {
+    let p = Plugin::load(json!({}));
+    p.schedule_downloads();
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    let id = p.scheduled_job(1);
+    p.t.call("detachScheduledDownloads", json!({}));
+    let engine = p.relaunch();
+    // The new process cannot hand the job over (no adoption) ...
+    p.t.host
+        .reply_to_hook("scheduleDownload", json!({ "scheduled": false }));
+    // ... and the job completes while the check reads the bundles (the log after "New bundle").
+    let job_engine = p.t.engine.clone();
+    let job_id = id.clone();
+    let job_result: Arc<Mutex<Option<Value>>> = Arc::default();
+    let result = job_result.clone();
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    *p.t.host.on_log.lock().unwrap() = Some(Arc::new(move |message: &str| {
+        use std::sync::atomic::Ordering;
+        if message.starts_with("New bundle: 2.0.0 found") {
+            armed.store(true, Ordering::SeqCst);
+        } else if armed.swap(false, Ordering::SeqCst) {
+            *result.lock().unwrap() = Some(
+                job_engine
+                    .call("runScheduledDownload", &json!({ "id": job_id }))
+                    .unwrap(),
+            );
+        }
+    }));
+    let ready_before = p.events("appReady").len();
+    engine.call("appForeground", &json!({})).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while p.events("appReady").len() == ready_before {
+        assert!(Instant::now() < deadline, "cycle did not finish");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    *p.t.host.on_log.lock().unwrap() = None;
+    assert_eq!(job_result.lock().unwrap().as_ref().unwrap()["result"], "success");
+    let next = engine
+        .call("pluginMethod", &json!({ "name": "getNextBundle", "args": {} }))
+        .unwrap();
+    assert_eq!(next["resolve"]["id"], id.as_str(), "the job's bundle is kept");
     let zip_requests = p
         .backend
         .server
@@ -631,7 +759,7 @@ fn the_next_launch_resumes_the_job_of_a_killed_process() {
         .iter()
         .filter(|request| request.url.starts_with("/b.zip"))
         .count();
-    assert_eq!(zip_requests, 1, "one download, by the job");
+    assert_eq!(zip_requests, 1, "no second download");
 }
 
 #[test]
