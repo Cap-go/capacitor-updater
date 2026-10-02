@@ -35,7 +35,7 @@ public class ShakeMenuTest {
 
     @Test
     public void pickingAChannelKeepsTheMenuBusyUntilTheSwitchEnds() throws Exception {
-        final BridgeActivity activity = Robolectric.buildActivity(BridgeActivity.class).get();
+        final BridgeActivity activity = Robolectric.buildActivity(BridgeActivity.class).setup().get();
         final CapacitorUpdaterPlugin plugin = mock(CapacitorUpdaterPlugin.class);
         final CountDownLatch switching = new CountDownLatch(1);
         final CountDownLatch finish = new CountDownLatch(1);

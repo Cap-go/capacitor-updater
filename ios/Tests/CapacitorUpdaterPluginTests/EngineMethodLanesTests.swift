@@ -231,9 +231,11 @@ class EngineMethodLanesTests: XCTestCase {
         lanes.setDetachedMethods(["detached"])
         let release = DispatchSemaphore(value: 0)
         lanes.submit("detached") { release.wait() }
+        let started = Date()
         let laneRan = expectation(description: "lane method")
         lanes.submit("current") { laneRan.fulfill() }
         wait(for: [laneRan], timeout: 5)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "the lane waits at most its 0.2 s hold limit")
         release.signal()
     }
 }

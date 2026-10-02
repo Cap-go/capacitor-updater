@@ -357,17 +357,22 @@ public class EngineHostTest {
                 () -> {}
             );
         }
-        assertTrue(saturated.await(10, TimeUnit.SECONDS));
-        final long started = System.nanoTime();
-        final CountDownLatch laneRan = new CountDownLatch(1);
-        lanes.submit("notifyAppReady", laneRan::countDown, () -> {});
-        assertTrue(laneRan.await(5, TimeUnit.SECONDS));
-        assertTrue("queued methods do not hold the lane", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(1));
-        assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, running.get());
-        release.countDown();
-        assertTrue(done.await(10, TimeUnit.SECONDS));
-        assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, peak.get());
-        lanes.shutdown();
+        try {
+            assertTrue(saturated.await(10, TimeUnit.SECONDS));
+            final long started = System.nanoTime();
+            final CountDownLatch laneRan = new CountDownLatch(1);
+            lanes.submit("notifyAppReady", laneRan::countDown, () -> {});
+            assertTrue(laneRan.await(5, TimeUnit.SECONDS));
+            assertTrue("queued methods do not hold the lane", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(1));
+            assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, running.get());
+            release.countDown();
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, peak.get());
+        } finally {
+            // A failed assertion must not leave parked workers behind for the next tests.
+            release.countDown();
+            lanes.shutdown();
+        }
     }
 
     /** A detached method that never reports a wait holds the lane for the limit at most. */

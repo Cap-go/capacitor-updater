@@ -41,22 +41,28 @@ while kill -0 "$XCODEBUILD_PID" 2>/dev/null; do
       echo
     done
     # Seen on CI: xcodebuild waiting on a hung `xcodebuild -version -sdk` child after the tests.
-    pkill -TERM -P "$XCODEBUILD_PID" 2>/dev/null || true
-    kill -TERM "$XCODEBUILD_PID" 2>/dev/null || true
+    # Capture the children first: once xcodebuild exits they are reparented and -P misses them.
+    children="$(pgrep -P "$XCODEBUILD_PID" || true)"
+    kill -TERM "$XCODEBUILD_PID" $children 2>/dev/null || true
     for _ in 1 2 3 4 5; do
       kill -0 "$XCODEBUILD_PID" 2>/dev/null || break
       sleep 2
     done
-    pkill -KILL -P "$XCODEBUILD_PID" 2>/dev/null || true
-    kill -KILL "$XCODEBUILD_PID" 2>/dev/null || true
+    kill -KILL "$XCODEBUILD_PID" $children 2>/dev/null || true
+    stopped_by_watchdog=1
     break
   fi
   sleep 2
 done
-wait "$XCODEBUILD_PID" 2>/dev/null || true
+status=0
+wait "$XCODEBUILD_PID" 2>/dev/null || status=$?
 sleep 1
 kill "$TAIL_PID" 2>/dev/null || true
 
+# xcodebuild's own status decides, unless the watchdog stopped it after the tests finished.
+if [[ -z "${stopped_by_watchdog:-}" ]]; then
+  exit "$status"
+fi
 if grep -q "^Test Suite 'All tests' passed" "$LOG_FILE" && grep -q "with 0 failures" "$LOG_FILE"; then
   exit 0
 fi
