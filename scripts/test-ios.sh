@@ -32,9 +32,16 @@ while kill -0 "$XCODEBUILD_PID" 2>/dev/null; do
   fi
   if [[ -n "$finished_at" ]] && (( SECONDS - finished_at > TEARDOWN_LIMIT_SECONDS )); then
     echo "::warning::iOS tests finished but xcodebuild did not exit within ${TEARDOWN_LIMIT_SECONDS}s; test process stacks:"
-    for pid in $(pgrep -f "xctest" || true); do
-      echo "---- sample of $pid ($(ps -o comm= -p "$pid" 2>/dev/null || true))"
-      sample "$pid" 3 2>/dev/null | sed -n '/Call graph:/,/Total number in stack/p' | head -400 || true
+    ps -axo pid,ppid,etime,command | grep -iE "xctest|xcodebuild|testmanagerd" | grep -v grep || true
+    for pid in $(pgrep -f "xctest" || true) "$XCODEBUILD_PID"; do
+      echo "---- sample of $pid"
+      sample "$pid" 2 -mayDie 2>&1 | grep -vE "^\s*$" | head -200 || true
+    done
+    # A test process that crashed while exiting leaves a report (xcodebuild then gathers it).
+    for report in $(find "$HOME/Library/Logs/DiagnosticReports" -name 'xctest*' -newer "$LOG_FILE" 2>/dev/null | head -3); do
+      echo "---- crash report $report"
+      head -c 12000 "$report"
+      echo
     done
     pkill -P "$XCODEBUILD_PID" 2>/dev/null || true
     kill "$XCODEBUILD_PID" 2>/dev/null || true
