@@ -2671,9 +2671,17 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testAppLaunchStartReportsBuiltinAfterNativeBuildReset() {
         let nativeBuildKey = "LatestNativeBuildVersion"
+        let appSessionKeys = [
+            "CapacitorUpdater.appSessionId",
+            "CapacitorUpdater.appSessionForeground",
+            "CapacitorUpdater.appSessionStartedAt",
+            "CapacitorUpdater.lastReportedUncleanSessionId"
+        ]
         UserDefaults.standard.set("9", forKey: nativeBuildKey)
+        appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         defer {
             UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         }
 
         let resetPlugin = TestableCapacitorUpdaterPlugin()
