@@ -2678,6 +2678,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let resetPlugin = TestableCapacitorUpdaterPlugin()
         let statsImplementation = ResettingHealthStatsCapgoUpdater()
+        statsImplementation.setLogger(Logger(withTag: "TestLogger", options: Logger.Options(level: .silent)))
         statsImplementation.statsUrl = "https://example.com/stats"
         statsImplementation.currentBundleValue = BundleInfo(
             id: "ota-id",
@@ -2689,8 +2690,12 @@ class CapacitorUpdaterTests: XCTestCase {
         resetPlugin.implementation = statsImplementation
         resetPlugin.setCurrentBuildVersionForTesting("15")
 
-        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
-        resetPlugin.reportAppLaunchStartForTesting()
+        XCTAssertTrue(
+            resetPlugin.resetStartupBundleAndReportAppLaunchStartForTesting(
+                resetWhenUpdate: true,
+                nativeBuildVersionChanged: true
+            )
+        )
 
         XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
         XCTAssertEqual(statsImplementation.lastStatsVersionName, "builtin")
