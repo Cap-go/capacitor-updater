@@ -527,12 +527,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -552,6 +546,14 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -599,12 +601,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -624,6 +620,14 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -745,12 +749,6 @@ jobs:
           persist-credentials: false
       # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
       # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -772,6 +770,14 @@ jobs:
           path: maestro-ios-edge-apps
       # A full case takes most of the 10 minute cap on hosted macOS runners, so no case-level retry here.
       # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run edge case Maestro flows
         run: |
           set -euo pipefail
