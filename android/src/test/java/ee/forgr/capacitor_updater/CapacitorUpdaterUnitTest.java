@@ -1883,7 +1883,7 @@ public class CapacitorUpdaterUnitTest {
             final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
             plugin.implementation = updater;
             plugin.setCurrentBuildVersionForTesting("15");
-            plugin.resetStartupBundleAndReportAppLaunchStartForTesting(true, false);
+            plugin.resetStartupBundleAndReportAppLaunchStartForTesting(true, true);
 
             assertEquals("app_launch_start", updater.lastStatsAction);
             assertEquals("builtin", updater.lastStatsVersionName);
