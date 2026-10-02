@@ -1150,6 +1150,8 @@ prepare_scenario() {
 
 mkdir -p "$ARTIFACT_DIR"
 trap cleanup EXIT
+# A cancelled CI job sends INT/TERM: exit so the EXIT trap still saves the logs.
+trap 'exit 130' INT TERM
 
 if [[ -z "$TIMEOUT_CMD" ]]; then
   echo "GNU timeout is required to run Maestro flows. Install coreutils (gtimeout) on macOS or make sure timeout is available." >&2

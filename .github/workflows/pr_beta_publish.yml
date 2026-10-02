@@ -15,18 +15,22 @@ concurrency:
   group: pr-beta-${{ github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
-  publish:
+  authorize:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.issue.pull_request && contains(github.event.comment.body, '/publish-beta')) }}
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      actor: ${{ steps.pr.outputs.actor }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
     steps:
       - name: Resolve PR and access checks
         id: pr
@@ -154,12 +158,121 @@ jobs:
               body,
             });
 
+      - name: Publish failure comment
+        if: ${{ failure() && steps.pr.outputs.pr_number != '' }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const marker = '<!-- pr-beta-publish -->';
+            const prNumber = Number('${{ steps.pr.outputs.pr_number }}');
+            const body = [
+              marker,
+              '',
+              '## Beta npm build',
+              '',
+              'Status: failed',
+              '',
+              'Open the run for details:',
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => comment.user.type === 'Bot' && comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
+
+  core:
+    needs: authorize
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - platform: android
+            runner: ubuntu-latest
+            path: android/src/main/jniLibs
+          - platform: ios
+            runner: macOS-latest
+            path: ios/Frameworks/CapgoUpdaterCore.xcframework
+    runs-on: ${{ matrix.runner }}
+    name: Build Rust core / ${{ matrix.platform }}
+    steps:
       - name: Check out PR head
         uses: actions/checkout@v7
         with:
-          ref: ${{ steps.pr.outputs.head_sha }}
+          ref: ${{ needs.authorize.outputs.head_sha }}
+          persist-credentials: false
+      - name: Build Rust core
+        uses: ./.github/actions/build-core
+        with:
+          platform: ${{ matrix.platform }}
+          cache: 'false'
+      - name: Upload Rust core
+        uses: actions/upload-artifact@v7
+        with:
+          name: capgo-core-${{ matrix.platform }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+
+  publish:
+    needs: [authorize, core]
+    if: ${{ !cancelled() && needs.authorize.result == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    steps:
+      - name: Require Rust core builds
+        if: ${{ needs.core.result != 'success' }}
+        run: |
+          echo "Rust core build failed (${{ needs.core.result }})."
+          exit 1
+
+      - name: Check out PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.authorize.outputs.head_sha }}
           fetch-depth: 0
           filter: blob:none
+
+      - name: Download Rust core (Android)
+        uses: actions/download-artifact@v8
+        with:
+          name: capgo-core-android
+          path: android/src/main/jniLibs
+
+      - name: Download Rust core (iOS)
+        uses: actions/download-artifact@v8
+        with:
+          name: capgo-core-ios
+          path: ios/Frameworks/CapgoUpdaterCore.xcframework
 
       - uses: oven-sh/setup-bun@v2
 
@@ -172,7 +285,7 @@ jobs:
       - name: Set beta package version
         id: version
         env:
-          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
         run: |
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const fs = require('fs');
@@ -193,6 +306,9 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Check Rust core artifacts
+        run: bun run core:check-artifacts
 
       - name: Setup Node.js for npm publish
         uses: actions/setup-node@v7
@@ -227,11 +343,11 @@ jobs:
         with:
           script: |
             const marker = '<!-- pr-beta-publish -->';
-            const prNumber = Number('${{ steps.pr.outputs.pr_number }}');
-            const actor = '${{ steps.pr.outputs.actor }}';
+            const prNumber = Number('${{ needs.authorize.outputs.pr_number }}');
+            const actor = '${{ needs.authorize.outputs.actor }}';
             const packageName = '${{ steps.version.outputs.package_name }}';
             const version = '${{ steps.version.outputs.version }}';
-            const shortSha = '${{ steps.pr.outputs.head_sha }}'.slice(0, 7);
+            const shortSha = '${{ needs.authorize.outputs.head_sha }}'.slice(0, 7);
             const body = [
               marker,
               '',
@@ -279,12 +395,12 @@ jobs:
             });
 
       - name: Publish failure comment
-        if: ${{ failure() && steps.pr.outputs.pr_number != '' }}
+        if: ${{ failure() && needs.authorize.outputs.pr_number != '' }}
         uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- pr-beta-publish -->';
-            const prNumber = Number('${{ steps.pr.outputs.pr_number }}');
+            const prNumber = Number('${{ needs.authorize.outputs.pr_number }}');
             const body = [
               marker,
               '',

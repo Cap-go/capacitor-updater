@@ -11,6 +11,7 @@ usage() {
 
 run_ios_compile() {
   cd "$ROOT_DIR"
+  "$ROOT_DIR/scripts/build-core.sh" ios
   xcodebuild build-for-testing -scheme CapgoCapacitorUpdater -destination generic/platform=iOS "$@"
 }
 

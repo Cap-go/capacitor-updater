@@ -72,3 +72,8 @@ captures
 .externalNativeBuild
 node_modules/
 package-lock.json
+
+# Rust updater core build outputs (scripts/build-core.sh)
+core/target
+android/src/main/jniLibs
+ios/Frameworks/CapgoUpdaterCore.xcframework

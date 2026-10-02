@@ -2,762 +2,276 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
 
-private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
-    private(set) var notifiedEventNames: [String] = []
-    private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
-    private(set) var notifiedEventRetainValues: [String: Bool] = [:]
-
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
-        notifiedEventNames.append(eventName)
-        notifiedEventRetainValues[eventName] = retain
-        if let data {
-            notifiedEventPayloads[eventName] = data
-        }
-    }
-
-    override func endBackGroundTask() {
-        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
-    }
-
-    override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
-        work()
-    }
-
-    override func runGetLatestWork(_ work: @escaping () -> Void) {
-        work()
-    }
-
-    override func sendReadyToJs(current: BundleInfo, msg: String) {
-        // Intentionally blank: tests assert native state transitions without JS bridge side effects.
-    }
-}
-
-private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
-    private let eventLock = NSLock()
-    private var _notifiedEventNames: [String] = []
-    private var _notifiedEventPayloads: [String: [String: Any]] = [:]
-    private var _appReadyNotifiedAt: Date?
-    private var _appReadyNotifiedOnMainThread: Bool?
-    private var _appReadyRetainUntilConsumed: Bool?
-
-    var appReadyNotifiedOnMainThread: Bool? {
-        eventLock.lock()
-        defer { eventLock.unlock() }
-        return _appReadyNotifiedOnMainThread
-    }
-
-    var appReadyRetainUntilConsumed: Bool? {
-        eventLock.lock()
-        defer { eventLock.unlock() }
-        return _appReadyRetainUntilConsumed
-    }
-
-    var appReadyNotifiedAt: Date? {
-        eventLock.lock()
-        defer { eventLock.unlock() }
-        return _appReadyNotifiedAt
-    }
-
-    var notifiedEventNames: [String] {
-        eventLock.lock()
-        defer { eventLock.unlock() }
-        return _notifiedEventNames
-    }
-
-    var notifiedEventPayloads: [String: [String: Any]] {
-        eventLock.lock()
-        defer { eventLock.unlock() }
-        return _notifiedEventPayloads
-    }
-
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
-        eventLock.lock()
-        _notifiedEventNames.append(eventName)
-        if eventName == "appReady" {
-            _appReadyNotifiedAt = Date()
-            _appReadyNotifiedOnMainThread = Thread.isMainThread
-            _appReadyRetainUntilConsumed = retain
-        }
-        if let data {
-            _notifiedEventPayloads[eventName] = data
-        }
-        eventLock.unlock()
-    }
-
-    override func endBackGroundTask() {
-        // Intentionally blank: tests avoid touching UIApplication background-task APIs.
-    }
-}
-
-private final class FreshDownloadCapgoUpdater: CapgoUpdater {
-    var currentBundleValue: BundleInfo!
-    var latestResponse = AppVersion()
-    var existingBundleValue: BundleInfo?
-    var downloadedBundleValue: BundleInfo?
-    var builtinBundleValue = BundleInfo(
-        id: BundleInfo.ID_BUILTIN,
-        version: "builtin",
-        status: .SUCCESS,
-        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-        checksum: "builtin"
-    )
-    var onDownloadStart: (() -> Void)?
-    var downloadCalls = 0
-    var deleteCalls = 0
-    var lastDeletedId: String?
-    var setNextBundleCalls = 0
-    var lastSetNextBundleId: String?
-    var setNextBundleSucceeds = true
-    var sentStatsActions: [String] = []
-
-    override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
-        latestResponse
-    }
-
-    override func getCurrentBundle() -> BundleInfo {
-        currentBundleValue
-    }
-
-    override func getBundleInfoByVersionName(version: String) -> BundleInfo? {
-        guard existingBundleValue?.getVersionName() == version else {
-            return nil
-        }
-        return existingBundleValue
-    }
-
-    override func getBundleInfo(id: String?) -> BundleInfo {
-        if id == BundleInfo.ID_BUILTIN {
-            return builtinBundleValue
-        }
-        return currentBundleValue
-    }
-
-    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        downloadCalls += 1
-        onDownloadStart?()
-        if let downloadedBundleValue {
-            return downloadedBundleValue
-        }
-        throw NSError(domain: "CapacitorUpdaterPluginTests", code: 1)
-    }
-
-    override func delete(id: String, removeInfo _: Bool) -> Bool {
-        deleteCalls += 1
-        lastDeletedId = id
-        if existingBundleValue?.getId() == id {
-            existingBundleValue = nil
-        }
-        return true
-    }
-
-    override func setNextBundle(next: String?) -> Bool {
-        setNextBundleCalls += 1
-        lastSetNextBundleId = next
-        return setNextBundleSucceeds
-    }
-
-    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        sentStatsActions.append(action)
-    }
-}
-
-private class HealthStatsCapgoUpdater: CapgoUpdater {
-    var currentBundleValue = BundleInfo(
-        id: "current-id",
-        version: "1.0.0",
-        status: .SUCCESS,
-        downloaded: Date(),
-        checksum: "abc123"
-    )
-    var sentStatsActions: [String] = []
-    var sentStatsMetadata: [[String: String]?] = []
-    var lastStatsVersionName: String?
-    var lastStatsOldVersionName: String?
-    var lastStatsMetadata: [String: String]?
-    var acknowledgeStats = true
-
-    override func getCurrentBundle() -> BundleInfo {
-        currentBundleValue
-    }
-
-    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        sentStatsActions.append(action)
-        sentStatsMetadata.append(nil)
-        lastStatsVersionName = versionName
-        lastStatsOldVersionName = oldVersionName
-        lastStatsMetadata = nil
-    }
-
-    override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
-        sentStatsActions.append(action)
-        sentStatsMetadata.append(metadata)
-        lastStatsVersionName = versionName
-        lastStatsOldVersionName = oldVersionName
-        lastStatsMetadata = metadata
-    }
-
-    override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String], onSent: @escaping () -> Void) {
-        sendStats(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata)
-        if acknowledgeStats {
-            onSent()
-        }
-    }
-}
-
-private final class ResettingHealthStatsCapgoUpdater: HealthStatsCapgoUpdater {
-    private let builtinBundle = BundleInfo(
-        id: BundleInfo.ID_BUILTIN,
-        version: "builtin",
-        status: .SUCCESS,
-        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-        checksum: "builtin"
-    )
-
-    override func reset(isInternal _: Bool) {
-        currentBundleValue = builtinBundle
-    }
-}
-
-private final class ChannelRequestCapgoUpdater: CapgoUpdater {
-    var requestResult: CapgoUpdater.RequestResult!
-
-    override func performRequest(_ request: URLRequest, label: String) -> CapgoUpdater.RequestResult {
-        requestResult
-    }
-}
-
-private final class ResetTrackingCapgoUpdater: CapgoUpdater {
-    var currentBundleValue = BundleInfo(
-        id: "current-id",
-        version: "1.0.0",
-        status: .SUCCESS,
-        downloaded: Date(),
-        checksum: "abc123"
-    )
-    var fallbackBundleValue = BundleInfo(
-        id: BundleInfo.ID_BUILTIN,
-        version: "builtin",
-        status: .SUCCESS,
-        downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-        checksum: "builtin"
-    )
-    var nextBundleValue: BundleInfo?
-    var previewFallbackBundleValue: BundleInfo?
-    var stagedPreviewFallbackBundle: BundleInfo?
-    var resetCalled = false
-    var resetIsInternal = false
-    var prepareResetStateForTransitionCalled = false
-    var prepareResetStateForTransitionCalls = 0
-    var finalizeResetTransitionCalled = false
-    var finalizeResetTransitionCalls = 0
-    var finalizeResetTransitionPreviousBundleName: String?
-    var finalizeResetTransitionIsInternal = true
-    var canSetResult = true
-    var setResult = true
-    var canSetCalls = 0
-    var setCalls = 0
-    var listedBundles: [BundleInfo] = []
-    var stagePendingReloadResult = true
-    var stagePendingReloadCalls = 0
-    var stagePreviewFallbackReloadResult = true
-    var stagePreviewFallbackReloadCalls = 0
-    var finalizePendingReloadCalls = 0
-    var finalizedPendingReloadBundle: BundleInfo?
-    var finalizePendingReloadPreviousBundleName: String?
-    var setPreviewFallbackBundleCalls = 0
-    var lastPreviewFallbackBundle: String?
-    var restoreResetStateCalls = 0
-    let capturedState = ResetState(
-        currentBundlePath: "/stored/current",
-        fallbackBundleId: "fallback-id",
-        nextBundleId: "next-id"
-    )
-    var restoredState: ResetState?
-
-    override func getCurrentBundle() -> BundleInfo {
-        currentBundleValue
-    }
-
-    override func getCurrentBundleId() -> String {
-        currentBundleValue.getId()
-    }
-
-    override func getFallbackBundle() -> BundleInfo {
-        fallbackBundleValue
-    }
-
-    override func getNextBundle() -> BundleInfo? {
-        nextBundleValue
-    }
-
-    override func list(raw _: Bool = false) -> [BundleInfo] {
-        listedBundles
-    }
-
-    override func getPreviewFallbackBundle() -> BundleInfo? {
-        previewFallbackBundleValue
-    }
-
-    override func getBundleInfo(id: String?) -> BundleInfo {
-        if id == BundleInfo.ID_BUILTIN {
-            return BundleInfo(
-                id: BundleInfo.ID_BUILTIN,
-                version: "builtin",
-                status: .SUCCESS,
-                downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-                checksum: "builtin"
-            )
-        }
-        if id == currentBundleValue.getId() {
-            return currentBundleValue
-        }
-        if id == fallbackBundleValue.getId() {
-            return fallbackBundleValue
-        }
-        if let previewFallbackBundleValue, id == previewFallbackBundleValue.getId() {
-            return previewFallbackBundleValue
-        }
-        return BundleInfo(id: id ?? "missing-id", version: id ?? "missing", status: .PENDING, downloaded: Date(), checksum: "")
-    }
-
-    override func canSet(bundle: BundleInfo) -> Bool {
-        canSetCalls += 1
-        return canSetResult
-    }
-
-    override func captureResetState() -> ResetState {
-        capturedState
-    }
-
-    override func restoreResetState(_ state: ResetState) {
-        restoreResetStateCalls += 1
-        restoredState = state
-    }
-
-    override func set(bundle: BundleInfo) -> Bool {
-        setCalls += 1
-        return setResult
-    }
-
-    override func setNextBundle(next: String?) -> Bool {
-        true
-    }
-
-    override func stagePendingReload(bundle: BundleInfo) -> Bool {
-        stagePendingReloadCalls += 1
-        return stagePendingReloadResult
-    }
-
-    override func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
-        stagePreviewFallbackReloadCalls += 1
-        stagedPreviewFallbackBundle = bundle
-        return stagePreviewFallbackReloadResult
-    }
-
-    override func setPreviewFallbackBundle(fallback: String?) -> Bool {
-        setPreviewFallbackBundleCalls += 1
-        lastPreviewFallbackBundle = fallback
-        if let fallback {
-            previewFallbackBundleValue = getBundleInfo(id: fallback)
-        } else {
-            previewFallbackBundleValue = nil
-        }
-        return true
-    }
-
-    override func delete(id _: String, removeInfo _: Bool) -> Bool {
-        true
-    }
-
-    override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
-        finalizePendingReloadCalls += 1
-        finalizedPendingReloadBundle = bundle
-        finalizePendingReloadPreviousBundleName = previousBundleName
-    }
-
-    override func reset(isInternal: Bool) {
-        resetCalled = true
-        resetIsInternal = isInternal
-    }
-
-    override func prepareResetStateForTransition() {
-        prepareResetStateForTransitionCalled = true
-        prepareResetStateForTransitionCalls += 1
-    }
-
-    override func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
-        finalizeResetTransitionCalled = true
-        finalizeResetTransitionCalls += 1
-        finalizeResetTransitionPreviousBundleName = previousBundleName
-        finalizeResetTransitionIsInternal = isInternal
-    }
-}
-
-private final class ResetTestableCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
-    override func canPerformResetTransition() -> Bool {
-        true
-    }
-
-    override func _reload() -> Bool {
-        true
-    }
-
-    override func reloadWithoutWaitingForAppReady() -> Bool {
-        true
-    }
-}
-
-private final class ReloadBypassCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
-    override func _reload() -> Bool {
-        true
-    }
-
-    override func reloadWithoutWaitingForAppReady() -> Bool {
-        true
-    }
-}
-
-private final class ReloadFailureCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
-    var restoreLiveBundleStateAfterFailedReloadCalls = 0
-
-    override func canPerformResetTransition() -> Bool {
-        true
-    }
-
-    override func _reload() -> Bool {
-        false
-    }
-
-    override func reloadWithoutWaitingForAppReady() -> Bool {
-        false
-    }
-
-    override func restoreLiveBundleStateAfterFailedReload() {
-        restoreLiveBundleStateAfterFailedReloadCalls += 1
-    }
-}
-
-private final class SequenceReloadCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
-    var reloadResults = [false]
-    private var reloadCallCount = 0
-    var restoreLiveBundleStateAfterFailedReloadCalls = 0
-
-    override func canPerformResetTransition() -> Bool {
-        true
-    }
-
-    override func _reload() -> Bool {
-        let resultIndex = min(reloadCallCount, reloadResults.count - 1)
-        reloadCallCount += 1
-        return reloadResults[resultIndex]
-    }
-
-    override func restoreLiveBundleStateAfterFailedReload() {
-        restoreLiveBundleStateAfterFailedReloadCalls += 1
-    }
-}
-
-private final class PendingReloadFinalizeCapgoUpdater: CapgoUpdater {
-    var bundleInfos: [String: BundleInfo] = [:]
-    var lastStatsAction: String?
-    var lastStatsVersionName: String?
-    var lastStatsOldVersionName: String?
-
-    override func getBundleInfo(id: String?) -> BundleInfo {
-        bundleInfos[id!]!
-    }
-
-    override func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
-        bundleInfos[id] = bundle
-        return true
-    }
-
-    override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        lastStatsAction = action
-        lastStatsVersionName = versionName
-        lastStatsOldVersionName = oldVersionName
-    }
-}
-
+/// Glue tests: the updater logic itself is tested in `core/tests` (Rust).
+/// These cover what the iOS host adds: storage conversions, the engine binding,
+/// method forwarding, hooks and events, and the WebView / splash helpers.
 class CapacitorUpdaterTests: XCTestCase {
-
-    var plugin: CapacitorUpdaterPlugin!
-    var implementation: CapgoUpdater!
-    private let delayPreferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
-    private let backgroundTimestampKey = DelayUpdateUtils.BACKGROUND_TIMESTAMP_KEY
-    private let onlyDownloadChecksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    private var plugin: CapacitorUpdaterPlugin!
+    private var implementation: CapgoUpdater!
+    private var noBackupDir: URL!
+    private let silentLogger = Logger(withTag: "CapacitorUpdaterTests", options: Logger.Options(level: .silent))
 
     override func setUp() {
         super.setUp()
-        plugin = TestableCapacitorUpdaterPlugin()
+        plugin = CapacitorUpdaterPlugin()
         implementation = CapgoUpdater()
+        implementation.setLogger(silentLogger)
+        implementation.appId = "com.capgo.ios.tests"
+        implementation.deviceID = "ios-tests-device"
+        implementation.versionBuild = "1.0.0"
+        noBackupDir = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-tests-\(UUID().uuidString)")
     }
 
     override func tearDown() {
+        implementation?.shutdown()
         plugin = nil
         implementation = nil
+        if let noBackupDir {
+            try? FileManager.default.removeItem(at: noBackupDir)
+        }
         super.tearDown()
     }
 
-    private func makeOnlyDownloadBundle(
-        id: String = "downloaded-id",
-        version: String = "2.0.0",
-        status: BundleStatus = .PENDING,
-        checksum: String? = nil
-    ) -> BundleInfo {
-        BundleInfo(
-            id: id,
-            version: version,
-            status: status,
-            downloaded: Date(),
-            checksum: checksum ?? onlyDownloadChecksum
-        )
-    }
-
-    private func makeOnlyDownloadLatest() -> AppVersion {
-        let latest = AppVersion()
-        latest.version = "2.0.0"
-        latest.url = "https://example.com/update.zip"
-        latest.checksum = onlyDownloadChecksum
-        return latest
-    }
-
-    private func makeOnlyDownloadPlugin(
-        current: BundleInfo? = nil,
-        existing: BundleInfo? = nil,
-        downloaded: BundleInfo? = nil
-    ) -> (TestableCapacitorUpdaterPlugin, FreshDownloadCapgoUpdater) {
-        let freshDownloadImplementation = FreshDownloadCapgoUpdater()
-        freshDownloadImplementation.currentBundleValue = current ?? makeOnlyDownloadBundle(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            checksum: "abc123"
-        )
-        freshDownloadImplementation.latestResponse = makeOnlyDownloadLatest()
-        freshDownloadImplementation.existingBundleValue = existing
-        freshDownloadImplementation.downloadedBundleValue = downloaded
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = freshDownloadImplementation
-        testPlugin.setAutoUpdateModeForTesting("onlyDownload")
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
-
-        return (testPlugin, freshDownloadImplementation)
-    }
-
-    private func makeAtBackgroundPlugin(
-        existing: BundleInfo? = nil,
-        downloaded: BundleInfo? = nil,
-        implementation: FreshDownloadCapgoUpdater = FreshDownloadCapgoUpdater()
-    ) -> (TestableCapacitorUpdaterPlugin, FreshDownloadCapgoUpdater) {
-        implementation.currentBundleValue = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        implementation.latestResponse = makeOnlyDownloadLatest()
-        implementation.existingBundleValue = existing
-        implementation.downloadedBundleValue = downloaded
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = implementation
-        testPlugin.setAutoUpdateModeForTesting("atBackground")
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
-
-        return (testPlugin, implementation)
-    }
-
-    private func assertOnlyDownloadLeavesUpdateManual(
-        plugin testPlugin: TestableCapacitorUpdaterPlugin,
-        implementation freshDownloadImplementation: FreshDownloadCapgoUpdater
-    ) {
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateAvailable"))
-        XCTAssertEqual(testPlugin.notifiedEventRetainValues["updateAvailable"], true)
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
-        XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
-        XCTAssertNil(freshDownloadImplementation.lastSetNextBundleId)
-    }
-
-    private func makeDelayUpdateUtils() throws -> DelayUpdateUtils {
-        let logger = Logger(withTag: "TestLogger")
-        let version = try CapgoSemanticVersion("1.0.0")
-        return DelayUpdateUtils(currentVersionNative: version, logger: logger)
-    }
-
-    private func clearDelayStorage() {
-        UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
-        UserDefaults.standard.removeObject(forKey: backgroundTimestampKey)
-    }
-
-    func testShouldReportUncleanForegroundExitOnlyOnce() {
-        XCTAssertTrue(AppHealthTracker.shouldReportUncleanForegroundExit(
-            previousSessionId: "session-1",
-            lastReportedSessionId: nil,
-            wasForeground: true
-        ))
-        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
-            previousSessionId: "session-1",
-            lastReportedSessionId: "session-1",
-            wasForeground: true
-        ))
-        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
-            previousSessionId: "session-2",
-            lastReportedSessionId: nil,
-            wasForeground: false
-        ))
-        XCTAssertFalse(AppHealthTracker.shouldReportUncleanForegroundExit(
-            previousSessionId: "",
-            lastReportedSessionId: nil,
-            wasForeground: true
-        ))
-    }
-
-    func testReportsPreviousUncleanForegroundExitAsAppCrashStat() {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "CapacitorUpdater.appSessionId",
-            "CapacitorUpdater.appSessionForeground",
-            "CapacitorUpdater.appSessionStartedAt",
-            "CapacitorUpdater.lastReportedUncleanSessionId"
+    /// Loads the plugin layer with every endpoint disabled (no network in tests).
+    @discardableResult
+    private func loadEngine(config extra: [String: Any] = [:]) throws -> [String: Any] {
+        var config: [String: Any] = [
+            "autoUpdate": false,
+            "updateUrl": "",
+            "statsUrl": "",
+            "channelUrl": ""
         ]
-        keys.forEach { defaults.removeObject(forKey: $0) }
-        defer { keys.forEach { defaults.removeObject(forKey: $0) } }
-
-        defaults.set("session-unclean", forKey: "CapacitorUpdater.appSessionId")
-        defaults.set(true, forKey: "CapacitorUpdater.appSessionForeground")
-        defaults.set("1760000000000", forKey: "CapacitorUpdater.appSessionStartedAt")
-
-        let implementation = HealthStatsCapgoUpdater()
-        let tracker = AppHealthTracker(implementation: implementation)
-
-        tracker.reportPreviousUncleanForegroundExit()
-
-        XCTAssertEqual(implementation.sentStatsActions, ["app_crash"])
-        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
-        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_reason"], "unclean_foreground_exit")
-        XCTAssertEqual(implementation.lastStatsMetadata?["exit_source"], "ios_session_marker")
-        XCTAssertEqual(implementation.lastStatsMetadata?["previous_session_id"], "session-unclean")
-        XCTAssertEqual(implementation.lastStatsMetadata?["session_started_at"], "1760000000000")
-
-        implementation.sentStatsActions.removeAll()
-        tracker.reportPreviousUncleanForegroundExit()
-
-        XCTAssertTrue(implementation.sentStatsActions.isEmpty)
-    }
-
-    func testReportsMemoryWarningAsHealthStat() {
-        let implementation = HealthStatsCapgoUpdater()
-        let tracker = AppHealthTracker(implementation: implementation)
-
-        tracker.reportMemoryWarning()
-
-        XCTAssertEqual(implementation.sentStatsActions, ["app_memory_warning"])
-        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
-        XCTAssertEqual(implementation.lastStatsOldVersionName, "")
-        XCTAssertEqual(implementation.lastStatsMetadata, ["source": "ios_memory_warning"])
-    }
-
-    func testMapsWebViewErrorTypesToStatsActions() {
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "javascript_error"), "webview_javascript_error")
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unhandled_rejection"), "webview_unhandled_rejection")
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "resource_error"), "webview_resource_error")
-        XCTAssertEqual(
-            WebViewStatsReporter.statsAction(for: "security_policy_violation"),
-            "webview_security_policy_violation"
-        )
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_unclean_restart"), "webview_unclean_restart")
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "render_process_gone"), "webview_render_process_gone")
-        XCTAssertEqual(
-            WebViewStatsReporter.statsAction(for: "web_content_process_terminated"),
-            "webview_content_process_terminated"
-        )
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_dom_content_loaded"), "webview_dom_content_loaded")
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "webview_page_loaded"), "webview_page_loaded")
-        XCTAssertEqual(WebViewStatsReporter.statsAction(for: "unknown"), "webview_javascript_error")
-    }
-
-    func testBuildWebViewErrorMetadataKeepsUsefulFields() {
-        let metadata = WebViewStatsReporter.buildMetadata([
-            "type": "javascript_error",
-            "message": "boom",
-            "source": "app.js",
-            "line": "10",
-            "column": "20",
-            "stack": String(repeating: "x", count: 3_000),
-            "href": "capacitor://localhost",
-            "session_id": "session-1",
-            "duration_ms": "123",
-            "page_started_at": "456"
+        config.merge(extra) { $1 }
+        let engine = try XCTUnwrap(implementation.engine())
+        return try engine.call("pluginLoad", [
+            "config": config,
+            "native": [
+                "versionName": "1.0.0",
+                "versionCode": "1",
+                "noBackupDir": noBackupDir.path,
+                "trackUncleanExits": false
+            ]
         ])
-
-        XCTAssertEqual(metadata["error_type"], "javascript_error")
-        XCTAssertEqual(metadata["message"], "boom")
-        XCTAssertEqual(metadata["source"], "app.js")
-        XCTAssertEqual(metadata["line"], "10")
-        XCTAssertEqual(metadata["column"], "20")
-        XCTAssertEqual(metadata["href"], "capacitor://localhost")
-        XCTAssertEqual(metadata["session_id"], "session-1")
-        XCTAssertEqual(metadata["duration_ms"], "123")
-        XCTAssertEqual(metadata["page_started_at"], "456")
-        XCTAssertEqual(metadata["stack"]?.count, 2_048)
-        XCTAssertNil(metadata["tag_name"])
     }
 
-    func testReportWebViewLoadStatsForwardsTimingMetadata() throws {
-        let implementation = HealthStatsCapgoUpdater()
-        let reporter = WebViewStatsReporter(implementation: implementation)
-        var resolved = false
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "webview-load-stat",
-            options: [
-                "type": "webview_dom_content_loaded",
-                "message": "WebView DOM content loaded",
-                "duration_ms": "123",
-                "page_started_at": "456",
-                "session_id": "session-1"
-            ],
-            success: { _, _ in
-                resolved = true
-            },
-            error: { _ in
-                XCTFail("reportError should resolve successful WebView load stats")
+    // MARK: - Storage
+
+    func testKvGetConvertsLegacyUserDefaultsValues() throws {
+        XCTAssertEqual(CapgoUpdater.storedString("beta"), "beta")
+        XCTAssertEqual(CapgoUpdater.storedString(true), "true")
+        XCTAssertEqual(CapgoUpdater.storedString(false), "false")
+        XCTAssertEqual(CapgoUpdater.storedString(NSNumber(value: 1_700_000_000_000 as Int64)), "1700000000000")
+        XCTAssertEqual(CapgoUpdater.storedString(NSNumber(value: 1)), "1")
+        XCTAssertEqual(CapgoUpdater.storedString(Data("{\"id\":\"abc\"}".utf8)), "{\"id\":\"abc\"}")
+
+        let sessions = try XCTUnwrap(CapgoUpdater.storedString(["abc": ["name": "PR 1"]]))
+        let decoded = try JSONSerialization.jsonObject(with: Data(sessions.utf8)) as? [String: [String: String]]
+        XCTAssertEqual(decoded?["abc"]?["name"], "PR 1")
+        XCTAssertEqual(CapgoUpdater.storedString(["a", "b"]), "[\"a\",\"b\"]")
+    }
+
+    func testKvSetKeepsTheTypesEarlierVersionsRead() throws {
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.previewSession", "true") as? Bool, true)
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.appSessionForeground", "false") as? Bool, false)
+        XCTAssertEqual((CapgoUpdater.legacyTypedValue("BACKGROUND_TIMESTAMP_KEY_CAPGO", "1700000000000") as? NSNumber)?.int64Value, 1_700_000_000_000)
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("abcdefghij_info", "{}") as? Data, Data("{}".utf8))
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.lastFailedBundle", "{}") as? Data, Data("{}".utf8))
+        let sessions = CapgoUpdater.legacyTypedValue("CapacitorUpdater.previewSessions", "{\"abc\":{\"name\":\"PR 1\"}}") as? [String: Any]
+        XCTAssertEqual((sessions?["abc"] as? [String: String])?["name"], "PR 1")
+        XCTAssertEqual(CapgoUpdater.legacyTypedValue("CapacitorUpdater.defaultChannel", "beta") as? String, "beta")
+    }
+
+    func testLegacyDownloadTempFilesAreRemoved() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["package_abc.tmp", "update_abc.dat", "keep.tmp", "package_notes.txt"] {
+            FileManager.default.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        CapgoUpdater.removeLegacyDownloadTempFiles(in: dir)
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+        XCTAssertEqual(left, ["keep.tmp", "package_notes.txt"])
+    }
+
+    func testLegacyKeyedBundleStatusIsMigratedForTheEngine() throws {
+        let legacy = """
+        {"downloaded":"1970-01-01T00:00:00.000Z","id":"test-id","version":"1.0.0","checksum":"abc123","status":{"SUCCESS":{}}}
+        """
+        let migrated = CapgoUpdater.migratedBundleRecord(legacy)
+        let record = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(migrated.utf8)) as? [String: Any])
+        XCTAssertEqual(record["status"] as? String, "success")
+        XCTAssertEqual(record["id"] as? String, "test-id")
+        let current = "{\"id\":\"x\",\"status\":\"pending\"}"
+        XCTAssertEqual(CapgoUpdater.migratedBundleRecord(current), current)
+    }
+
+    func testKvRoundTripKeepsBundleRecordsAsData() {
+        let key = "capgo-tests-\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key + "_info")
+        }
+        implementation.engineKvSet(key, "value")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: key), "value")
+        XCTAssertEqual(implementation.engineKvGet(key), "value")
+
+        implementation.engineKvSet(key + "_info", "{\"id\":\"x\"}")
+        XCTAssertNotNil(UserDefaults.standard.data(forKey: key + "_info"))
+        XCTAssertEqual(implementation.engineKvGet(key + "_info"), "{\"id\":\"x\"}")
+
+        UserDefaults.standard.set(true, forKey: key)
+        XCTAssertEqual(implementation.engineKvGet(key), "true")
+        implementation.engineKvSet(key, nil)
+        XCTAssertNil(implementation.engineKvGet(key))
+    }
+
+    // MARK: - Bundle folders
+
+    func testBundleDirectoryStaysInsideBundleRoot() throws {
+        let root = implementation.libraryDir.appendingPathComponent(CapgoUpdater.bundleDirectory).standardizedFileURL.path
+        let folder = try implementation.bundleDirectory(id: "abcdefghij")
+        XCTAssertEqual(folder.standardizedFileURL.path, root + "/abcdefghij")
+        XCTAssertThrowsError(try implementation.bundleDirectory(id: "../escape"))
+        XCTAssertThrowsError(try implementation.bundleDirectory(id: "/etc"))
+        XCTAssertThrowsError(try implementation.bundleDirectory(id: "."))
+        XCTAssertThrowsError(try implementation.bundleDirectory(id: ""))
+    }
+
+    // MARK: - Engine binding
+
+    func testPluginLoadReportsCurrentBundleAndPushesHostHooks() throws {
+        var hooks: [String: [String: Any]] = [:]
+        let lock = NSLock()
+        implementation.onHook = { name, payload in
+            lock.lock()
+            hooks[name] = payload
+            lock.unlock()
+            return nil
+        }
+        let loaded = try loadEngine(config: ["shakeMenu": true, "shakeMenuGesture": "threeFingerPinch", "keepUrlPathAfterReload": true])
+
+        XCTAssertEqual(loaded["appId"] as? String, "com.capgo.ios.tests")
+        XCTAssertEqual(loaded["isBuiltin"] as? Bool, true)
+        XCTAssertEqual((loaded["bundle"] as? [String: Any])?["id"] as? String, "builtin")
+        XCTAssertEqual(loaded["autoUpdate"] as? String, "off")
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertEqual(hooks["keepUrlPath"]?["enabled"] as? Bool, true)
+        XCTAssertEqual(hooks["shakeMenu"]?["enabled"] as? Bool, true)
+        XCTAssertEqual(hooks["shakeMenu"]?["gesture"] as? String, "threeFingerPinch")
+    }
+
+    func testPluginLoadRejectsInvalidPublicKey() throws {
+        let engine = try XCTUnwrap(implementation.engine())
+        XCTAssertThrowsError(try engine.call("pluginLoad", [
+            "config": ["publicKey": "not a key", "statsUrl": "", "updateUrl": ""],
+            "native": ["versionName": "1.0.0", "versionCode": "1", "noBackupDir": noBackupDir.path]
+        ]))
+    }
+
+    func testMethodsResolveAndRejectThroughTheEngine() throws {
+        plugin.implementation = implementation
+        try loadEngine()
+
+        guard case .resolved(let current) = plugin.runEngineMethod("current", [:]) else {
+            return XCTFail("current rejected")
+        }
+        let currentObject = try XCTUnwrap(current as? [String: Any])
+        XCTAssertEqual((currentObject["bundle"] as? [String: Any])?["id"] as? String, "builtin")
+        XCTAssertEqual(currentObject["native"] as? String, "1.0.0")
+
+        guard case .resolved(let next) = plugin.runEngineMethod("getNextBundle", [:]) else {
+            return XCTFail("getNextBundle rejected")
+        }
+        XCTAssertNil(next, "null resolves without data")
+
+        guard case .rejected(let message, _, _) = plugin.runEngineMethod("setUpdateUrl", ["url": "https://example.com"]) else {
+            return XCTFail("setUpdateUrl must be gated by allowModifyUrl")
+        }
+        XCTAssertTrue(message.contains("allowModifyUrl"))
+
+        guard case .rejected(_, let code, let data) = plugin.runEngineMethod("setChannel", [:]) else {
+            return XCTFail("setChannel without channel must reject")
+        }
+        XCTAssertEqual(code, "SETCHANNEL_INVALID_PARAMS")
+        XCTAssertNotNil(data?["message"])
+    }
+
+    func testEngineMethodsCoverEveryRegisteredMethod() throws {
+        let engine = try XCTUnwrap(implementation.engine())
+        let engineMethods = Set(try XCTUnwrap(engine.callValue("pluginMethods") as? [String]))
+        let native: Set<String> = [
+            "getAppUpdateInfo", "openAppStore", "performImmediateUpdate", "startFlexibleUpdate", "completeFlexibleUpdate"
+        ]
+        let registered = Set(plugin.pluginMethods.map(\.name))
+        XCTAssertEqual(registered.subtracting(native), engineMethods)
+        for name in engineMethods {
+            XCTAssertTrue(plugin.responds(to: Selector("\(name):")), "\(name) is not exposed to Capacitor")
+        }
+    }
+
+    func testShakeMenuSettersReachTheHostHook() throws {
+        plugin.implementation = implementation
+        var shakeMenuHooks: [[String: Any]] = []
+        let lock = NSLock()
+        implementation.onHook = { name, payload in
+            if name == "shakeMenu" {
+                lock.lock()
+                shakeMenuHooks.append(payload)
+                lock.unlock()
             }
-        ))
-
-        reporter.reportError(call)
-
-        XCTAssertTrue(resolved)
-        XCTAssertEqual(implementation.sentStatsActions, ["webview_dom_content_loaded"])
-        XCTAssertEqual(implementation.lastStatsVersionName, "1.0.0")
-        XCTAssertEqual(implementation.lastStatsMetadata?["duration_ms"], "123")
-        XCTAssertEqual(implementation.lastStatsMetadata?["page_started_at"], "456")
-        XCTAssertEqual(implementation.lastStatsMetadata?["session_id"], "session-1")
+            return nil
+        }
+        try loadEngine()
+        guard case .resolved = plugin.runEngineMethod("setShakeChannelSelector", ["enabled": true]) else {
+            return XCTFail("setShakeChannelSelector rejected")
+        }
+        guard case .resolved(let state) = plugin.runEngineMethod("isShakeChannelSelectorEnabled", [:]) else {
+            return XCTFail("isShakeChannelSelectorEnabled rejected")
+        }
+        XCTAssertEqual((state as? [String: Any])?["enabled"] as? Bool, true)
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertEqual(shakeMenuHooks.last?["channelSelector"] as? Bool, true)
     }
 
-    func testBuildWebViewErrorMetadataSanitizesUrlValues() {
-        let scheme = "https"
-        let host = "example.com"
-        let userInfo = ["user", "value"].joined(separator: ":") + "@"
-        let sourceQuery = "cache=123"
-        let hrefQuery = "debug=true"
-        let metadata = WebViewStatsReporter.buildMetadata([
-            "source": "\(scheme)://\(userInfo)\(host):8443/assets/app.js?\(sourceQuery)#L10",
-            "href": "\(scheme)://\(host)/users/123456/dashboard?\(hrefQuery)#frag",
-            "previous_href": "app.js?\(sourceQuery)#frag"
-        ])
-
-        XCTAssertEqual(metadata["source"], "\(scheme)://\(host):8443/assets/app.js")
-        XCTAssertEqual(metadata["href"], "\(scheme)://\(host)/users/redacted/dashboard")
-        XCTAssertEqual(metadata["previous_href"], "app.js")
-        XCTAssertFalse(metadata["source"]?.contains(sourceQuery) ?? true)
-        XCTAssertFalse(metadata["href"]?.contains(hrefQuery) ?? true)
+    func testEngineEventsAreForwarded() throws {
+        var events: [String] = []
+        var retained: [String: Bool] = [:]
+        var payloads: [String: [String: Any]] = [:]
+        let lock = NSLock()
+        implementation.onEvent = { name, payload, retain in
+            lock.lock()
+            events.append(name)
+            retained[name] = retain
+            payloads[name] = payload
+            lock.unlock()
+        }
+        try loadEngine()
+        let engine = try XCTUnwrap(implementation.engine())
+        // The first appReady waits for the initial page to confirm itself.
+        _ = try engine.call("pluginMethod", ["name": "notifyAppReady", "args": [:]])
+        _ = try engine.call("appForeground")
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            lock.lock()
+            let ready = events.contains("appReady")
+            lock.unlock()
+            if ready {
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertTrue(events.contains("appReady"), "\(events)")
+        // The engine flags appReady as retained; the flag never reaches JavaScript.
+        XCTAssertEqual(retained["appReady"], true)
+        XCTAssertNil(payloads["appReady"]?[CapgoUpdater.retainEventKey])
+        XCTAssertNotNil(payloads["appReady"]?["bundle"])
     }
+
+    // MARK: - WebView scripts
 
     func testWebViewStatsReporterScriptCapturesRuntimeAndRestartSignals() {
         let script = WebViewStatsReporter.script
@@ -771,1903 +285,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(script.contains("reportWebViewError"))
     }
 
-    private func makeDelayConditionsJSON() throws -> String {
-        let conditions = [
-            ["kind": "kill", "value": ""],
-            ["kind": "background", "value": "5000"]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: conditions)
-        return try XCTUnwrap(String(data: data, encoding: .utf8))
-    }
-
-    // MARK: - BundleInfo Tests
-
-    func testBundleInfoInitialization() {
-        let bundleInfo = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        XCTAssertEqual(bundleInfo.getId(), "test-id")
-        XCTAssertEqual(bundleInfo.getVersionName(), "1.0.0")
-        XCTAssertEqual(bundleInfo.getStatus(), "pending")
-        XCTAssertEqual(bundleInfo.getChecksum(), "abc123")
-    }
-
-    func testBundleInfoBuiltin() {
-        let bundleInfo = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: "abc123"
-        )
-
-        XCTAssertTrue(bundleInfo.isBuiltin())
-        XCTAssertFalse(bundleInfo.isUnknown())
-    }
-
-    func testBundleInfoUnknown() {
-        let bundleInfo = BundleInfo(
-            id: BundleInfo.VERSION_UNKNOWN,
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: "abc123"
-        )
-
-        XCTAssertTrue(bundleInfo.isUnknown())
-        XCTAssertFalse(bundleInfo.isBuiltin())
-    }
-
-    func testBundleInfoErrorStatus() {
-        let bundleInfo = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .ERROR,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        XCTAssertTrue(bundleInfo.isErrorStatus())
-        XCTAssertFalse(bundleInfo.isDeleted())
-    }
-
-    func testBundleInfoDeletedStatus() {
-        let bundleInfo = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .DELETED,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        XCTAssertTrue(bundleInfo.isDeleted())
-        XCTAssertFalse(bundleInfo.isErrorStatus())
-        XCTAssertFalse(bundleInfo.isDownloading())
-    }
-
-    func testBundleInfoDownloadingStatus() {
-        let bundleInfo = BundleInfo(
-            id: "stale-id",
-            version: "2.0.0",
-            status: .DOWNLOADING,
-            downloaded: Date(),
-            checksum: ""
-        )
-
-        XCTAssertTrue(bundleInfo.isDownloading())
-        XCTAssertTrue(bundleInfo.isDownloaded())
-        XCTAssertFalse(bundleInfo.isDeleted())
-        XCTAssertFalse(bundleInfo.isDeleting())
-        XCTAssertFalse(bundleInfo.isErrorStatus())
-    }
-
-    func testShouldRetryDownloadForIncompleteExistingBundles() {
-        let pending = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let downloading = BundleInfo(
-            id: "downloading-id",
-            version: "2.0.0",
-            status: .DOWNLOADING,
-            downloaded: Date(),
-            checksum: ""
-        )
-        let deleting = BundleInfo(
-            id: "deleting-id",
-            version: "2.0.0",
-            status: .DELETING,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let deleted = BundleInfo(
-            id: "deleted-id",
-            version: "2.0.0",
-            status: .DELETED,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(pending))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(downloading))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleting))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleted))
-    }
-
-    func testBuildUserAgentStripsNonIsoCharacters() {
-        let ua = CapgoUpdater.buildUserAgent(appId: "com.example.Тест", pluginVersion: "1.2.3🔥", versionOs: "18 😊")
-        XCTAssertEqual(ua, "CapacitorUpdater/1.2.3 (com.example.) ios/18")
-    }
-
-    func testBuildUserAgentFallsBackToUnknown() {
-        let ua = CapgoUpdater.buildUserAgent(appId: "", pluginVersion: "", versionOs: "")
-        XCTAssertEqual(ua, "CapacitorUpdater/unknown (unknown) ios/unknown")
-    }
-
-    func testBundleInfoEncodeDecode() throws {
-        let originalBundle = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        // Encode
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(originalBundle)
-
-        // Decode
-        let decoder = JSONDecoder()
-        let decodedBundle = try decoder.decode(BundleInfo.self, from: data)
-
-        XCTAssertEqual(decodedBundle.getId(), originalBundle.getId())
-        XCTAssertEqual(decodedBundle.getVersionName(), originalBundle.getVersionName())
-        XCTAssertEqual(decodedBundle.getStatus(), originalBundle.getStatus())
-        XCTAssertEqual(decodedBundle.getChecksum(), originalBundle.getChecksum())
-    }
-
-    func testShouldResetForForeignBundleWhenPathIsSetButBundleIsNotStored() {
-        XCTAssertTrue(CapgoUpdater.shouldResetForForeignBundle(
-            bundlePath: "/data/user/0/app/files/versions/abc123",
-            isBuiltin: false,
-            hasStoredBundleInfo: false
-        ))
-    }
-
-    func testShouldNotResetForForeignBundleWhenBundleIsBuiltin() {
-        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
-            bundlePath: "public",
-            isBuiltin: true,
-            hasStoredBundleInfo: false
-        ))
-    }
-
-    func testShouldNotResetForForeignBundleWhenBundleIsStored() {
-        XCTAssertFalse(CapgoUpdater.shouldResetForForeignBundle(
-            bundlePath: "/data/user/0/app/files/versions/abc123",
-            isBuiltin: false,
-            hasStoredBundleInfo: true
-        ))
-    }
-
-    // MARK: - BundleStatus Tests
-
-    func testBundleStatusLocalization() {
-        XCTAssertEqual(BundleStatus.SUCCESS.localizedString, "success")
-        XCTAssertEqual(BundleStatus.ERROR.localizedString, "error")
-        XCTAssertEqual(BundleStatus.PENDING.localizedString, "pending")
-        XCTAssertEqual(BundleStatus.DELETED.localizedString, "deleted")
-        XCTAssertEqual(BundleStatus.DELETING.localizedString, "deleting")
-        XCTAssertEqual(BundleStatus.DOWNLOADING.localizedString, "downloading")
-    }
-
-    func testBundleStatusStoredValue() {
-        XCTAssertEqual(BundleStatus.SUCCESS.storedValue, "success")
-        XCTAssertEqual(BundleStatus.ERROR.storedValue, "error")
-        XCTAssertEqual(BundleStatus.PENDING.storedValue, "pending")
-        XCTAssertEqual(BundleStatus.DELETED.storedValue, "deleted")
-        XCTAssertEqual(BundleStatus.DELETING.storedValue, "deleting")
-        XCTAssertEqual(BundleStatus.DOWNLOADING.storedValue, "downloading")
-    }
-
-    func testBundleStatusFromLocalizedString() {
-        XCTAssertEqual(BundleStatus(localizedString: "success"), BundleStatus.SUCCESS)
-        XCTAssertEqual(BundleStatus(localizedString: "error"), BundleStatus.ERROR)
-        XCTAssertEqual(BundleStatus(localizedString: "pending"), BundleStatus.PENDING)
-        XCTAssertEqual(BundleStatus(localizedString: "deleted"), BundleStatus.DELETED)
-        XCTAssertEqual(BundleStatus(localizedString: "deleting"), BundleStatus.DELETING)
-        XCTAssertEqual(BundleStatus(localizedString: "downloading"), BundleStatus.DOWNLOADING)
-        XCTAssertNil(BundleStatus(localizedString: "invalid"))
-    }
-
-    func testBundleStatusEncodesStableStoredValue() throws {
-        let data = try JSONEncoder().encode(BundleStatus.SUCCESS)
-        XCTAssertEqual(String(data: data, encoding: .utf8), "\"success\"")
-    }
-
-    func testBundleStatusEncodesDeletingStoredValue() throws {
-        let data = try JSONEncoder().encode(BundleStatus.DELETING)
-        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
-        XCTAssertEqual(decoded, BundleStatus.DELETING)
-        XCTAssertEqual(decoded.storedValue, "deleting")
-    }
-
-    func testBundleStatusDecodesLegacyCaseKeyObject() throws {
-        let data = try XCTUnwrap("""
-        {"SUCCESS":{}}
-        """.data(using: .utf8))
-
-        let decoded = try JSONDecoder().decode(BundleStatus.self, from: data)
-
-        XCTAssertEqual(decoded, .SUCCESS)
-    }
-
-    func testBundleInfoDecodesLegacyBundleStatusObject() throws {
-        let data = try XCTUnwrap("""
-        {"downloaded":"1970-01-01T00:00:00.000Z","id":"test-id","version":"1.0.0","checksum":"abc123","status":{"SUCCESS":{}}}
-        """.data(using: .utf8))
-
-        let decodedBundle = try JSONDecoder().decode(BundleInfo.self, from: data)
-
-        XCTAssertEqual(decodedBundle.getId(), "test-id")
-        XCTAssertEqual(decodedBundle.getVersionName(), "1.0.0")
-        XCTAssertEqual(decodedBundle.getChecksum(), "abc123")
-        XCTAssertEqual(decodedBundle.getStatus(), BundleStatus.SUCCESS.storedValue)
-    }
-
-    func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
-        let updater = ChannelRequestCapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
-        updater.defaultChannel = "stable"
-
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
-        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
-        let responseData = try XCTUnwrap("""
-        {"status":"error","message":"Unauthorized"}
-        """.data(using: .utf8))
-        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
-
-        XCTAssertEqual(result.error, "response_error")
-        XCTAssertEqual(result.message, "Unauthorized")
-        XCTAssertEqual(updater.defaultChannel, "stable")
-        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
-    }
-
-    func testUnsetChannelClearsOverrideWhenAllowed() {
-        let updater = CapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.defaultChannel = "beta"
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        UserDefaults.standard.set("beta", forKey: defaultsKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.unsetChannel(
-            defaultChannelKey: defaultsKey,
-            configDefaultChannel: "stable",
-            allowSetDefaultChannel: true
-        )
-
-        XCTAssertEqual(result.status, "ok")
-        XCTAssertEqual(result.message, "Channel override removed")
-        XCTAssertEqual(updater.defaultChannel, "stable")
-        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
-    }
-
-    func testUnsetChannelRejectsWhenDisabledByConfig() {
-        let updater = CapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.defaultChannel = "beta"
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        UserDefaults.standard.set("beta", forKey: defaultsKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.unsetChannel(
-            defaultChannelKey: defaultsKey,
-            configDefaultChannel: "stable",
-            allowSetDefaultChannel: false
-        )
-
-        XCTAssertEqual(result.error, "disabled_by_config")
-        XCTAssertEqual(result.message, "unsetChannel is disabled by configuration")
-        XCTAssertEqual(updater.defaultChannel, "beta")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "beta")
-    }
-
-    func testDefaultChannelCleanupRunsWhenPersistenceDisabledDuringNativeBuildCleanup() {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = false
-
-        XCTAssertTrue(
-            testPlugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: true,
-                resetWhenUpdate: true,
-                restoredReinstall: false
-            )
-        )
-    }
-
-    func testDefaultChannelCleanupRunsForRestoredSameVersionReinstall() {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = false
-
-        XCTAssertTrue(
-            testPlugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: false,
-                resetWhenUpdate: false,
-                restoredReinstall: true
-            )
-        )
-    }
-
-    func testDefaultChannelCleanupKeepsChannelWhenPersistenceEnabled() {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = true
-
-        XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: true,
-                resetWhenUpdate: true,
-                restoredReinstall: true
-            )
-        )
-    }
-
-    func testDefaultChannelCleanupKeepsChannelWhenNativeBuildDoesNotChange() {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = false
-
-        XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: false,
-                resetWhenUpdate: true,
-                restoredReinstall: false
-            )
-        )
-    }
-
-    func testDefaultChannelCleanupKeepsChannelWhenNativeCleanupIsDisabled() {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = false
-
-        XCTAssertFalse(
-            testPlugin.shouldClearPersistedDefaultChannel(
-                nativeBuildVersionChanged: true,
-                resetWhenUpdate: false,
-                restoredReinstall: false
-            )
-        )
-    }
-
-    func testDefaultChannelCleanupClearsRestoredPreviewSnapshot() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let previewChannelKey = "CapacitorUpdater.previewPreviousDefaultChannel"
-        let previewChannelWasSetKey = "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        let previewSnapshotFile = directory.appendingPathComponent("preview")
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-            UserDefaults.standard.removeObject(forKey: previewChannelKey)
-            UserDefaults.standard.removeObject(forKey: previewChannelWasSetKey)
-        }
-        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
-        UserDefaults.standard.set("stale", forKey: previewChannelKey)
-        UserDefaults.standard.set(true, forKey: previewChannelWasSetKey)
-
-        XCTAssertTrue(testPlugin.clearPersistedDefaultChannel(
-            stateFile: stateFile,
-            previewSnapshotFile: previewSnapshotFile
-        ))
-        let state = testPlugin.defaultChannelState(file: stateFile)
-        XCTAssertTrue(state.exists)
-        XCTAssertNil(state.channel)
-        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: previewSnapshotFile), .invalidated)
-
-        XCTAssertNil(UserDefaults.standard.object(forKey: defaultChannelKey))
-        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelKey))
-        XCTAssertNil(UserDefaults.standard.object(forKey: previewChannelWasSetKey))
-    }
-
-    func testDefaultChannelCleanupReportsStateWriteFailure() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let nonDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
-        let stateFile = nonDirectory.appendingPathComponent("state")
-        let previewSnapshotFile = nonDirectory.appendingPathComponent("preview")
-        try Data().write(to: nonDirectory)
-        defer {
-            try? FileManager.default.removeItem(at: nonDirectory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
-
-        XCTAssertFalse(testPlugin.clearPersistedDefaultChannel(
-            stateFile: stateFile,
-            previewSnapshotFile: previewSnapshotFile
-        ))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
-        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "stale")
-    }
-
-    func testDefaultChannelStatePersistsNewChannel() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-        }
-
-        try testPlugin.persistDefaultChannelState(channel: "beta", file: stateFile)
-        let state = testPlugin.defaultChannelState(file: stateFile)
-        XCTAssertTrue(state.exists)
-        XCTAssertEqual(state.channel, "beta")
-    }
-
-    func testDefaultChannelPreviewSnapshotStatesRoundTrip() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let snapshotFile = directory.appendingPathComponent("preview")
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-        }
-
-        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .missing)
-
-        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: nil, file: snapshotFile)
-        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot(nil))
-
-        try testPlugin.persistDefaultChannelPreviewSnapshot(channel: "beta", file: snapshotFile)
-        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .snapshot("beta"))
-
-        try testPlugin.invalidateDefaultChannelPreviewSnapshot(file: snapshotFile)
-        XCTAssertEqual(testPlugin.defaultChannelPreviewSnapshot(file: snapshotFile), .invalidated)
-    }
-
-    func testUnreadableDefaultChannelStateFallsBackToUserDefaults() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data([0xFF]).write(to: stateFile)
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
-
-        let state = testPlugin.defaultChannelState(file: stateFile)
-        XCTAssertFalse(state.isReadable)
-        XCTAssertEqual(testPlugin.persistedDefaultChannel(stateFile: stateFile), "beta")
-    }
-
-    func testUnreadableDefaultChannelStateDoesNotRestoreWhenPersistenceDisabled() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = false
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data([0xFF]).write(to: stateFile)
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
-
-        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
-    }
-
-    func testDefaultChannelStateOverridesStaleUserDefaults() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        UserDefaults.standard.set("stale", forKey: defaultChannelKey)
-
-        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
-
-        XCTAssertNil(testPlugin.persistedDefaultChannel(stateFile: stateFile))
-    }
-
-    func testDefaultChannelStateMirrorsDefaultsWithReinstallPersistenceEnabled() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.persistDefaultChannelOnReinstall = true
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state")
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        try testPlugin.persistDefaultChannelState(channel: nil, file: stateFile)
-        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
-
-        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
-        XCTAssertEqual(testPlugin.defaultChannelState(file: stateFile).channel, "beta")
-    }
-
-    func testDefaultChannelStateWriteFailureInvalidatesAuthoritativeState() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let defaultChannelKey = "CapacitorUpdater.defaultChannel"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let stateFile = directory.appendingPathComponent("state", isDirectory: true)
-        try FileManager.default.createDirectory(at: stateFile, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        }
-        UserDefaults.standard.set("beta", forKey: defaultChannelKey)
-
-        XCTAssertTrue(testPlugin.persistDefaultChannelStateFromDefaults(stateFile: stateFile))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: stateFile.path))
-        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultChannelKey), "beta")
-    }
-
-    func testDefaultChannelCleanupFailurePreservesInstallMarkerRetry() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let marker = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
-        try Data().write(to: marker)
-        defer {
-            try? FileManager.default.removeItem(at: marker)
-        }
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
-        try testPlugin.invalidateDefaultChannelInstallMarker(marker: marker)
-        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
-    }
-
-    func testDefaultChannelInstallMarkerFailureIsHandledOnce() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
-        let nonDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)")
-        let marker = nonDirectory.appendingPathComponent("marker")
-        try Data().write(to: nonDirectory)
-        defer {
-            try? FileManager.default.removeItem(at: nonDirectory)
-            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
-        }
-        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
-
-        XCTAssertTrue(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: true))
-        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
-
-        XCTAssertFalse(UserDefaults.standard.bool(forKey: markerDefaultsKey))
-        XCTAssertFalse(testPlugin.isRestoredReinstall(marker: marker, markerWasCreated: false))
-    }
-
-    func testDefaultChannelInstallMarkerReappliesBackupExclusion() throws {
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        let markerDefaultsKey = "CapacitorUpdater.defaultChannelInstallMarkerCreated"
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CapacitorUpdaterTests.\(UUID().uuidString)", isDirectory: true)
-        let marker = directory.appendingPathComponent("marker")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data().write(to: marker)
-        var markerResourceValues = URLResourceValues()
-        markerResourceValues.isExcludedFromBackup = false
-        var mutableMarker = marker
-        try mutableMarker.setResourceValues(markerResourceValues)
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: markerDefaultsKey)
-        }
-        UserDefaults.standard.set(true, forKey: markerDefaultsKey)
-
-        testPlugin.prepareDefaultChannelInstallMarker(marker: marker, markerWasCreated: true)
-
-        let resourceValues = try marker.resourceValues(forKeys: [.isExcludedFromBackupKey])
-        XCTAssertEqual(resourceValues.isExcludedFromBackup, true)
-    }
-
-    func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
-        let updater = ChannelRequestCapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
-
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
-        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
-        let responseData = try XCTUnwrap("""
-        {"channel":"company-a","status":"ok","allowSet":true}
-        """.data(using: .utf8))
-        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        let result = updater.getChannel(defaultChannelKey: defaultsKey)
-
-        XCTAssertEqual(result.channel, "company-a")
-        XCTAssertEqual(updater.defaultChannel, "company-a")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
-    }
-
-    func testGetChannelDoesNotPersistBuiltinVersionNameAsDefaultChannel() {
-        let updater = ChannelRequestCapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.defaultChannel = "stable"
-
-        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
-        defer {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        }
-
-        updater.persistDefaultChannelFromResponse(channel: "builtin", defaultChannelKey: defaultsKey)
-
-        XCTAssertEqual(updater.defaultChannel, "stable")
-        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
-    }
-
-    // MARK: - DelayCondition Tests
-
-    func testDelayConditionInitialization() {
-        let condition = DelayCondition(kind: .background, value: "test-value")
-
-        XCTAssertEqual(condition.getKind(), "background")
-        XCTAssertEqual(condition.getValue(), "test-value")
-    }
-
-    func testDelayConditionWithStringInit() {
-        let condition = DelayCondition(kind: "kill", value: "test-value")
-
-        XCTAssertEqual(condition.getKind(), "kill")
-        XCTAssertEqual(condition.getValue(), "test-value")
-    }
-
-    func testDelayConditionToJSON() {
-        let condition = DelayCondition(kind: .nativeVersion, value: "1.0.0")
-        let json = condition.toJSON()
-
-        XCTAssertEqual(json["kind"], "nativeVersion")
-        XCTAssertEqual(json["value"], "1.0.0")
-    }
-
-    func testDelayConditionEquality() {
-        let condition1 = DelayCondition(kind: .date, value: "2023-01-01")
-        let condition2 = DelayCondition(kind: .date, value: "2023-01-01")
-        let condition3 = DelayCondition(kind: .date, value: "2023-01-02")
-
-        XCTAssertTrue(condition1 == condition2)
-        XCTAssertFalse(condition1 == condition3)
-    }
-
-    func testShouldConsumeOnLaunchDirectUpdateForOnLaunchAttempt() {
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: true))
-    }
-
-    func testShouldNotConsumeOnLaunchDirectUpdateForNonLaunchAttempt() {
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "onLaunch", plannedDirectUpdate: false))
-    }
-
-    func testShouldNotConsumeOnLaunchDirectUpdateForOtherModes() {
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "always", plannedDirectUpdate: true))
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "atInstall", plannedDirectUpdate: true))
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldConsumeOnLaunchDirectUpdate(directUpdateMode: "false", plannedDirectUpdate: true))
-    }
-
-    func testPeriodCheckDelayZeroDisablesPeriodicChecks() {
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(0), 0)
-    }
-
-    func testPeriodCheckDelayNegativeDisablesPeriodicChecks() {
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(-1), 0)
-    }
-
-    func testPeriodCheckDelayBelowMinimumClampsToTenMinutes() {
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(1), 600)
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(599), 600)
-    }
-
-    func testPeriodCheckDelayAtMinimumIsAllowed() {
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(600), 600)
-    }
-
-    func testPeriodCheckDelayAboveMinimumIsPreserved() {
-        XCTAssertEqual(CapacitorUpdaterPlugin.normalizedPeriodCheckDelaySeconds(3600), 3600)
-    }
-
-    func testCheckRevertSkipsRollbackDuringPreviewSession() {
-        let previewPlugin = TestableCapacitorUpdaterPlugin()
-        let previewImplementation = ResetTrackingCapgoUpdater()
-        previewImplementation.currentBundleValue = BundleInfo(
-            id: "preview-id",
-            version: "preview",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "preview"
-        )
-
-        previewPlugin.implementation = previewImplementation
-        previewPlugin.previewSessionEnabled = true
-
-        previewPlugin.checkRevert()
-
-        XCTAssertFalse(previewImplementation.resetCalled)
-        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateFailed"))
-    }
-
-    func testCheckRevertSkipsRollbackDuringPreviewTransition() {
-        let previewPlugin = TestableCapacitorUpdaterPlugin()
-        let previewImplementation = ResetTrackingCapgoUpdater()
-        previewImplementation.currentBundleValue = BundleInfo(
-            id: "preview-id",
-            version: "preview",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "preview"
-        )
-        previewImplementation.previewSession = true
-
-        previewPlugin.implementation = previewImplementation
-
-        previewPlugin.checkRevert()
-
-        XCTAssertFalse(previewImplementation.resetCalled)
-        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateFailed"))
-    }
-
-    func testTriggerUpdateCheckSkipsDuringPreviewSession() {
-        let previewPlugin = TestableCapacitorUpdaterPlugin()
-        let previewImplementation = ResetTrackingCapgoUpdater()
-        previewImplementation.currentBundleValue = BundleInfo(
-            id: "preview-id",
-            version: "preview",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "preview"
-        )
-
-        previewPlugin.implementation = previewImplementation
-        previewPlugin.previewSessionEnabled = true
-        previewPlugin.setUpdateUrlForTesting("https://example.com/update")
-
-        let status = previewPlugin.triggerBackgroundUpdateCheck()
-
-        XCTAssertEqual(status, "preview_session")
-        XCTAssertFalse(previewImplementation.resetCalled)
-        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateAvailable"))
-        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateCheckResult"))
-    }
-
-    func testResetToPendingWithoutInstallablePendingBundleDoesNotResetState() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.nextBundleValue = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        resetImplementation.canSetResult = false
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 0)
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
-    }
-
-    func testResetToPendingRestoresStateWhenSwitchFails() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.nextBundleValue = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        resetImplementation.setResult = false
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 1)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
-    }
-
-    func testResetToPendingRestoresLiveStateWhenReloadFails() {
-        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.nextBundleValue = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 1)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
-        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
-    }
-
-    func testResetToPendingRestoresStateWhenBuiltinPendingReloadFails() {
-        let resetPlugin = ReloadFailureCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.nextBundleValue = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: "builtin"
-        )
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: false, usePendingBundle: true))
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 0)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
-        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
-    }
-
-    func testLeavePreviewUsesBuiltinWhenPreviewFallbackIsMissing() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.currentBundleValue = BundleInfo(
-            id: "preview-id",
-            version: "preview",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "preview"
-        )
-        resetImplementation.previewFallbackBundleValue = nil
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertTrue(resetPlugin.resetToPreviewFallbackBundle())
-        XCTAssertEqual(resetImplementation.stagePreviewFallbackReloadCalls, 1)
-        XCTAssertEqual(resetImplementation.stagedPreviewFallbackBundle?.getId(), BundleInfo.ID_BUILTIN)
-        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "preview")
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionIsInternal)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
-    }
-
-    func testLeavePreviewFromShakeMenuKeepsPreviewGuardUntilAppReady() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.currentBundleValue = BundleInfo(
-            id: "preview-id",
-            version: "preview",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "preview"
-        )
-        resetImplementation.previewFallbackBundleValue = BundleInfo(
-            id: "fallback-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "fallback"
-        )
-        resetImplementation.previewSession = true
-
-        resetPlugin.implementation = resetImplementation
-        resetPlugin.previewSessionEnabled = true
-
-        XCTAssertTrue(resetPlugin.leavePreviewSessionFromShakeMenu())
-        XCTAssertFalse(resetPlugin.hasActivePreviewSession())
-        XCTAssertTrue(resetImplementation.previewSession)
-        XCTAssertEqual(resetImplementation.stagePreviewFallbackReloadCalls, 1)
-        XCTAssertEqual(resetImplementation.stagedPreviewFallbackBundle?.getId(), "fallback-id")
-        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "preview")
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
-        XCTAssertNil(resetImplementation.lastPreviewFallbackBundle)
-        XCTAssertGreaterThan(resetImplementation.setPreviewFallbackBundleCalls, 0)
-    }
-
-    func testPreviewMenuListsStoredPreviewsAndCleansMissingBundles() throws {
-        let previewsKey = "CapacitorUpdater.previewSessions"
-        UserDefaults.standard.removeObject(forKey: previewsKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: previewsKey)
-        }
-
-        let previewPlugin = TestableCapacitorUpdaterPlugin()
-        let previewImplementation = ResetTrackingCapgoUpdater()
-        let current = BundleInfo(
-            id: "preview-current",
-            version: "2.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "current"
-        )
-        let other = BundleInfo(
-            id: "preview-other",
-            version: "1.5.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "other"
-        )
-
-        previewImplementation.currentBundleValue = current
-        previewImplementation.listedBundles = [current, other]
-        previewPlugin.implementation = previewImplementation
-        previewPlugin.previewSessionEnabled = true
-
-        UserDefaults.standard.set([
-            "preview-current": [
-                "name": "Current preview",
-                "source": "qr",
-                "createdAt": "2026-01-01T00:00:00.000Z",
-                "updatedAt": "2026-01-02T00:00:00.000Z",
-                "lastUsedAt": "2026-01-03T00:00:00.000Z"
-            ],
-            "preview-other": [
-                "name": "Other preview",
-                "createdAt": "2026-01-01T00:00:00.000Z",
-                "updatedAt": "2026-01-01T00:00:00.000Z",
-                "lastUsedAt": "2026-01-02T00:00:00.000Z"
-            ],
-            "missing-preview": [
-                "name": "Missing preview",
-                "lastUsedAt": "2026-01-04T00:00:00.000Z"
-            ]
-        ], forKey: previewsKey)
-
-        let previews = previewPlugin.previewMenuPreviews()
-
-        XCTAssertEqual(previews.count, 2)
-        let first = try XCTUnwrap(previews.first)
-        XCTAssertEqual(first["id"] as? String, "preview-current")
-        XCTAssertEqual(first["name"] as? String, "Current preview")
-        XCTAssertEqual(first["source"] as? String, "qr")
-        XCTAssertEqual(first["isActive"] as? Bool, true)
-
-        let second = try XCTUnwrap(previews.dropFirst().first)
-        XCTAssertEqual(second["id"] as? String, "preview-other")
-        XCTAssertEqual(second["isActive"] as? Bool, false)
-
-        let savedSessions = try XCTUnwrap(UserDefaults.standard.dictionary(forKey: previewsKey))
-        XCTAssertNil(savedSessions["missing-preview"])
-    }
-
-    func testNormalizeShakeMenuGestureSupportsThreeFingerPinch() {
-        XCTAssertEqual(
-            CapacitorUpdaterPlugin.normalizedShakeMenuGesture(nil),
-            CapacitorUpdaterPlugin.shakeMenuGestureShake
-        )
-        XCTAssertEqual(
-            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("shake"),
-            CapacitorUpdaterPlugin.shakeMenuGestureShake
-        )
-        XCTAssertEqual(
-            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("unknown"),
-            CapacitorUpdaterPlugin.shakeMenuGestureShake
-        )
-        XCTAssertEqual(
-            CapacitorUpdaterPlugin.normalizedShakeMenuGesture("threeFingerPinch"),
-            CapacitorUpdaterPlugin.shakeMenuGestureThreeFingerPinch
-        )
-        XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("shake"))
-        XCTAssertTrue(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("threeFingerPinch"))
-        XCTAssertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture(" "))
-        XCTAssertFalse(CapacitorUpdaterPlugin.isSupportedShakeMenuGesture("pinch"))
-    }
-
-    func testResetToLastSuccessfulWithoutInstallableFallbackFallsBackToBuiltin() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.fallbackBundleValue = BundleInfo(
-            id: "fallback-id",
-            version: "1.5.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "fallback"
-        )
-        resetImplementation.canSetResult = false
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertTrue(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 0)
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "1.0.0")
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionIsInternal)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
-    }
-
-    func testResetToLastSuccessfulRestoresStateWhenSwitchFails() {
-        let resetPlugin = ResetTestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetImplementation.fallbackBundleValue = BundleInfo(
-            id: "fallback-id",
-            version: "1.5.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "fallback"
-        )
-        resetImplementation.setResult = false
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
-        XCTAssertFalse(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 1)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
-    }
-
-    func testResetToLastSuccessfulRestoresStateWhenFallbackReloadFails() {
-        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetPlugin.reloadResults = [false]
-        resetImplementation.fallbackBundleValue = BundleInfo(
-            id: "fallback-id",
-            version: "1.5.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "fallback"
-        )
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertFalse(resetPlugin._reset(toLastSuccessful: true, usePendingBundle: false))
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 1)
-        XCTAssertFalse(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 1)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
-        XCTAssertEqual(resetImplementation.restoredState?.currentBundlePath, resetImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(resetImplementation.restoredState?.fallbackBundleId, resetImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(resetImplementation.restoredState?.nextBundleId, resetImplementation.capturedState.nextBundleId)
-    }
-
-    func testInternalResetToLastSuccessfulFallsBackToBuiltinWhenFallbackReloadFails() {
-        let resetPlugin = SequenceReloadCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetPlugin.reloadResults = [false, true]
-        resetImplementation.currentBundleValue = BundleInfo(
-            id: "current-id",
-            version: "2.0.0",
-            status: .ERROR,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        resetImplementation.fallbackBundleValue = BundleInfo(
-            id: "fallback-id",
-            version: "1.5.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "fallback"
-        )
-
-        resetPlugin.implementation = resetImplementation
-
-        XCTAssertTrue(resetPlugin.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true))
-        XCTAssertTrue(resetImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertEqual(resetImplementation.prepareResetStateForTransitionCalls, 2)
-        XCTAssertTrue(resetImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(resetImplementation.finalizeResetTransitionCalls, 1)
-        XCTAssertEqual(resetImplementation.finalizeResetTransitionPreviousBundleName, "2.0.0")
-        XCTAssertTrue(resetImplementation.finalizeResetTransitionIsInternal)
-        XCTAssertEqual(resetImplementation.canSetCalls, 1)
-        XCTAssertEqual(resetImplementation.setCalls, 1)
-        XCTAssertEqual(resetImplementation.restoreResetStateCalls, 0)
-        XCTAssertEqual(resetPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 0)
-    }
-
-    func testFinalizePendingReloadPreservesSuccessfulBundleStatus() {
-        let updater = PendingReloadFinalizeCapgoUpdater()
-        let successfulBundle = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        let pendingBundle = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        updater.bundleInfos["pending-id"] = successfulBundle
-
-        updater.finalizePendingReload(bundle: pendingBundle, previousBundleName: "1.0.0")
-
-        XCTAssertEqual(updater.bundleInfos["pending-id"]?.getStatus(), BundleStatus.SUCCESS.storedValue)
-        XCTAssertEqual(updater.lastStatsAction, "set")
-        XCTAssertEqual(updater.lastStatsVersionName, "2.0.0")
-        XCTAssertEqual(updater.lastStatsOldVersionName, "1.0.0")
-    }
-
-    func testReloadRestoresStateWhenPendingApplyReloadFails() throws {
-        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
-        let reloadImplementation = ResetTrackingCapgoUpdater()
-        var rejected = false
-
-        reloadImplementation.nextBundleValue = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        reloadPlugin.implementation = reloadImplementation
-
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "reload-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("reload should reject when the pending apply reload fails")
-            },
-            error: { _ in
-                rejected = true
-            }
-        ))
-
-        reloadPlugin.reload(call)
-
-        XCTAssertTrue(rejected)
-        XCTAssertEqual(reloadImplementation.setCalls, 0)
-        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
-        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
-        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
-        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
-    }
-
-    func testReloadFinalizesPendingBundleSideEffectsAfterSuccess() throws {
-        let reloadPlugin = ReloadBypassCapacitorUpdaterPlugin()
-        let reloadImplementation = ResetTrackingCapgoUpdater()
-
-        reloadImplementation.nextBundleValue = BundleInfo(
-            id: "pending-id",
-            version: "2.0.0",
-            status: .PENDING,
-            downloaded: Date(),
-            checksum: "pending"
-        )
-        reloadPlugin.implementation = reloadImplementation
-
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "reload-success-test",
-            options: [:],
-            success: { _, _ in },
-            error: { _ in
-                XCTFail("reload should resolve when the pending bundle reload succeeds")
-            }
-        ))
-
-        reloadPlugin.reload(call)
-
-        XCTAssertEqual(reloadImplementation.setCalls, 0)
-        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 1)
-        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 1)
-        XCTAssertEqual(reloadImplementation.finalizePendingReloadPreviousBundleName, "1.0.0")
-        XCTAssertEqual(reloadImplementation.finalizedPendingReloadBundle?.getId(), "pending-id")
-    }
-
-    func testReloadRestoresStateWhenBuiltinPendingReloadFails() throws {
-        let reloadPlugin = ReloadFailureCapacitorUpdaterPlugin()
-        let reloadImplementation = ResetTrackingCapgoUpdater()
-        var rejected = false
-
-        reloadImplementation.nextBundleValue = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: "builtin"
-        )
-        reloadPlugin.implementation = reloadImplementation
-
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "reload-builtin-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("reload should reject when the builtin pending reload fails")
-            },
-            error: { _ in
-                rejected = true
-            }
-        ))
-
-        reloadPlugin.reload(call)
-
-        XCTAssertTrue(rejected)
-        XCTAssertEqual(reloadImplementation.setCalls, 0)
-        XCTAssertEqual(reloadImplementation.stagePendingReloadCalls, 0)
-        XCTAssertEqual(reloadImplementation.finalizePendingReloadCalls, 0)
-        XCTAssertTrue(reloadImplementation.prepareResetStateForTransitionCalled)
-        XCTAssertFalse(reloadImplementation.finalizeResetTransitionCalled)
-        XCTAssertEqual(reloadImplementation.restoreResetStateCalls, 1)
-        XCTAssertEqual(reloadPlugin.restoreLiveBundleStateAfterFailedReloadCalls, 1)
-        XCTAssertEqual(reloadImplementation.restoredState?.currentBundlePath, reloadImplementation.capturedState.currentBundlePath)
-        XCTAssertEqual(reloadImplementation.restoredState?.fallbackBundleId, reloadImplementation.capturedState.fallbackBundleId)
-        XCTAssertEqual(reloadImplementation.restoredState?.nextBundleId, reloadImplementation.capturedState.nextBundleId)
-    }
-
-    func testOnLaunchCompletionConsumesWindowAfterFirstCycle() {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        plugin.configureDirectUpdateModeForTesting("onLaunch")
-
-        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
-        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
-
-        plugin.endBackGroundTaskWithNotif(
-            msg: "No need to update",
-            latestVersionName: current.getVersionName(),
-            current: current,
-            error: false,
-            plannedDirectUpdate: true
-        )
-
-        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
-        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
-    }
-
-    func testOnLaunchFreshDownloadConsumesWindowBeforeDownloadStarts() {
-        let downloadStarted = expectation(description: "fresh download started")
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.version = "2.0.0"
-        latest.url = "https://example.com/update.zip"
-        latest.checksum = "abc123"
-
-        let freshDownloadImplementation = FreshDownloadCapgoUpdater()
-        freshDownloadImplementation.currentBundleValue = current
-        freshDownloadImplementation.latestResponse = latest
-
-        plugin = TestableCapacitorUpdaterPlugin()
-        plugin.implementation = freshDownloadImplementation
-        plugin.configureDirectUpdateModeForTesting("onLaunch")
-        plugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
-        XCTAssertFalse(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
-
-        var consumedWhenDownloadStarted = false
-        freshDownloadImplementation.onDownloadStart = {
-            consumedWhenDownloadStarted = self.plugin.hasConsumedOnLaunchDirectUpdateForTesting
-            downloadStarted.fulfill()
-        }
-
-        plugin.backgroundDownload()
-
-        wait(for: [downloadStarted], timeout: 5.0)
-        XCTAssertTrue(consumedWhenDownloadStarted)
-        XCTAssertTrue(plugin.hasConsumedOnLaunchDirectUpdateForTesting)
-        XCTAssertFalse(plugin.shouldUseDirectUpdateForTesting())
-    }
-
-    func testOnlyDownloadModeDownloadsWithoutSettingNextBundle() {
-        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(downloaded: makeOnlyDownloadBundle())
-
-        XCTAssertFalse(testPlugin.shouldUseDirectUpdateForTesting())
-
-        testPlugin.backgroundDownload()
-
-        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
-    }
-
-    func testOnlyDownloadModeDoesNotSetExistingDownloadedBundleNext() {
-        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(existing: makeOnlyDownloadBundle())
-
-        testPlugin.backgroundDownload()
-
-        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
-    }
-
-    func testOnlyDownloadModeBuiltinNotifiesUpdateAvailableWithoutSettingNextBundle() {
-        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin()
-        let latest = AppVersion()
-        latest.version = "builtin"
-        freshDownloadImplementation.latestResponse = latest
-
-        testPlugin.backgroundDownload()
-
-        assertOnlyDownloadLeavesUpdateManual(plugin: testPlugin, implementation: freshDownloadImplementation)
-        let updateBundle = testPlugin.notifiedEventPayloads["updateAvailable"]?["bundle"] as? [String: String]
-        XCTAssertEqual(updateBundle?["id"], BundleInfo.ID_BUILTIN)
-    }
-
-    func testOnlyDownloadModeBuiltinDoesNotNotifyWhenBuiltinIsCurrent() {
-        let current = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: "builtin"
-        )
-        let (testPlugin, freshDownloadImplementation) = makeOnlyDownloadPlugin(current: current)
-        let latest = AppVersion()
-        latest.version = "builtin"
-        freshDownloadImplementation.latestResponse = latest
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("updateAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
-        XCTAssertEqual(freshDownloadImplementation.setNextBundleCalls, 0)
-    }
-
-    func testStaleDownloadingBundleIsRedownloadedInsteadOfQueued() {
-        let stale = makeOnlyDownloadBundle(id: "stale-id", status: .DOWNLOADING, checksum: "")
-        let downloaded = makeOnlyDownloadBundle(id: "fresh-id")
-        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: stale, downloaded: downloaded)
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertEqual(implementation.downloadCalls, 1)
-        XCTAssertEqual(implementation.deleteCalls, 1)
-        XCTAssertEqual(implementation.lastDeletedId, "stale-id")
-        XCTAssertEqual(implementation.lastSetNextBundleId, "fresh-id")
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateAvailable"))
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
-    }
-
-    func testPendingExistingBundleIsReusedWithoutRedownload() {
-        let existing = makeOnlyDownloadBundle()
-        let (testPlugin, implementation) = makeAtBackgroundPlugin(existing: existing)
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertEqual(implementation.downloadCalls, 0)
-        XCTAssertEqual(implementation.deleteCalls, 0)
-        XCTAssertEqual(implementation.setNextBundleCalls, 1)
-        XCTAssertEqual(implementation.lastSetNextBundleId, existing.getId())
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
-    }
-
-    func testFailedSetNextBundleAfterDownloadNotifiesFailure() {
-        let downloaded = makeOnlyDownloadBundle()
-        let implementation = FreshDownloadCapgoUpdater()
-        implementation.setNextBundleSucceeds = false
-        let (testPlugin, _) = makeAtBackgroundPlugin(downloaded: downloaded, implementation: implementation)
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertEqual(implementation.downloadCalls, 1)
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertTrue(implementation.sentStatsActions.contains("download_fail"))
-    }
-
-    func testNoNewVersionAvailableDoesNotNotifyDownloadFailed() {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.error = "no_new_version_available"
-        latest.kind = "up_to_date"
-        latest.message = "No new version available"
-        latest.statusCode = 200
-
-        let noUpdateImplementation = FreshDownloadCapgoUpdater()
-        noUpdateImplementation.currentBundleValue = current
-        noUpdateImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = noUpdateImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertFalse(noUpdateImplementation.sentStatsActions.contains("download_fail"))
-    }
-
-    func testGetLatestRejectsLegacyErrorWithoutBackendKind() throws {
-        let latest = AppVersion()
-        latest.error = "no_new_version_available"
-        latest.message = "No new version available"
-        latest.statusCode = 200
-
-        let noUpdateImplementation = FreshDownloadCapgoUpdater()
-        noUpdateImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = noUpdateImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        let rejected = expectation(description: "getLatest rejects legacy response without kind")
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-legacy-error-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("getLatest should reject legacy error responses without backend kind")
-            },
-            error: { error in
-                XCTAssertEqual(error?.message, "no_new_version_available")
-                rejected.fulfill()
-            }
-        ))
-
-        testPlugin.getLatest(call)
-        wait(for: [rejected], timeout: 10)
-    }
-
-    func testGetLatestRejectsFailedKindWithoutErrorMessage() throws {
-        let latest = AppVersion()
-        latest.kind = "failed"
-        latest.statusCode = 500
-
-        let failedImplementation = FreshDownloadCapgoUpdater()
-        failedImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = failedImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        let rejected = expectation(description: "getLatest rejects failed kind")
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-failed-kind-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("getLatest should reject failed kind responses")
-            },
-            error: { error in
-                XCTAssertEqual(error?.message, "server did not provide a message")
-                rejected.fulfill()
-            }
-        ))
-
-        testPlugin.getLatest(call)
-        wait(for: [rejected], timeout: 10)
-    }
-
-    func testGetLatestRejectsFailedErrorUsingBackendErrorCode() throws {
-        let latest = AppVersion()
-        latest.error = "response_error"
-        latest.message = "Server returned an invalid response"
-        latest.kind = "failed"
-        latest.statusCode = 500
-
-        let failedImplementation = FreshDownloadCapgoUpdater()
-        failedImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = failedImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        let rejected = expectation(description: "getLatest rejects failed error")
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-failed-error-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("getLatest should reject failed error responses")
-            },
-            error: { error in
-                XCTAssertEqual(error?.message, "response_error")
-                rejected.fulfill()
-            }
-        ))
-
-        testPlugin.getLatest(call)
-        wait(for: [rejected], timeout: 10)
-    }
-
-    func testGetLatestBreakingResponseNotifiesBreakingListeners() throws {
-        let latest = AppVersion()
-        latest.version = "2.0.0"
-        latest.breaking = true
-        latest.message = "store_update_required"
-        latest.statusCode = 200
-
-        let breakingImplementation = FreshDownloadCapgoUpdater()
-        breakingImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = breakingImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        let rejected = expectation(description: "getLatest rejects store update response")
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-breaking-response-test",
-            options: [:],
-            success: { _, _ in
-                XCTFail("getLatest should reject store update responses")
-            },
-            error: { error in
-                XCTAssertEqual(error?.message, "store_update_required")
-                rejected.fulfill()
-            }
-        ))
-
-        testPlugin.getLatest(call)
-        wait(for: [rejected], timeout: 10)
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
-    }
-
-    func testGetLatestBreakingResponseWithoutVersionNotifiesCurrentBundleVersion() throws {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.error = "disable_auto_update_to_major"
-        latest.kind = "blocked"
-        latest.message = "Cannot upgrade major version"
-        latest.statusCode = 200
-
-        let breakingImplementation = FreshDownloadCapgoUpdater()
-        breakingImplementation.currentBundleValue = current
-        breakingImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = breakingImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        let resolved = expectation(description: "getLatest resolves blocked breaking response")
-        let call = try XCTUnwrap(CAPPluginCall(
-            callbackId: "get-latest-breaking-response-no-version-test",
-            options: [:],
-            success: { _, _ in
-                resolved.fulfill()
-            },
-            error: { _ in
-                XCTFail("getLatest should resolve blocked breaking responses")
-            }
-        ))
-
-        testPlugin.getLatest(call)
-        wait(for: [resolved], timeout: 10)
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "1.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "1.0.0")
-    }
-
-    func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.version = "2.0.0"
-        latest.error = "disable_auto_update_to_major"
-        latest.kind = "blocked"
-        latest.message = "Cannot upgrade major version"
-        latest.statusCode = 200
-
-        let blockedImplementation = FreshDownloadCapgoUpdater()
-        blockedImplementation.currentBundleValue = current
-        blockedImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = blockedImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
-    }
-
-    func testBreakingNoUrlUpdateCheckNotifiesBreakingListeners() {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.version = "2.0.0"
-        latest.breaking = true
-        latest.message = "store_update_required"
-        latest.statusCode = 200
-
-        let breakingImplementation = FreshDownloadCapgoUpdater()
-        breakingImplementation.currentBundleValue = current
-        breakingImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = breakingImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertTrue(breakingImplementation.sentStatsActions.contains("download_fail"))
-    }
-
-    func testFailedUpdateCheckNotifiesDownloadFailed() {
-        let current = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-        let latest = AppVersion()
-        latest.error = "response_error"
-        latest.kind = "failed"
-        latest.message = "Error getting Latest"
-        latest.statusCode = 500
-
-        let failedImplementation = FreshDownloadCapgoUpdater()
-        failedImplementation.currentBundleValue = current
-        failedImplementation.latestResponse = latest
-
-        let testPlugin = TestableCapacitorUpdaterPlugin()
-        testPlugin.implementation = failedImplementation
-        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
-
-        testPlugin.backgroundDownload()
-
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
-    }
-
-    func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {
-        let nativeBuildKey = "LatestNativeBuildVersion"
-        let legacyBuildKey = "LatestVersionNative"
-        UserDefaults.standard.removeObject(forKey: nativeBuildKey)
-        UserDefaults.standard.set("1", forKey: legacyBuildKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
-            UserDefaults.standard.removeObject(forKey: legacyBuildKey)
-        }
-
-        plugin.setCurrentBuildVersionForTesting("2")
-
-        XCTAssertTrue(plugin.hasNativeBuildVersionChanged())
-    }
-
-    func testReportNativeVersionStatsPersistsFirstSnapshotWithoutEvent() {
-        let keys = [
-            "CapacitorUpdater.lastVersionOs",
-            "CapacitorUpdater.lastVersionBuild",
-            "CapacitorUpdater.lastVersionCode"
-        ]
-        for key in keys {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-        defer {
-            for key in keys {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
-
-        let statsImplementation = HealthStatsCapgoUpdater()
-        plugin.implementation = statsImplementation
-
-        plugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "1.0.0", currentVersionCode: "100", currentVersionOs: "17.0")
-
-        XCTAssertTrue(statsImplementation.sentStatsActions.isEmpty)
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionOs"), "17.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionBuild"), "1.0.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionCode"), "100")
-    }
-
-    func testReportNativeVersionStatsSendsChangedOsAndNativeVersionEvents() {
-        let values = [
-            "CapacitorUpdater.lastVersionOs": "16.0",
-            "CapacitorUpdater.lastVersionBuild": "1.0.0",
-            "CapacitorUpdater.lastVersionCode": "100"
-        ]
-        for (key, value) in values {
-            UserDefaults.standard.set(value, forKey: key)
-        }
-        defer {
-            for key in values.keys {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
-
-        let statsImplementation = HealthStatsCapgoUpdater()
-        plugin.implementation = statsImplementation
-
-        plugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "1.1.0", currentVersionCode: "101", currentVersionOs: "17.0")
-
-        XCTAssertEqual(statsImplementation.sentStatsActions, ["os_version_changed", "native_app_version_changed"])
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[0]?["previous_version_os"], "16.0")
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[0]?["current_version_os"], "17.0")
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["previous_version_build"], "1.0.0")
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["current_version_build"], "1.1.0")
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["previous_version_code"], "100")
-        XCTAssertEqual(statsImplementation.sentStatsMetadata[1]?["current_version_code"], "101")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionOs"), "17.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionBuild"), "1.1.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionCode"), "101")
-    }
-
-    func testReportNativeVersionStatsKeepsChangedSnapshotPendingUntilStatsAck() {
-        let values = [
-            "CapacitorUpdater.lastVersionOs": "16.0",
-            "CapacitorUpdater.lastVersionBuild": "1.0.0",
-            "CapacitorUpdater.lastVersionCode": "100"
-        ]
-        for (key, value) in values {
-            UserDefaults.standard.set(value, forKey: key)
-        }
-        defer {
-            for key in values.keys {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
-
-        let statsImplementation = HealthStatsCapgoUpdater()
-        statsImplementation.acknowledgeStats = false
-        plugin.implementation = statsImplementation
-
-        plugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "1.1.0", currentVersionCode: "101", currentVersionOs: "17.0")
-
-        XCTAssertEqual(statsImplementation.sentStatsActions, ["os_version_changed", "native_app_version_changed"])
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionOs"), "16.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionBuild"), "1.0.0")
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "CapacitorUpdater.lastVersionCode"), "100")
-    }
-
-    func testNativeVersionStatsAfterNativeBuildResetUseBuiltinBundle() {
-        let values = [
-            "LatestNativeBuildVersion": "1",
-            "CapacitorUpdater.lastVersionOs": "17.0",
-            "CapacitorUpdater.lastVersionBuild": "1.0.0",
-            "CapacitorUpdater.lastVersionCode": "1"
-        ]
-        for (key, value) in values {
-            UserDefaults.standard.set(value, forKey: key)
-        }
-        defer {
-            for key in values.keys {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
-
-        let resetPlugin = TestableCapacitorUpdaterPlugin()
-        let statsImplementation = ResettingHealthStatsCapgoUpdater()
-        statsImplementation.currentBundleValue = BundleInfo(
-            id: "ota-id",
-            version: "ota-version",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "ota"
-        )
-        resetPlugin.implementation = statsImplementation
-        resetPlugin.setCurrentBuildVersionForTesting("2")
-
-        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
-        resetPlugin.reportNativeVersionStatsIfChanged(currentVersionBuild: "2.0.0", currentVersionCode: "2", currentVersionOs: "17.0")
-
-        XCTAssertEqual(statsImplementation.sentStatsActions, ["native_app_version_changed"])
-        XCTAssertEqual(statsImplementation.lastStatsVersionName, "builtin")
-    }
-
-    func testResetCurrentBundleForNativeBuildChangeIfNeededResetsSynchronously() {
-        let nativeBuildKey = "LatestNativeBuildVersion"
-        let resetPlugin = TestableCapacitorUpdaterPlugin()
-        let resetImplementation = ResetTrackingCapgoUpdater()
-        resetPlugin.implementation = resetImplementation
-        UserDefaults.standard.set("1", forKey: nativeBuildKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
-        }
-
-        resetPlugin.setCurrentBuildVersionForTesting("2")
-
-        XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
-        XCTAssertTrue(resetImplementation.resetCalled)
-        XCTAssertTrue(resetImplementation.resetIsInternal)
-    }
+    // MARK: - Splash screen
 
     func testShowSplashscreenOptionsDisableAutoHide() {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
@@ -2677,9 +295,7 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testHideSplashscreenOptionsStayEmpty() {
-        let options = plugin.splashscreenOptionsForTesting(methodName: "hide")
-
-        XCTAssertTrue(options.isEmpty)
+        XCTAssertTrue(plugin.splashscreenOptionsForTesting(methodName: "hide").isEmpty)
     }
 
     func testSplashscreenInvocationTokenRejectsStaleRequests() {
@@ -2690,619 +306,66 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(plugin.isCurrentSplashscreenInvocationTokenForTesting(0))
     }
 
-    func testDelayUpdateUtilsSetMultiDelayStoresMultipleConditions() throws {
-        let utils = try makeDelayUpdateUtils()
-        clearDelayStorage()
-        defer { clearDelayStorage() }
-        let json = try makeDelayConditionsJSON()
-
-        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
-        XCTAssertEqual(UserDefaults.standard.string(forKey: delayPreferencesKey), json)
-    }
-
-    func testDelayUpdateUtilsCheckCancelDelayKilledKeepsOtherConditions() throws {
-        let utils = try makeDelayUpdateUtils()
-        clearDelayStorage()
-        defer { clearDelayStorage() }
-        let json = try makeDelayConditionsJSON()
-        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
-
-        utils.checkCancelDelay(source: .killed)
-
-        let stored = try XCTUnwrap(UserDefaults.standard.string(forKey: delayPreferencesKey))
-        let storedData = try XCTUnwrap(stored.data(using: .utf8))
-        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: storedData) as? [[String: String]])
-
-        XCTAssertEqual(parsed.count, 1)
-        XCTAssertEqual(parsed.first?["kind"], "background")
-        XCTAssertEqual(parsed.first?["value"], "5000")
-    }
-
-    // MARK: - DelayUntilNext Tests
-
-    func testDelayUntilNextDescription() {
-        XCTAssertEqual(DelayUntilNext.background.description, "background")
-        XCTAssertEqual(DelayUntilNext.kill.description, "kill")
-        XCTAssertEqual(DelayUntilNext.nativeVersion.description, "nativeVersion")
-        XCTAssertEqual(DelayUntilNext.date.description, "date")
-    }
-
-    func testDelayUntilNextEncodeDecode() throws {
-        let original = DelayUntilNext.background
-
-        // Encode
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(original)
-
-        // Decode
-        let decoder = JSONDecoder()
-        let decoded = try decoder.decode(DelayUntilNext.self, from: data)
-
-        XCTAssertEqual(decoded, original)
-    }
-
-    // MARK: - Logger Tests
+    // MARK: - Logger
 
     func testLoggerInitialization() {
         let logger = Logger(withTag: "TestTag")
-        XCTAssertNotNil(logger)
-
-        // Test different log levels
         logger.debug("Debug message")
         logger.info("Info message")
         logger.error("Error message")
-        // No assertions here as logger just prints, but we ensure no crashes
+    }
+}
+
+final class CleartextPolicyTests: XCTestCase {
+    func testAtsDecidesPlainHttpForTheEngineClient() {
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "127.0.0.1", ats: nil))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "1.2.3.4", ats: ["NSExceptionDomains": ["1.2.3.4": ["NSExceptionAllowsInsecureHTTPLoads": true]]]))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "127.0.0.1", ats: ["NSAllowsLocalNetworking": true]))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "[::1]", ats: ["NSAllowsLocalNetworking": true]))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "localhost", ats: nil))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: nil))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ["NSAllowsArbitraryLoads": true]))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "mac.local", ats: ["NSAllowsLocalNetworking": true]))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ["NSAllowsLocalNetworking": true]))
+        let exceptions: [String: Any] = [
+            "NSExceptionDomains": [
+                "example.com": ["NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true]
+            ]
+        ]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: exceptions))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "example.org", ats: exceptions))
     }
 
-    // MARK: - UserDefaults Extension Tests
-
-    func testSetAndGetObject() {
-        let testObject = ["key": "value", "number": 42] as [String: Any]
-        UserDefaults.standard.set(testObject, forKey: "test_object")
-
-        let retrievedObject = UserDefaults.standard.object(forKey: "test_object") as? [String: Any]
-        XCTAssertNotNil(retrievedObject)
-        XCTAssertEqual(retrievedObject?["key"] as? String, "value")
-        XCTAssertEqual(retrievedObject?["number"] as? Int, 42)
-
-        // Clean up
-        UserDefaults.standard.removeObject(forKey: "test_object")
-    }
-
-    func testSetAndGetDictionary() {
-        let testDict = ["id": "1", "name": "Test"]
-        UserDefaults.standard.set(testDict, forKey: "test_dict")
-
-        let retrievedDict = UserDefaults.standard.dictionary(forKey: "test_dict")
-        XCTAssertNotNil(retrievedDict)
-        XCTAssertEqual(retrievedDict?["id"] as? String, "1")
-        XCTAssertEqual(retrievedDict?["name"] as? String, "Test")
-
-        // Clean up
-        UserDefaults.standard.removeObject(forKey: "test_dict")
-    }
-
-    // MARK: - File System Tests
-
-    func testFileOperations() {
-        let testPath = NSTemporaryDirectory().appending("test_file.txt")
-        let testContent = "Test content"
-
-        // Test file creation
-        let success = FileManager.default.createFile(
-            atPath: testPath,
-            contents: testContent.data(using: .utf8),
-            attributes: nil
-        )
-        XCTAssertTrue(success)
-
-        // Test file existence
-        XCTAssertTrue(FileManager.default.fileExists(atPath: testPath))
-
-        // Test file deletion
-        do {
-            try FileManager.default.removeItem(atPath: testPath)
-            XCTAssertFalse(FileManager.default.fileExists(atPath: testPath))
-        } catch {
-            XCTFail("Failed to delete test file: \(error)")
-        }
-    }
-
-    // MARK: - Bundle Path Tests
-
-    func testBundlePathGeneration() {
-        let bundleId = "test-bundle-123"
-
-        // Generate a mock bundle path
-        let documentsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
-        let bundlePath = documentsPath.appending("/\(bundleId)")
-
-        XCTAssertTrue(bundlePath.contains(bundleId))
-        XCTAssertTrue(bundlePath.contains("Documents"))
-    }
-
-    // MARK: - Date Extension Tests
-
-    func testDateISO8601Formatting() {
-        let date = Date(timeIntervalSince1970: 0)
-        let formatted = date.iso8601withFractionalSeconds
-
-        XCTAssertNotNil(formatted)
-        XCTAssertTrue(formatted.contains("1970"))
-    }
-
-    // MARK: - String Extension Tests
-
-    func testStringTrim() {
-        let testString = "  test string  "
-        let trimmed = testString.trim()
-
-        XCTAssertEqual(trimmed, "test string")
-    }
-
-    func testStringTrimWithNewlines() {
-        let testString = "\n\ntest\n\n"
-        let trimmed = testString.trim()
-
-        XCTAssertEqual(trimmed, "test")
-    }
-
-    // MARK: - CapgoUpdater Tests
-
-    func testCapgoUpdaterInitialization() {
-        let updater = CapgoUpdater()
-        XCTAssertNotNil(updater)
-    }
-
-    func testInfoObjectParametersIncludeInstallSource() {
-        let info = InfoObject(
-            platform: "ios",
-            device_id: "device-id",
-            app_id: "com.example.app",
-            custom_id: "",
-            version_build: "1.0.0",
-            version_code: "1",
-            version_os: "18.0",
-            version_name: "builtin",
-            old_version_name: "",
-            plugin_version: "8.0.0",
-            is_emulator: false,
-            is_prod: true,
-            installSource: "app_store",
-            action: "set",
-            channel: nil,
-            defaultChannel: "production",
-            key_id: nil
-        )
-
-        XCTAssertEqual(info.toParameters()["install_source"] as? String, "app_store")
-    }
-
-    func testZipEntryPathRejectsSiblingPrefixPathTraversal() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(
-                baseDirectory: base,
-                relativePath: "../bundle-evil/pwned.txt"
-            )
-        )
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("bundle-evil/pwned.txt").path))
-    }
-
-    func testManifestTargetPathRejectsPathTraversalAfterBrotliSuffixIsRemoved() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolveManifestTargetPath(
-                baseDirectory: base,
-                fileName: "../bundle-evil/app.js.br"
-            )
-        )
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("bundle-evil/app.js").path))
-    }
-
-    func testManifestTargetPathAllowsNestedBrotliFileInsideBundle() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let resolved = try CapgoUpdater.resolveManifestTargetPath(
-            baseDirectory: base,
-            fileName: "assets/app.js.br"
-        )
-
-        XCTAssertEqual(
-            resolved.standardizedFileURL.path,
-            base.appendingPathComponent("assets/app.js").standardizedFileURL.path
-        )
-    }
-
-    func testResolvePathInsideDirectoryRejectsAbsolutePaths() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: "/etc/passwd")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .absolutePath)
-        }
-    }
-
-    func testResolvePathInsideDirectoryRejectsBackslashes() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: "assets\\app.js")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .windowsPath)
-        }
-    }
-
-    func testResolvePathInsideDirectoryRejectsNullBytes() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: "assets\0app.js")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .windowsPath)
-        }
-    }
-
-    func testResolvePathInsideDirectoryRejectsDotDotSegments() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: "assets/../../secret.js")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .pathTraversal)
-        }
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: "../secret.js")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .pathTraversal)
-        }
-    }
-
-    func testResolvePathInsideDirectoryRejectsDotAsBaseDirectory() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolvePathInsideDirectory(baseDirectory: base, relativePath: ".")
-        ) { error in
-            XCTAssertEqual(error as? CapgoUpdater.SecurePathError, .pathTraversal)
-        }
-    }
-
-    func testRememberManifestTargetRejectsDuplicateCanonicalPaths() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = root.appendingPathComponent("bundle")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let plain = try CapgoUpdater.resolveManifestTargetPath(baseDirectory: base, fileName: "assets/app.js")
-        let brotli = try CapgoUpdater.resolveManifestTargetPath(baseDirectory: base, fileName: "assets/app.js.br")
-        var seen = Set<String>()
-
-        XCTAssertTrue(CapgoUpdater.rememberManifestTarget(&seen, targetFile: plain))
-        XCTAssertFalse(CapgoUpdater.rememberManifestTarget(&seen, targetFile: brotli))
-    }
-
-    func testResolveBundleDirectoryRejectsAbsolutePath() throws {
-        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: libraryDir) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: "/tmp/evil")
-        )
-    }
-
-    func testResolveBundleDirectoryRejectsPathTraversal() throws {
-        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: libraryDir) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: "../outside-target")
-        )
-    }
-
-    func testDeleteRejectsPathTraversalOutsideBundleRoot() throws {
-        let updater = CapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-
-        let deleted = updater.delete(id: "../outside-target", removeInfo: true)
-
-        XCTAssertFalse(deleted)
-    }
-
-    func testDeleteRemovesLegitimateInSandboxBundle() throws {
-        let updater = CapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-        let bundleId = "sandbox-\(UUID().uuidString)"
-        let bundleDir = try updater.getBundleDirectory(id: bundleId)
-        try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
-        try "<html></html>".write(to: bundleDir.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: bundleDir) }
-
-        let deleted = updater.delete(id: bundleId, removeInfo: true)
-
-        XCTAssertTrue(deleted)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: bundleDir.path))
-    }
-
-    func testResolveBundleDirectoryRejectsDotAsBundleRoot() throws {
-        let libraryDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: libraryDir) }
-
-        XCTAssertThrowsError(
-            try CapgoUpdater.resolveBundleDirectory(libraryDir: libraryDir, bundleId: ".")
-        )
-    }
-
-    func testDeleteRejectsDotBundleId() throws {
-        let updater = CapgoUpdater()
-        updater.setLogger(Logger(withTag: "TestLogger"))
-
-        XCTAssertFalse(updater.delete(id: ".", removeInfo: true))
-    }
-
-    // MARK: - Performance Tests
-
-    func testPerformanceStringTrim() {
-        let testString = "  test string with spaces  "
-
-        self.measure {
-            for _ in 0..<10000 {
-                _ = testString.trim()
+    /// Apple's precedence: fine-grained keys disable NSAllowsArbitraryLoads, exception domains override it.
+    func testAtsPrecedenceWithMixedSettings() {
+        for key in ["NSAllowsArbitraryLoadsInWebContent", "NSAllowsArbitraryLoadsForMedia", "NSAllowsLocalNetworking"] {
+            for value in [true, false] {
+                let ats: [String: Any] = ["NSAllowsArbitraryLoads": true, key: value]
+                XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: ats), "\(key)=\(value)")
             }
         }
+        // An exception domain without insecure HTTP keeps TLS required under arbitrary loads.
+        let strictDomain: [String: Any] = [
+            "NSAllowsArbitraryLoads": true,
+            "NSExceptionDomains": ["example.com": ["NSIncludesSubdomains": true, "NSExceptionRequiresForwardSecrecy": false]]
+        ]
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: strictDomain))
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "updates.example.org", ats: strictDomain))
+        // The most specific exception domain wins.
+        let nested: [String: Any] = [
+            "NSExceptionDomains": [
+                "example.com": ["NSIncludesSubdomains": true, "NSExceptionAllowsInsecureHTTPLoads": true],
+                "secure.example.com": ["NSIncludesSubdomains": true]
+            ]
+        ]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "cdn.example.com", ats: nested))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "api.secure.example.com", ats: nested))
+        // An exact domain entry applies without NSIncludesSubdomains; subdomains do not.
+        let exact: [String: Any] = ["NSExceptionDomains": ["example.com": ["NSExceptionAllowsInsecureHTTPLoads": true]]]
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "example.com", ats: exact))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "updates.example.com", ats: exact))
+        // IPs: arbitrary loads only when no fine-grained key is present.
+        XCTAssertTrue(CapgoUpdater.atsAllowsCleartext(host: "1.2.3.4", ats: ["NSAllowsArbitraryLoads": true]))
+        XCTAssertFalse(CapgoUpdater.atsAllowsCleartext(host: "1.2.3.4", ats: ["NSAllowsArbitraryLoads": true, "NSAllowsArbitraryLoadsForMedia": true]))
     }
-
-    func testPerformanceDateFormatting() {
-        let date = Date()
-
-        self.measure {
-            for _ in 0..<1000 {
-                _ = date.iso8601withFractionalSeconds
-            }
-        }
-    }
-
-    func testPerformanceBundleInfoEncoding() {
-        let bundleInfo = BundleInfo(
-            id: "test-id",
-            version: "1.0.0",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "abc123"
-        )
-
-        self.measure {
-            for _ in 0..<1000 {
-                if let data = try? JSONEncoder().encode(bundleInfo) {
-                    _ = try? JSONDecoder().decode(BundleInfo.self, from: data)
-                }
-            }
-        }
-    }
-
-    func testPerformanceDelayConditionOperations() {
-        let condition = DelayCondition(kind: .background, value: "test")
-
-        self.measure {
-            for _ in 0..<1000 {
-                _ = condition.toJSON()
-                _ = condition.toString()
-                _ = condition.getKind()
-            }
-        }
-    }
-
-    func testSendReadyToJsSkipsSemaphoreWaitWhenNotArmed() {
-        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.setAppReadyTimeoutForTesting(2000)
-        let bundle = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: ""
-        )
-
-        let expectation = expectation(description: "appReady without wait")
-        let start = Date()
-        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
-
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 1.0)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["appReady"]?["status"] as? String, "disabled")
-        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
-    }
-
-    func testSendReadyToJsNotifiesAppReadyOnMainThread() {
-        // CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157).
-        // sendReadyToJs runs on a background queue, so appReady must hop to main.
-        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.resetSemaphoreWaitTestingStateForTesting()
-        let bundle = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: ""
-        )
-
-        let expectation = expectation(description: "appReady notified")
-        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
-
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 2.0)
-        XCTAssertEqual(testPlugin.appReadyNotifiedOnMainThread, true)
-        XCTAssertEqual(testPlugin.appReadyRetainUntilConsumed, true)
-    }
-
-    func testSendReadyToJsWaitsOnlyWhenArmed() {
-        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.setAppReadyTimeoutForTesting(200)
-        testPlugin.armPendingNotifyAppReadyForTesting()
-        let bundle = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: ""
-        )
-
-        let expectation = expectation(description: "appReady after armed wait timeout")
-        let start = Date()
-        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
-
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 2.0)
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
-        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
-    }
-
-    func testSendReadyToJsUnblocksWhenNotifyAppReadySignals() {
-        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.setAppReadyTimeoutForTesting(500)
-        testPlugin.resetSemaphoreWaitTestingStateForTesting()
-        testPlugin.armPendingNotifyAppReadyForTesting()
-        let bundle = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: ""
-        )
-
-        let expectation = expectation(description: "appReady after notify")
-        testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
-
-        DispatchQueue.global().async {
-            // Wait until sendReadyToJs enters semaphoreWait. The armed flag is cleared
-            // before the wait starts, so polling that flag can signal too early.
-            for _ in 0..<400 {
-                if testPlugin.didEnterSemaphoreWaitForTestingState {
-                    break
-                }
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-            XCTAssertTrue(testPlugin.didEnterSemaphoreWaitForTestingState)
-
-            let signalStart = Date()
-            // Simulate notifyAppReady signalling the semaphore.
-            testPlugin.semaphoreReady.signal()
-
-            for _ in 0..<80 {
-                if let notifiedAt = testPlugin.appReadyNotifiedAt {
-                    XCTAssertGreaterThanOrEqual(
-                        notifiedAt.timeIntervalSince1970,
-                        signalStart.timeIntervalSince1970
-                    )
-                    XCTAssertLessThan(notifiedAt.timeIntervalSince(signalStart), 0.5)
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-
-        wait(for: [expectation], timeout: 5.0)
-        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
-    }
-
-    func testClearPendingNotifyAppReadyPreventsWait() {
-        let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
-        testPlugin.setAppReadyTimeoutForTesting(2000)
-        testPlugin.armPendingNotifyAppReadyForTesting()
-        testPlugin.clearPendingNotifyAppReadyForTesting()
-        XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
-
-        let bundle = BundleInfo(
-            id: BundleInfo.ID_BUILTIN,
-            version: "builtin",
-            status: .SUCCESS,
-            downloaded: BundleInfo.DOWNLOADED_BUILTIN,
-            checksum: ""
-        )
-        let expectation = expectation(description: "appReady after clear is immediate")
-        let start = Date()
-        testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
-        DispatchQueue.global().async {
-            for _ in 0..<40 {
-                if testPlugin.notifiedEventNames.contains("appReady") {
-                    expectation.fulfill()
-                    return
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            }
-        }
-        wait(for: [expectation], timeout: 1.0)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
-    }
-
-    func testReadyCallFromPreviousPageIsRejected() {
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: false, expectedGeneration: 1, reportedGeneration: nil))
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: nil))
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 1))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldAcceptReadyCall(guardArmed: true, expectedGeneration: 2, reportedGeneration: 2))
-        let script = CapacitorUpdaterPlugin.readyGenerationScript(2)
-        XCTAssertTrue(script.contains("window.__CAPGO_READY_GEN=2"))
-        XCTAssertTrue(script.contains("cap.nativePromise"))
-        XCTAssertFalse(script.contains("plugin.notifyAppReady="))
-    }
-
 }

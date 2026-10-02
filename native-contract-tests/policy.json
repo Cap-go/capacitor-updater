@@ -1,0 +1,1307 @@
+{
+  "version": 1,
+  "description": "Update policy and HTTP helper decisions shared by every updater host. Group names are the core operation names.",
+  "legacyDirectUpdateAutoMode": [
+    {
+      "id": "legacy-direct-update.false",
+      "input": {
+        "directUpdateMode": "false"
+      },
+      "expect": {
+        "mode": "atBackground"
+      }
+    },
+    {
+      "id": "legacy-direct-update.atInstall",
+      "input": {
+        "directUpdateMode": "atInstall"
+      },
+      "expect": {
+        "mode": "atInstall"
+      }
+    },
+    {
+      "id": "legacy-direct-update.onLaunch",
+      "input": {
+        "directUpdateMode": "onLaunch"
+      },
+      "expect": {
+        "mode": "onLaunch"
+      }
+    },
+    {
+      "id": "legacy-direct-update.always",
+      "input": {
+        "directUpdateMode": "always"
+      },
+      "expect": {
+        "mode": "always"
+      }
+    },
+    {
+      "id": "legacy-direct-update.onlyDownload",
+      "input": {
+        "directUpdateMode": "onlyDownload"
+      },
+      "expect": {
+        "mode": "atBackground"
+      }
+    },
+    {
+      "id": "legacy-direct-update.atBackground",
+      "input": {
+        "directUpdateMode": "atBackground"
+      },
+      "expect": {
+        "mode": "atBackground"
+      }
+    },
+    {
+      "id": "legacy-direct-update.garbage",
+      "input": {
+        "directUpdateMode": "garbage"
+      },
+      "expect": {
+        "mode": "atBackground"
+      }
+    }
+  ],
+  "shakeMenuGesture": [
+    {
+      "id": "shake-gesture.missing",
+      "input": {
+        "value": null
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    },
+    {
+      "id": "shake-gesture.empty",
+      "input": {
+        "value": ""
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    },
+    {
+      "id": "shake-gesture.blank",
+      "input": {
+        "value": "   "
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    },
+    {
+      "id": "shake-gesture.shake",
+      "input": {
+        "value": "shake"
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    },
+    {
+      "id": "shake-gesture.three-finger-pinch",
+      "input": {
+        "value": "threeFingerPinch"
+      },
+      "expect": {
+        "gesture": "threeFingerPinch"
+      }
+    },
+    {
+      "id": "shake-gesture.three-finger-pinch.padded",
+      "input": {
+        "value": "  threeFingerPinch\n"
+      },
+      "expect": {
+        "gesture": "threeFingerPinch"
+      }
+    },
+    {
+      "id": "shake-gesture.unknown",
+      "input": {
+        "value": "pinch"
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    },
+    {
+      "id": "shake-gesture.case-sensitive",
+      "input": {
+        "value": "Shake"
+      },
+      "expect": {
+        "gesture": "shake"
+      }
+    }
+  ],
+  "webViewErrorStatsAction": [
+    {
+      "id": "webview-error.unhandled_rejection",
+      "input": {
+        "type": "unhandled_rejection"
+      },
+      "expect": {
+        "action": "webview_unhandled_rejection"
+      }
+    },
+    {
+      "id": "webview-error.resource_error",
+      "input": {
+        "type": "resource_error"
+      },
+      "expect": {
+        "action": "webview_resource_error"
+      }
+    },
+    {
+      "id": "webview-error.security_policy_violation",
+      "input": {
+        "type": "security_policy_violation"
+      },
+      "expect": {
+        "action": "webview_security_policy_violation"
+      }
+    },
+    {
+      "id": "webview-error.webview_unclean_restart",
+      "input": {
+        "type": "webview_unclean_restart"
+      },
+      "expect": {
+        "action": "webview_unclean_restart"
+      }
+    },
+    {
+      "id": "webview-error.render_process_gone",
+      "input": {
+        "type": "render_process_gone"
+      },
+      "expect": {
+        "action": "webview_render_process_gone"
+      }
+    },
+    {
+      "id": "webview-error.web_content_process_terminated",
+      "input": {
+        "type": "web_content_process_terminated"
+      },
+      "expect": {
+        "action": "webview_content_process_terminated"
+      }
+    },
+    {
+      "id": "webview-error.webview_dom_content_loaded",
+      "input": {
+        "type": "webview_dom_content_loaded"
+      },
+      "expect": {
+        "action": "webview_dom_content_loaded"
+      }
+    },
+    {
+      "id": "webview-error.webview_page_loaded",
+      "input": {
+        "type": "webview_page_loaded"
+      },
+      "expect": {
+        "action": "webview_page_loaded"
+      }
+    },
+    {
+      "id": "webview-error.javascript_error",
+      "input": {
+        "type": "javascript_error"
+      },
+      "expect": {
+        "action": "webview_javascript_error"
+      }
+    },
+    {
+      "id": "webview-error.something_else",
+      "input": {
+        "type": "something_else"
+      },
+      "expect": {
+        "action": "webview_javascript_error"
+      }
+    },
+    {
+      "id": "webview-error.empty",
+      "input": {
+        "type": ""
+      },
+      "expect": {
+        "action": "webview_javascript_error"
+      }
+    }
+  ],
+  "foreignBundleReset": [
+    {
+      "id": "foreign-bundle.missing-path",
+      "input": {
+        "bundlePath": null,
+        "isBuiltin": false,
+        "hasStoredBundleInfo": false
+      },
+      "expect": {
+        "reset": false
+      }
+    },
+    {
+      "id": "foreign-bundle.empty-path",
+      "input": {
+        "bundlePath": "",
+        "isBuiltin": false,
+        "hasStoredBundleInfo": false
+      },
+      "expect": {
+        "reset": false
+      }
+    },
+    {
+      "id": "foreign-bundle.blank-path",
+      "input": {
+        "bundlePath": " \n\t",
+        "isBuiltin": false,
+        "hasStoredBundleInfo": false
+      },
+      "expect": {
+        "reset": false
+      }
+    },
+    {
+      "id": "foreign-bundle.builtin",
+      "input": {
+        "bundlePath": "/data/public",
+        "isBuiltin": true,
+        "hasStoredBundleInfo": false
+      },
+      "expect": {
+        "reset": false
+      }
+    },
+    {
+      "id": "foreign-bundle.stored",
+      "input": {
+        "bundlePath": "/data/versions/abc",
+        "isBuiltin": false,
+        "hasStoredBundleInfo": true
+      },
+      "expect": {
+        "reset": false
+      }
+    },
+    {
+      "id": "foreign-bundle.foreign",
+      "input": {
+        "bundlePath": "/data/versions/abc",
+        "isBuiltin": false,
+        "hasStoredBundleInfo": false
+      },
+      "expect": {
+        "reset": true
+      }
+    }
+  ],
+  "clearPersistedDefaultChannel": [
+    {
+      "id": "clear-default-channel.persist-false.reset-false.native-false.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-false.native-false.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": true
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-false.native-true.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-false.native-true.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": true
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-true.native-false.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-true.native-false.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": true
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-true.native-true.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": true
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-false.reset-true.native-true.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": false,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": true
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-false.native-false.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-false.native-false.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-false.native-true.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-false.native-true.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": false,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-true.native-false.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-true.native-false.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": false,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-true.native-true.restored-false",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": false
+      },
+      "expect": {
+        "clear": false
+      }
+    },
+    {
+      "id": "clear-default-channel.persist-true.reset-true.native-true.restored-true",
+      "input": {
+        "persistDefaultChannelOnReinstall": true,
+        "resetWhenUpdate": true,
+        "nativeBuildVersionChanged": true,
+        "restoredReinstall": true
+      },
+      "expect": {
+        "clear": false
+      }
+    }
+  ],
+  "manifestConcurrency": [
+    {
+      "id": "manifest-concurrency.-3",
+      "input": {
+        "processorCount": -3
+      },
+      "expect": {
+        "maxConcurrentFiles": 32
+      }
+    },
+    {
+      "id": "manifest-concurrency.0",
+      "input": {
+        "processorCount": 0
+      },
+      "expect": {
+        "maxConcurrentFiles": 32
+      }
+    },
+    {
+      "id": "manifest-concurrency.1",
+      "input": {
+        "processorCount": 1
+      },
+      "expect": {
+        "maxConcurrentFiles": 32
+      }
+    },
+    {
+      "id": "manifest-concurrency.4",
+      "input": {
+        "processorCount": 4
+      },
+      "expect": {
+        "maxConcurrentFiles": 32
+      }
+    },
+    {
+      "id": "manifest-concurrency.5",
+      "input": {
+        "processorCount": 5
+      },
+      "expect": {
+        "maxConcurrentFiles": 40
+      }
+    },
+    {
+      "id": "manifest-concurrency.8",
+      "input": {
+        "processorCount": 8
+      },
+      "expect": {
+        "maxConcurrentFiles": 64
+      }
+    },
+    {
+      "id": "manifest-concurrency.32",
+      "input": {
+        "processorCount": 32
+      },
+      "expect": {
+        "maxConcurrentFiles": 64
+      }
+    },
+    {
+      "id": "manifest-concurrency.128",
+      "input": {
+        "processorCount": 128
+      },
+      "expect": {
+        "maxConcurrentFiles": 64
+      }
+    }
+  ],
+  "userAgent": [
+    {
+      "id": "user-agent.android",
+      "input": {
+        "appId": "app.capgo.demo",
+        "pluginVersion": "8.1.0",
+        "versionOs": "14",
+        "platform": "android"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/8.1.0 (app.capgo.demo) android/14"
+      }
+    },
+    {
+      "id": "user-agent.ios",
+      "input": {
+        "appId": "app.capgo.demo",
+        "pluginVersion": "8.1.0",
+        "versionOs": "18.2",
+        "platform": "ios"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/8.1.0 (app.capgo.demo) ios/18.2"
+      }
+    },
+    {
+      "id": "user-agent.empty-values",
+      "input": {
+        "appId": "",
+        "pluginVersion": "",
+        "versionOs": "",
+        "platform": "android"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/unknown (unknown) android/unknown"
+      }
+    },
+    {
+      "id": "user-agent.trimmed",
+      "input": {
+        "appId": "  app.id  ",
+        "pluginVersion": " 1.0 ",
+        "versionOs": " 17 ",
+        "platform": "ios"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/1.0 (app.id) ios/17"
+      }
+    },
+    {
+      "id": "user-agent.latin1-kept",
+      "input": {
+        "appId": "app.café",
+        "pluginVersion": "1.0",
+        "versionOs": "17",
+        "platform": "ios"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/1.0 (app.café) ios/17"
+      }
+    },
+    {
+      "id": "user-agent.control-and-emoji-dropped",
+      "input": {
+        "appId": "app\u0007.id🚀",
+        "pluginVersion": "1.0\n",
+        "versionOs": "17",
+        "platform": "android"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/1.0 (app.id) android/17"
+      }
+    },
+    {
+      "id": "user-agent.only-invalid",
+      "input": {
+        "appId": "🚀",
+        "pluginVersion": "1.0",
+        "versionOs": "17",
+        "platform": "android"
+      },
+      "expect": {
+        "userAgent": "CapacitorUpdater/1.0 (unknown) android/17"
+      }
+    }
+  ],
+  "retryableHttpStatus": [
+    {
+      "id": "retryable-status.200",
+      "input": {
+        "status": 200
+      },
+      "expect": {
+        "retryable": false
+      }
+    },
+    {
+      "id": "retryable-status.404",
+      "input": {
+        "status": 404
+      },
+      "expect": {
+        "retryable": false
+      }
+    },
+    {
+      "id": "retryable-status.408",
+      "input": {
+        "status": 408
+      },
+      "expect": {
+        "retryable": true
+      }
+    },
+    {
+      "id": "retryable-status.429",
+      "input": {
+        "status": 429
+      },
+      "expect": {
+        "retryable": true
+      }
+    },
+    {
+      "id": "retryable-status.499",
+      "input": {
+        "status": 499
+      },
+      "expect": {
+        "retryable": false
+      }
+    },
+    {
+      "id": "retryable-status.500",
+      "input": {
+        "status": 500
+      },
+      "expect": {
+        "retryable": true
+      }
+    },
+    {
+      "id": "retryable-status.503",
+      "input": {
+        "status": 503
+      },
+      "expect": {
+        "retryable": true
+      }
+    }
+  ],
+  "contentRange": [
+    {
+      "id": "content-range.full",
+      "input": {
+        "header": "bytes 0-99/100"
+      },
+      "expect": {
+        "range": {
+          "start": 0,
+          "end": 99,
+          "total": 100
+        }
+      }
+    },
+    {
+      "id": "content-range.unknown-total",
+      "input": {
+        "header": "bytes 100-199/*"
+      },
+      "expect": {
+        "range": {
+          "start": 100,
+          "end": 199,
+          "total": -1
+        }
+      }
+    },
+    {
+      "id": "content-range.padded",
+      "input": {
+        "header": "  bytes 0-9/10  "
+      },
+      "expect": {
+        "range": {
+          "start": 0,
+          "end": 9,
+          "total": 10
+        }
+      }
+    },
+    {
+      "id": "content-range.inner-spaces",
+      "input": {
+        "header": "bytes  0 - 9 / 10"
+      },
+      "expect": {
+        "range": {
+          "start": 0,
+          "end": 9,
+          "total": 10
+        }
+      }
+    },
+    {
+      "id": "content-range.missing",
+      "input": {
+        "header": null
+      },
+      "expect": {
+        "range": null
+      }
+    },
+    {
+      "id": "content-range.empty",
+      "input": {
+        "header": ""
+      },
+      "expect": {
+        "range": null
+      }
+    },
+    {
+      "id": "content-range.wrong-unit",
+      "input": {
+        "header": "items 0-1/2"
+      },
+      "expect": {
+        "range": null
+      }
+    },
+    {
+      "id": "content-range.reversed",
+      "input": {
+        "header": "bytes 5-3/10"
+      },
+      "expect": {
+        "range": null
+      }
+    },
+    {
+      "id": "content-range.not-numeric",
+      "input": {
+        "header": "bytes a-b/10"
+      },
+      "expect": {
+        "range": null
+      }
+    },
+    {
+      "id": "content-range.no-total",
+      "input": {
+        "header": "bytes 0-99"
+      },
+      "expect": {
+        "range": null
+      }
+    }
+  ],
+  "zipResumePlan": [
+    {
+      "id": "zip-resume.partial-matches",
+      "input": {
+        "responseCode": 206,
+        "downloadedBytes": 100,
+        "contentRange": "bytes 100-199/200"
+      },
+      "expect": {
+        "responseCode": 206,
+        "writeOffset": 100
+      }
+    },
+    {
+      "id": "zip-resume.partial-restarts",
+      "input": {
+        "responseCode": 206,
+        "downloadedBytes": 100,
+        "contentRange": "bytes 0-199/200"
+      },
+      "expect": {
+        "responseCode": 200,
+        "writeOffset": 0
+      }
+    },
+    {
+      "id": "zip-resume.partial-mismatch",
+      "input": {
+        "responseCode": 206,
+        "downloadedBytes": 100,
+        "contentRange": "bytes 50-199/200"
+      },
+      "expect": {
+        "error": "invalid_content_range"
+      }
+    },
+    {
+      "id": "zip-resume.partial-missing-range",
+      "input": {
+        "responseCode": 206,
+        "downloadedBytes": 100,
+        "contentRange": null
+      },
+      "expect": {
+        "error": "invalid_content_range"
+      }
+    },
+    {
+      "id": "zip-resume.full-after-partial",
+      "input": {
+        "responseCode": 200,
+        "downloadedBytes": 100,
+        "contentRange": null
+      },
+      "expect": {
+        "responseCode": 200,
+        "writeOffset": 0
+      }
+    },
+    {
+      "id": "zip-resume.full-fresh",
+      "input": {
+        "responseCode": 200,
+        "downloadedBytes": 0,
+        "contentRange": null
+      },
+      "expect": {
+        "responseCode": 200,
+        "writeOffset": 0
+      }
+    },
+    {
+      "id": "zip-resume.other-status",
+      "input": {
+        "responseCode": 404,
+        "downloadedBytes": 50,
+        "contentRange": null
+      },
+      "expect": {
+        "responseCode": 404,
+        "writeOffset": 50
+      }
+    }
+  ],
+  "appendHttpBody": [
+    {
+      "id": "append-http-body.206.10",
+      "input": {
+        "statusCode": 206,
+        "existingBytes": 10
+      },
+      "expect": {
+        "append": true
+      }
+    },
+    {
+      "id": "append-http-body.206.0",
+      "input": {
+        "statusCode": 206,
+        "existingBytes": 0
+      },
+      "expect": {
+        "append": false
+      }
+    },
+    {
+      "id": "append-http-body.200.10",
+      "input": {
+        "statusCode": 200,
+        "existingBytes": 10
+      },
+      "expect": {
+        "append": false
+      }
+    },
+    {
+      "id": "append-http-body.416.10",
+      "input": {
+        "statusCode": 416,
+        "existingBytes": 10
+      },
+      "expect": {
+        "append": false
+      }
+    }
+  ],
+  "rateLimitDeadline": [
+    {
+      "id": "rate-limit.header-seconds",
+      "input": {
+        "retryAfter": "30",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000030000
+      }
+    },
+    {
+      "id": "rate-limit.header-padded",
+      "input": {
+        "retryAfter": " 30 ",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000030000
+      }
+    },
+    {
+      "id": "rate-limit.header-fraction",
+      "input": {
+        "retryAfter": "1.5",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000001500
+      }
+    },
+    {
+      "id": "rate-limit.header-zero",
+      "input": {
+        "retryAfter": "0",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    },
+    {
+      "id": "rate-limit.header-negative-no-body",
+      "input": {
+        "retryAfter": "-5",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    },
+    {
+      "id": "rate-limit.header-http-date",
+      "input": {
+        "retryAfter": "Wed, 21 Oct 2015 07:28:00 GMT",
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    },
+    {
+      "id": "rate-limit.header-invalid-body-more-info",
+      "input": {
+        "retryAfter": "abc",
+        "body": "{\"moreInfo\":{\"retryAfterSeconds\":10}}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000010000
+      }
+    },
+    {
+      "id": "rate-limit.body-top-level",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"retryAfterSeconds\":5}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000005000
+      }
+    },
+    {
+      "id": "rate-limit.body-more-info-wins",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"moreInfo\":{\"retryAfterSeconds\":7},\"retryAfterSeconds\":99}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000007000
+      }
+    },
+    {
+      "id": "rate-limit.body-reset-at",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"moreInfo\":{\"rateLimitResetAt\":1700000060000}}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000060000
+      }
+    },
+    {
+      "id": "rate-limit.body-top-level-reset-at",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"rateLimitResetAt\":1700000045000}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000045000
+      }
+    },
+    {
+      "id": "rate-limit.body-reset-in-past",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"rateLimitResetAt\":1699999999000}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    },
+    {
+      "id": "rate-limit.body-negative-retry-uses-reset",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"moreInfo\":{\"retryAfterSeconds\":-1},\"rateLimitResetAt\":1700000005000}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700000005000
+      }
+    },
+    {
+      "id": "rate-limit.capped-at-one-day",
+      "input": {
+        "retryAfter": null,
+        "body": "{\"retryAfterSeconds\":999999}",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 1700086400000
+      }
+    },
+    {
+      "id": "rate-limit.body-not-json",
+      "input": {
+        "retryAfter": null,
+        "body": "not json",
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    },
+    {
+      "id": "rate-limit.no-hint",
+      "input": {
+        "retryAfter": null,
+        "body": null,
+        "nowMs": 1700000000000
+      },
+      "expect": {
+        "blockedUntilMs": 0
+      }
+    }
+  ],
+  "remoteError": [
+    {
+      "id": "remote-error.both",
+      "input": {
+        "body": "{\"error\":\"too_many_requests\",\"message\":\"Slow down\"}"
+      },
+      "expect": {
+        "error": "too_many_requests",
+        "message": "Slow down"
+      }
+    },
+    {
+      "id": "remote-error.message-only",
+      "input": {
+        "body": "{\"message\":\"m\"}"
+      },
+      "expect": {
+        "error": "",
+        "message": "m"
+      }
+    },
+    {
+      "id": "remote-error.error-only",
+      "input": {
+        "body": "{\"error\":\"e\"}"
+      },
+      "expect": {
+        "error": "e",
+        "message": ""
+      }
+    },
+    {
+      "id": "remote-error.missing",
+      "input": {
+        "body": null
+      },
+      "expect": {
+        "error": "",
+        "message": ""
+      }
+    },
+    {
+      "id": "remote-error.empty",
+      "input": {
+        "body": ""
+      },
+      "expect": {
+        "error": "",
+        "message": ""
+      }
+    },
+    {
+      "id": "remote-error.not-json",
+      "input": {
+        "body": "garbage"
+      },
+      "expect": {
+        "error": "",
+        "message": ""
+      }
+    },
+    {
+      "id": "remote-error.array",
+      "input": {
+        "body": "[]"
+      },
+      "expect": {
+        "error": "",
+        "message": ""
+      }
+    }
+  ],
+  "bundleStatus": [
+    {
+      "id": "bundle-status.success",
+      "input": {
+        "value": "success"
+      },
+      "expect": {
+        "status": "success"
+      }
+    },
+    {
+      "id": "bundle-status.error",
+      "input": {
+        "value": "error"
+      },
+      "expect": {
+        "status": "error"
+      }
+    },
+    {
+      "id": "bundle-status.pending",
+      "input": {
+        "value": "pending"
+      },
+      "expect": {
+        "status": "pending"
+      }
+    },
+    {
+      "id": "bundle-status.deleted",
+      "input": {
+        "value": "deleted"
+      },
+      "expect": {
+        "status": "deleted"
+      }
+    },
+    {
+      "id": "bundle-status.deleting",
+      "input": {
+        "value": "deleting"
+      },
+      "expect": {
+        "status": "deleting"
+      }
+    },
+    {
+      "id": "bundle-status.downloading",
+      "input": {
+        "value": "downloading"
+      },
+      "expect": {
+        "status": "downloading"
+      }
+    },
+    {
+      "id": "bundle-status.unknown",
+      "input": {
+        "value": "installed"
+      },
+      "expect": {
+        "status": null
+      }
+    },
+    {
+      "id": "bundle-status.padded",
+      "input": {
+        "value": " success "
+      },
+      "expect": {
+        "status": "success"
+      }
+    },
+    {
+      "id": "bundle-status.uppercase",
+      "input": {
+        "value": "SUCCESS"
+      },
+      "expect": {
+        "status": "success"
+      }
+    },
+    {
+      "id": "bundle-status.empty",
+      "input": {
+        "value": ""
+      },
+      "expect": {
+        "status": "pending"
+      }
+    }
+  ]
+}

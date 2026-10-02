@@ -13,6 +13,10 @@ appId: app.capgo.updater
       SCENARIO_ID: '${SCENARIO_ID}'
 # Cold launch: the launch check downloads the release and queues it as next.
 - launchApp
+# Maestro's first view-hierarchy query can race the XCTest runner registering the new process
+# ("Application ... is not running" while it is): settle on screenshots first.
+- waitForAnimationToEnd:
+    timeout: 3000
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:
@@ -20,6 +24,10 @@ appId: app.capgo.updater
 # Background applies the queued release; the next launch runs it.
 - pressKey: Home
 - launchApp
+# Maestro's first view-hierarchy query can race the XCTest runner registering the new process
+# ("Application ... is not running" while it is): settle on screenshots first.
+- waitForAnimationToEnd:
+    timeout: 3000
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:

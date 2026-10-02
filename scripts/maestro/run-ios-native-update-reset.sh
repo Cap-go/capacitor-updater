@@ -45,6 +45,8 @@ cleanup() {
 }
 
 trap cleanup EXIT
+# A cancelled CI job sends INT/TERM: exit so the EXIT trap still saves the logs.
+trap 'exit 130' INT TERM
 
 run_with_timeout() {
   local timeout_seconds="$1"

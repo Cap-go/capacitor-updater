@@ -89,6 +89,10 @@ public class Logger {
     private final String kDefaultTimerLabel = "default";
     private boolean useSystemLog;
 
+    boolean usesSystemLog() {
+        return this.useSystemLog;
+    }
+
     public void setBridge(Bridge bridge) {
         this.bridge = bridge;
     }

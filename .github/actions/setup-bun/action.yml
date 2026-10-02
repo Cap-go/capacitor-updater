@@ -19,11 +19,26 @@ inputs:
 runs:
   using: composite
   steps:
+    # macOS runners ship Node: skip the download (over a minute while the simulator boots)
+    # when the preinstalled one is recent enough for the Capacitor CLI (22+).
+    - name: Check preinstalled Node.js
+      id: node
+      shell: bash
+      run: |
+        if command -v node >/dev/null 2>&1 && node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+        fi
     - name: Setup Node.js
+      if: steps.node.outputs.ok != 'true' || runner.os != 'macOS'
       uses: actions/setup-node@v7
       with:
         node-version: 24.x
+    # On macOS, restoring the cached binary can take minutes while the simulator boots; the
+    # installer downloads the release zip directly in seconds.
     - name: Cache Bun runtime
+      if: runner.os != 'macOS'
       uses: actions/cache@v6
       with:
         path: ~/.bun

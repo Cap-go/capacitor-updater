@@ -15,7 +15,7 @@ CapacitorUpdater can be configured with these options:
 | Prop | Type | Description | Default | Since |
 | --- | --- | --- | --- | --- |
 | **`appReadyTimeout`** | `number` | Configure the number of milliseconds the native plugin should wait before considering an update 'failed'. Only available for Android and iOS. | `10000 // (10 seconds)` |  |
-| **`responseTimeout`** | `number` | Configure the number of seconds the native plugin should wait before considering an HTTP timeout. Applies to update checks and file downloads. On Android these are idle connect/read/write timeouts and do not cap total download time; on iOS the request timeout also bounds the total download duration. Only available for Android and iOS. | `20 // (20 second)` |  |
+| **`responseTimeout`** | `number` | Configure the number of seconds the native plugin should wait before considering an HTTP timeout. Applies to update checks, channel and statistics requests, and file downloads. On Android and iOS these are idle connect/read/write timeouts: they do not cap the total download time. Bundle and preview payload transfers always allow at least 60 seconds per read. Only available for Android and iOS. | `20 // (20 second)` |  |
 | **`autoDeleteFailed`** | `boolean` | Configure whether the plugin should use automatically delete failed bundles. Only available for Android and iOS. | `true` |  |
 | **`autoDeletePrevious`** | `boolean` | Configure whether the plugin should use automatically delete previous bundles after a successful update. Only available for Android and iOS. | `true` |  |
 | **`autoUpdate`** | `boolean \| 'always' \| 'off' \| 'atBackground' \| 'atInstall' \| 'onLaunch' \| 'onlyDownload'` | Configure how the plugin checks for, downloads, and applies live updates. The plugin checks for updates when the app moves to the foreground. When {@link periodCheckDelay} is greater than 0, it also checks on a repeating timer while the app stays open. Boolean values keep their existing behavior: - `true`: Same as `"atBackground"`. - `false`: Same as `"off"`. String values merge the previous Auto Update and Direct Update configuration: - `"off"`: Disable automatic update checks. - `"atBackground"`: Check and download automatically on each foreground check, then apply the update the next time the app moves to background. - `"atInstall"`: Apply immediately only after a fresh install or native app store update; otherwise use `"atBackground"` behavior. - `"onLaunch"`: Apply immediately only when the app is brought to the foreground from a killed state (cold start). After that first check, fall back to `"atBackground"` behavior. - `"always"`: Check on every foreground transition and apply immediately whenever an update is available. - `"onlyDownload"`: Check and download automatically, emit `updateAvailable`, and never set the next bundle or apply an update automatically. Instant apply modes (`"atInstall"`, `"onLaunch"`, `"always"`) apply while the user is waiting. Upload with `npx @capgo/cli@latest bundle upload --delta` so only changed files download. A full zip upload slows the user experience. These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`. Only available for Android and iOS. | `true` |  |
@@ -921,14 +921,20 @@ foreground with auto-update enabled. It is useful for native integrations
 such as a silent push notification asking the app to check for a Capgo
 bundle without reimplementing the update protocol in JavaScript.
 
+The check runs whatever the `autoUpdate` mode is. When `autoUpdate` is off
+(or `onlyDownload`), a new bundle is downloaded and announced with
+`updateAvailable` but never set as next or installed.
+
 The promise resolves after the native background work has been queued, not
 after the update has been downloaded or installed. Listen to updater events
 such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
 `noNeedUpdate` for the final result.
 
 Native support is available on iOS and Android. On Web, this method returns
-a result with `status: 'unavailable'`. Native platforms also return
-`unavailable` when the native auto-update system is disabled.
+a result with `status: 'unavailable'`. Native platforms return
+`unavailable` when the update URL is missing or invalid,
+`preview_session` while a preview session is active, and
+`already_running` when an update check is still running.
 
 **Returns**
 

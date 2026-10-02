@@ -1,9 +1,6 @@
 ext {
     junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
-    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.3.0'
-    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.7.0'
-    okhttpVersion = project.hasProperty('okhttpVersion') ? rootProject.ext.okhttpVersion : '4.12.0'
 }
 
 buildscript {
@@ -26,7 +23,7 @@ android {
         targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
         versionCode 1
         versionName "1.0"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
     }
     buildTypes {
         release {
@@ -57,17 +54,100 @@ dependencies {
     implementation "com.google.android.gms:play-services-tasks:18.4.1"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
+    // BridgeActivity extends AppCompatActivity: the plugin needs AppCompat on its compile classpath.
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     // Play Core library for in-app updates
     implementation 'com.google.android.play:app-update:2.1.0'
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "androidx.work:work-testing:$work_version"
     testImplementation 'org.mockito:mockito-core:5.23.0'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.17'
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
-    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
-    implementation 'org.brotli:dec:0.1.2'
-    implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+}
+
+// JVM unit tests load the shared Rust core (../core) built for the host machine.
+// The npm package does not ship core/, so app builds never run cargo; they use
+// the prebuilt src/main/jniLibs from scripts/build-core.sh android.
+def capgoCoreDir = file("../core")
+
+// Some ld releases end the indirect symbol table of the host dylib on a 4-byte boundary and
+// put the string table right after it; newer dyld refuses that ("mis-aligned LINKEDIT string
+// pool"). Host test library only: move the string table to an 8-byte boundary and re-sign.
+def alignMachOStringTable = { File dylib ->
+    def read = { java.nio.ByteBuffer.wrap(dylib.bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN) }
+    def stringTableOffset = { java.nio.ByteBuffer buffer ->
+        int offset = 32
+        for (int index = 0; index < buffer.getInt(16); index++) {
+            if (buffer.getInt(offset) == 0x2) {
+                return offset
+            }
+            offset += buffer.getInt(offset + 4)
+        }
+        return -1
+    }
+    def buffer = read()
+    if (buffer.getInt(0) != (int) 0xfeedfacf) {
+        return
+    }
+    int symtab = stringTableOffset(buffer)
+    if (symtab < 0 || buffer.getInt(symtab + 16) % 8 == 0) {
+        return
+    }
+    def sign = { List<String> args ->
+        def process = (["codesign"] + args + [dylib.absolutePath]).execute()
+        process.waitForProcessOutput(System.out, System.err)
+        if (process.exitValue() != 0) {
+            throw new GradleException("codesign ${args} failed for ${dylib}")
+        }
+    }
+    sign(["--remove-signature"])
+    buffer = read()
+    int stroff = buffer.getInt(symtab + 16)
+    int pad = 8 - stroff % 8
+    byte[] original = buffer.array()
+    byte[] patched = new byte[original.length + pad]
+    System.arraycopy(original, 0, patched, 0, stroff)
+    System.arraycopy(original, stroff, patched, stroff + pad, original.length - stroff)
+    def out = java.nio.ByteBuffer.wrap(patched).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    out.putInt(symtab + 16, stroff + pad)
+    int offset = 32
+    for (int index = 0; index < out.getInt(16); index++) {
+        if (out.getInt(offset) == 0x19 && new String(patched, offset + 8, 10, "US-ASCII") == "__LINKEDIT") {
+            long filesize = out.getLong(offset + 48) + pad
+            out.putLong(offset + 48, filesize)
+            out.putLong(offset + 32, Math.max(out.getLong(offset + 32), (filesize + 0x3fff) & ~0x3fffL))
+        }
+        offset += out.getInt(offset + 4)
+    }
+    dylib.bytes = patched
+    sign(["-s", "-", "-f"])
+}
+
+if (capgoCoreDir.exists()) {
+    def capgoCoreHostLibDir = new File(capgoCoreDir, "target/host/release")
+    def buildCapgoCoreHost = tasks.register("buildCapgoCoreHost", Exec) {
+        description = "Builds the Capgo Rust core for the host JVM (unit tests)"
+        workingDir capgoCoreDir
+        def cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty('user.home')}/.cargo"
+        def rustupCargo = new File(cargoHome, "bin/cargo")
+        executable rustupCargo.exists() ? rustupCargo.absolutePath : "cargo"
+        args "build", "--release", "--locked", "--features", "jni", "--target-dir", "target/host"
+        inputs.dir(new File(capgoCoreDir, "src"))
+        inputs.file(new File(capgoCoreDir, "Cargo.toml"))
+        inputs.file(new File(capgoCoreDir, "Cargo.lock"))
+        outputs.dir(capgoCoreHostLibDir)
+        doLast {
+            if (System.getProperty("os.name").toLowerCase().contains("mac")) {
+                alignMachOStringTable(new File(capgoCoreHostLibDir, System.mapLibraryName("capgo_updater_core")))
+            }
+        }
+    }
+    tasks.withType(Test).configureEach {
+        dependsOn buildCapgoCoreHost
+        // Re-run the JVM tests whenever the core library changes.
+        inputs.files(buildCapgoCoreHost)
+        systemProperty "capgo.core.hostLibrary", new File(capgoCoreHostLibDir, System.mapLibraryName("capgo_updater_core")).absolutePath
+    }
 }
 
 tasks.withType(Test) {
