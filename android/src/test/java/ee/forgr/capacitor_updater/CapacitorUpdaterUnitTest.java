@@ -1861,14 +1861,18 @@ public class CapacitorUpdaterUnitTest {
         final LaunchStartAfterNativeResetCapgoUpdater updater = new LaunchStartAfterNativeResetCapgoUpdater();
         updater.reset(true);
 
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
-        plugin.implementation = updater;
-        plugin.reportAppLaunchStartForTesting();
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        assertEquals("app_launch_start", updater.lastStatsAction);
-        assertEquals("builtin", updater.lastStatsVersionName);
-        assertEquals("plugin_load", updater.lastStatsMetadata.get("source"));
-        assertNotNull(updater.lastStatsMetadata.get("launch_started_at"));
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = updater;
+            plugin.reportAppLaunchStartForTesting();
+
+            assertEquals("app_launch_start", updater.lastStatsAction);
+            assertEquals("builtin", updater.lastStatsVersionName);
+            assertEquals("plugin_load", updater.lastStatsMetadata.get("source"));
+            assertNotNull(updater.lastStatsMetadata.get("launch_started_at"));
+        }
     }
 
     @Test
