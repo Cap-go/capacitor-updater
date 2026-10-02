@@ -140,6 +140,30 @@ jobs:
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
+
+  # Split from build_ios: the core build, device build, packed-package check and the
+  # simulator test build together came within seconds of the 10 minute cap.
+  test_ios:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Run iOS native tests
         id: test_ios
         run: bun run native:test:ios
