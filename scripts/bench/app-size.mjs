@@ -63,12 +63,17 @@ export function iosSize(label) {
   if (!existsSync(app)) return null;
   const exe = path.join(app, 'App');
   const archs = sh('lipo', ['-archs', exe]).trim();
-  let arm64Bytes = statSync(exe).size;
-  if (archs.split(' ').length > 1) {
-    const tmp = path.join(appsDir, `.${label}-App-arm64`);
-    sh('lipo', [exe, '-thin', 'arm64', '-output', tmp]);
-    arm64Bytes = statSync(tmp).size;
-    rmSync(tmp, { force: true });
+  const archList = archs.split(/\s+/).filter(Boolean);
+  // No arm64 slice (an x86_64-only simulator build): no arm64 size.
+  let arm64Bytes = null;
+  if (archList.includes('arm64')) {
+    arm64Bytes = statSync(exe).size;
+    if (archList.length > 1) {
+      const tmp = path.join(appsDir, `.${label}-App-arm64`);
+      sh('lipo', [exe, '-thin', 'arm64', '-output', tmp]);
+      arm64Bytes = statSync(tmp).size;
+      rmSync(tmp, { force: true });
+    }
   }
   const fwDir = path.join(app, 'Frameworks');
   const frameworks = existsSync(fwDir)

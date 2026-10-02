@@ -24,12 +24,21 @@ bench_acquire_lock() {
   local waited=0 owner
   until mkdir "$BENCH_DEVICE_LOCK" 2>/dev/null; do
     # A runner killed with SIGKILL leaves its lock behind: reclaim it when its owner is gone.
+    # One runner reclaims at a time, and checks the owner again under that guard: another one
+    # may have reclaimed the lock and taken it since the first read.
     owner="$(cat "$BENCH_DEVICE_LOCK/pid" 2>/dev/null || true)"
     if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-      echo "[bench] removing stale device lock of PID $owner"
-      rm -f "$BENCH_DEVICE_LOCK/pid"
-      rmdir "$BENCH_DEVICE_LOCK" 2>/dev/null || true
-      continue
+      # A guard left by a runner killed while reclaiming expires after a minute.
+      find "$BENCH_DEVICE_LOCK.reclaim" -maxdepth 0 -mmin +1 -exec rmdir {} \; 2>/dev/null || true
+      if mkdir "$BENCH_DEVICE_LOCK.reclaim" 2>/dev/null; then
+        if [[ "$(cat "$BENCH_DEVICE_LOCK/pid" 2>/dev/null || true)" == "$owner" ]]; then
+          echo "[bench] removing stale device lock of PID $owner"
+          rm -f "$BENCH_DEVICE_LOCK/pid"
+          rmdir "$BENCH_DEVICE_LOCK" 2>/dev/null || true
+        fi
+        rmdir "$BENCH_DEVICE_LOCK.reclaim"
+        continue
+      fi
     fi
     if ((waited % 300 == 0)); then echo "[bench] waiting for device lock $BENCH_DEVICE_LOCK (${waited}s)"; fi
     sleep 15

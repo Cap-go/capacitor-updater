@@ -10,6 +10,7 @@
 #                   forwarder handles bursts of 16+ new connections badly (some wait for a 1 s SYN
 #                   retry), which penalizes clients that open many parallel connections.
 # BENCH_DEVICE_BASE_URL, when set, overrides the URL for either transport.
+# ANDROID_SERIAL (read by adb itself) selects the device when several are connected.
 set -euo pipefail
 BENCH_ANDROID_TRANSPORT="${BENCH_ANDROID_TRANSPORT:-host}"
 case "$BENCH_ANDROID_TRANSPORT" in
@@ -60,7 +61,16 @@ fi
 bench_acquire_lock
 STARTED_EMULATOR=0
 WIFI_DISABLED=0
-if ! "$ADB" devices | grep -q "device$"; then
+devices="$("$ADB" devices | grep -c "device$" || true)"
+if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+  if [[ "$("$ADB" get-state 2>/dev/null)" != "device" ]]; then
+    echo "[bench] device $ANDROID_SERIAL (ANDROID_SERIAL) is not connected" >&2
+    exit 1
+  fi
+elif ((devices > 1)); then
+  echo "[bench] $devices Android devices are connected: set ANDROID_SERIAL to the one to use" >&2
+  exit 1
+elif ((devices == 0)); then
   echo "[bench] starting emulator ${BENCH_AVD:-capgo_mem_api36}"
   nohup "$SDK/emulator/emulator" -avd "${BENCH_AVD:-capgo_mem_api36}" -no-window -no-audio -no-snapshot-save \
     >"$BENCH_LOG_DIR/emulator.log" 2>&1 &
@@ -109,7 +119,7 @@ fi
 # wlan0 is still associating (route still eth0) and becomes the default route mid-run.
 if [[ "$BENCH_ANDROID_TRANSPORT" == "host" ]]; then
   if "$ADB" shell ip route get 10.0.2.2 2>/dev/null | grep -q wlan0 \
-    || [[ "$("$ADB" shell settings get global wifi_on 2>/dev/null | tr -d '\r')" != "0" ]]; then
+    || [[ "$("$ADB" shell settings get global wifi_on 2>/dev/null | tr -d '\r')" == "1" ]]; then
     "$ADB" shell svc wifi disable >/dev/null
     WIFI_DISABLED=1
     for _ in $(seq 1 30); do
