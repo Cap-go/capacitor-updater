@@ -3613,7 +3613,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void leavePreviewSessionForLaunchIntentIfNeeded() {
-        final Intent intent = getActivity() == null ? null : getActivity().getIntent();
+        final Bridge bridge = getBridge();
+        final Activity launchActivity = bridge == null ? null : bridge.getActivity();
+        final Intent intent = launchActivity == null ? null : launchActivity.getIntent();
         if (
             intent == null ||
             !Intent.ACTION_VIEW.equals(intent.getAction()) ||
