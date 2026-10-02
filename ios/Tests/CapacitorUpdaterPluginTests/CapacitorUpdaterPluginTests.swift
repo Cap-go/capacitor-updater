@@ -2669,6 +2669,48 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(resetImplementation.resetIsInternal)
     }
 
+    func testAppLaunchStartReportsBuiltinAfterNativeBuildReset() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let appSessionKeys = [
+            "CapacitorUpdater.appSessionId",
+            "CapacitorUpdater.appSessionForeground",
+            "CapacitorUpdater.appSessionStartedAt",
+            "CapacitorUpdater.lastReportedUncleanSessionId"
+        ]
+        UserDefaults.standard.set("9", forKey: nativeBuildKey)
+        appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        }
+
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let statsImplementation = ResettingHealthStatsCapgoUpdater()
+        statsImplementation.setLogger(Logger(withTag: "TestLogger", options: Logger.Options(level: .silent)))
+        statsImplementation.statsUrl = "https://example.com/stats"
+        statsImplementation.currentBundleValue = BundleInfo(
+            id: "ota-id",
+            version: "2.8.35",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "ota"
+        )
+        resetPlugin.implementation = statsImplementation
+        resetPlugin.setCurrentBuildVersionForTesting("15")
+
+        XCTAssertTrue(
+            resetPlugin.resetStartupBundleAndReportAppLaunchStartForTesting(
+                resetWhenUpdate: true,
+                nativeBuildVersionChanged: true
+            )
+        )
+
+        XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
+        XCTAssertEqual(statsImplementation.lastStatsVersionName, "builtin")
+        XCTAssertEqual(statsImplementation.lastStatsMetadata?["source"], "plugin_load")
+        XCTAssertNotNil(statsImplementation.lastStatsMetadata?["launch_started_at"])
+    }
+
     func testShowSplashscreenOptionsDisableAutoHide() {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
 
