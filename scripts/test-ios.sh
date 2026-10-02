@@ -14,11 +14,12 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
   exit 1
 fi
 
-# After the last test, xcodebuild normally exits within seconds. If the test process lingers,
-# print its stacks (to find what keeps it alive) and stop it instead of burning the CI job cap.
-TEARDOWN_LIMIT_SECONDS="${CAPGO_IOS_TEST_TEARDOWN_LIMIT_SECONDS:-45}"
+# After the last test, xcodebuild normally exits within seconds. On CI it sometimes hangs in
+# its own tooling afterwards: stop it instead of burning the job cap (the summary decides).
+TEARDOWN_LIMIT_SECONDS="${CAPGO_IOS_TEST_TEARDOWN_LIMIT_SECONDS:-20}"
 LOG_FILE="$(mktemp -t capgo-ios-test)"
-trap 'kill "${TAIL_PID:-}" 2>/dev/null || true; rm -f "$LOG_FILE"' EXIT
+START_MARKER="$(mktemp -t capgo-ios-test-start)"
+trap 'kill "${TAIL_PID:-}" 2>/dev/null || true; rm -f "$LOG_FILE" "$START_MARKER"' EXIT
 
 xcodebuild test -scheme CapgoCapacitorUpdater -destination "id=${SIMULATOR_ID}" "$@" > "$LOG_FILE" 2>&1 &
 XCODEBUILD_PID=$!
@@ -31,20 +32,23 @@ while kill -0 "$XCODEBUILD_PID" 2>/dev/null; do
     finished_at=$SECONDS
   fi
   if [[ -n "$finished_at" ]] && (( SECONDS - finished_at > TEARDOWN_LIMIT_SECONDS )); then
-    echo "::warning::iOS tests finished but xcodebuild did not exit within ${TEARDOWN_LIMIT_SECONDS}s; test process stacks:"
+    echo "::warning::iOS tests finished but xcodebuild did not exit within ${TEARDOWN_LIMIT_SECONDS}s; stopping it (the test summary decides the result)."
     ps -axo pid,ppid,etime,command | grep -iE "xctest|xcodebuild|testmanagerd" | grep -v grep || true
-    for pid in $(pgrep -f "xctest" || true) "$XCODEBUILD_PID"; do
-      echo "---- sample of $pid"
-      sample "$pid" 2 -mayDie 2>&1 | grep -vE "^\s*$" | head -200 || true
-    done
-    # A test process that crashed while exiting leaves a report (xcodebuild then gathers it).
-    for report in $(find "$HOME/Library/Logs/DiagnosticReports" -name 'xctest*' -newer "$LOG_FILE" 2>/dev/null | head -3); do
+    # A test process that crashed while exiting leaves a report.
+    for report in $(find "$HOME/Library/Logs/DiagnosticReports" -name 'xctest*' -newer "$START_MARKER" 2>/dev/null | head -3); do
       echo "---- crash report $report"
       head -c 12000 "$report"
       echo
     done
-    pkill -P "$XCODEBUILD_PID" 2>/dev/null || true
-    kill "$XCODEBUILD_PID" 2>/dev/null || true
+    # Seen on CI: xcodebuild waiting on a hung `xcodebuild -version -sdk` child after the tests.
+    pkill -TERM -P "$XCODEBUILD_PID" 2>/dev/null || true
+    kill -TERM "$XCODEBUILD_PID" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$XCODEBUILD_PID" 2>/dev/null || break
+      sleep 2
+    done
+    pkill -KILL -P "$XCODEBUILD_PID" 2>/dev/null || true
+    kill -KILL "$XCODEBUILD_PID" 2>/dev/null || true
     break
   fi
   sleep 2
