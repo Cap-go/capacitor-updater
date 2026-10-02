@@ -2689,7 +2689,6 @@ class CapacitorUpdaterTests: XCTestCase {
         resetPlugin.implementation = statsImplementation
         resetPlugin.setCurrentBuildVersionForTesting("15")
 
-        statsImplementation.autoReset()
         XCTAssertTrue(resetPlugin.resetCurrentBundleForNativeBuildChangeIfNeeded())
         resetPlugin.reportAppLaunchStartForTesting()
 
