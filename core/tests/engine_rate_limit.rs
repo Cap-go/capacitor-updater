@@ -52,7 +52,19 @@ fn rate_limit_blocks_following_requests() {
     };
     let stats_before = stats_requests();
     t.call("statsSend", json!({ "action": "set" }));
-    std::thread::sleep(Duration::from_millis(1500));
+    // Remove the blocker only once a write really failed.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !t
+        .host
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(_, line)| line.contains("Failed to persist stats queue"))
+    {
+        assert!(std::time::Instant::now() < deadline, "stats write never failed");
+        std::thread::sleep(Duration::from_millis(20));
+    }
     std::fs::remove_dir_all(&blocker).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
