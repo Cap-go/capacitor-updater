@@ -294,6 +294,7 @@ impl Http {
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Result<ureq::Response, NetError> {
+        crate::host::release_method_lane();
         let mut current = url.to_string();
         let mut method = method.to_string();
         let mut body = body;

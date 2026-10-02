@@ -76,6 +76,10 @@ pub mod hooks {
     pub const SCHEDULE_DOWNLOAD: &str = "scheduleDownload";
     /// `{url}` -> `{type:"http"|"direct", host, port}`: the system proxy for a request.
     pub const PROXY_FOR_URL: &str = "proxyForUrl";
+    /// `{}`: the detached plugin method running on this thread is about to wait (network,
+    /// `notifyAppReady`): the host's method lane may run the next calls. Hosts keep the lane
+    /// until this hook or the method's return, so methods take effect in call order.
+    pub const RELEASE_METHOD_LANE: &str = "releaseMethodLane";
 }
 
 /// Persisted keys owned by the plugin layer (names kept from every previous version).
@@ -523,6 +527,7 @@ impl Engine {
 
     /// Download gate: blocks until the launch cleanup finished (bounded).
     pub(crate) fn wait_for_cleanup(&self) -> CoreResult<()> {
+        crate::host::release_method_lane();
         let gate = &self.plugin.cleanup;
         let complete = gate.complete.lock().unwrap();
         if *complete || !self.plugin_state().loaded {
@@ -551,6 +556,9 @@ impl Engine {
 
     /// Runs one JavaScript plugin method: `{ name, args }`.
     pub fn plugin_method(&self, name: &str, args: &Value) -> Value {
+        let _lane = DETACHED_METHODS
+            .contains(&name)
+            .then(|| crate::host::MethodLaneHold::new(self.host.clone()));
         match self.run_plugin_method(name, args) {
             Ok(value) => json!({ "resolve": value }),
             Err(rejection) => json!({ "reject": rejection.to_json() }),

@@ -43,6 +43,8 @@ impl Engine {
 
     /// Waits until `notifyAppReady` fires after `token` (false on timeout).
     pub(crate) fn wait_for_app_ready(&self, token: u64, timeout: Duration) -> bool {
+        // notifyAppReady comes through the host's method lane.
+        crate::host::release_method_lane();
         let inner = self.plugin.ready.inner.lock().unwrap();
         let (inner, result) = self
             .plugin

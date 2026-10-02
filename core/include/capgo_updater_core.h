@@ -40,7 +40,7 @@ void capgo_core_free(char *value);
  * returns a host-allocated JSON object reply or NULL ("not handled"). Host
  * services: willSwitchBundle, cancelVersionDownload, beforeDownload,
  * cancelAllDownloads, sendStats, cleartextPermitted, proxyForUrl,
- * scheduleDownload. Plugin layer (payloads in core/src/engine/plugin/mod.rs,
+ * scheduleDownload, releaseMethodLane. Plugin layer (payloads in core/src/engine/plugin/mod.rs,
  * `hooks`): applyBundle (bundle switching), splash, previewLoader,
  * previewNotice, shakeMenu, shakeMenuProgress, keepUrlPath, backgroundTask,
  * excludeFromBackup.

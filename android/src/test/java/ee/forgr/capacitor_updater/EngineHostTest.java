@@ -284,6 +284,112 @@ public class EngineHostTest {
         lanes.shutdown();
     }
 
+    /**
+     * The lane waits until a detached method waits (releaseMethodLane) or returns: what it changes first happens in
+     * call order, before the calls that follow it (set then reset, set then current).
+     */
+    @Test
+    public void detachedMethodsTakeEffectInCallOrder() throws Exception {
+        final EngineMethodLanes lanes = new EngineMethodLanes();
+        lanes.setDetachedMethods(new JSONArray().put("detached"));
+        // Two thirds detached: below MAX_DETACHED_THREADS, so each one starts at once.
+        final int calls = (EngineMethodLanes.MAX_DETACHED_THREADS * 3) / 2 - 1;
+        final List<String> seen = new CopyOnWriteArrayList<>();
+        final CountDownLatch done = new CountDownLatch(calls);
+        for (int call = 0; call < calls; call++) {
+            final String label = (call % 3 == 0 ? "lane " : "detached ") + call;
+            lanes.submit(
+                call % 3 == 0 ? "current" : "detached",
+                () -> {
+                    seen.add(label);
+                    if (label.startsWith("detached")) {
+                        // The engine's releaseMethodLane hook, then the wait (network, notifyAppReady).
+                        EngineMethodLanes.releaseCurrentThread();
+                        try {
+                            Thread.sleep(200);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    done.countDown();
+                },
+                () -> {}
+            );
+        }
+        assertTrue(done.await(20, TimeUnit.SECONDS));
+        for (int call = 0; call < calls; call++) {
+            assertEquals((call % 3 == 0 ? "lane " : "detached ") + call, seen.get(call));
+        }
+        lanes.shutdown();
+    }
+
+    /** At most MAX_DETACHED_THREADS detached methods run; more queue without holding up the lane (notifyAppReady). */
+    @Test
+    public void detachedThreadsAreBoundedAndNeverBlockTheLane() throws Exception {
+        final EngineMethodLanes lanes = new EngineMethodLanes();
+        lanes.setDetachedMethods(new JSONArray().put("detached"));
+        final int calls = EngineMethodLanes.MAX_DETACHED_THREADS * 3;
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch saturated = new CountDownLatch(EngineMethodLanes.MAX_DETACHED_THREADS);
+        final CountDownLatch done = new CountDownLatch(calls);
+        final java.util.concurrent.atomic.AtomicInteger running = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger peak = new java.util.concurrent.atomic.AtomicInteger();
+        for (int call = 0; call < calls; call++) {
+            lanes.submit(
+                "detached",
+                () -> {
+                    peak.accumulateAndGet(running.incrementAndGet(), Math::max);
+                    EngineMethodLanes.releaseCurrentThread();
+                    saturated.countDown();
+                    try {
+                        release.await();
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    running.decrementAndGet();
+                    done.countDown();
+                },
+                () -> {}
+            );
+        }
+        assertTrue(saturated.await(10, TimeUnit.SECONDS));
+        final long started = System.nanoTime();
+        final CountDownLatch laneRan = new CountDownLatch(1);
+        lanes.submit("notifyAppReady", laneRan::countDown, () -> {});
+        assertTrue(laneRan.await(5, TimeUnit.SECONDS));
+        assertTrue("queued methods do not hold the lane", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(1));
+        assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, running.get());
+        release.countDown();
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        assertEquals(EngineMethodLanes.MAX_DETACHED_THREADS, peak.get());
+        lanes.shutdown();
+    }
+
+    /** A detached method that never reports a wait holds the lane for the limit at most. */
+    @Test
+    public void laneHoldIsBounded() throws Exception {
+        final EngineMethodLanes lanes = new EngineMethodLanes(200);
+        lanes.setDetachedMethods(new JSONArray().put("detached"));
+        final CountDownLatch release = new CountDownLatch(1);
+        lanes.submit(
+            "detached",
+            () -> {
+                try {
+                    release.await();
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            },
+            () -> {}
+        );
+        final CountDownLatch laneRan = new CountDownLatch(1);
+        lanes.submit("current", laneRan::countDown, () -> {});
+        assertTrue(laneRan.await(5, TimeUnit.SECONDS));
+        assertEquals(1, release.getCount());
+        release.countDown();
+        lanes.shutdown();
+    }
+
     private JSONObject call(final String name, final JSONObject args) {
         try {
             return method(name, args);

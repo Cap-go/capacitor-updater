@@ -65,16 +65,15 @@ pub const ENGINE_METHODS: &[&str] = &[
 /// JavaScript does not await (`next()` then `reload()`) behave like every
 /// previous version, where Capacitor ran them in order on one plugin thread
 /// (Android) or the bridge queue (iOS). These methods are network bound or wait
-/// for `notifyAppReady` from the new page (`set`, `reload`, `reset`): hosts start
-/// them in call order, then run them off the lane, like both previous plugins ran
-/// them on their own threads, so they never block the calls that come after.
+/// for `notifyAppReady` from the new page (`set`, `reload`, `reset`): hosts run
+/// them on another thread and keep the lane until the method waits (the
+/// `releaseMethodLane` hook) or returns. What they change before waiting happens
+/// in call order; the wait never blocks the calls that come after.
 pub const DETACHED_METHODS: &[&str] = &[
     "download",
     "set",
     "reload",
     "reset",
-    "setPreview",
-    "resetPreview",
     "checkPreviewUpdate",
     "updatePreview",
     "getLatest",
@@ -400,6 +399,9 @@ mod tests {
             "current",
             "delete",
             "triggerUpdateCheck",
+            // They never wait: running them off the lane would only let later calls overtake them.
+            "setPreview",
+            "resetPreview",
         ] {
             assert!(!DETACHED_METHODS.contains(&method), "{method}");
         }

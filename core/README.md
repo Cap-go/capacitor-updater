@@ -44,7 +44,13 @@ The main operations a plugin host uses:
 The host callbacks (`CapgoHostCallbacks`, JNI `CapgoEngineHost`) provide logging,
 key-value storage, event delivery and `hook(name, payload)` for platform work:
 `applyBundle`, `splash`, `previewLoader`, `previewNotice`, `shakeMenu`, `shakeMenuProgress`,
-`keepUrlPath`, `backgroundTask`, `excludeFromBackup`, `scheduleDownload` (see `engine::plugin::hooks`).
+`keepUrlPath`, `backgroundTask`, `excludeFromBackup`, `scheduleDownload`, `releaseMethodLane`
+(see `engine::plugin::hooks`).
+
+Hosts run `pluginMethod` calls one at a time in call order. Methods listed by
+`detachedPluginMethods` run on another thread while the host's lane waits until the engine
+calls `releaseMethodLane` (the method now waits for the network or `notifyAppReady`) or the
+method returns.
 
 Downloads run in-process unless the host answers `scheduleDownload {id, version}` with
 `{scheduled: true}` (Android: a WorkManager job that waits for the network, retries with

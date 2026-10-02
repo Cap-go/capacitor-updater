@@ -10,12 +10,34 @@ import Capacitor
 /// Runs JavaScript engine methods in call order, like the bridge queue ran every previous version.
 ///
 /// Every method runs on one serial lane. Detached methods (`detachedPluginMethods`: network calls and
-/// `set` / `reload` / `reset`, which can wait for `notifyAppReady` from the new page) start in call
-/// order, then run on a global queue so they never block the calls that follow.
+/// `set` / `reload` / `reset`, which can wait for `notifyAppReady` from the new page) run on a worker
+/// while the lane waits until the engine reports that the method waits (`releaseMethodLane` hook) or
+/// the method returns. What a detached method changes before waiting is in call order (set then reset);
+/// its wait never blocks the calls that follow.
 final class EngineMethodLanes {
+    /// Detached methods running at once; more wait for a free slot (bursts of waiting calls).
+    static let maxDetached = 32
+    /// Longest the lane waits for a detached method to start waiting (a full queue, a slow step).
+    static let defaultLaneHoldLimit: TimeInterval = 5
+    private static let laneHoldKey = "app.capgo.updater.methodLaneHold"
+
     private let lane = DispatchQueue(label: "app.capgo.updater.methods", qos: .userInitiated)
+    private let detached: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "app.capgo.updater.detached"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = EngineMethodLanes.maxDetached
+        return queue
+    }()
+    private let laneHoldLimit: TimeInterval
     private let lock = NSLock()
     private var detachedMethods: Set<String> = []
+    /// Detached methods submitted and not finished: below the cap, a submitted one starts at once.
+    private var outstanding = 0
+
+    init(laneHoldLimit: TimeInterval = EngineMethodLanes.defaultLaneHoldLimit) {
+        self.laneHoldLimit = laneHoldLimit
+    }
 
     func setDetachedMethods(_ names: [String]) {
         lock.lock()
@@ -29,13 +51,39 @@ final class EngineMethodLanes {
         return detachedMethods.contains(name)
     }
 
+    /// `releaseMethodLane` hook: the detached method running on this thread waits; the lane goes on.
+    static func releaseCurrentThread() {
+        let dictionary = Thread.current.threadDictionary
+        guard let hold = dictionary[laneHoldKey] as? DispatchSemaphore else {
+            return
+        }
+        dictionary.removeObject(forKey: laneHoldKey)
+        hold.signal()
+    }
+
     func submit(_ name: String, _ task: @escaping () -> Void) {
         let detached = isDetached(name)
         lane.async {
-            if detached {
-                DispatchQueue.global(qos: .userInitiated).async(execute: task)
-            } else {
+            guard detached else {
                 task()
+                return
+            }
+            let hold = DispatchSemaphore(value: 0)
+            // Every slot busy: the method queues for one and the lane does not wait for it.
+            self.lock.lock()
+            let startsNow = self.outstanding < Self.maxDetached
+            self.outstanding += 1
+            self.lock.unlock()
+            self.detached.addOperation {
+                Thread.current.threadDictionary[Self.laneHoldKey] = hold
+                task()
+                self.lock.lock()
+                self.outstanding -= 1
+                self.lock.unlock()
+                Self.releaseCurrentThread()
+            }
+            if startsNow {
+                _ = hold.wait(timeout: .now() + self.laneHoldLimit)
             }
         }
     }

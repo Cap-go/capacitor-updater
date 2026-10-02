@@ -255,6 +255,10 @@ public class CapgoUpdater {
                 if ("proxyForUrl".equals(name)) {
                     return proxyForUrlReply(payloadJson, ProxySelector.getDefault());
                 }
+                if ("releaseMethodLane".equals(name)) {
+                    EngineMethodLanes.releaseCurrentThread();
+                    return null;
+                }
                 return listener.onHook(name, payloadJson);
             } catch (RuntimeException e) {
                 logger.error("Hook " + name + " failed: " + e.getMessage());

@@ -301,6 +301,9 @@ import UIKit
         case "cleartextPermitted":
             let ats = Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]
             return ["permitted": Self.atsAllowsCleartext(host: payload["host"] as? String ?? "", ats: ats)]
+        case "releaseMethodLane":
+            EngineMethodLanes.releaseCurrentThread()
+            return nil
         case "proxyForUrl":
             let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue()
             return Self.systemProxy(for: payload["url"] as? String ?? "", settings: settings) { [weak self] message in

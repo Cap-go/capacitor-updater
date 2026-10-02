@@ -938,6 +938,52 @@ fn android_reload_waits_for_notify_app_ready() {
     );
 }
 
+/// Hosts keep their method lane while a detached method runs, until the engine says it
+/// waits (`releaseMethodLane`): `set` switches the bundle first, `getLatest` releases before
+/// its request, and lane methods never release.
+#[test]
+fn detached_methods_release_the_method_lane_when_they_wait() {
+    let p = Plugin::load_with(
+        json!({ "autoUpdate": false }),
+        json!({ "reloadWaitsForAppReady": true, "pendingBundleMinAppReadyTimeoutMs": 1000 }),
+    );
+    let hook_names = || -> Vec<String> {
+        p.t.host
+            .hooks
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    };
+    let releases = || hook_names().iter().filter(|name| *name == "releaseMethodLane").count();
+    p.t.host.hooks.lock().unwrap().clear();
+    p.resolve("current", json!({}));
+    p.resolve("setShakeMenu", json!({ "enabled": true }));
+    assert_eq!(releases(), 0, "lane methods: {:?}", hook_names());
+
+    p.method("getLatest", json!({}));
+    assert_eq!(releases(), 1, "once per call: {:?}", hook_names());
+    assert!(!p.backend.server.requests().is_empty());
+
+    p.t.host.hooks.lock().unwrap().clear();
+    let id = "abcdefghij";
+    p.t.install_bundle(id, "2.0.0", "pending");
+    let engine = p.t.engine.clone();
+    let set = std::thread::spawn(move || engine.call("pluginMethod", &json!({ "name": "set", "args": { "id": id } })));
+    wait_until("set waits for notifyAppReady", || releases() == 1);
+    let names = hook_names();
+    let apply = names
+        .iter()
+        .position(|name| name == "applyBundle")
+        .expect("applyBundle");
+    let release = names.iter().position(|name| name == "releaseMethodLane").unwrap();
+    assert!(apply < release, "switched before releasing: {names:?}");
+    p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
+    assert!(set.join().unwrap().unwrap().get("resolve").is_some());
+    assert_eq!(releases(), 1);
+}
+
 #[test]
 fn reset_methods() {
     let p = Plugin::load(json!({ "autoUpdate": false }));

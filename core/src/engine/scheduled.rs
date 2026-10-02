@@ -241,6 +241,7 @@ impl Engine {
     /// Blocks until job `id` ends, is cancelled, or the engine is released. Without a
     /// network the job waits for it, so this can take as long as the device stays offline.
     fn await_scheduled(&self, id: &str, version: &str, cancel: &Cancel) -> Scheduled {
+        crate::host::release_method_lane();
         self.scheduled_download_waiting(version, true);
         let registry = registry();
         let mut seen_retries = 0;

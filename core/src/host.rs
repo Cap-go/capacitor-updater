@@ -8,7 +8,10 @@
 
 use serde_json::Value;
 
-use crate::engine::plugin::hooks::{CLEARTEXT_PERMITTED, PROXY_FOR_URL};
+use std::cell::RefCell;
+use std::sync::Arc;
+
+use crate::engine::plugin::hooks::{CLEARTEXT_PERMITTED, PROXY_FOR_URL, RELEASE_METHOD_LANE};
 
 /// Payload flag of [`Host::emit_retained`] events: keep the event for listeners
 /// registered after it fired. Hosts strip it from the payload.
@@ -58,6 +61,37 @@ impl HttpProxy {
             host: host.to_string(),
             port: port as u16,
         })
+    }
+}
+
+thread_local! {
+    /// Host whose method lane the detached plugin method running on this thread still holds.
+    static METHOD_LANE: RefCell<Option<Arc<dyn Host>>> = const { RefCell::new(None) };
+}
+
+/// Held while a detached plugin method runs: its host keeps the method lane until the
+/// method blocks ([`release_method_lane`]) or returns, so the calls after it wait for
+/// what it changes first (`set` stages and reloads before `reset` runs).
+pub(crate) struct MethodLaneHold;
+
+impl MethodLaneHold {
+    pub(crate) fn new(host: Arc<dyn Host>) -> Self {
+        METHOD_LANE.with(|lane| *lane.borrow_mut() = Some(host));
+        Self
+    }
+}
+
+impl Drop for MethodLaneHold {
+    fn drop(&mut self) {
+        METHOD_LANE.with(|lane| lane.borrow_mut().take());
+    }
+}
+
+/// Called before the running method waits (network, `notifyAppReady`, launch cleanup,
+/// a scheduled download): its host runs the next calls meanwhile. Once per method.
+pub(crate) fn release_method_lane() {
+    if let Some(host) = METHOD_LANE.with(|lane| lane.borrow_mut().take()) {
+        host.hook(RELEASE_METHOD_LANE, &Value::Object(Default::default()));
     }
 }
 

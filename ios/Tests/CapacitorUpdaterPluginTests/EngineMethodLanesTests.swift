@@ -147,4 +147,93 @@ class EngineMethodLanesTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 5, "well before the 8 s appReadyTimeout")
         XCTAssertEqual(Set(finished), ["reset", "notifyAppReady", "current"])
     }
+
+    /// The lane waits until a detached method waits (releaseMethodLane) or returns: what it changes
+    /// first happens in call order, before the calls that follow it (set then reset, set then current).
+    func testDetachedMethodsTakeEffectInCallOrder() {
+        let lanes = EngineMethodLanes()
+        lanes.setDetachedMethods(["detached"])
+        // Two thirds detached: below maxDetached, so each one starts at once.
+        let calls = EngineMethodLanes.maxDetached * 3 / 2 - 1
+        var seen: [String] = []
+        let lock = NSLock()
+        let done = expectation(description: "every call")
+        done.expectedFulfillmentCount = calls
+        for call in 0..<calls {
+            let lane = call % 3 == 0
+            let label = (lane ? "lane " : "detached ") + String(call)
+            lanes.submit(lane ? "current" : "detached") {
+                lock.lock()
+                seen.append(label)
+                lock.unlock()
+                if !lane {
+                    // The engine's releaseMethodLane hook, then the wait (network, notifyAppReady).
+                    EngineMethodLanes.releaseCurrentThread()
+                    Thread.sleep(forTimeInterval: 0.2)
+                }
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 20)
+        lock.lock()
+        defer { lock.unlock() }
+        XCTAssertEqual(seen, (0..<calls).map { ($0 % 3 == 0 ? "lane " : "detached ") + String($0) })
+    }
+
+    /// At most maxDetached detached methods run; more queue without holding up the lane (notifyAppReady).
+    func testDetachedMethodsAreBoundedAndNeverBlockTheLane() {
+        let lanes = EngineMethodLanes()
+        lanes.setDetachedMethods(["detached"])
+        let calls = EngineMethodLanes.maxDetached * 3
+        let release = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var (running, peak) = (0, 0)
+        let saturated = expectation(description: "every slot busy")
+        saturated.expectedFulfillmentCount = EngineMethodLanes.maxDetached
+        saturated.assertForOverFulfill = false
+        let done = expectation(description: "every call")
+        done.expectedFulfillmentCount = calls
+        let task = {
+            lock.lock()
+            running += 1
+            peak = max(peak, running)
+            lock.unlock()
+            EngineMethodLanes.releaseCurrentThread()
+            saturated.fulfill()
+            release.wait()
+            lock.lock()
+            running -= 1
+            lock.unlock()
+            done.fulfill()
+        }
+        for _ in 0..<calls {
+            lanes.submit("detached", task)
+        }
+        wait(for: [saturated], timeout: 10)
+        let started = Date()
+        let laneRan = expectation(description: "lane method")
+        lanes.submit("notifyAppReady") { laneRan.fulfill() }
+        wait(for: [laneRan], timeout: 5)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "queued methods do not hold the lane")
+        lock.lock()
+        XCTAssertEqual(running, EngineMethodLanes.maxDetached)
+        lock.unlock()
+        for _ in 0..<calls {
+            release.signal()
+        }
+        wait(for: [done], timeout: 10)
+        XCTAssertEqual(peak, EngineMethodLanes.maxDetached)
+    }
+
+    /// A detached method that never reports a wait holds the lane for the limit at most.
+    func testLaneHoldIsBounded() {
+        let lanes = EngineMethodLanes(laneHoldLimit: 0.2)
+        lanes.setDetachedMethods(["detached"])
+        let release = DispatchSemaphore(value: 0)
+        lanes.submit("detached") { release.wait() }
+        let laneRan = expectation(description: "lane method")
+        lanes.submit("current") { laneRan.fulfill() }
+        wait(for: [laneRan], timeout: 5)
+        release.signal()
+    }
 }
