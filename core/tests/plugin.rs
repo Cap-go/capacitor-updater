@@ -646,6 +646,7 @@ fn a_job_finished_without_its_cycle_is_installed_by_the_next_check() {
             .count()
     };
     let downloads = zip_requests();
+    p.background();
     p.foreground();
     let deadline = Instant::now() + Duration::from_secs(8);
     while p.resolve("getNextBundle", json!({})).is_null() {
@@ -1006,6 +1007,31 @@ fn notify_app_ready_racing_the_rollback_check_keeps_the_bundle() {
     assert!(p.events("updateFailed").is_empty());
     assert_eq!(p.current()["id"], id);
     assert_eq!(p.current()["status"], "success");
+}
+
+/// iOS reports the launch foreground twice (load() and the scene's willEnterForeground): one
+/// update check, until the app really goes to the background and comes back.
+#[test]
+fn a_repeated_foreground_runs_one_update_check() {
+    let p = Plugin::load(json!({ "autoUpdate": true }));
+    let checks = || {
+        p.backend
+            .server
+            .requests()
+            .iter()
+            .filter(|request| request.url.starts_with("/updates"))
+            .count()
+    };
+    p.foreground();
+    wait_until("first check", || checks() >= 1);
+    // The first cycle has ended when the repeated event arrives (a fast up-to-date reply).
+    std::thread::sleep(Duration::from_millis(500));
+    p.foreground();
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(checks(), 1, "the repeated foreground is ignored");
+    p.background();
+    p.foreground();
+    wait_until("check after a real background", || checks() >= 2);
 }
 
 #[test]
@@ -1557,6 +1583,7 @@ fn on_launch_installs_once_then_queues() {
     p.resolve("notifyAppReady", json!({ "loadGeneration": p.last_generation() }));
     assert_eq!(p.wait_for_event("appReady", 1)[0]["status"], "update installed");
     p.backend.offer("3.0.0", web_bundle("v3"));
+    p.background();
     p.foreground();
     let ready = p.wait_for_event("appReady", 2);
     assert_eq!(ready[1]["status"], "update downloaded, will install next background");

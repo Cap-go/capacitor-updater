@@ -1,5 +1,6 @@
 //! Engine operation table: JSON in, JSON out.
 
+use crate::host::HostLog;
 use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
@@ -56,6 +57,16 @@ impl Engine {
                     self.plugin_method(req_str(input, "name")?, input.get("args").unwrap_or(&Value::Null))
                 }
                 "appForeground" => {
+                    {
+                        let mut state = self.plugin_state();
+                        if state.foreground_handled {
+                            drop(state);
+                            self.host
+                                .debug("Already in foreground, ignoring a repeated foreground event");
+                            return Ok(json!({ "duplicate": true }));
+                        }
+                        state.foreground_handled = true;
+                    }
                     self.invalidate_app_ready_check();
                     self.plugin_state().in_background = false;
                     self.spawn_plugin_task(|engine| engine.app_moved_to_foreground());

@@ -344,6 +344,9 @@ pub struct PluginState {
     pub ready_guard_armed: bool,
     /// Between `appBackground` and `appForeground`: rollback checks wait for the next foreground.
     pub in_background: bool,
+    /// A host `appForeground` was handled and no `appBackground` came since: a second one is the
+    /// same transition reported twice (iOS: `load()` plus the scene's willEnterForeground).
+    pub foreground_handled: bool,
     /// The bundle the running update cycle downloads.
     pub cycle_download: Option<CycleDownload>,
 }

@@ -296,7 +296,11 @@ impl Engine {
     /// Runs on the caller's thread (the host's background notification) so the
     /// splash screen is up before the OS snapshots the app.
     pub(crate) fn background_splash(&self) {
-        self.plugin_state().in_background = true;
+        {
+            let mut state = self.plugin_state();
+            state.in_background = true;
+            state.foreground_handled = false;
+        }
         // The page is paused: its readiness is checked again from the next foreground.
         self.invalidate_app_ready_check();
         self.mark_session_foreground(false);
