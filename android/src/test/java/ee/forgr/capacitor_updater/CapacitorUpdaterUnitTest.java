@@ -996,7 +996,7 @@ public class CapacitorUpdaterUnitTest {
 
     private static final class LaunchStartAfterNativeResetCapgoUpdater extends CapgoUpdater {
 
-        private BundleInfo currentBundle = new BundleInfo("ota-id", "2.8.35", BundleStatus.SUCCESS, new Date(), "checksum");
+        private BundleInfo currentBundle = new BundleInfo("legacy-bundle-id", "2.8.35", BundleStatus.SUCCESS, new Date(), "checksum");
         private String lastStatsAction;
         private String lastStatsVersionName;
         private Map<String, String> lastStatsMetadata;
