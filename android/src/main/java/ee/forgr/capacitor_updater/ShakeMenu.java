@@ -34,7 +34,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private BridgeActivity activity;
     private ShakeDetector shakeDetector;
     private ThreeFingerPinchDetector pinchDetector;
-    private boolean isShowing = false;
+    /** A menu, picker or switch is in progress: gestures are ignored until it ends. */
+    private volatile boolean isShowing = false;
     private Logger logger;
     private String gesture;
 
@@ -313,7 +314,13 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             });
 
             AlertDialog dialog = builder.create();
-            dialog.setOnDismissListener((d) -> isShowing = false);
+            // Picking a preview dismisses the picker: the menu stays busy until the switch ends.
+            final boolean[] picked = { false };
+            dialog.setOnDismissListener((d) -> {
+                if (!picked[0]) {
+                    isShowing = false;
+                }
+            });
 
             searchField.addTextChangedListener(
                 new TextWatcher() {
@@ -345,6 +352,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             listView.setOnItemClickListener((parent, view, position, id) -> {
                 JSObject selectedPreview = displayedPreviews.get(position);
                 String previewId = selectedPreview.optString("id", "");
+                picked[0] = true;
                 dialog.dismiss();
                 selectPreview(previewId);
             });
@@ -367,14 +375,15 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private void selectPreview(String previewId) {
         new Thread(() -> {
             try {
-                if (!plugin.setPreviewFromShakeMenu(previewId)) {
+                if (plugin.setPreviewFromShakeMenu(previewId)) {
+                    isShowing = false;
+                } else {
+                    // The error dialog ends the menu when dismissed.
                     activity.runOnUiThread(() -> showError("Could not switch preview."));
                 }
             } catch (Exception e) {
                 logger.error("Error switching preview: " + e.getMessage());
                 activity.runOnUiThread(() -> showError("Error switching preview: " + e.getMessage()));
-            } finally {
-                isShowing = false;
             }
         }).start();
     }
@@ -509,7 +518,14 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             });
 
             AlertDialog dialog = builder.create();
-            dialog.setOnDismissListener((d) -> isShowing = false);
+            // Picking a channel dismisses the picker: the menu stays busy until the switch ends, so a
+            // second gesture cannot start a concurrent switch (one shakeMenuProgress listener).
+            final boolean[] picked = { false };
+            dialog.setOnDismissListener((d) -> {
+                if (!picked[0]) {
+                    isShowing = false;
+                }
+            });
 
             // Search filter
             searchField.addTextChangedListener(
@@ -542,6 +558,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             // Channel selection
             listView.setOnItemClickListener((parent, view, position, id) -> {
                 String selectedChannel = displayedChannels.get(position);
+                picked[0] = true;
                 dialog.dismiss();
                 selectChannel(selectedChannel);
             });
@@ -575,9 +592,11 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     // The engine runs setChannel, getLatest, download and next; progress arrives
                     // through the shakeMenuProgress hook.
                     plugin.shakeMenuProgressListener = (message) -> activity.runOnUiThread(() -> progressDialog.setMessage(message));
-                    final JSONObject result;
+                    JSONObject result;
                     try {
                         result = plugin.switchChannelFromShakeMenu(channelName);
+                    } catch (RuntimeException e) {
+                        result = jsonOf("status", "error", "message", "Error switching channel: " + e.getMessage());
                     } finally {
                         plugin.shakeMenuProgressListener = null;
                     }
