@@ -227,12 +227,15 @@ public class EngineHostTest {
             .count();
         final List<String> finished = new CopyOnWriteArrayList<>();
         final AtomicReference<JSONObject> reset = new AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicBoolean notifySent = new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.atomic.AtomicBoolean resetAfterNotify = new java.util.concurrent.atomic.AtomicBoolean(false);
         final CountDownLatch done = new CountDownLatch(3);
         final long started = System.nanoTime();
         lanes.submit(
             "reset",
             () -> {
                 reset.set(call("reset", new JSONObject()));
+                resetAfterNotify.set(notifySent.get());
                 finished.add("reset");
                 done.countDown();
             },
@@ -260,6 +263,7 @@ public class EngineHostTest {
                     .reduce((a, b) -> b)
                     .orElse("");
                 final long generation = parse(applied.substring("applyBundle ".length())).optLong("readyGeneration");
+                notifySent.set(true);
                 call("notifyAppReady", CapgoCore.input("loadGeneration", generation));
                 finished.add("notifyAppReady");
                 done.countDown();
@@ -278,8 +282,9 @@ public class EngineHostTest {
         assertTrue(done.await(6, TimeUnit.SECONDS));
         assertTrue("reset resolved: " + reset.get(), reset.get().has("resolve"));
         assertTrue("well before the 8 s appReadyTimeout", System.nanoTime() - started < TimeUnit.SECONDS.toNanos(5));
-        // reset was called first but only finishes once the lane delivered notifyAppReady.
-        assertEquals("notifyAppReady", finished.get(0));
+        // reset was called first but only finishes once the lane delivered notifyAppReady (the two
+        // threads then race to record their end, so check the delivery, not the record order).
+        assertTrue("reset finished only after notifyAppReady was delivered", resetAfterNotify.get());
         assertEquals(Set.of("notifyAppReady", "current", "reset"), Set.copyOf(finished));
         lanes.shutdown();
     }
