@@ -428,7 +428,7 @@ jobs:
       - name: Run Maestro smoke tests
         timeout-minutes: 8
         continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # tag=v2.38.0 NOSONAR hash pin required by zizmor
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
@@ -888,7 +888,7 @@ jobs:
       - name: Run live update Maestro flow
         timeout-minutes: 8
         continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # tag=v2.38.0 NOSONAR hash pin required by zizmor
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
