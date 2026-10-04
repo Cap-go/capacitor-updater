@@ -79,7 +79,10 @@
     "native:contract:crypto": "bun run native:contract:crypto:ios && bun run native:contract:crypto:android",
     "native:contract:crypto:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/RsaContractTests",
     "native:contract:crypto:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.RsaContractTest && cd ..",
-    "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs"
+    "native:contract:cli:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests",
+    "native:contract:cli:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.CliCryptoFixtureTest && cd ..",
+    "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs",
+    "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.0",
@@ -87,6 +90,7 @@
     "@capacitor/core": "^8.5.0",
     "@capacitor/docgen": "^0.3.0",
     "@capacitor/ios": "^8.5.0",
+    "@capgo/cli": "8.72.0",
     "@ionic/eslint-config": "^0.5.0",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.70.0",
