@@ -213,7 +213,17 @@ private final class ResettingHealthStatsCapgoUpdater: HealthStatsCapgoUpdater {
         checksum: "builtin"
     )
 
+    private(set) var autoResetCallCount = 0
+    private(set) var resetCallCount = 0
+
+    override func autoReset() {
+        // Keep the OTA fixture active: only the native-build reset may switch to builtin,
+        // so the test fails if app_launch_start is reported before that reset.
+        autoResetCallCount += 1
+    }
+
     override func reset(isInternal _: Bool) {
+        resetCallCount += 1
         currentBundleValue = builtinBundle
     }
 }
@@ -2697,6 +2707,7 @@ class CapacitorUpdaterTests: XCTestCase {
         )
         resetPlugin.implementation = statsImplementation
         resetPlugin.setCurrentBuildVersionForTesting("15")
+        XCTAssertEqual(statsImplementation.getCurrentBundle().getVersionName(), "2.8.35")
 
         XCTAssertTrue(
             resetPlugin.resetStartupBundleAndReportAppLaunchStartForTesting(
@@ -2705,10 +2716,55 @@ class CapacitorUpdaterTests: XCTestCase {
             )
         )
 
+        XCTAssertEqual(statsImplementation.autoResetCallCount, 1)
+        XCTAssertEqual(statsImplementation.resetCallCount, 1)
         XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
         XCTAssertEqual(statsImplementation.lastStatsVersionName, "builtin")
         XCTAssertEqual(statsImplementation.lastStatsMetadata?["source"], "plugin_load")
         XCTAssertNotNil(statsImplementation.lastStatsMetadata?["launch_started_at"])
+    }
+
+    func testAppLaunchStartReportsOtaBundleWithoutNativeBuildChange() {
+        let nativeBuildKey = "LatestNativeBuildVersion"
+        let appSessionKeys = [
+            "CapacitorUpdater.appSessionId",
+            "CapacitorUpdater.appSessionForeground",
+            "CapacitorUpdater.appSessionStartedAt",
+            "CapacitorUpdater.lastReportedUncleanSessionId"
+        ]
+        UserDefaults.standard.set("15", forKey: nativeBuildKey)
+        appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        defer {
+            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
+            appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        }
+
+        let resetPlugin = TestableCapacitorUpdaterPlugin()
+        let statsImplementation = ResettingHealthStatsCapgoUpdater()
+        statsImplementation.setLogger(Logger(withTag: "TestLogger", options: Logger.Options(level: .silent)))
+        statsImplementation.statsUrl = "https://example.com/stats"
+        statsImplementation.currentBundleValue = BundleInfo(
+            id: "ota-id",
+            version: "2.8.35",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "ota"
+        )
+        resetPlugin.implementation = statsImplementation
+        resetPlugin.setCurrentBuildVersionForTesting("15")
+
+        XCTAssertFalse(
+            resetPlugin.resetStartupBundleAndReportAppLaunchStartForTesting(
+                resetWhenUpdate: true,
+                nativeBuildVersionChanged: false
+            )
+        )
+
+        // Same fixture, no native-build change: the OTA version is reported, so the builtin
+        // result above comes from the native-build reset itself.
+        XCTAssertEqual(statsImplementation.resetCallCount, 0)
+        XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
+        XCTAssertEqual(statsImplementation.lastStatsVersionName, "2.8.35")
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {
