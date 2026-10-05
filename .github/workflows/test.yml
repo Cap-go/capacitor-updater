@@ -158,6 +158,9 @@ jobs:
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      # Simulator tests only need the arm64 simulator slice of the core (saves two release builds).
+      CAPGO_CORE_IOS_SIMULATOR_ONLY: '1'
     steps:
       - name: Check out
         uses: actions/checkout@v7

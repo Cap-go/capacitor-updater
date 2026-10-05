@@ -113,12 +113,19 @@ build_ios() {
   if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]] && ! xcodebuild -version >/dev/null 2>&1; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
   fi
-  ensure_targets aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+  # CAPGO_CORE_IOS_SIMULATOR_ONLY=1 builds only the arm64 simulator slice (simulator tests on
+  # Apple silicon): the shipped xcframework always has the device and both simulator slices.
+  local targets="aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios"
+  if [[ "${CAPGO_CORE_IOS_SIMULATOR_ONLY:-}" == "1" ]]; then
+    targets="aarch64-apple-ios-sim"
+  fi
+  # shellcheck disable=SC2086
+  ensure_targets $targets
   local target_dir="$CORE_DIR/target"
   (
     cd "$CORE_DIR"
     export IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET"
-    for target in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+    for target in $targets; do
       cargo build --release --locked --target "$target"
     done
   )
@@ -127,25 +134,32 @@ build_ios() {
   rm -rf "$work"
   mkdir -p "$work/ios" "$work/simulator"
   # rustc does not strip static libraries; drop debug info (~20 MB -> ~3 MB per slice).
-  for target in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+  for target in $targets; do
     mkdir -p "$work/$target"
     cp "$target_dir/$target/release/lib$LIB_NAME.a" "$work/$target/lib$LIB_NAME.a"
     xcrun strip -S "$work/$target/lib$LIB_NAME.a"
   done
-  lipo -create \
-    "$work/aarch64-apple-ios-sim/lib$LIB_NAME.a" \
-    "$work/x86_64-apple-ios/lib$LIB_NAME.a" \
-    -output "$work/simulator/lib$LIB_NAME.a"
-  make_framework "$work/aarch64-apple-ios/lib$LIB_NAME.a" "$work/ios/$FRAMEWORK_NAME.framework"
-  make_framework "$work/simulator/lib$LIB_NAME.a" "$work/simulator/$FRAMEWORK_NAME.framework"
 
   local out="$ROOT_DIR/ios/Frameworks/$FRAMEWORK_NAME.xcframework"
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"
-  xcodebuild -create-xcframework \
-    -framework "$work/ios/$FRAMEWORK_NAME.framework" \
-    -framework "$work/simulator/$FRAMEWORK_NAME.framework" \
-    -output "$out" >/dev/null
+  if [[ "${CAPGO_CORE_IOS_SIMULATOR_ONLY:-}" == "1" ]]; then
+    make_framework "$work/aarch64-apple-ios-sim/lib$LIB_NAME.a" "$work/simulator/$FRAMEWORK_NAME.framework"
+    xcodebuild -create-xcframework \
+      -framework "$work/simulator/$FRAMEWORK_NAME.framework" \
+      -output "$out" >/dev/null
+  else
+    lipo -create \
+      "$work/aarch64-apple-ios-sim/lib$LIB_NAME.a" \
+      "$work/x86_64-apple-ios/lib$LIB_NAME.a" \
+      -output "$work/simulator/lib$LIB_NAME.a"
+    make_framework "$work/aarch64-apple-ios/lib$LIB_NAME.a" "$work/ios/$FRAMEWORK_NAME.framework"
+    make_framework "$work/simulator/lib$LIB_NAME.a" "$work/simulator/$FRAMEWORK_NAME.framework"
+    xcodebuild -create-xcframework \
+      -framework "$work/ios/$FRAMEWORK_NAME.framework" \
+      -framework "$work/simulator/$FRAMEWORK_NAME.framework" \
+      -output "$out" >/dev/null
+  fi
   echo "iOS core xcframework written to $out"
 }
 
