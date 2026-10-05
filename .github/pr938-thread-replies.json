@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "pullRequest": 938,
+  "replies": [
+    {
+      "threadId": "PRRT_kwDOGRP_2c6o9cBb",
+      "path": "scripts/generate-cli-crypto-fixtures.mjs",
+      "line": 214,
+      "body": "Fixed in 111aa1a5: the fixture output directory is resolved through symlinks (walking up to the nearest existing ancestor when the path does not exist yet) before containment checks and before mkdir or fixture cleanup, so a symlink cannot bypass the guard."
+    }
+  ]
+}
