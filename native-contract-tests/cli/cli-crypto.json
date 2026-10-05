@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "description": "Bundles zipped and encrypted by the Capgo CLI SDK (zipBundle + encryptBundle). The CLI is the source of truth; regenerate with `bun run generate:cli-crypto`.",
+  "cli": {
+    "package": "@capgo/cli",
+    "version": "8.72.0"
+  },
+  "updaterVersion": "8.52.1",
+  "checksumFormat": "v3-hex",
+  "publicKey": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAxog7suMG1F2Y/e6CLNpWU0Kp5eNXPYSE+lY4Nzrxq8Mdi0nKR8tK\nqWHxCgNQJrfhE9CjSwuu9w656i3P32zIGRSu/nDgUkDd4Z2EGiq+Eu3ooR9SnUTC\n/yjCksNdbu47RHTvCtHbDEczqfpIDZMgRgYbRePQAxVHWJehfetO80yDoNdiRDrD\nc0UYgNQf/H5ko2KWiQs7yjsU22zPLfwZ8NEkuD2hTXZeOj/pBUborVAykI9bI59I\nPfQPVKEdW9RAggpR2FcYbnTMaYSc9yVIxu4VxWB7DfvPKJOrz4HOJIwfTwuFGeQs\nwUcG10QvXok+NHjaHHc+iBe2hk24XDUnGQIDAQAB\n-----END RSA PUBLIC KEY-----\n",
+  "bundles": [
+    {
+      "id": "tiny",
+      "description": "Smallest real bundle; zip length is not a multiple of 16.",
+      "zip": "tiny.zip",
+      "encrypted": "tiny.zip.enc",
+      "zipSize": 241,
+      "encryptedSize": 256,
+      "sha256": "31c2f9fd9735b93c526bfb12b6f0da42d679029b90be4c59ef9c1428361706df",
+      "checksum": "9b1da29febe0e1ac28b33545daf2efe49685ff0d1eb890397a0687c910c3feed99efeb8eab53cc1ba19db59115e47e66c3b38cf9db087fcfc0096fcb802a2555d050b33e2e2dc9313e2bbee5937dd4cbf9f1ed22a2a9683c6d524f0ed24afee2b28cc0f3f2c4d41d39430f91c6e883769d99f60e8cb4eb8fc7054302e8e868215808ea7ef18179a832b8c9ae937c1832f14648a04f39481aced9fc1b4c051835bf26030f5772c0afc70a29691db206e6bcbe00f563f87340764cd90f1fba7717528dede54a05c35d09a932c794096cece203ca819b7b5045084d6c74592ffda31031be10f6c694b5a97863f5ae7ecda095a95d9812e03025aad235196adca7d1",
+      "ivSessionKey": "hg3TSUIm0ilyZA18VFS8tQ==:lF5Q4K4U7P/Bj0yxLqDVO8Oq06zGo0mg0oWc+Aslv8d1WDAlagyGac6v24Q5Rjx1W7UOmCi6yuYiTYAPakOwt2AH97HfTGyhObXMDSGnbL0pwtfulXmDwZ+BMAVLaKnRpDPvXW+2Z3hNEaLySTYOXTOlmspV8UCZR/bgaSDIqi7FuQAE81HCp8V9JfpPaIJeGcaM/vfFTTSeiEFof+HYKHTVXR3oU9ScqPEb9jqmQ5InZEP3ejIACQH9K9scR/dpcqKu5ZzNLS5sf+5F6MjGA9KdjowAa9gdzsmf1UOz4csxSq4/W0hpK85xYTFjp5v2kfQEen33Pcc8H4KniN5g2A==",
+      "files": [
+        {
+          "path": "index.html",
+          "sha256": "9556388be94d06eb7d263ec726a0ca4154ae82356e2a666a60e1bdedd0ad6d0b"
+        },
+        {
+          "path": "pad.txt",
+          "sha256": "4a34dcb5fd8fd8792033bbcba8823c9700c85b3887d6ac90d9550e99d8b50629"
+        }
+      ]
+    },
+    {
+      "id": "block-aligned",
+      "description": "Zip length is an exact multiple of 16, so PKCS#7 adds a whole padding block.",
+      "zip": "block-aligned.zip",
+      "encrypted": "block-aligned.zip.enc",
+      "zipSize": 432,
+      "encryptedSize": 448,
+      "sha256": "a6b4f5b516cf3dd01200e4f42e2a8da1727319d6c3b16111713a6d87f90a2572",
+      "checksum": "6d05465b331e7342d05c0e75a8ba2466c0703f9d9f6c28001918556ff1d32e60ba71f64aa39cb2a11669d9289ab54c21d7d8c36c19ac1176ce4ca83c0bd8f2a7ce5b87f9a1e02e864beaf958f7da8f93f763bdaeb6b7cf8cff08f637d5d78b7fb58d25600fe104089ec6091da2101191d543a8ed82c173efccd67799d117701672f8bf3db40ed9be559f9607134e5057c4f24de5750031972f4a46bc41d920c8a74affabccd6779dc0246bc793a86f6c6963cf3b8cf247c85215e5d30a0731a64976dd9853ebdb1e3636e26ac36c3d49784ed382a806f9b99949231aa219169ef184ddfb56097587b44ddd7e9e0e0695069522b0692a8ea931c599461a5fe69c",
+      "ivSessionKey": "YppScLEJojL2kuasxW3TuQ==:ERykVkPPTWYOk0w+fhbjSRuXNyDrkqRr/MP9bHu+J1kgpMC4fnkqNYaXFCaJHXcjzXnWN0IENGDdj+HZYIFqUpkfIEFelXQm9nosuWGlEYzwGTGHcsWDJX8LG5xGNJog1afcyji6elJB+PbJmbC7I2PxvagZ1NkKJEFo7i1pjzM4cas3NWacI5+wiOWMLLNBca0Lj4CM/7CwA5Gju/8tchL1X//VL631ZkUFsBgnVL47BfFGtJ11zDcAXMk/gSQCuTDuLY0ebPrSHQXYNYFGQpZvAhtZ48qE4biT2a3rE3+zLeDrdu1gZBEr6WOj3xazex/OcDQPFbYSIVklUnKB+g==",
+      "files": [
+        {
+          "path": "app.js",
+          "sha256": "d9fe7412437d2156d1f8b2f5eb198bc32c10a227582230d5e26fe31483179e53"
+        },
+        {
+          "path": "index.html",
+          "sha256": "ec5fc6809803133b7e5f83285e81c31ba1f488afb2ba3344771677ea2aa1a584"
+        },
+        {
+          "path": "pad.txt",
+          "sha256": "04e0e985388fa7b6e5b66a13488c3737667f6371abd5bcf7dc48ee96ea5e0e8f"
+        }
+      ]
+    },
+    {
+      "id": "large-random",
+      "description": "About 1 MiB of incompressible content; spans several 256 KiB decrypt buffers.",
+      "zip": "large-random.zip",
+      "encrypted": "large-random.zip.enc",
+      "zipSize": 1049404,
+      "encryptedSize": 1049408,
+      "sha256": "8da9717268f5ef67b84ccec8a8916f36ffc8139a35a996df639631295d747334",
+      "checksum": "44a9f6f0b50ac7e46c942f4ea1d705f30db70ab1b245f83860c449c905819827a48fa9ba101d44215e8dd422f7bd8a68c83d00af1e51f64f8c5909c987475c6d10ae613caad9c3b216119b181c9f24879be8929a9000feecc614287b9e0cf924bbb023e80f6f895a65ceb501a22144154bd74d4e538d0f09ff0625463c9adf9440726c2d377f48d9ccbb15719ef5d475de0099f8b613551963ab7d90cf2d00a32cd80831782571b6b030a7f6b86b660e10d856b680c6d76fa36a47e26ef3096447acd256d209d181861e9ead35437c9bef1bc579411c54496113508786b9ab6e8ae9048f48b0cd0e454531671e4cbfe98c57468340882d694c877ff7cc3df244",
+      "ivSessionKey": "pQL02/PGf4r2hiAFDzGKXw==:t/YqVZD2DTzTLb21p4FWVGAUBSJPyA41xQI+SRm3zcX5uYbWxh4ToGluaDSGcmPCVtyMa9h0US24NmWmiHcwNbRsOZM2oolUZqNTVOVOGDkYoFu1uxQONRYOxKmLa+HHBfQmxMcOiPL8K1/ki/aarglUnhLRbxZNg/hF2myWEcL+EmOoXuPTxtnnWlWn2sge1J7Hhh59kSJ7/W6fTF3EJv2rFj01YQjwYlVbWcQo9HrkoMqpHWqMM/U5CbrYsxLoyYaoBnhFlPaheA8eO2klfRlZLi241LD4MB8gWJPKh51N6d8LtqQe0dDjl7CqMLaIgrJ6Cy0iMky6zzTyAu9SRQ==",
+      "files": [
+        {
+          "path": "assets/blob.bin",
+          "sha256": "f7ceac5e22a1c6ee10a6739f99b8d686aca80a449c29749f57d97168a4a2b9bb"
+        },
+        {
+          "path": "index.html",
+          "sha256": "0e1b927d254c08cd5209329f7cce6f7e6705fcf4b43ca195f8a6ed384b3eaa4a"
+        },
+        {
+          "path": "pad.txt",
+          "sha256": "2a5095d46cb2d710da1c138d6a3036941243de4c8dfcbf1d0c8bd278be32d834"
+        }
+      ]
+    },
+    {
+      "id": "nested",
+      "description": "Nested folders, as a typical web build produces.",
+      "zip": "nested.zip",
+      "encrypted": "nested.zip.enc",
+      "zipSize": 2863,
+      "encryptedSize": 2864,
+      "sha256": "43c8e23a9ef34c005f64047692d905dcda4737ede3817437ac18aff220472652",
+      "checksum": "01e4b70d69ee439b9f661effbd5138e1713ffb350f827745a811cb2ad6e61c9327b41cb4e71679ce0a410643e1933e1a818774b0adb7110cdcc4742a19437c71473ea57f1b3151920a59d78204d2a0bb60e33a36c43f083b7a9069003932bc98f15280ed2318b7852e4995d0826006426f2cec3698c792cf5f3b9ecbad1d475e417a8cf47dfaf50517b832ddc5cbb4f4c3a4a32b84c9a6f05b64670459476a8f04b311c242d3eb9b6972076aa36e82d11dfd3b03cf5853ec4bab6634dce449c88bca9d7910fc5eb80a46623f73a90d400f0b1914ee59682866651ae15ca694b20fce4984a959c5df59128241591beccc5e4e3cc25e15137d8fa220cac973b8ba",
+      "ivSessionKey": "qBgsSfjk3IlhAgFoOM/WDA==:TgwQFhcd+oi2jmp1adOZzWoTexZPktwWuMij3dwcELzHt9uLmc0LVj7cEK/e75hKi+5irBPZCV0g2vXQwOPkTzBymS84RynT7x4ykDaQ+WzaEVzOJvj5d/qNuvFdmA0Er3o3pYjibgOb3J+kprMGXwTumgG/1yMUugCmdOrbhU4zmV9lu/o1gk1jnQQPPUQfo/p4TeBtReqt/1nz/hTNimWf4Lx+53N5j1FWdeSEpZbEdlsDeb5si/zOhCTocbSd7TTODvE+Zac79ZC55BOLMidvRdoSL8a7KQs8SQ9pzsEOlwKwYIrWTKWcpKfoHVcv+aqA0RuulQW1fL8mk++cgA==",
+      "files": [
+        {
+          "path": "app.js",
+          "sha256": "88a7ef837367e8059d24c4754927b0ce1e2e4e3d96ef4a4e24dcb4e2d5ac3f42"
+        },
+        {
+          "path": "assets/css/main.css",
+          "sha256": "eac0e790573fb6424e6008c9f3a1bdf262add6bb2460a001bb89549fb1ddf482"
+        },
+        {
+          "path": "assets/img/icons/logo.svg",
+          "sha256": "fb91f9a03c202c5f160eef644da6f2f704b19ac5c5f8b4c124e1b0b485ad57a0"
+        },
+        {
+          "path": "assets/js/chunks/vendor/lib.js",
+          "sha256": "7c961e4b40dfff072411777743d53130c879b2d56afe3de81e9e5e38b2e9ba70"
+        },
+        {
+          "path": "deep/a/b/c/d/e/leaf.txt",
+          "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+        },
+        {
+          "path": "index.html",
+          "sha256": "bda663fd9d2cc2c9ac4982f968a25ea627a99e8fd8edda7af2461cdb93ceeecd"
+        },
+        {
+          "path": "pad.txt",
+          "sha256": "24f30cbe8ca56ed9c748e13e86129cfb2dca75f3411da935ca55dfe367a819d4"
+        }
+      ]
+    }
+  ]
+}

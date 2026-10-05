@@ -70,6 +70,15 @@ jobs:
       - name: Test (shared native contract fixtures)
         working-directory: core
         run: cargo test --locked
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
+        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
+        run: bun run generate:cli-crypto && cd core && cargo test --locked --test cli_crypto
 
   build_android:
     permissions:
