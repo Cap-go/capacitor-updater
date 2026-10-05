@@ -27,7 +27,10 @@ const outputDir = path.resolve(process.argv[2] ?? path.join(root, 'native-contra
 const require = (await import('node:module')).createRequire(import.meta.url);
 const cliPackage = JSON.parse(fs.readFileSync(require.resolve('@capgo/cli/package.json'), 'utf8'));
 const updaterVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-const sdk = await import('@capgo/cli/sdk');
+const { CapgoSDK } = await import('@capgo/cli/sdk');
+// zipBundle looks up a saved Capgo API key before zipping although it never calls the network:
+// pass a placeholder so the generator runs offline and in CI (no login).
+const sdk = new CapgoSDK({ apikey: process.env.CAPGO_TOKEN || 'offline-fixture-generation' });
 
 const appId = 'app.capgo.clifixtures';
 const fixedTime = new Date('2024-01-01T00:00:00Z');
