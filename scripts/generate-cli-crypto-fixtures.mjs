@@ -194,8 +194,21 @@ try {
   }
   const keyPath = path.join(project, '.capgo_key_v2');
 
-  fs.rmSync(outputDir, { recursive: true, force: true });
+  // Only this script's own files are replaced: never delete the output folder itself, which
+  // could be the checkout or hold other files.
+  const inside = (parent, child) => {
+    const relative = path.relative(parent, child);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  };
+  if (inside(outputDir, root) || inside(outputDir, process.cwd())) {
+    throw new Error(`Refusing to write fixtures into ${outputDir}: it contains the repository or the current folder`);
+  }
   fs.mkdirSync(outputDir, { recursive: true });
+  for (const name of fs.readdirSync(outputDir)) {
+    if (name === 'cli-crypto.json' || name.endsWith('.zip') || name.endsWith('.zip.enc')) {
+      fs.rmSync(path.join(outputDir, name), { force: true });
+    }
+  }
   const bundles = [];
   for (const testCase of cases) {
     const { zip, checksum, zipPath, files } = await testCase.build();

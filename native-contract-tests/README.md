@@ -27,7 +27,7 @@ Fixture files:
 RSA public-decrypt fixtures live in `crypto-rsa.json`; regenerate them with
 `bun run generate:rsa-contract`.
 
-Bundles encrypted by the real Capgo CLI live in `cli/` (see its README). The CLI
+Bundles encrypted by the real Capgo CLI live in `cli/`. The CLI
 is the source of truth for the encryption format; regenerate them with
 `bun run generate:cli-crypto`. `core/tests/cli_crypto.rs` decrypts every one of
 them, with the crypto functions and through the engine `download` path.
