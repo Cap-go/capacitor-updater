@@ -27,7 +27,13 @@ export function resolveRealPath(target) {
 /** True when `descendant` is `parent` or a path under `parent`. */
 export function pathContains(parent, descendant) {
   const relative = path.relative(parent, descendant);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  if (relative === '') {
+    return true;
+  }
+  if (path.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.sep}`)) {
+    return false;
+  }
+  return true;
 }
 
 /**
