@@ -2679,20 +2679,20 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(resetImplementation.resetIsInternal)
     }
 
-    func testAppLaunchStartReportsBuiltinAfterNativeBuildReset() {
+    private static let appLaunchSessionDefaultsKeys = [
+        "CapacitorUpdater.appSessionId",
+        "CapacitorUpdater.appSessionForeground",
+        "CapacitorUpdater.appSessionStartedAt",
+        "CapacitorUpdater.lastReportedUncleanSessionId"
+    ]
+
+    private func prepareAppLaunchStartOtaFixture(
+        storedNativeBuild: String,
+        currentBuild: String
+    ) -> (TestableCapacitorUpdaterPlugin, ResettingHealthStatsCapgoUpdater) {
         let nativeBuildKey = "LatestNativeBuildVersion"
-        let appSessionKeys = [
-            "CapacitorUpdater.appSessionId",
-            "CapacitorUpdater.appSessionForeground",
-            "CapacitorUpdater.appSessionStartedAt",
-            "CapacitorUpdater.lastReportedUncleanSessionId"
-        ]
-        UserDefaults.standard.set("9", forKey: nativeBuildKey)
-        appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
-        defer {
-            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
-            appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
-        }
+        UserDefaults.standard.set(storedNativeBuild, forKey: nativeBuildKey)
+        Self.appLaunchSessionDefaultsKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
 
         let resetPlugin = TestableCapacitorUpdaterPlugin()
         let statsImplementation = ResettingHealthStatsCapgoUpdater()
@@ -2706,7 +2706,21 @@ class CapacitorUpdaterTests: XCTestCase {
             checksum: "ota"
         )
         resetPlugin.implementation = statsImplementation
-        resetPlugin.setCurrentBuildVersionForTesting("15")
+        resetPlugin.setCurrentBuildVersionForTesting(currentBuild)
+        return (resetPlugin, statsImplementation)
+    }
+
+    private func tearDownAppLaunchStartOtaFixture() {
+        UserDefaults.standard.removeObject(forKey: "LatestNativeBuildVersion")
+        Self.appLaunchSessionDefaultsKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+    }
+
+    func testAppLaunchStartReportsBuiltinAfterNativeBuildReset() {
+        let (resetPlugin, statsImplementation) = prepareAppLaunchStartOtaFixture(
+            storedNativeBuild: "9",
+            currentBuild: "15"
+        )
+        defer { tearDownAppLaunchStartOtaFixture() }
         XCTAssertEqual(statsImplementation.getCurrentBundle().getVersionName(), "2.8.35")
 
         XCTAssertTrue(
@@ -2725,33 +2739,11 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testAppLaunchStartReportsOtaBundleWithoutNativeBuildChange() {
-        let nativeBuildKey = "LatestNativeBuildVersion"
-        let appSessionKeys = [
-            "CapacitorUpdater.appSessionId",
-            "CapacitorUpdater.appSessionForeground",
-            "CapacitorUpdater.appSessionStartedAt",
-            "CapacitorUpdater.lastReportedUncleanSessionId"
-        ]
-        UserDefaults.standard.set("15", forKey: nativeBuildKey)
-        appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
-        defer {
-            UserDefaults.standard.removeObject(forKey: nativeBuildKey)
-            appSessionKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
-        }
-
-        let resetPlugin = TestableCapacitorUpdaterPlugin()
-        let statsImplementation = ResettingHealthStatsCapgoUpdater()
-        statsImplementation.setLogger(Logger(withTag: "TestLogger", options: Logger.Options(level: .silent)))
-        statsImplementation.statsUrl = "https://example.com/stats"
-        statsImplementation.currentBundleValue = BundleInfo(
-            id: "ota-id",
-            version: "2.8.35",
-            status: .SUCCESS,
-            downloaded: Date(),
-            checksum: "ota"
+        let (resetPlugin, statsImplementation) = prepareAppLaunchStartOtaFixture(
+            storedNativeBuild: "15",
+            currentBuild: "15"
         )
-        resetPlugin.implementation = statsImplementation
-        resetPlugin.setCurrentBuildVersionForTesting("15")
+        defer { tearDownAppLaunchStartOtaFixture() }
 
         XCTAssertFalse(
             resetPlugin.resetStartupBundleAndReportAppLaunchStartForTesting(
