@@ -270,6 +270,25 @@ public class CapgoDownloadWorkerTest {
         throw new AssertionError("no download job was enqueued");
     }
 
+    /**
+     * Meets the job's constraints and waits until it actually ran. The job can show up in WorkManager's
+     * database before the test scheduler registered it; constraints met before that are ignored.
+     */
+    private WorkInfo runJob(final WorkInfo job) throws Exception {
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (true) {
+            this.driver().setAllConstraintsMet(job.getId());
+            final WorkInfo info = this.job(job);
+            if (info.getRunAttemptCount() > 0 || info.getState().isFinished()) {
+                return info;
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the download job never ran: " + info);
+            }
+            Thread.sleep(20);
+        }
+    }
+
     private WorkInfo job(final WorkInfo job) throws Exception {
         return WorkManager.getInstance(this.context).getWorkInfoById(job.getId()).get();
     }
@@ -312,7 +331,7 @@ public class CapgoDownloadWorkerTest {
         assertTrue(this.ranges.isEmpty());
 
         // The network comes back.
-        this.driver().setAllConstraintsMet(job.getId());
+        this.runJob(job);
         final JSONObject result = call.get(10, TimeUnit.SECONDS);
         assertEquals(result.toString(), id, result.getJSONObject("resolve").getString("id"));
         assertEquals("pending", result.getJSONObject("resolve").getString("status"));
@@ -343,9 +362,8 @@ public class CapgoDownloadWorkerTest {
         this.truncateNext.set(1);
         final Future<JSONObject> call = this.download(sha256(this.bundle));
         final WorkInfo job = this.awaitJob();
-        this.driver().setAllConstraintsMet(job.getId());
         // The run failed with a network error: WorkManager backs off and keeps the job.
-        final WorkInfo retrying = this.job(job);
+        final WorkInfo retrying = this.runJob(job);
         assertEquals(WorkInfo.State.ENQUEUED, retrying.getState());
         assertEquals(1, retrying.getRunAttemptCount());
         assertFalse(call.isDone());
@@ -367,8 +385,7 @@ public class CapgoDownloadWorkerTest {
     public void aChecksumErrorFailsTheJob() throws Exception {
         final Future<JSONObject> call = this.download(sha256("other".getBytes("UTF-8")));
         final WorkInfo job = this.awaitJob();
-        this.driver().setAllConstraintsMet(job.getId());
-        assertEquals(WorkInfo.State.FAILED, this.job(job).getState());
+        assertEquals(WorkInfo.State.FAILED, this.runJob(job).getState());
         final JSONObject result = call.get(10, TimeUnit.SECONDS);
         assertTrue(result.toString(), result.getJSONObject("reject").getString("message").contains("Checksum"));
         final String id = job
@@ -399,8 +416,7 @@ public class CapgoDownloadWorkerTest {
         this.engine.close();
         this.engine = null;
 
-        this.driver().setAllConstraintsMet(job.getId());
-        assertEquals(WorkInfo.State.SUCCEEDED, this.job(job).getState());
+        assertEquals(WorkInfo.State.SUCCEEDED, this.runJob(job).getState());
         final JSONObject stored = this.storedBundle(id);
         assertEquals("pending", stored.getString("status"));
         assertEquals("2.0.0", stored.getString("version"));
