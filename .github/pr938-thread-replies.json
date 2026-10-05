@@ -7,6 +7,24 @@
       "path": "scripts/generate-cli-crypto-fixtures.mjs",
       "line": 214,
       "body": "Fixed in 111aa1a5: the fixture output directory is resolved through symlinks (walking up to the nearest existing ancestor when the path does not exist yet) before containment checks and before mkdir or fixture cleanup, so a symlink cannot bypass the guard."
+    },
+    {
+      "threadId": "PRRT_kwDOGRP_2c6pJvuY",
+      "path": "scripts/cli-crypto-fixture-output.mjs",
+      "line": 30,
+      "body": "Fixed in ccd9cae7: pathContains now rejects only exact `..` and segments starting with `..${path.sep}`, so a checkout directory named like `..checkout` under the output folder is still treated as contained."
+    },
+    {
+      "threadId": "PRRT_kwDOGRP_2c6pJvuz",
+      "path": "scripts/test-cli-crypto-output-guard.mjs",
+      "line": 29,
+      "body": "Fixed in ccd9cae7: the resolveRealPath assertion compares against path.join(fs.realpathSync(tmp), 'nested', 'out'), and the guard test covers a `..checkout` child directory so containment cannot miss the repository."
+    },
+    {
+      "threadId": "PRRT_kwDOGRP_2c6pJzcA",
+      "path": "scripts/test-cli-crypto-output-guard.mjs",
+      "line": 29,
+      "body": "Fixed in ccd9cae7: same realpathSync(tmp) canonicalization for the expected nested path so macOS /var vs /private/var aliases do not fail check:wiring."
     }
   ]
 }
