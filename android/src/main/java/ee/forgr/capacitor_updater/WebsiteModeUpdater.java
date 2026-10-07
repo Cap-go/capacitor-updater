@@ -22,9 +22,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,19 +60,26 @@ final class WebsiteModeUpdater {
     static final String MODE_WEBSITE = "website";
     static final String MODE_CAPGO = "capgo";
 
+    /**
+     * href is only taken from {@code <link>} elements (stylesheets, icons, manifest, preloads):
+     * {@code <a href>} is navigation, not an asset.
+     */
     private static final String[] MARKUP_PATTERNS = new String[] {
-        "(?:src|href)\\s*=\\s*[\"']([^\"']+)[\"']",
+        "src\\s*=\\s*[\"']([^\"']+)[\"']",
+        "<link\\b[^>]*?\\bhref\\s*=\\s*[\"']([^\"']+)[\"']",
         "srcset\\s*=\\s*[\"']([^\"']+)[\"']",
         "url\\(\\s*[\"']?([^\"')]+)[\"']?\\s*\\)",
         "@import\\s+[\"']([^\"']+)[\"']"
     };
-    private static final Pattern SRCSET_PATTERN = Pattern.compile(MARKUP_PATTERNS[1], Pattern.CASE_INSENSITIVE);
+    private static final Pattern SRCSET_PATTERN = Pattern.compile(MARKUP_PATTERNS[2], Pattern.CASE_INSENSITIVE);
     private static final Pattern[] COMPILED_MARKUP_PATTERNS = new Pattern[] {
         Pattern.compile(MARKUP_PATTERNS[0], Pattern.CASE_INSENSITIVE),
+        Pattern.compile(MARKUP_PATTERNS[1], Pattern.CASE_INSENSITIVE),
         SRCSET_PATTERN,
-        Pattern.compile(MARKUP_PATTERNS[2], Pattern.CASE_INSENSITIVE),
-        Pattern.compile(MARKUP_PATTERNS[3], Pattern.CASE_INSENSITIVE)
+        Pattern.compile(MARKUP_PATTERNS[3], Pattern.CASE_INSENSITIVE),
+        Pattern.compile(MARKUP_PATTERNS[4], Pattern.CASE_INSENSITIVE)
     };
+    private static final Pattern SRCSET_ITEM = Pattern.compile("^(\\s*)(\\S+)(.*)$", Pattern.DOTALL);
     private static final Pattern JS_ASSET_PATTERN = Pattern.compile(
         "[\"'`]([^\"'`\\s]+\\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|mp3|mp4|webm|txt)(?:\\?[^\"'`\\s]*)?)[\"'`]",
         Pattern.CASE_INSENSITIVE
@@ -163,7 +172,11 @@ final class WebsiteModeUpdater {
     }
 
     interface Fetcher {
-        FetchResponse fetch(URL url) throws IOException;
+        /**
+         * @param bypassCache true for website files (always fetch the deployed bytes); false for the
+         *     live check, whose answer is meant to be served from edge and device caches
+         */
+        FetchResponse fetch(URL url, boolean bypassCache) throws IOException;
     }
 
     /** Minimal persistent key-value store so the logic stays testable on the JVM. */
@@ -204,7 +217,7 @@ final class WebsiteModeUpdater {
     static final int MAX_WEBSITE_REDIRECTS = 5;
 
     static Fetcher okHttpFetcher() {
-        return (url) -> {
+        return (url, bypassCache) -> {
             // Redirects are followed by hand so every hop can be checked against
             // the requested origin: files are saved under the requested path, so
             // another origin must never supply bundle code. The shared client and
@@ -212,12 +225,11 @@ final class WebsiteModeUpdater {
             final OkHttpClient client = DownloadService.sharedClient.newBuilder().followRedirects(false).followSslRedirects(false).build();
             HttpUrl target = HttpUrl.get(url.toString());
             for (int hop = 0; hop <= MAX_WEBSITE_REDIRECTS; hop++) {
-                final Request request = new Request.Builder()
-                    .url(target)
-                    .header("Accept", "*/*")
-                    .header("Cache-Control", "no-cache")
-                    .get()
-                    .build();
+                final Request.Builder builder = new Request.Builder().url(target).header("Accept", "*/*").get();
+                if (bypassCache) {
+                    builder.header("Cache-Control", "no-cache");
+                }
+                final Request request = builder.build();
                 try (Response response = client.newCall(request).execute()) {
                     if (response.isRedirect()) {
                         final String location = response.header("Location");
@@ -319,7 +331,8 @@ final class WebsiteModeUpdater {
         if (checkUrl == null) {
             throw new IOException("Invalid websiteLiveUrl");
         }
-        final FetchResponse response = this.fetcher.fetch(new URL(checkUrl));
+        // No cache bypass: the live answer is device independent and meant to be cached.
+        final FetchResponse response = this.fetcher.fetch(new URL(checkUrl), false);
         if (!response.isSuccess()) {
             throw new IOException("Website live check failed with HTTP " + response.statusCode);
         }
@@ -392,13 +405,32 @@ final class WebsiteModeUpdater {
 
     // ---- Website download ----
 
-    /** Deterministic bundle version: web-&lt;first 12 hex chars of sha256(entry HTML bytes)&gt;. */
-    static String versionForEntryHtml(final byte[] html) {
-        return VERSION_PREFIX + sha256Hex(html).substring(0, 12);
+    /**
+     * Deterministic bundle version: web-&lt;first 12 hex chars of sha256(normalized website URL + "\n" +
+     * entry HTML bytes)&gt;. The URL is part of the hash so moving the app to another domain also
+     * produces a new version.
+     */
+    static String versionForWebsite(final URL websiteUrl, final byte[] html) {
+        final byte[] prefix = (normalizedWebsiteUrl(websiteUrl) + "\n").getBytes(StandardCharsets.UTF_8);
+        final byte[] input = new byte[prefix.length + html.length];
+        System.arraycopy(prefix, 0, input, 0, prefix.length);
+        System.arraycopy(html, 0, input, prefix.length, html.length);
+        return VERSION_PREFIX + sha256Hex(input).substring(0, 12);
+    }
+
+    /** Lowercase scheme and host, default port dropped, empty path as "/", query kept, fragment dropped. */
+    static String normalizedWebsiteUrl(final URL url) {
+        final String scheme = url.getProtocol().toLowerCase(Locale.ROOT);
+        final String host = url.getHost().toLowerCase(Locale.ROOT);
+        final int port = url.getPort();
+        final String portPart = port == -1 || port == url.getDefaultPort() ? "" : ":" + port;
+        final String path = url.getPath() == null || url.getPath().isEmpty() ? "/" : url.getPath();
+        final String query = url.getQuery() == null ? "" : "?" + url.getQuery();
+        return scheme + "://" + host + portPart + path + query;
     }
 
     byte[] fetchEntryHtml(final URL websiteUrl, final URL downloadBase) throws IOException {
-        final FetchResponse response = this.fetcher.fetch(rebase(websiteUrl, downloadBase));
+        final FetchResponse response = this.fetcher.fetch(rebase(websiteUrl, downloadBase), true);
         if (!response.isSuccess()) {
             throw new IOException("HTTP " + response.statusCode + " while fetching website entry");
         }
@@ -418,13 +450,15 @@ final class WebsiteModeUpdater {
         if (!targetDir.exists() && !targetDir.mkdirs()) {
             throw new IOException("Unable to create website download directory");
         }
-        save(entryHtml, new File(targetDir, "index.html"), targetDir);
+        final String entryText = new String(entryHtml, StandardCharsets.UTF_8);
+        save(withBundleAssetUrls(entryHtml, entryText, websiteUrl, websiteUrl), new File(targetDir, "index.html"), targetDir);
         final Set<String> written = new HashSet<>();
         written.add("index.html");
 
         final ArrayDeque<Asset> queue = new ArrayDeque<>();
         final Set<String> queued = new HashSet<>();
-        for (Asset asset : discoverMarkupAssets(new String(entryHtml, StandardCharsets.UTF_8), websiteUrl, websiteUrl, true)) {
+        final Map<String, List<URL>> requiredReferences = new LinkedHashMap<>();
+        for (Asset asset : discoverMarkupAssets(entryText, websiteUrl, websiteUrl, true)) {
             enqueue(asset, queue, queued);
         }
 
@@ -440,7 +474,7 @@ final class WebsiteModeUpdater {
             }
             final FetchResponse response;
             try {
-                response = this.fetcher.fetch(rebase(asset.url, downloadBase));
+                response = this.fetcher.fetch(rebase(asset.url, downloadBase), true);
             } catch (IOException e) {
                 throw new IOException("Failed to download " + asset.url.getPath() + ": " + e.getMessage(), e);
             }
@@ -450,23 +484,124 @@ final class WebsiteModeUpdater {
                 }
                 throw new IOException("HTTP " + response.statusCode + " while downloading " + asset.url.getPath());
             }
-            save(response.data, new File(targetDir, relativePath), targetDir);
-            written.add(relativePath);
 
-            final String text;
             if (isCss(asset.url, response.contentType)) {
-                text = new String(response.data, StandardCharsets.UTF_8);
+                final String text = new String(response.data, StandardCharsets.UTF_8);
+                save(withBundleAssetUrls(response.data, text, asset.url, websiteUrl), new File(targetDir, relativePath), targetDir);
+                written.add(relativePath);
                 for (Asset child : discoverMarkupAssets(text, asset.url, websiteUrl, false)) {
                     enqueue(child, queue, queued);
                 }
             } else if (isJavaScript(asset.url, response.contentType)) {
-                text = new String(response.data, StandardCharsets.UTF_8);
+                // JS is saved as is: same-origin absolute URLs in code may be API calls.
+                save(response.data, new File(targetDir, relativePath), targetDir);
+                written.add(relativePath);
+                final String text = new String(response.data, StandardCharsets.UTF_8);
                 for (Asset child : discoverJavaScriptAssets(text, asset.url, websiteUrl)) {
+                    if (!child.requiredCandidates.isEmpty()) {
+                        requiredReferences.put(candidatesKey(child.requiredCandidates), child.requiredCandidates);
+                    }
                     enqueue(child, queue, queued);
                 }
+            } else {
+                save(response.data, new File(targetDir, relativePath), targetDir);
+                written.add(relativePath);
+            }
+        }
+
+        // A code chunk referenced from JS must exist under at least one of its candidate paths,
+        // otherwise the bundle would break when the chunk is lazily loaded (e.g. deploy race).
+        for (List<URL> candidates : requiredReferences.values()) {
+            boolean found = false;
+            for (URL candidate : candidates) {
+                if (written.contains(localPath(candidate))) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                throw new IOException("Missing code chunk referenced from JS: " + candidates.get(0).getPath());
             }
         }
         return written.size();
+    }
+
+    private static String candidatesKey(final List<URL> candidates) {
+        final StringBuilder key = new StringBuilder();
+        for (URL candidate : candidates) {
+            key.append(candidate.toString()).append('\n');
+        }
+        return key.toString();
+    }
+
+    /** Returns the original bytes unless a same-origin absolute asset URL had to be made root-relative. */
+    private static byte[] withBundleAssetUrls(final byte[] data, final String text, final URL baseUrl, final URL rootUrl) {
+        final String rewritten = rewriteAbsoluteAssetUrls(text, baseUrl, rootUrl);
+        return rewritten.equals(text) ? data : rewritten.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * HTML/CSS only: discovered same-origin absolute asset URLs (https://app.example.com/assets/a.js) become
+     * root-relative (/assets/a.js), matching where they are stored in the bundle, so the WebView loads them
+     * from the bundle instead of the network. Values that are not discovered assets are left untouched.
+     */
+    static String rewriteAbsoluteAssetUrls(final String text, final URL baseUrl, final URL rootUrl) {
+        if (text == null) {
+            return null;
+        }
+        String result = text;
+        for (Pattern pattern : COMPILED_MARKUP_PATTERNS) {
+            final Matcher matcher = pattern.matcher(result);
+            final StringBuilder out = new StringBuilder();
+            int last = 0;
+            while (matcher.find()) {
+                final String value = matcher.group(1);
+                final String rewritten =
+                    pattern == SRCSET_PATTERN ? rewriteSrcset(value, baseUrl, rootUrl) : rewriteAbsoluteValue(value, baseUrl, rootUrl);
+                if (rewritten != null) {
+                    out.append(result, last, matcher.start(1)).append(rewritten);
+                    last = matcher.end(1);
+                }
+            }
+            if (last > 0) {
+                out.append(result, last, result.length());
+                result = out.toString();
+            }
+        }
+        return result;
+    }
+
+    private static String rewriteAbsoluteValue(final String value, final URL baseUrl, final URL rootUrl) {
+        final String trimmed = value.trim();
+        final String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("https://") && !lower.startsWith("http://") && !lower.startsWith("//")) {
+            return null;
+        }
+        final URL url = sameOriginUrl(trimmed, baseUrl, rootUrl);
+        if (url == null) {
+            return null;
+        }
+        final String path = url.getPath() == null || url.getPath().isEmpty() ? "/" : url.getPath();
+        final String query = url.getQuery() == null ? "" : "?" + url.getQuery();
+        final int hash = trimmed.indexOf('#');
+        return path + query + (hash >= 0 ? trimmed.substring(hash) : "");
+    }
+
+    private static String rewriteSrcset(final String value, final URL baseUrl, final URL rootUrl) {
+        final String[] items = value.split(",", -1);
+        boolean changed = false;
+        for (int i = 0; i < items.length; i++) {
+            final Matcher item = SRCSET_ITEM.matcher(items[i]);
+            if (!item.matches()) {
+                continue;
+            }
+            final String rewritten = rewriteAbsoluteValue(item.group(2), baseUrl, rootUrl);
+            if (rewritten != null) {
+                items[i] = item.group(1) + rewritten + item.group(3);
+                changed = true;
+            }
+        }
+        return changed ? String.join(",", items) : null;
     }
 
     private static void enqueue(final Asset asset, final ArrayDeque<Asset> queue, final Set<String> queued) {
@@ -480,10 +615,20 @@ final class WebsiteModeUpdater {
 
         final URL url;
         final boolean required;
+        /**
+         * For JS code chunk references: every candidate URL of the reference. The update fails
+         * unless at least one of them downloads; each single candidate may still 404.
+         */
+        final List<URL> requiredCandidates;
 
         Asset(final URL url, final boolean required) {
+            this(url, required, Collections.emptyList());
+        }
+
+        Asset(final URL url, final boolean required, final List<URL> requiredCandidates) {
             this.url = url;
             this.required = required;
+            this.requiredCandidates = requiredCandidates;
         }
     }
 
@@ -515,7 +660,8 @@ final class WebsiteModeUpdater {
 
     /**
      * Heuristic string refs inside JS bundles. Bundlers emit both module-relative refs ("./chunk.js")
-     * and base-relative refs ("assets/chunk.js"), so both resolutions are tried; misses are tolerated.
+     * and base-relative refs ("assets/chunk.js"), so both resolutions are tried and a single candidate
+     * may miss. Code refs (.js/.mjs/.css) must resolve on at least one candidate; other refs are best effort.
      */
     static List<Asset> discoverJavaScriptAssets(final String text, final URL baseUrl, final URL rootUrl) {
         final List<Asset> result = new ArrayList<>();
@@ -525,15 +671,26 @@ final class WebsiteModeUpdater {
         final Matcher matcher = JS_ASSET_PATTERN.matcher(text);
         while (matcher.find()) {
             final String value = matcher.group(1);
+            final List<URL> candidates = new ArrayList<>(2);
             final URL relativeToModule = sameOriginUrl(value, baseUrl, rootUrl);
             if (relativeToModule != null) {
-                result.add(new Asset(relativeToModule, false));
+                candidates.add(relativeToModule);
             }
             if (!value.startsWith("/") && !value.startsWith("./") && !value.startsWith("../") && !value.contains("://")) {
                 final URL relativeToRoot = sameOriginUrl(value, rootUrl, rootUrl);
-                if (relativeToRoot != null && (relativeToModule == null || !relativeToRoot.equals(relativeToModule))) {
-                    result.add(new Asset(relativeToRoot, false));
+                if (
+                    relativeToRoot != null && (relativeToModule == null || !relativeToRoot.toString().equals(relativeToModule.toString()))
+                ) {
+                    candidates.add(relativeToRoot);
                 }
+            }
+            if (candidates.isEmpty()) {
+                continue;
+            }
+            final boolean code = REQUIRED_EXTENSION.matcher(candidates.get(0).getPath()).find();
+            final List<URL> required = code ? Collections.unmodifiableList(candidates) : Collections.emptyList();
+            for (URL candidate : candidates) {
+                result.add(new Asset(candidate, false, required));
             }
         }
         return result;
@@ -557,7 +714,12 @@ final class WebsiteModeUpdater {
             if (!"http".equals(url.getProtocol()) && !"https".equals(url.getProtocol())) {
                 return null;
             }
-            if (!url.getHost().equalsIgnoreCase(rootUrl.getHost()) || effectivePort(url) != effectivePort(rootUrl)) {
+            // Scheme is part of the origin: an https site must never pull code over http.
+            if (
+                !url.getProtocol().equalsIgnoreCase(rootUrl.getProtocol()) ||
+                !url.getHost().equalsIgnoreCase(rootUrl.getHost()) ||
+                effectivePort(url) != effectivePort(rootUrl)
+            ) {
                 return null;
             }
             final URI uri = url.toURI();

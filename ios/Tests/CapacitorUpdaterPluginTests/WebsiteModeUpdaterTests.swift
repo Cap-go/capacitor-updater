@@ -23,13 +23,15 @@ final class WebsiteModeUpdaterTests: XCTestCase {
     private final class FakeSite {
         var responses: [String: WebsiteModeUpdater.FetchResponse] = [:]
         var requested: [String] = []
+        var bypassCache: [String: Bool] = [:]
 
         func put(_ url: String, _ body: String, _ contentType: String) {
             responses[url] = WebsiteModeUpdater.FetchResponse(statusCode: 200, data: Data(body.utf8), contentType: contentType)
         }
 
-        func fetch(_ url: URL) throws -> WebsiteModeUpdater.FetchResponse {
+        func fetch(_ url: URL, bypass: Bool) throws -> WebsiteModeUpdater.FetchResponse {
             requested.append(url.absoluteString)
+            bypassCache[url.absoluteString] = bypass
             return responses[url.absoluteString] ?? WebsiteModeUpdater.FetchResponse(statusCode: 404, data: Data(), contentType: "text/plain")
         }
     }
@@ -39,7 +41,7 @@ final class WebsiteModeUpdaterTests: XCTestCase {
     }
 
     private func makeUpdater(_ site: FakeSite) -> WebsiteModeUpdater {
-        WebsiteModeUpdater(websiteLiveUrl: nil, fetcher: { try site.fetch($0) }, defaults: defaults)
+        WebsiteModeUpdater(websiteLiveUrl: nil, fetcher: { try site.fetch($0, bypass: $1) }, defaults: defaults)
     }
 
     // MARK: - Response parsing
@@ -112,13 +114,19 @@ final class WebsiteModeUpdaterTests: XCTestCase {
 
     // MARK: - Version id
 
-    func testVersionIdIsDeterministicSha256Prefix() {
+    func testVersionIdHashesWebsiteUrlAndEntryHtml() {
+        let site = URL(string: "https://app.example.com/")!
         let html = Data("<html></html>".utf8)
-        let version = WebsiteModeUpdater.versionForEntryHtml(html)
-        XCTAssertEqual(version, "web-" + String(WebsiteModeUpdater.sha256Hex(html).prefix(12)))
-        XCTAssertEqual(version.count, 16)
-        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForEntryHtml(Data("<html> </html>".utf8)))
-        XCTAssertEqual(WebsiteModeUpdater.versionForEntryHtml(Data()), "web-e3b0c44298fc")
+        let version = WebsiteModeUpdater.versionForWebsite(site, entryHtml: html)
+        // sha256("https://app.example.com/\n<html></html>"), identical on Android.
+        XCTAssertEqual(version, "web-1fa8d47e9e84")
+        XCTAssertEqual(version, WebsiteModeUpdater.versionForWebsite(URL(string: "HTTPS://App.Example.com:443")!, entryHtml: html))
+        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForWebsite(site, entryHtml: Data("<html> </html>".utf8)))
+        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForWebsite(URL(string: "https://new.example.com/")!, entryHtml: html))
+        XCTAssertEqual(
+            WebsiteModeUpdater.normalizedWebsiteUrl(URL(string: "https://APP.example.com:8443/index.html?a=1#x")!),
+            "https://app.example.com:8443/index.html?a=1"
+        )
     }
 
     // MARK: - Asset discovery
@@ -130,7 +138,8 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         <link rel=stylesheet href='/assets/index-abc.css'>
         <img srcset="/img/a.png 1x, /img/b.png 2x">
         <script src="https://cdn.other.com/x.js"></script>
-        <a href="#top"></a><img src="data:image/png;base64,AA">
+        <a href="#top"></a><a href="/about">About</a><img src="data:image/png;base64,AA">
+        <link rel="manifest" href="/manifest.webmanifest"><link href="/assets/pre.js" rel="modulepreload">
         """
         let assets = WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: true)
         let found = assets.map { $0.url.absoluteString }
@@ -139,6 +148,9 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertTrue(found.contains("https://app.example.com/img/a.png"))
         XCTAssertTrue(found.contains("https://app.example.com/img/b.png"))
         XCTAssertFalse(found.contains("https://cdn.other.com/x.js"))
+        XCTAssertFalse(found.contains("https://app.example.com/about"))
+        XCTAssertTrue(found.contains("https://app.example.com/manifest.webmanifest"))
+        XCTAssertTrue(found.contains("https://app.example.com/assets/pre.js"))
         for asset in assets {
             XCTAssertEqual(asset.required, ["js", "css"].contains(asset.url.pathExtension))
         }
@@ -163,6 +175,52 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertTrue(found.contains("https://app.example.com/assets/Home-2.js"))
         XCTAssertTrue(found.contains("https://app.example.com/assets/assets/Home-2.js"))
         XCTAssertTrue(found.contains("https://app.example.com/data/x.json"))
+    }
+
+    func testRejectsSchemeDowngradeOnSameHostAndPort() {
+        let root = URL(string: "https://app.example.com/")!
+        XCTAssertNil(WebsiteModeUpdater.sameOriginUrl("http://app.example.com:443/app.js", baseUrl: root, rootUrl: root))
+        XCTAssertNil(WebsiteModeUpdater.sameOriginUrl("http://app.example.com/app.js", baseUrl: root, rootUrl: root))
+        XCTAssertNotNil(WebsiteModeUpdater.sameOriginUrl("https://app.example.com:443/app.js", baseUrl: root, rootUrl: root))
+        let html = #"<script src="http://app.example.com:443/app.js"></script>"#
+        XCTAssertTrue(WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: true).isEmpty)
+    }
+
+    func testMarksJavaScriptCodeReferencesRequiredAcrossCandidates() {
+        let root = URL(string: "https://app.example.com/")!
+        let module = URL(string: "https://app.example.com/assets/index.js")!
+        let assets = WebsiteModeUpdater.discoverJavaScriptAssets(
+            #"const a=["assets/Home-2.js","assets/logo.png"]"#,
+            baseUrl: module,
+            rootUrl: root
+        )
+        for asset in assets {
+            XCTAssertFalse(asset.required)
+            XCTAssertEqual(asset.requiredCandidates.count, asset.url.pathExtension == "js" ? 2 : 0)
+        }
+    }
+
+    func testRewritesAbsoluteSameOriginAssetUrlsInMarkup() {
+        let root = URL(string: "https://app.example.com/")!
+        let html = #"<script src="https://app.example.com/assets/app.js"></script>"# +
+            #"<link rel=stylesheet href='https://app.example.com/assets/app.css?v=2'>"# +
+            #"<img srcset="https://app.example.com/a.png 1x, /b.png 2x, https://cdn.other.com/c.png 3x">"# +
+            #"<a href="https://app.example.com/about">x</a>"# +
+            #"<script src="https://cdn.other.com/x.js"></script><script src="http://app.example.com/old.js"></script>"#
+        let expected = #"<script src="/assets/app.js"></script>"# +
+            #"<link rel=stylesheet href='/assets/app.css?v=2'>"# +
+            #"<img srcset="/a.png 1x, /b.png 2x, https://cdn.other.com/c.png 3x">"# +
+            #"<a href="https://app.example.com/about">x</a>"# +
+            #"<script src="https://cdn.other.com/x.js"></script><script src="http://app.example.com/old.js"></script>"#
+        XCTAssertEqual(WebsiteModeUpdater.rewriteAbsoluteAssetUrls(html, baseUrl: root, rootUrl: root), expected)
+
+        let css = URL(string: "https://app.example.com/assets/app.css")!
+        let cssText = #"@import "https://app.example.com/assets/theme.css"; "# +
+            #".a{background:url(https://app.example.com/img/bg.png)} .b{src:url('//app.example.com/f.woff2#iefix')}"#
+        XCTAssertEqual(
+            WebsiteModeUpdater.rewriteAbsoluteAssetUrls(cssText, baseUrl: css, rootUrl: root),
+            #"@import "/assets/theme.css"; .a{background:url(/img/bg.png)} .b{src:url('/f.woff2#iefix')}"#
+        )
     }
 
     func testLocalPathRejectsTraversal() throws {
@@ -215,6 +273,68 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         ))
     }
 
+    func testDownloadRewritesAbsoluteUrlsInHtmlAndCssButNotJs() throws {
+        let site = FakeSite()
+        let html = #"<script type=module src="https://app.example.com/assets/index.js"></script>"# +
+            #"<link rel=stylesheet href="https://app.example.com/assets/index.css">"#
+        let js = "fetch('https://app.example.com/api/data.json')"
+        site.put("https://app.example.com/assets/index.js", js, "application/javascript")
+        site.put("https://app.example.com/assets/index.css", ".b{background:url(https://app.example.com/bg.png)}", "text/css")
+        site.put("https://app.example.com/bg.png", "PNG", "image/png")
+        let dir = tempRoot.appendingPathComponent("absolute", isDirectory: true)
+        try makeUpdater(site).downloadWebsite(
+            entryHtml: Data(html.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: dir
+        )
+        XCTAssertEqual(
+            try String(contentsOf: dir.appendingPathComponent("index.html"), encoding: .utf8),
+            #"<script type=module src="/assets/index.js"></script><link rel=stylesheet href="/assets/index.css">"#
+        )
+        XCTAssertEqual(
+            try String(contentsOf: dir.appendingPathComponent("assets/index.css"), encoding: .utf8),
+            ".b{background:url(/bg.png)}"
+        )
+        XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent("assets/index.js"), encoding: .utf8), js)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("bg.png").path))
+    }
+
+    func testDownloadFailsWhenJavaScriptChunkIsMissingOnEveryCandidate() {
+        let site = FakeSite()
+        site.put("https://app.example.com/assets/index.js", "import('./About-1.js');const c=['assets/Home-2.css']", "application/javascript")
+        site.put("https://app.example.com/assets/Home-2.css", ".a{}", "text/css")
+        XCTAssertThrowsError(try makeUpdater(site).downloadWebsite(
+            entryHtml: Data(#"<script src="/assets/index.js"></script>"#.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: tempRoot.appendingPathComponent("race", isDirectory: true)
+        )) { error in
+            XCTAssertTrue(error.localizedDescription.contains("About-1.js"), error.localizedDescription)
+        }
+    }
+
+    func testDownloadToleratesMissingCandidateAndNonCodeAssets() throws {
+        let site = FakeSite()
+        // "assets/Home-2.js" 404s module-relative (/assets/assets/Home-2.js) but exists root-relative.
+        site.put(
+            "https://app.example.com/assets/index.js",
+            "const m=['assets/Home-2.js','assets/missing.png','x/gone.json']",
+            "text/javascript"
+        )
+        site.put("https://app.example.com/assets/Home-2.js", "export{}", "text/javascript")
+        let dir = tempRoot.appendingPathComponent("partial", isDirectory: true)
+        try makeUpdater(site).downloadWebsite(
+            entryHtml: Data(#"<script src="/assets/index.js"></script>"#.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: dir
+        )
+        XCTAssertTrue(site.requested.contains("https://app.example.com/assets/assets/Home-2.js"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("assets/Home-2.js").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("assets/missing.png").path))
+    }
+
     func testDownloadUsesDownloadBaseUrl() throws {
         let site = FakeSite()
         site.put("https://cdn.example.com/v1/assets/index.js", "1", "application/javascript")
@@ -227,6 +347,7 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("assets/index.js").path))
         XCTAssertTrue(site.requested.contains("https://cdn.example.com/v1/assets/index.js"))
+        XCTAssertEqual(site.bypassCache["https://cdn.example.com/v1/assets/index.js"], true)
     }
 
     func testFetchLiveResponseCallsEndpointWithAppId() throws {
@@ -238,6 +359,8 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         )
         let updater = makeUpdater(site)
         XCTAssertTrue(try updater.fetchLiveResponse(appId: "com.example.app").isWebsiteUpdateAllowed)
+        // The live check must stay cacheable (edge and device); website files bypass caches.
+        XCTAssertEqual(site.bypassCache["https://plugin.capgo.app/website_live?app_id=com.example.app"], false)
         XCTAssertThrowsError(try updater.fetchLiveResponse(appId: "unknown.app"))
     }
 

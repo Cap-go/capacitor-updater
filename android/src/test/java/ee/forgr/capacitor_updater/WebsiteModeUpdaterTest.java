@@ -56,14 +56,16 @@ public class WebsiteModeUpdaterTest {
 
         final Map<String, WebsiteModeUpdater.FetchResponse> responses = new HashMap<>();
         final List<String> requested = new ArrayList<>();
+        final Map<String, Boolean> bypassCache = new HashMap<>();
 
         void put(String url, String body, String contentType) {
             responses.put(url, new WebsiteModeUpdater.FetchResponse(200, body.getBytes(StandardCharsets.UTF_8), contentType));
         }
 
         @Override
-        public WebsiteModeUpdater.FetchResponse fetch(URL url) {
+        public WebsiteModeUpdater.FetchResponse fetch(URL url, boolean bypass) {
             requested.add(url.toString());
+            bypassCache.put(url.toString(), bypass);
             final WebsiteModeUpdater.FetchResponse response = responses.get(url.toString());
             return response != null ? response : new WebsiteModeUpdater.FetchResponse(404, new byte[0], "text/plain");
         }
@@ -176,14 +178,19 @@ public class WebsiteModeUpdaterTest {
     // ---- Version id ----
 
     @Test
-    public void versionIdIsDeterministicSha256Prefix() {
+    public void versionIdHashesWebsiteUrlAndEntryHtml() throws Exception {
+        final URL site = new URL("https://app.example.com/");
         final byte[] html = "<html></html>".getBytes(StandardCharsets.UTF_8);
-        final String version = WebsiteModeUpdater.versionForEntryHtml(html);
-        assertEquals("web-" + WebsiteModeUpdater.sha256Hex(html).substring(0, 12), version);
-        assertEquals(16, version.length());
-        assertEquals(version, WebsiteModeUpdater.versionForEntryHtml(html.clone()));
-        assertFalse(version.equals(WebsiteModeUpdater.versionForEntryHtml("<html> </html>".getBytes(StandardCharsets.UTF_8))));
-        assertEquals("web-e3b0c44298fc", WebsiteModeUpdater.versionForEntryHtml(new byte[0]));
+        final String version = WebsiteModeUpdater.versionForWebsite(site, html);
+        // sha256("https://app.example.com/\n<html></html>"), identical on iOS.
+        assertEquals("web-1fa8d47e9e84", version);
+        assertEquals(version, WebsiteModeUpdater.versionForWebsite(new URL("HTTPS://App.Example.com:443"), html.clone()));
+        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(site, "<html> </html>".getBytes(StandardCharsets.UTF_8))));
+        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(new URL("https://new.example.com/"), html)));
+        assertEquals(
+            "https://app.example.com:8443/index.html?a=1",
+            WebsiteModeUpdater.normalizedWebsiteUrl(new URL("https://APP.example.com:8443/index.html?a=1#x"))
+        );
     }
 
     // ---- Asset discovery ----
@@ -196,7 +203,8 @@ public class WebsiteModeUpdaterTest {
             "<link rel=stylesheet href='/assets/index-abc.css'>" +
             "<img srcset=\"/img/a.png 1x, /img/b.png 2x\">" +
             "<script src=\"https://cdn.other.com/x.js\"></script>" +
-            "<a href=\"#top\"></a><img src=\"data:image/png;base64,AA\">";
+            "<a href=\"#top\"></a><a href=\"/about\">About</a><img src=\"data:image/png;base64,AA\">" +
+            "<link rel=\"manifest\" href=\"/manifest.webmanifest\"><link href=\"/assets/pre.js\" rel=\"modulepreload\">";
         final List<WebsiteModeUpdater.Asset> assets = WebsiteModeUpdater.discoverMarkupAssets(html, root, root, true);
         final List<String> found = urls(assets);
         assertTrue(found.contains("https://app.example.com/assets/index-abc.js"));
@@ -204,6 +212,9 @@ public class WebsiteModeUpdaterTest {
         assertTrue(found.contains("https://app.example.com/img/a.png"));
         assertTrue(found.contains("https://app.example.com/img/b.png"));
         assertFalse(found.contains("https://cdn.other.com/x.js"));
+        assertFalse(found.contains("https://app.example.com/about"));
+        assertTrue(found.contains("https://app.example.com/manifest.webmanifest"));
+        assertTrue(found.contains("https://app.example.com/assets/pre.js"));
         for (WebsiteModeUpdater.Asset asset : assets) {
             final boolean code = asset.url.getPath().endsWith(".js") || asset.url.getPath().endsWith(".css");
             assertEquals(code, asset.required);
@@ -231,6 +242,66 @@ public class WebsiteModeUpdaterTest {
         assertTrue(found.contains("https://app.example.com/assets/Home-2.js"));
         assertTrue(found.contains("https://app.example.com/assets/assets/Home-2.js"));
         assertTrue(found.contains("https://app.example.com/data/x.json"));
+    }
+
+    @Test
+    public void rejectsSchemeDowngradeOnSameHostAndPort() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        assertNull(WebsiteModeUpdater.sameOriginUrl("http://app.example.com:443/app.js", root, root));
+        assertNull(WebsiteModeUpdater.sameOriginUrl("http://app.example.com/app.js", root, root));
+        assertNotNull(WebsiteModeUpdater.sameOriginUrl("https://app.example.com:443/app.js", root, root));
+        final List<String> found = urls(
+            WebsiteModeUpdater.discoverMarkupAssets("<script src=\"http://app.example.com:443/app.js\"></script>", root, root, true)
+        );
+        assertTrue(found.isEmpty());
+    }
+
+    @Test
+    public void marksJavaScriptCodeReferencesRequiredAcrossCandidates() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        final URL js = new URL("https://app.example.com/assets/index.js");
+        final List<WebsiteModeUpdater.Asset> assets = WebsiteModeUpdater.discoverJavaScriptAssets(
+            "const a=[\"assets/Home-2.js\",\"assets/logo.png\"]",
+            js,
+            root
+        );
+        for (WebsiteModeUpdater.Asset asset : assets) {
+            assertFalse(asset.required);
+            if (asset.url.getPath().endsWith(".js")) {
+                assertEquals(2, asset.requiredCandidates.size());
+            } else {
+                assertTrue(asset.requiredCandidates.isEmpty());
+            }
+        }
+    }
+
+    @Test
+    public void rewritesAbsoluteSameOriginAssetUrlsInMarkup() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        final String html =
+            "<script src=\"https://app.example.com/assets/app.js\"></script>" +
+            "<link rel=stylesheet href='https://app.example.com/assets/app.css?v=2'>" +
+            "<img srcset=\"https://app.example.com/a.png 1x, /b.png 2x, https://cdn.other.com/c.png 3x\">" +
+            "<a href=\"https://app.example.com/about\">x</a>" +
+            "<script src=\"https://cdn.other.com/x.js\"></script><script src=\"http://app.example.com/old.js\"></script>";
+        assertEquals(
+            "<script src=\"/assets/app.js\"></script>" +
+                "<link rel=stylesheet href='/assets/app.css?v=2'>" +
+                "<img srcset=\"/a.png 1x, /b.png 2x, https://cdn.other.com/c.png 3x\">" +
+                "<a href=\"https://app.example.com/about\">x</a>" +
+                "<script src=\"https://cdn.other.com/x.js\"></script><script src=\"http://app.example.com/old.js\"></script>",
+            WebsiteModeUpdater.rewriteAbsoluteAssetUrls(html, root, root)
+        );
+        final URL css = new URL("https://app.example.com/assets/app.css");
+        assertEquals(
+            "@import \"/assets/theme.css\"; .a{background:url(/img/bg.png)} .b{src:url('/f.woff2#iefix')}",
+            WebsiteModeUpdater.rewriteAbsoluteAssetUrls(
+                "@import \"https://app.example.com/assets/theme.css\"; .a{background:url(https://app.example.com/img/bg.png)} " +
+                    ".b{src:url('//app.example.com/f.woff2#iefix')}",
+                css,
+                root
+            )
+        );
     }
 
     @Test
@@ -289,6 +360,67 @@ public class WebsiteModeUpdaterTest {
     }
 
     @Test
+    public void downloadRewritesAbsoluteUrlsInHtmlAndCssButNotJs() throws Exception {
+        final FakeSite site = new FakeSite();
+        final String html =
+            "<script type=module src=\"https://app.example.com/assets/index.js\"></script>" +
+            "<link rel=stylesheet href=\"https://app.example.com/assets/index.css\">";
+        final String js = "fetch('https://app.example.com/api/data.json')";
+        site.put("https://app.example.com/assets/index.js", js, "application/javascript");
+        site.put("https://app.example.com/assets/index.css", ".b{background:url(https://app.example.com/bg.png)}", "text/css");
+        site.put("https://app.example.com/bg.png", "PNG", "image/png");
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        final File dir = tmp.newFolder("absolute");
+        updater.downloadWebsite(html.getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, dir);
+        assertEquals(
+            "<script type=module src=\"/assets/index.js\"></script><link rel=stylesheet href=\"/assets/index.css\">",
+            new String(Files.readAllBytes(new File(dir, "index.html").toPath()), StandardCharsets.UTF_8)
+        );
+        assertEquals(
+            ".b{background:url(/bg.png)}",
+            new String(Files.readAllBytes(new File(dir, "assets/index.css").toPath()), StandardCharsets.UTF_8)
+        );
+        assertEquals(js, new String(Files.readAllBytes(new File(dir, "assets/index.js").toPath()), StandardCharsets.UTF_8));
+        assertTrue(new File(dir, "bg.png").isFile());
+    }
+
+    @Test
+    public void downloadFailsWhenJavaScriptChunkIsMissingOnEveryCandidate() throws Exception {
+        final FakeSite site = new FakeSite();
+        site.put(
+            "https://app.example.com/assets/index.js",
+            "import('./About-1.js');const c=['assets/Home-2.css']",
+            "application/javascript"
+        );
+        site.put("https://app.example.com/assets/Home-2.css", ".a{}", "text/css");
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        final byte[] html = "<script src=\"/assets/index.js\"></script>".getBytes(StandardCharsets.UTF_8);
+        final IOException error = assertThrows(IOException.class, () ->
+            updater.downloadWebsite(html, new URL("https://app.example.com/"), null, tmp.newFolder("race"))
+        );
+        assertTrue(error.getMessage().contains("About-1.js"));
+    }
+
+    @Test
+    public void downloadToleratesMissingCandidateAndNonCodeAssets() throws Exception {
+        final FakeSite site = new FakeSite();
+        // "assets/Home-2.js" 404s module-relative (/assets/assets/Home-2.js) but exists root-relative.
+        site.put(
+            "https://app.example.com/assets/index.js",
+            "const m=['assets/Home-2.js','assets/missing.png','x/gone.json']",
+            "text/javascript"
+        );
+        site.put("https://app.example.com/assets/Home-2.js", "export{}", "text/javascript");
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        final byte[] html = "<script src=\"/assets/index.js\"></script>".getBytes(StandardCharsets.UTF_8);
+        final File dir = tmp.newFolder("partial");
+        updater.downloadWebsite(html, new URL("https://app.example.com/"), null, dir);
+        assertTrue(site.requested.contains("https://app.example.com/assets/assets/Home-2.js"));
+        assertTrue(new File(dir, "assets/Home-2.js").isFile());
+        assertFalse(new File(dir, "assets/missing.png").exists());
+    }
+
+    @Test
     public void downloadUsesDownloadBaseUrl() throws Exception {
         final FakeSite site = new FakeSite();
         site.put("https://cdn.example.com/v1/assets/index.js", "1", "application/javascript");
@@ -298,6 +430,7 @@ public class WebsiteModeUpdaterTest {
         updater.downloadWebsite(html, new URL("https://app.example.com/"), new URL("https://cdn.example.com/v1"), dir);
         assertTrue(new File(dir, "assets/index.js").isFile());
         assertTrue(site.requested.contains("https://cdn.example.com/v1/assets/index.js"));
+        assertEquals(Boolean.TRUE, site.bypassCache.get("https://cdn.example.com/v1/assets/index.js"));
     }
 
     @Test
@@ -310,6 +443,8 @@ public class WebsiteModeUpdaterTest {
         );
         final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
         assertTrue(updater.fetchLiveResponse("com.example.app").isWebsiteUpdateAllowed());
+        // The live check must stay cacheable (edge and device); website files bypass caches.
+        assertEquals(Boolean.FALSE, site.bypassCache.get("https://plugin.capgo.app/website_live?app_id=com.example.app"));
         assertThrows(IOException.class, () -> updater.fetchLiveResponse("unknown.app"));
     }
 

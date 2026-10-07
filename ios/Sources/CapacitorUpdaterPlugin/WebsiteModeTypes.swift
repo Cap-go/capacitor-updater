@@ -70,6 +70,9 @@ extension WebsiteModeUpdater {
     struct Asset: Equatable {
         let url: URL
         let required: Bool
+        /// For JS code chunk references: every candidate URL of the reference. The update fails
+        /// unless at least one of them downloads; each single candidate may still 404.
+        var requiredCandidates: [URL] = []
     }
 }
 

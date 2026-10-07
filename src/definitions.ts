@@ -140,7 +140,7 @@ declare module '@capacitor/cli' {
        * then downloads the entry HTML and the same-origin assets it references (HTML, CSS `url()`, JS asset refs)
        * directly from your website. Capgo serves no bundle bytes.
        *
-       * The bundle version is `web-<first 12 hex of sha256(entry HTML)>`. A new version is applied immediately
+       * The bundle version is `web-<first 12 hex of sha256(website URL + "\n" + entry HTML)>`. A new version is applied immediately
        * (like `directUpdate: 'always'`). `notifyAppReady()` is still required: if it is not called within
        * `appReadyTimeout`, the plugin rolls back to the previous bundle and never retries that `web-*` version.
        *

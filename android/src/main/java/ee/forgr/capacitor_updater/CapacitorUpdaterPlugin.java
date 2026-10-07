@@ -5135,7 +5135,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         File tempDir = null;
         try {
             final byte[] entryHtml = updater.fetchEntryHtml(websiteUrl, downloadBase);
-            version = WebsiteModeUpdater.versionForEntryHtml(entryHtml);
+            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml);
             if (version.equals(current.getVersionName())) {
                 logger.info("Website is up to date: " + version);
                 this.endBackGroundTaskWithNotif("No need to update", version, current, false, true);

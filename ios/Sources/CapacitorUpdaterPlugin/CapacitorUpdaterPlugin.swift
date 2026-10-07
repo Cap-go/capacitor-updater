@@ -4568,11 +4568,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let liveUrl = getConfig().getString("websiteLiveUrl", WebsiteModeUpdater.defaultWebsiteLiveUrl)
-        let updater = WebsiteModeUpdater(websiteLiveUrl: liveUrl, fetcher: { [weak self] url in
+        let updater = WebsiteModeUpdater(websiteLiveUrl: liveUrl, fetcher: { [weak self] url, bypassCache in
             guard let self else {
                 throw WebsiteModeUpdater.WebsiteModeError.failed("Plugin released")
             }
-            return try self.websiteFetch(url)
+            return try self.websiteFetch(url, bypassCache: bypassCache)
         })
         self.websiteModeUpdater = updater
         logger.info("Website mode enabled, live check via: \(updater.websiteLiveUrl)")
@@ -4598,9 +4598,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// Dedicated session: every redirect hop must stay on the requested origin.
     /// The shared updater session and its redirect policy are left untouched.
+    /// Cache policy is set per request in `websiteFetch`.
     private lazy var websiteSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.requestCachePolicy = .useProtocolCachePolicy
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = implementation.timeout
@@ -4608,13 +4609,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }()
     private let websiteFetchDelegate = WebsiteFetchDelegate(maxBytes: WebsiteModeUpdater.maxAssetBytes)
 
-    /// Plain GET (no cookies, no cache, same-origin redirects only).
-    private func websiteFetch(_ url: URL) throws -> WebsiteModeUpdater.FetchResponse {
+    /// Plain GET (no cookies, same-origin redirects only). Website files bypass caches; the live
+    /// check does not, so its edge-cached, device independent answer can be reused.
+    private func websiteFetch(_ url: URL, bypassCache: Bool) throws -> WebsiteModeUpdater.FetchResponse {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = implementation.timeout
         request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        if bypassCache {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        } else {
+            request.cachePolicy = .useProtocolCachePolicy
+        }
         let semaphore = DispatchSemaphore(value: 0)
         var responseData: Data?
         var urlResponse: URLResponse?
@@ -4767,7 +4774,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var tempDir: URL?
         do {
             let entryHtml = try updater.fetchEntryHtml(websiteUrl: websiteUrl, downloadBase: downloadBase)
-            version = WebsiteModeUpdater.versionForEntryHtml(entryHtml)
+            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml: entryHtml)
             if version == current.getVersionName() {
                 logger.info("Website is up to date: \(version)")
                 self.endBackGroundTaskWithNotif(
