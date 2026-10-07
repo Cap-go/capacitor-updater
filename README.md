@@ -1127,20 +1127,14 @@ foreground with auto-update enabled. It is useful for native integrations
 such as a silent push notification asking the app to check for a Capgo
 bundle without reimplementing the update protocol in JavaScript.
 
-The check runs whatever the `autoUpdate` mode is. When `autoUpdate` is off
-(or `onlyDownload`), a new bundle is downloaded and announced with
-`updateAvailable` but never set as next or installed.
-
 The promise resolves after the native background work has been queued, not
 after the update has been downloaded or installed. Listen to updater events
 such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
 `noNeedUpdate` for the final result.
 
 Native support is available on iOS and Android. On Web, this method returns
-a result with `status: 'unavailable'`. Native platforms return
-`unavailable` when the update URL is missing or invalid,
-`preview_session` while a preview session is active, and
-`already_running` when an update check is still running.
+a result with `status: 'unavailable'`. Native platforms also return
+`unavailable` when the native auto-update system is disabled.
 
 **Returns:** <code>Promise&lt;<a href="#triggerupdatecheckresult">TriggerUpdateCheckResult</a>&gt;</code>
 
@@ -2488,10 +2482,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 Result returned after requesting an immediate native auto-update check.
 
-| Prop         | Type                                                                             | Description                                                                                                                                                                                                                                             |
-| ------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`status`** | <code>'queued' \| 'already_running' \| 'preview_session' \| 'unavailable'</code> | Native trigger state: `queued` when a check was queued, `already_running` when the native update pipeline is already active, `preview_session` while a preview session is active, or `unavailable` on Web or when the update URL is missing or invalid. |
-| **`queued`** | <code>boolean</code>                                                             | Whether a new native update check was queued. This is `true` only when `status` is `queued`; otherwise it is `false`.                                                                                                                                   |
+| Prop         | Type                                                        | Description                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`status`** | <code>'queued' \| 'already_running' \| 'unavailable'</code> | Native trigger state: `queued` when a check was queued, `already_running` when the native update pipeline is already active, or `unavailable` on Web or when native auto-update is disabled. |
+| **`queued`** | <code>boolean</code>                                        | Whether a new native update check was queued. This is `true` only when `status` is `queued`; otherwise it is `false`.                                                                        |
 
 
 ##### LatestVersion

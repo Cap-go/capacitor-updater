@@ -889,27 +889,22 @@ fn trigger_update_check_statuses() {
 }
 
 #[test]
-fn trigger_update_check_downloads_when_auto_update_is_off() {
+fn trigger_update_check_is_unavailable_when_auto_update_is_off() {
     let p = Plugin::load(json!({ "autoUpdate": false }));
     p.backend.offer("2.0.0", web_bundle("v2"));
-    assert_eq!(p.resolve("triggerUpdateCheck", json!({}))["status"], "queued");
-    // Like onlyDownload: the bundle is downloaded and announced, never scheduled.
-    wait_until("onlyDownload appReady", || {
-        p.events("appReady")
-            .iter()
-            .any(|ready| ready["status"] == "update downloaded, autoUpdate onlyDownload")
-    });
-    assert_eq!(p.events("updateAvailable")[0]["bundle"]["version"], "2.0.0");
-    assert_eq!(p.resolve("getNextBundle", json!({})), Value::Null);
-    assert_eq!(p.current()["id"], "builtin");
+    let status = p.resolve("triggerUpdateCheck", json!({}));
+    assert_eq!(status["status"], "unavailable");
+    assert_eq!(status["queued"], false);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(update_requests(&p, "/updates"), 0);
 }
 
 #[test]
-fn trigger_update_check_reports_preview_sessions() {
+fn trigger_update_check_is_unavailable_during_a_preview_session() {
     let p = Plugin::load(json!({ "allowPreview": true }));
     p.resolve("startPreviewSession", json!({}));
     let status = p.resolve("triggerUpdateCheck", json!({}));
-    assert_eq!(status["status"], "preview_session");
+    assert_eq!(status["status"], "unavailable");
     assert_eq!(status["queued"], false);
 }
 
@@ -1726,7 +1721,7 @@ fn preview_menu_drops_previews_whose_bundle_is_gone() {
         .unwrap()
         .contains("abcdefghij"));
     // Auto update is off during a preview.
-    assert_eq!(p.resolve("triggerUpdateCheck", json!({}))["status"], "preview_session");
+    assert_eq!(p.resolve("triggerUpdateCheck", json!({}))["status"], "unavailable");
     assert_eq!(p.t.call("previewMenuLeave", json!({}))["ok"], true);
     assert_eq!(p.current()["id"], "builtin");
 }

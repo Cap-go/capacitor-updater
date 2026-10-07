@@ -958,16 +958,20 @@ impl Engine {
 
     // ---- triggers ----------------------------------------------------------------------------
 
-    /// `triggerUpdateCheck()`: queues a full update cycle whatever the `autoUpdate`
-    /// mode (with auto update off the cycle only downloads, like `onlyDownload`).
-    /// Returns `queued`, `already_running`, `preview_session` or `unavailable`.
+    /// `triggerUpdateCheck()`: queues the auto-update cycle. Returns `queued`,
+    /// `already_running` or `unavailable` (no valid update URL, a preview session,
+    /// or auto update disabled), the only statuses the TypeScript contract knows.
     pub(crate) fn trigger_update_check(&self) -> &'static str {
         if !is_http_url(&self.config().update_url) {
             self.host.error("Error no url or wrong format");
             return "unavailable";
         }
         if self.block_for_preview() {
-            return "preview_session";
+            return "unavailable";
+        }
+        if !self.is_auto_update_enabled() {
+            self.host.info("Auto update is disabled, update check not triggered");
+            return "unavailable";
         }
         self.background_download()
     }
