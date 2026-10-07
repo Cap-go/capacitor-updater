@@ -73,9 +73,44 @@ extension WebsiteModeUpdater {
     }
 }
 
-/// Website mode saves files under the requested path, so a redirect must never
-/// let another origin supply bundle code. Each hop is checked before it is followed.
-final class SameOriginRedirectDelegate: NSObject, URLSessionTaskDelegate {
+/// Session delegate for website-mode fetches:
+/// - every redirect hop must stay on the requested origin, because files are
+///   saved under the requested path and another origin must never supply code;
+/// - bodies are capped while they stream in, so an oversized response is
+///   cancelled before it is fully buffered in memory.
+final class WebsiteFetchDelegate: NSObject, URLSessionDataDelegate {
+    typealias Completion = (Data?, URLResponse?, Error?) -> Void
+
+    private struct TaskState {
+        var data = Data()
+        var response: URLResponse?
+        var tooLarge = false
+        let completion: Completion
+    }
+
+    private let maxBytes: Int
+    private let lock = NSLock()
+    private var states: [Int: TaskState] = [:]
+
+    init(maxBytes: Int) {
+        self.maxBytes = maxBytes
+    }
+
+    func register(_ task: URLSessionTask, completion: @escaping Completion) {
+        lock.lock()
+        states[task.taskIdentifier] = TaskState(completion: completion)
+        lock.unlock()
+    }
+
+    private func update(_ task: URLSessionTask, _ change: (inout TaskState) -> Void) {
+        lock.lock()
+        if var state = states[task.taskIdentifier] {
+            change(&state)
+            states[task.taskIdentifier] = state
+        }
+        lock.unlock()
+    }
+
     func urlSession(
         _: URLSession,
         task: URLSessionTask,
@@ -91,5 +126,52 @@ final class SameOriginRedirectDelegate: NSObject, URLSessionTaskDelegate {
             return
         }
         completionHandler(request)
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let declaredTooLarge = response.expectedContentLength > Int64(maxBytes)
+        update(dataTask) { state in
+            state.response = response
+            state.tooLarge = declaredTooLarge
+        }
+        completionHandler(declaredTooLarge ? .cancel : .allow)
+    }
+
+    func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        var exceeded = false
+        update(dataTask) { state in
+            guard !state.tooLarge else {
+                return
+            }
+            if state.data.count + data.count > maxBytes {
+                state.tooLarge = true
+                state.data = Data()
+                exceeded = true
+            } else {
+                state.data.append(data)
+            }
+        }
+        if exceeded {
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let state = states.removeValue(forKey: task.taskIdentifier)
+        lock.unlock()
+        guard let state else {
+            return
+        }
+        if state.tooLarge {
+            state.completion(nil, state.response, WebsiteModeUpdater.WebsiteModeError.failed("Asset too large"))
+            return
+        }
+        state.completion(error == nil ? state.data : nil, state.response ?? task.response, error)
     }
 }

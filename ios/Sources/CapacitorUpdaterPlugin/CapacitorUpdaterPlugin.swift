@@ -4604,8 +4604,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = implementation.timeout
-        return URLSession(configuration: configuration, delegate: SameOriginRedirectDelegate(), delegateQueue: nil)
+        return URLSession(configuration: configuration, delegate: websiteFetchDelegate, delegateQueue: nil)
     }()
+    private let websiteFetchDelegate = WebsiteFetchDelegate(maxBytes: WebsiteModeUpdater.maxAssetBytes)
 
     /// Plain GET (no cookies, no cache, same-origin redirects only).
     private func websiteFetch(_ url: URL) throws -> WebsiteModeUpdater.FetchResponse {
@@ -4618,7 +4619,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var responseData: Data?
         var urlResponse: URLResponse?
         var responseError: Error?
-        let task = websiteSession.dataTask(with: request) { data, response, error in
+        let task = websiteSession.dataTask(with: request)
+        websiteFetchDelegate.register(task) { data, response, error in
             responseData = data
             urlResponse = response
             responseError = error
