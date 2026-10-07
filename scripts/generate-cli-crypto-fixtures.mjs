@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { assertSafeFixtureOutputDir } from './cli-crypto-fixture-output.mjs';
 
 // The CLI must not send analytics for fixture generation.
 process.env.CAPGO_DISABLE_TELEMETRY = '1';
@@ -195,18 +196,12 @@ try {
   const keyPath = path.join(project, '.capgo_key_v2');
 
   // Only this script's own files are replaced: never delete the output folder itself, which
-  // could be the checkout or hold other files.
-  const inside = (parent, child) => {
-    const relative = path.relative(parent, child);
-    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-  };
-  if (inside(outputDir, root) || inside(outputDir, process.cwd())) {
-    throw new Error(`Refusing to write fixtures into ${outputDir}: it contains the repository or the current folder`);
-  }
-  fs.mkdirSync(outputDir, { recursive: true });
-  for (const name of fs.readdirSync(outputDir)) {
+  // could be the checkout or hold other files. Resolve symlinks before containment checks.
+  const fixtureOutputDir = assertSafeFixtureOutputDir(outputDir, { root, cwd: process.cwd() });
+  fs.mkdirSync(fixtureOutputDir, { recursive: true });
+  for (const name of fs.readdirSync(fixtureOutputDir)) {
     if (name === 'cli-crypto.json' || name.endsWith('.zip') || name.endsWith('.zip.enc')) {
-      fs.rmSync(path.join(outputDir, name), { force: true });
+      fs.rmSync(path.join(fixtureOutputDir, name), { force: true });
     }
   }
   const bundles = [];
@@ -233,8 +228,8 @@ try {
       throw new Error(`${testCase.id}: CLI decrypt round trip does not give back the zip`);
     }
 
-    fs.writeFileSync(path.join(outputDir, `${testCase.id}.zip`), zip);
-    fs.writeFileSync(path.join(outputDir, `${testCase.id}.zip.enc`), ciphertext);
+    fs.writeFileSync(path.join(fixtureOutputDir, `${testCase.id}.zip`), zip);
+    fs.writeFileSync(path.join(fixtureOutputDir, `${testCase.id}.zip.enc`), ciphertext);
     bundles.push({
       id: testCase.id,
       description: testCase.description,
@@ -259,8 +254,8 @@ try {
     publicKey,
     bundles,
   };
-  fs.writeFileSync(path.join(outputDir, 'cli-crypto.json'), `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Wrote ${bundles.length} bundles from @capgo/cli ${cliPackage.version} to ${outputDir}`);
+  fs.writeFileSync(path.join(fixtureOutputDir, 'cli-crypto.json'), `${JSON.stringify(fixture, null, 2)}\n`);
+  console.log(`Wrote ${bundles.length} bundles from @capgo/cli ${cliPackage.version} to ${fixtureOutputDir}`);
 } finally {
   process.chdir(startDir);
   fs.rmSync(project, { recursive: true, force: true });
