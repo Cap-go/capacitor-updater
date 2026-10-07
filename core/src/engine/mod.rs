@@ -18,21 +18,40 @@ mod scheduled;
 pub mod stats;
 pub mod store;
 
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard, Weak};
 use std::time::Duration;
 
 use serde_json::Value;
 
 use crate::error::{CoreError, CoreResult};
-use crate::host::Host;
+use crate::host::{Host, HostLog};
 use crate::net::Http;
 
 pub use config::EngineConfig;
 
+pub(crate) struct ConfigWrite<'a>(RwLockWriteGuard<'a, Arc<EngineConfig>>);
+
+impl std::ops::Deref for ConfigWrite<'_> {
+    type Target = EngineConfig;
+    fn deref(&self) -> &EngineConfig {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ConfigWrite<'_> {
+    fn deref_mut(&mut self) -> &mut EngineConfig {
+        // Snapshots taken earlier keep the old values.
+        Arc::make_mut(&mut self.0)
+    }
+}
+
 pub struct Engine {
     pub(crate) host: Arc<dyn Host>,
     pub(crate) http: Http,
-    config: RwLock<EngineConfig>,
+    /// Readers take a snapshot and never hold the lock: a read guard kept across a host
+    /// callback, a network call or a second `config()` deadlocked as soon as a writer queued
+    /// (std's RwLock blocks new readers behind a waiting writer), hanging main-thread calls.
+    config: RwLock<Arc<EngineConfig>>,
     pub(crate) stats: stats::StatsState,
     pub(crate) delete_lock: Mutex<()>,
     /// In-flight downloads per version (the same version can download twice at once,
@@ -58,7 +77,7 @@ impl Engine {
         let engine = Arc::new_cyclic(|weak| Self {
             http: Http::new(host.clone(), user_agent, timeout),
             host,
-            config: RwLock::new(config),
+            config: RwLock::new(Arc::new(config)),
             stats: stats::StatsState::default(),
             delete_lock: Mutex::new(()),
             downloads: Mutex::new(Default::default()),
@@ -70,12 +89,27 @@ impl Engine {
         Ok(engine)
     }
 
-    pub fn config(&self) -> RwLockReadGuard<'_, EngineConfig> {
-        self.config.read().unwrap_or_else(|poison| poison.into_inner())
+    /// A snapshot of the settings; later changes do not affect it.
+    pub fn config(&self) -> Arc<EngineConfig> {
+        self.config.read().unwrap_or_else(|poison| poison.into_inner()).clone()
     }
 
-    pub(crate) fn config_mut(&self) -> RwLockWriteGuard<'_, EngineConfig> {
-        self.config.write().unwrap_or_else(|poison| poison.into_inner())
+    /// Exclusive access for a change. Keep it to the change itself: no `config()`, host
+    /// callback or network call while it is alive.
+    pub(crate) fn config_mut(&self) -> ConfigWrite<'_> {
+        ConfigWrite(self.config.write().unwrap_or_else(|poison| poison.into_inner()))
+    }
+
+    /// Starts a worker thread. `std::thread::spawn` panics when the OS cannot create one
+    /// (out of threads or memory); this logs and returns false so callers can undo.
+    pub(crate) fn spawn(&self, name: &str, work: impl FnOnce() + Send + 'static) -> bool {
+        match std::thread::Builder::new().name(format!("capgo-{name}")).spawn(work) {
+            Ok(_) => true,
+            Err(error) => {
+                self.host.error(format!("Could not start the {name} thread: {error}"));
+                false
+            }
+        }
     }
 
     pub(crate) fn weak_self(&self) -> Weak<Engine> {

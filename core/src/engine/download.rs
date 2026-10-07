@@ -1,6 +1,7 @@
 //! Zip bundle downloads and the shared download lifecycle (gates, progress,
 //! cancellation, status transitions, post-install actions).
 
+use crate::sync::LockRecover;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -145,7 +146,7 @@ impl Engine {
 
     /// Cancels an in-flight download of `version` (returns whether one was running).
     pub fn cancel_download(&self, version: &str) -> bool {
-        match self.downloads.lock().unwrap().get(version) {
+        match self.downloads.lock_or_recover().get(version) {
             Some(tokens) if !tokens.is_empty() => {
                 for token in tokens {
                     token.0.store(true, Ordering::SeqCst);
@@ -525,7 +526,7 @@ impl Engine {
         self.progress(&id, 91);
         let installed = self.finish_install(record, &checksum, request);
         if let Some(engine) = self.weak_self().upgrade() {
-            std::thread::spawn(move || engine.populate_delta_cache(&id));
+            self.spawn("delta-cache", move || engine.populate_delta_cache(&id));
         }
         Ok(installed)
     }

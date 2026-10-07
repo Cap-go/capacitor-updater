@@ -492,7 +492,7 @@ impl Engine {
         self.plugin_state().leaving_preview_for_link = true;
         self.preview_loader(true, "incoming-preview-deeplink");
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("preview", move || {
             if let Some(engine) = weak.upgrade() {
                 if !engine.leave_preview_for_incoming_link() {
                     engine
@@ -528,7 +528,7 @@ impl Engine {
         // Keep the guard until the fallback had a chance to confirm itself.
         let delay = Duration::from_millis(self.plugin_config().app_ready_timeout_ms);
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("preview", move || {
             if let Some(engine) = Engine::sleep_unless_dropped(&weak, delay) {
                 engine.clear_incoming_preview_transition();
             }
@@ -718,7 +718,7 @@ impl Engine {
         }
         self.kv_write_flag(keys::PREVIEW_ALERT_PENDING, false);
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("preview", move || {
             let Some(engine) = Engine::sleep_unless_dropped(&weak, PREVIEW_NOTICE_DELAY) else {
                 return;
             };
@@ -856,7 +856,9 @@ impl Engine {
         let Some(id) = args.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()) else {
             return Err(Rejection::new("deletePreview called without id"));
         };
-        if self.plugin_state().preview_session_enabled && self.current_bundle().id() == id {
+        // Copied first: the state lock must not be held across the bundle lookup.
+        let preview_active = self.plugin_state().preview_session_enabled;
+        if preview_active && self.current_bundle().id() == id {
             return Err(Rejection::new("Cannot delete the active preview"));
         }
         let mut previews = self.previews();
@@ -918,7 +920,8 @@ impl Engine {
             }));
         }
         let next = self.download_preview_payload(&payload)?;
-        let was_active = self.plugin_state().preview_session_enabled && self.current_bundle().id() == id;
+        let preview_active = self.plugin_state().preview_session_enabled;
+        let was_active = preview_active && self.current_bundle().id() == id;
         if was_active && !self.set_bundle(next.id()) {
             return Err(CoreError::new(
                 "set_failed",

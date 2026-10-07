@@ -2,6 +2,7 @@
 //! the APK assets (Android) or the delta cache when its hash matches, and only
 //! the rest is fetched (resumable partials, brotli, per-file decryption).
 
+use crate::sync::LockRecover;
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -388,7 +389,7 @@ impl Engine {
                     if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
                         return;
                     }
-                    let Some(task) = queue.lock().unwrap().next() else {
+                    let Some(task) = queue.lock_or_recover().next() else {
                         return;
                     };
                     match self.process_manifest_file(&task, request, &session, assets.as_ref(), cancel) {
@@ -402,7 +403,7 @@ impl Engine {
                                 task.file_name, error.message
                             ));
                             failed.store(true, Ordering::SeqCst);
-                            first_error.lock().unwrap().get_or_insert(error);
+                            first_error.lock_or_recover().get_or_insert(error);
                             return;
                         }
                     }
@@ -674,7 +675,7 @@ impl Engine {
 
     /// Removes this download's token only (another download of the version may still run).
     pub(crate) fn unregister_download_token(&self, version: &str, token: &Cancel) {
-        let mut downloads = self.downloads.lock().unwrap();
+        let mut downloads = self.downloads.lock_or_recover();
         if let Some(tokens) = downloads.get_mut(version) {
             tokens.retain(|other| !std::sync::Arc::ptr_eq(&other.0, &token.0));
             if tokens.is_empty() {

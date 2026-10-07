@@ -326,6 +326,8 @@ pub unsafe extern "C" fn capgo_engine_call(
 #[no_mangle]
 pub unsafe extern "C" fn capgo_engine_free(engine: *mut Engine) {
     if !engine.is_null() {
-        drop(std::sync::Arc::from_raw(engine as *const Engine));
+        // A panic unwinding out of an `extern "C"` function aborts the process.
+        let engine = std::sync::Arc::from_raw(engine as *const Engine);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(engine)));
     }
 }

@@ -1,6 +1,7 @@
 //! Bundle archive extraction: zip-slip safe, CRC checked, symlinks only when
 //! they stay inside their own directory, then the single-folder unwrap rule.
 
+use crate::sync::LockRecover;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -100,8 +101,55 @@ fn open_archive(zip_path: &Path) -> Result<Archive, ExtractError> {
     let failed = |error: &dyn std::fmt::Display| {
         ExtractError::Failed(format!("Failed to unzip {}: {error}", zip_path.display()))
     };
-    let file = File::open(zip_path).map_err(|error| failed(&error))?;
+    let mut file = File::open(zip_path).map_err(|error| failed(&error))?;
+    check_declared_entries(&mut file).map_err(|error| failed(&error))?;
     zip::ZipArchive::new(io::BufReader::with_capacity(ARCHIVE_READ_BUFFER, file)).map_err(|error| failed(&error))
+}
+
+/// Smallest central directory record (signature + fixed fields, empty name).
+const MIN_CENTRAL_RECORD: u64 = 46;
+
+/// The zip crate reserves memory for the entry count the end record declares (about 200
+/// bytes each) before reading any entry. A forged count (zip64 allows 2^64) made it ask
+/// for gigabytes from a small file, and a failed allocation aborts the app. Every entry
+/// needs a 46-byte central record, so a count the file cannot hold is rejected first.
+fn check_declared_entries(file: &mut File) -> io::Result<()> {
+    use io::{Seek, SeekFrom};
+    let len = file.seek(SeekFrom::End(0))?;
+    // End record (22 bytes) plus the longest comment.
+    let tail_len = len.min(22 + u64::from(u16::MAX));
+    let mut tail = vec![0u8; tail_len as usize];
+    file.seek(SeekFrom::Start(len - tail_len))?;
+    file.read_exact(&mut tail)?;
+    file.seek(SeekFrom::Start(0))?;
+    // No end record: the zip crate reports it.
+    let Some(end) = (0..tail.len().saturating_sub(21))
+        .rev()
+        .find(|&at| tail[at..at + 4] == [0x50, 0x4b, 0x05, 0x06])
+    else {
+        return Ok(());
+    };
+    let mut entries = u64::from(u16::from_le_bytes([tail[end + 10], tail[end + 11]]));
+    // zip64: the locator just before the end record points at the zip64 end record.
+    if entries == u64::from(u16::MAX) && end >= 20 && tail[end - 20..end - 16] == [0x50, 0x4b, 0x06, 0x07] {
+        let offset = u64::from_le_bytes(tail[end - 12..end - 4].try_into().unwrap_or_default());
+        if offset.saturating_add(40) <= len {
+            let mut record = [0u8; 40];
+            file.seek(SeekFrom::Start(offset))?;
+            file.read_exact(&mut record)?;
+            file.seek(SeekFrom::Start(0))?;
+            if record[..4] == [0x50, 0x4b, 0x06, 0x06] {
+                entries = u64::from_le_bytes(record[32..40].try_into().unwrap_or_default());
+            }
+        }
+    }
+    if entries.saturating_mul(MIN_CENTRAL_RECORD) > len {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("archive declares {entries} entries, more than its size can hold"),
+        ));
+    }
+    Ok(())
 }
 
 /// A regular file entry to write in the second pass.
@@ -310,7 +358,7 @@ pub fn extract_zip(
                 let mut archive = match open_archive(zip_path) {
                     Ok(archive) => archive,
                     Err(error) => {
-                        first_error.lock().unwrap().get_or_insert(error);
+                        first_error.lock_or_recover().get_or_insert(error);
                         stop.store(true, std::sync::atomic::Ordering::SeqCst);
                         return;
                     }
@@ -325,7 +373,7 @@ pub fn extract_zip(
                         return;
                     };
                     if let Err(error) = write_file_entry(&mut archive, entry, &mut buffer, zip_path) {
-                        first_error.lock().unwrap().get_or_insert(error);
+                        first_error.lock_or_recover().get_or_insert(error);
                         stop.store(true, std::sync::atomic::Ordering::SeqCst);
                         return;
                     }
@@ -340,7 +388,7 @@ pub fn extract_zip(
             progress(done, total);
             if cancelled() {
                 stop.store(true, std::sync::atomic::Ordering::SeqCst);
-                first_error.lock().unwrap().get_or_insert(ExtractError::Cancelled);
+                first_error.lock_or_recover().get_or_insert(ExtractError::Cancelled);
             }
         }
         for handle in handles {
@@ -408,4 +456,60 @@ pub fn install_extracted(source: &Path, destination: &Path) -> CoreResult<()> {
         let _ = super::store::remove_path(source);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 1 MiB of zeros, then zip64 end records declaring `entries` files.
+    fn forged_zip64(entries: u64) -> Vec<u8> {
+        let mut bytes = vec![0u8; 1 << 20];
+        let zip64_end = bytes.len() as u64;
+        bytes.extend(0x0606_4b50u32.to_le_bytes());
+        bytes.extend(44u64.to_le_bytes());
+        bytes.extend([45, 0, 45, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend(entries.to_le_bytes());
+        bytes.extend(entries.to_le_bytes());
+        bytes.extend((46 * entries).to_le_bytes());
+        bytes.extend(1024u64.to_le_bytes());
+        bytes.extend(0x0706_4b50u32.to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(zip64_end.to_le_bytes());
+        bytes.extend(1u32.to_le_bytes());
+        bytes.extend(0x0605_4b50u32.to_le_bytes());
+        bytes.extend([0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+        bytes.extend([0xff; 8]);
+        bytes.extend([0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn an_entry_count_the_file_cannot_hold_is_rejected_before_allocating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("forged.zip");
+        // The zip crate would reserve about 200 bytes per declared entry: 200 MB here.
+        std::fs::write(&path, forged_zip64(1 << 20)).unwrap();
+        let Err(ExtractError::Failed(message)) = open_archive(&path) else {
+            panic!("a forged entry count must be rejected");
+        };
+        assert!(message.contains("more than its size can hold"), "{message}");
+    }
+
+    #[test]
+    fn real_archives_still_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ok.zip");
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        for index in 0..3 {
+            writer
+                .start_file(format!("f{index}.txt"), zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"x").unwrap();
+        }
+        writer.finish().unwrap();
+        assert_eq!(open_archive(&path).ok().map(|archive| archive.len()), Some(3));
+        std::fs::write(&path, []).unwrap();
+        assert!(open_archive(&path).is_err());
+    }
 }

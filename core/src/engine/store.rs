@@ -637,7 +637,7 @@ impl Engine {
         self.set_fallback_bundle(Some(&bundle));
         if delete_previous {
             let engine = self.clone();
-            std::thread::spawn(move || {
+            self.spawn("delete", move || {
                 if !engine.cancel_version_download(&previous_version) {
                     engine
                         .host

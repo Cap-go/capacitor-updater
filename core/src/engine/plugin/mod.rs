@@ -18,6 +18,7 @@ mod preview;
 mod ready;
 mod telemetry;
 
+use crate::sync::LockRecover;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -524,7 +525,7 @@ impl Engine {
     }
 
     fn mark_cleanup(&self, complete: bool) {
-        *self.plugin.cleanup.complete.lock().unwrap() = complete;
+        *self.plugin.cleanup.complete.lock_or_recover() = complete;
         self.plugin.cleanup.changed.notify_all();
     }
 
@@ -532,7 +533,7 @@ impl Engine {
     pub(crate) fn wait_for_cleanup(&self) -> CoreResult<()> {
         crate::host::release_method_lane();
         let gate = &self.plugin.cleanup;
-        let complete = gate.complete.lock().unwrap();
+        let complete = gate.complete.lock_or_recover();
         if *complete || !self.plugin_state().loaded {
             return Ok(());
         }
@@ -587,7 +588,7 @@ impl Engine {
     /// Runs lifecycle work off the caller's thread (hosts call from the UI thread).
     pub(crate) fn spawn_plugin_task(&self, task: impl FnOnce(&Engine) + Send + 'static) {
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("task", move || {
             if let Some(engine) = weak.upgrade() {
                 task(&engine);
             }

@@ -1,6 +1,7 @@
 //! Reload, `notifyAppReady` and rollback: the part of the update lifecycle
 //! that decides whether a bundle stays.
 
+use crate::sync::LockRecover;
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -24,28 +25,28 @@ impl Engine {
     // ---- notifyAppReady signal ---------------------------------------------------------------
 
     fn ready_token(&self) -> u64 {
-        self.plugin.ready.inner.lock().unwrap().signals
+        self.plugin.ready.inner.lock_or_recover().signals
     }
 
     /// Arms the wait consumed by the next `appReady` emission.
     pub(crate) fn arm_pending_ready_wait(&self) {
-        let mut inner = self.plugin.ready.inner.lock().unwrap();
+        let mut inner = self.plugin.ready.inner.lock_or_recover();
         inner.pending = Some(inner.signals);
     }
 
     pub(crate) fn clear_pending_ready_wait(&self) {
-        self.plugin.ready.inner.lock().unwrap().pending = None;
+        self.plugin.ready.inner.lock_or_recover().pending = None;
     }
 
     fn take_pending_ready_wait(&self) -> Option<u64> {
-        self.plugin.ready.inner.lock().unwrap().pending.take()
+        self.plugin.ready.inner.lock_or_recover().pending.take()
     }
 
     /// Waits until `notifyAppReady` fires after `token` (false on timeout).
     pub(crate) fn wait_for_app_ready(&self, token: u64, timeout: Duration) -> bool {
         // notifyAppReady comes through the host's method lane.
         crate::host::release_method_lane();
-        let inner = self.plugin.ready.inner.lock().unwrap();
+        let inner = self.plugin.ready.inner.lock_or_recover();
         let (inner, result) = self
             .plugin
             .ready
@@ -62,7 +63,7 @@ impl Engine {
     }
 
     fn signal_app_ready(&self) {
-        let mut inner = self.plugin.ready.inner.lock().unwrap();
+        let mut inner = self.plugin.ready.inner.lock_or_recover();
         inner.signals += 1;
         drop(inner);
         self.plugin.ready.changed.notify_all();
@@ -90,7 +91,7 @@ impl Engine {
             Some(token) => {
                 let timeout = Duration::from_millis(self.plugin_config().app_ready_timeout_ms);
                 let weak = self.weak_self();
-                std::thread::spawn(move || {
+                self.spawn("app-ready-timeout", move || {
                     if let Some(engine) = weak.upgrade() {
                         engine.wait_for_app_ready(token, timeout);
                         emit(&engine);
@@ -127,7 +128,7 @@ impl Engine {
             wait.as_millis()
         ));
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("delay", move || {
             let Some(engine) = Engine::sleep_unless_dropped(&weak, wait) else {
                 return;
             };
@@ -214,7 +215,7 @@ impl Engine {
             // Marked before the async delete so a kill still resumes it (drainPendingDeletes).
             self.save_bundle_info(&failed_id, Some(&latest.with_status(BundleStatus::Deleting)));
             let weak = self.weak_self();
-            std::thread::spawn(move || {
+            self.spawn("delete", move || {
                 if let Some(engine) = weak.upgrade() {
                     if engine.delete_bundle(&failed_id, false, false) {
                         engine.host.info(format!("Failed bundle deleted: {version}"));
@@ -549,7 +550,7 @@ impl Engine {
             return;
         }
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        self.spawn("app-ready-timeout", move || {
             let Some(engine) = Engine::sleep_unless_dropped(&weak, Duration::from_millis(timeout)) else {
                 return;
             };

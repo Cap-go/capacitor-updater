@@ -1,5 +1,6 @@
 //! Launch, lifecycle, health and WebView statistics, and download progress events.
 
+use crate::sync::LockRecover;
 use serde_json::{json, Map, Value};
 
 use super::keys;
@@ -269,7 +270,7 @@ impl Engine {
         writes: Vec<(String, Option<String>)>,
     ) {
         let callback_id = format!("capgo-ack-{}", super::super::store::random_id());
-        self.stats.acks.lock().unwrap().insert(callback_id.clone(), writes);
+        self.stats.acks.lock_or_recover().insert(callback_id.clone(), writes);
         self.send_stats_with_callback(
             action,
             Some(&self.current_version_name()),

@@ -3,6 +3,7 @@
 //! the operating system trust store through the host (Android
 //! `X509TrustManager`, iOS `SecTrust`), host names by rustls.
 
+use crate::sync::{LockRecover, RwLockRecover};
 use std::io::Read;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -179,15 +180,15 @@ impl Http {
     fn agent_for(&self, download: bool, url: &str) -> ureq::Agent {
         let direct = || {
             if download {
-                self.download_agent.read().unwrap().clone()
+                self.download_agent.read_or_recover().clone()
             } else {
-                self.agent.read().unwrap().clone()
+                self.agent.read_or_recover().clone()
             }
         };
         let Some(proxy) = self.host.proxy_for_url(url) else {
             return direct();
         };
-        let mut proxied = self.proxied.lock().unwrap();
+        let mut proxied = self.proxied.lock_or_recover();
         if let Some(agent) = proxied.get(&(download, proxy.clone())) {
             return agent.clone();
         }
@@ -196,7 +197,7 @@ impl Http {
         let Ok(ureq_proxy) = ureq::Proxy::new(format!("http://{PROXY_PLACEHOLDER}:{}", proxy.port)) else {
             return direct();
         };
-        let timeout = *self.timeout.read().unwrap();
+        let timeout = *self.timeout.read_or_recover();
         let timeout = if download {
             timeout.max(Duration::from_secs(60))
         } else {
@@ -224,13 +225,13 @@ impl Http {
             return Ok(());
         }
         let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
-        let cached = self.cleartext.lock().unwrap().get(&host).copied();
+        let cached = self.cleartext.lock_or_recover().get(&host).copied();
         let permitted = match cached {
             Some(permitted) => permitted,
             // No answer (no policy hook, hook error): fail closed, as the OS HTTP stacks do.
             None => match self.host.cleartext_permitted(&host) {
                 Some(permitted) => {
-                    self.cleartext.lock().unwrap().insert(host.clone(), permitted);
+                    self.cleartext.lock_or_recover().insert(host.clone(), permitted);
                     permitted
                 }
                 None => false,
@@ -249,11 +250,11 @@ impl Http {
     }
 
     pub fn set_user_agent(&self, user_agent: String) {
-        *self.user_agent.write().unwrap() = user_agent;
+        *self.user_agent.write_or_recover() = user_agent;
     }
 
     pub fn user_agent(&self) -> String {
-        self.user_agent.read().unwrap().clone()
+        self.user_agent.read_or_recover().clone()
     }
 
     /// Updates connect/read/write timeouts (0 keeps the 20 s default).
@@ -263,17 +264,17 @@ impl Http {
         } else {
             timeout
         };
-        let mut current = self.timeout.write().unwrap();
+        let mut current = self.timeout.write_or_recover();
         if *current == timeout {
             return;
         }
         *current = timeout;
-        *self.agent.write().unwrap() = build_agent(self.tls.clone(), timeout);
-        *self.download_agent.write().unwrap() = build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
+        *self.agent.write_or_recover() = build_agent(self.tls.clone(), timeout);
+        *self.download_agent.write_or_recover() = build_agent(self.tls.clone(), timeout.max(Duration::from_secs(60)));
         // `agent_for` reads the timeout while holding `proxied`: release the timeout first
         // (lock order). Clearing afterwards drops any agent built with the old timeout.
         drop(current);
-        self.proxied.lock().unwrap().clear();
+        self.proxied.lock_or_recover().clear();
     }
 
     fn prepare(&self, agent: ureq::Agent, method: &str, url: &str, headers: &[(&str, &str)]) -> ureq::Request {

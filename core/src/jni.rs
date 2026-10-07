@@ -61,13 +61,20 @@ struct JniHost {
 impl JniHost {
     fn with_env<R>(&self, f: impl FnOnce(&mut JNIEnv) -> jni::errors::Result<R>) -> Option<R> {
         let mut env = self.vm.attach_current_thread().ok()?;
-        let result = f(&mut env);
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-            return None;
-        }
-        result.ok()
+        // A local frame frees this callback's local references when it returns. On a Java
+        // thread that called into the engine they would otherwise pile up until that call
+        // returns, and Android 7 (API 24/25) aborts the process past 512 of them.
+        env.with_local_frame(16, |env| {
+            let result = f(env);
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+                return Ok(None);
+            }
+            Ok::<_, jni::errors::Error>(result.ok())
+        })
+        .ok()
+        .flatten()
     }
 
     fn string_arg<'a>(env: &mut JNIEnv<'a>, value: &str) -> jni::errors::Result<JObject<'a>> {
@@ -346,6 +353,8 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineDe
     engine: jlong,
 ) {
     if engine != 0 {
-        drop(unsafe { Arc::from_raw(engine as *const Engine) });
+        // A panic unwinding out of a JNI function aborts the process.
+        let engine = unsafe { Arc::from_raw(engine as *const Engine) };
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(engine)));
     }
 }

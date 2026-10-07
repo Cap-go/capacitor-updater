@@ -6,6 +6,8 @@
 //! logging, event delivery to the app, and, where the OS owns TLS trust
 //! (Android network security config), certificate verification.
 
+#[cfg(any(test, feature = "test-support"))]
+use crate::sync::LockRecover;
 use serde_json::Value;
 
 use std::cell::RefCell;
@@ -263,15 +265,15 @@ impl MemoryHost {
     }
 
     pub fn reply_to_hook(&self, name: &str, reply: Value) {
-        self.hook_replies.lock().unwrap().insert(name.to_string(), reply);
+        self.hook_replies.lock_or_recover().insert(name.to_string(), reply);
     }
 }
 
 #[cfg(any(test, feature = "test-support"))]
 impl Host for MemoryHost {
     fn log(&self, level: LogLevel, message: &str) {
-        self.logs.lock().unwrap().push((level, message.to_string()));
-        let on_log = self.on_log.lock().unwrap().clone();
+        self.logs.lock_or_recover().push((level, message.to_string()));
+        let on_log = self.on_log.lock_or_recover().clone();
         if let Some(on_log) = on_log {
             on_log(message);
         }
@@ -287,7 +289,7 @@ impl Host for MemoryHost {
     }
 
     fn kv_set(&self, key: &str, value: Option<&str>) {
-        let mut store = self.store.lock().unwrap();
+        let mut store = self.store.lock_or_recover();
         match value {
             Some(value) => {
                 store.insert(key.to_string(), value.to_string());
@@ -299,29 +301,29 @@ impl Host for MemoryHost {
     }
 
     fn kv_keys(&self) -> Vec<String> {
-        self.store.lock().unwrap().keys().cloned().collect()
+        self.store.lock_or_recover().keys().cloned().collect()
     }
 
     fn emit(&self, event: &str, payload: &Value) {
-        self.events.lock().unwrap().push((event.to_string(), payload.clone()));
+        self.events.lock_or_recover().push((event.to_string(), payload.clone()));
     }
 
     fn emit_retained(&self, event: &str, payload: &Value) {
-        self.retained_events.lock().unwrap().push(event.to_string());
+        self.retained_events.lock_or_recover().push(event.to_string());
         self.emit(event, payload);
     }
 
     fn hook(&self, name: &str, payload: &Value) -> Option<Value> {
-        self.hooks.lock().unwrap().push((name.to_string(), payload.clone()));
-        self.hook_replies.lock().unwrap().get(name).cloned()
+        self.hooks.lock_or_recover().push((name.to_string(), payload.clone()));
+        self.hook_replies.lock_or_recover().get(name).cloned()
     }
 
     fn verify_server_certificate(&self, chain: &[&[u8]], server_name: &str) -> Option<Result<(), String>> {
-        self.certificate_requests.lock().unwrap().push((
+        self.certificate_requests.lock_or_recover().push((
             chain.iter().map(|cert| cert.to_vec()).collect(),
             server_name.to_string(),
         ));
-        if let Some(verdict) = self.certificate_verdict.lock().unwrap().clone() {
+        if let Some(verdict) = self.certificate_verdict.lock_or_recover().clone() {
             return verdict;
         }
         #[cfg(feature = "test-support")]
@@ -360,7 +362,7 @@ mod tests {
             Vec::new()
         }
         fn emit(&self, event: &str, payload: &Value) {
-            self.events.lock().unwrap().push((event.to_string(), payload.clone()));
+            self.events.lock_or_recover().push((event.to_string(), payload.clone()));
         }
     }
 
@@ -369,7 +371,7 @@ mod tests {
         let host = Bridged::default();
         host.emit_retained("set", &serde_json::json!({ "bundle": { "id": "abc" } }));
         host.emit("download", &serde_json::json!({ "percent": 5 }));
-        let events = host.events.lock().unwrap();
+        let events = host.events.lock_or_recover();
         assert_eq!(events[0].1[RETAIN_EVENT_KEY], true);
         assert_eq!(events[0].1["bundle"]["id"], "abc");
         assert!(events[1].1.get(RETAIN_EVENT_KEY).is_none());

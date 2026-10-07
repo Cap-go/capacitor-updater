@@ -27,6 +27,7 @@ pub mod jni;
 pub mod net;
 pub mod paths;
 pub mod policy;
+mod sync;
 pub mod text;
 
 pub use error::{CoreError, CoreResult};

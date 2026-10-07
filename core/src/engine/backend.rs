@@ -1,6 +1,7 @@
 //! Capgo backend client: update checks, channels, bundle size, and the
 //! process-wide 429 (rate limit) block shared by every request.
 
+use crate::sync::LockRecover;
 use std::sync::Mutex;
 
 use serde_json::{json, Map, Value};
@@ -75,7 +76,7 @@ impl Engine {
     }
 
     pub fn is_remote_blocked(&self) -> bool {
-        let mut state = RATE_LIMIT.lock().unwrap();
+        let mut state = RATE_LIMIT.lock_or_recover();
         if state.blocked_until_ms <= 0 {
             return false;
         }
@@ -87,7 +88,7 @@ impl Engine {
     }
 
     fn remote_blocked_error(&self) -> Json {
-        let state = RATE_LIMIT.lock().unwrap();
+        let state = RATE_LIMIT.lock_or_recover();
         let error = if state.error.is_empty() {
             "too_many_requests"
         } else {
@@ -126,7 +127,7 @@ impl Engine {
         let now = now_ms();
         let until = crate::http::rate_limit_blocked_until_ms(response.header("Retry-After"), Some(&body), now);
         let claim = {
-            let mut state = RATE_LIMIT.lock().unwrap();
+            let mut state = RATE_LIMIT.lock_or_recover();
             if until > state.blocked_until_ms {
                 state.blocked_until_ms = until;
                 state.error = error.clone();
@@ -161,7 +162,7 @@ impl Engine {
 
     fn send_rate_limit_statistic(&self) {
         let stats_url = self.config().stats_url.clone();
-        let release = || RATE_LIMIT.lock().unwrap().statistic_sent = false;
+        let release = || RATE_LIMIT.lock_or_recover().statistic_sent = false;
         if stats_url.is_empty() {
             release();
             return;
@@ -174,17 +175,19 @@ impl Engine {
             release();
             return;
         };
-        std::thread::spawn(move || match engine.http.post_json(&stats_url, &Value::Object(event)) {
-            Ok(response) if response.is_success() => engine.host.info("Rate limit statistic sent"),
-            Ok(response) => {
-                release();
-                engine.host.error("Error sending rate limit statistic");
-                engine.host.debug(format!("Response code: {}", response.status));
-            }
-            Err(error) => {
-                release();
-                engine.host.error("Failed to send rate limit statistic");
-                engine.host.debug(format!("Error: {error}"));
+        self.spawn("stats", move || {
+            match engine.http.post_json(&stats_url, &Value::Object(event)) {
+                Ok(response) if response.is_success() => engine.host.info("Rate limit statistic sent"),
+                Ok(response) => {
+                    release();
+                    engine.host.error("Error sending rate limit statistic");
+                    engine.host.debug(format!("Response code: {}", response.status));
+                }
+                Err(error) => {
+                    release();
+                    engine.host.error("Failed to send rate limit statistic");
+                    engine.host.debug(format!("Error: {error}"));
+                }
             }
         });
     }

@@ -1,5 +1,6 @@
 //! Plugin load, app lifecycle and the auto-update cycle.
 
+use crate::sync::LockRecover;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
@@ -88,7 +89,9 @@ impl Engine {
             runtime.insert("appId".into(), json!(app_id));
         }
         if self.config().app_id.is_empty() && !runtime.contains_key("appId") {
-            return Err(crate::error::CoreError::invalid_input(
+            // Its own code: hosts stop the app only on this and an invalid public key.
+            return Err(crate::error::CoreError::new(
+                "missing_app_id",
                 "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config",
             ));
         }
@@ -118,7 +121,7 @@ impl Engine {
         runtime.insert(
             "timeoutMs".into(),
             json!(if response_timeout > 0 {
-                response_timeout as u64 * 1000
+                (response_timeout as u64).saturating_mul(1000)
             } else {
                 20_000
             }),
@@ -231,7 +234,7 @@ impl Engine {
             json!({ "action": "begin", "name": "CapgoBundleCleanup" }),
         );
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        let started = self.spawn("cleanup", move || {
             let Some(engine) = weak.upgrade() else {
                 return;
             };
@@ -262,6 +265,14 @@ impl Engine {
                 json!({ "action": "end", "name": "CapgoBundleCleanup" }),
             );
         });
+        if !started {
+            // Downloads wait for the cleanup, and an unended background task gets the app killed.
+            self.mark_cleanup(true);
+            self.hook(
+                hooks::BACKGROUND_TASK,
+                json!({ "action": "end", "name": "CapgoBundleCleanup" }),
+            );
+        }
     }
 
     // ---- lifecycle ---------------------------------------------------------------------------
@@ -468,7 +479,7 @@ impl Engine {
     /// Starts an update check (+ download / install) on a worker thread.
     /// Returns `queued`, `already_running` or `unavailable`.
     pub(crate) fn background_download(&self) -> &'static str {
-        let _guard = self.plugin.cycle.lock().unwrap();
+        let _guard = self.plugin.cycle.lock_or_recover();
         if self.block_for_preview() {
             return "unavailable";
         }
@@ -496,11 +507,19 @@ impl Engine {
             json!({ "action": "begin", "name": "Finish Download Tasks" }),
         );
         let weak = self.weak_self();
-        std::thread::spawn(move || {
+        let started = self.spawn("update", move || {
             if let Some(engine) = weak.upgrade() {
                 engine.run_update_cycle(&update_url, planned, message_update);
             }
         });
+        if !started {
+            self.plugin_state().download_started_at = None;
+            self.hook(
+                hooks::BACKGROUND_TASK,
+                json!({ "action": "end", "name": "Finish Download Tasks" }),
+            );
+            return "unavailable";
+        }
         "queued"
     }
 
@@ -965,7 +984,7 @@ impl Engine {
             return;
         }
         let weak = self.weak_self();
-        std::thread::spawn(move || loop {
+        self.spawn("periodic-check", move || loop {
             let Some(engine) = Engine::sleep_unless_dropped(&weak, Duration::from_secs(period)) else {
                 return;
             };

@@ -2,6 +2,7 @@
 //! persisted across launches (`capgo_pending_stats.json`, written by the same
 //! 1 s timer, at background and at exit) and retried on transient failures.
 
+use crate::sync::LockRecover;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -112,7 +113,7 @@ impl Engine {
             event.insert("metadata".into(), Value::Object(metadata.clone()));
         }
         {
-            let mut queue = self.stats.queue.lock().unwrap();
+            let mut queue = self.stats.queue.lock_or_recover();
             if self.stats.stopped.load(Ordering::SeqCst) {
                 return;
             }
@@ -130,7 +131,7 @@ impl Engine {
     }
 
     pub fn pending_stats_count(&self) -> usize {
-        self.stats.queue.lock().unwrap().len()
+        self.stats.queue.lock_or_recover().len()
     }
 
     fn ensure_stats_timer(&self) {
@@ -155,7 +156,7 @@ impl Engine {
 
     /// Sends queued events now (also called by the 1 s timer).
     pub fn flush_stats(&self) {
-        if self.stats.stopped.load(Ordering::SeqCst) || self.stats.queue.lock().unwrap().is_empty() {
+        if self.stats.stopped.load(Ordering::SeqCst) || self.stats.queue.lock_or_recover().is_empty() {
             return;
         }
         // While Retry-After is active, keep stats queued (on disk too) and skip the network call.
@@ -168,8 +169,8 @@ impl Engine {
         }
         let stats_url = self.config().stats_url.clone();
         if stats_url.is_empty() {
-            self.stats.queue.lock().unwrap().clear();
-            self.stats.in_flight.lock().unwrap().clear();
+            self.stats.queue.lock_or_recover().clear();
+            self.stats.in_flight.lock_or_recover().clear();
             self.persist_stats(false);
             return;
         }
@@ -177,9 +178,9 @@ impl Engine {
             return;
         }
         let events: Vec<QueuedEvent> = {
-            let mut queue = self.stats.queue.lock().unwrap();
+            let mut queue = self.stats.queue.lock_or_recover();
             let events = std::mem::take(&mut *queue);
-            *self.stats.in_flight.lock().unwrap() = events.clone();
+            *self.stats.in_flight.lock_or_recover() = events.clone();
             events
         };
         if events.is_empty() {
@@ -203,12 +204,12 @@ impl Engine {
                 if self.handle_rate_limit(&response).blocked {
                     self.requeue_stats(events);
                 } else if response.is_success() {
-                    self.stats.in_flight.lock().unwrap().clear();
+                    self.stats.in_flight.lock_or_recover().clear();
                     self.persist_stats(false);
                     self.host.info("Stats batch sent successfully");
                     self.host.debug(format!("Sent {} events", events.len()));
                     for callback_id in events.iter().filter_map(|queued| queued.callback_id.clone()) {
-                        let ack = self.stats.acks.lock().unwrap().remove(&callback_id);
+                        let ack = self.stats.acks.lock_or_recover().remove(&callback_id);
                         if let Some(writes) = ack {
                             for (key, value) in writes {
                                 self.host.kv_set(&key, value.as_deref());
@@ -223,7 +224,7 @@ impl Engine {
                     self.host
                         .debug(format!("Retrying later, response code: {}", response.status));
                 } else {
-                    self.stats.in_flight.lock().unwrap().clear();
+                    self.stats.in_flight.lock_or_recover().clear();
                     self.persist_stats(false);
                     self.host.error("Dropping stats batch after permanent error");
                     self.host.debug(format!("Response code: {}", response.status));
@@ -238,8 +239,8 @@ impl Engine {
             return;
         }
         {
-            let mut queue = self.stats.queue.lock().unwrap();
-            self.stats.in_flight.lock().unwrap().clear();
+            let mut queue = self.stats.queue.lock_or_recover();
+            self.stats.in_flight.lock_or_recover().clear();
             let mut combined = events;
             combined.append(&mut queue);
             let overflow = combined.len().saturating_sub(MAX_PENDING_STATS);
@@ -255,14 +256,14 @@ impl Engine {
         let Some(file) = self.stats_file() else {
             return;
         };
-        let _guard = self.stats.persist_lock.lock().unwrap();
+        let _guard = self.stats.persist_lock.lock_or_recover();
         if self.stats.stopped.load(Ordering::SeqCst) && !force {
             return;
         }
         self.stats.unsaved.store(false, Ordering::SeqCst);
         let events: Vec<Value> = {
-            let queue = self.stats.queue.lock().unwrap();
-            let in_flight = self.stats.in_flight.lock().unwrap();
+            let queue = self.stats.queue.lock_or_recover();
+            let in_flight = self.stats.in_flight.lock_or_recover();
             let combined: Vec<Value> = in_flight
                 .iter()
                 .chain(queue.iter())
@@ -298,7 +299,7 @@ impl Engine {
             return;
         };
         let restored = {
-            let mut queue = self.stats.queue.lock().unwrap();
+            let mut queue = self.stats.queue.lock_or_recover();
             for event in events.into_iter().filter(Value::is_object) {
                 if queue.len() >= MAX_PENDING_STATS {
                     break;
