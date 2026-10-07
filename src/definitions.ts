@@ -138,11 +138,12 @@ declare module '@capacitor/cli' {
        * source of truth: at the moments auto update normally checks (app launch and resume), the plugin asks
        * `websiteLiveUrl` whether the app may update and which website URL to use,
        * then downloads the entry HTML and the same-origin assets it references (HTML, CSS `url()`, JS asset refs)
-       * directly from your website. Capgo serves no bundle bytes.
+       * directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they
+       * keep loading from the network) and a single download is capped at 300 MB.
        *
        * The bundle version is `web-<first 12 hex of sha256(website URL + "\n" + entry HTML)>`. A new version is applied immediately
        * (like `directUpdate: 'always'`). `notifyAppReady()` is still required: if it is not called within
-       * `appReadyTimeout`, the plugin rolls back to the previous bundle and never retries that `web-*` version.
+       * `appReadyTimeout`, the plugin rolls back to the previous bundle and skips that `web-*` version for 24 hours.
        *
        * In website mode there are no channels, no stats, no bundle uploads, no encryption and no checksum
        * signatures. If the backend answers `mode: "capgo"` (the app was upgraded to full Capgo), the classic

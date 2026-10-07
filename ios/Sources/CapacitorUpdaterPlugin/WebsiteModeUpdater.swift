@@ -15,8 +15,14 @@ final class WebsiteModeUpdater {
     static let versionPrefix = "web-"
     static let maxAssetCount = 1000
     static let maxAssetBytes = 100 * 1024 * 1024
+    /// Total bytes a single crawl may download; past it the update fails.
+    static let maxTotalBytes = 300 * 1024 * 1024
     static let maxCheckIntervalSeconds = 24 * 60 * 60
+    /// Floor for check_interval_seconds (also used when it is missing) so devices cannot stampede the backend.
+    static let minCheckIntervalSeconds = 300
     static let maxFailedVersions = 50
+    /// A failed website version is retried once this has elapsed (the site may be fixed without changing index.html).
+    static let failedVersionTtlMs: Int64 = 24 * 60 * 60 * 1000
 
     static let lastCheckKey = "CapacitorUpdater.websiteMode.lastCheckMs"
     static let checkIntervalKey = "CapacitorUpdater.websiteMode.checkIntervalMs"
@@ -27,12 +33,16 @@ final class WebsiteModeUpdater {
     static let modeCapgo = "capgo"
 
     /// Fetches a URL. The Bool is `bypassCache`: true for website files (always fetch the deployed
-    /// bytes), false for the live check, whose answer is meant to be served from edge and device caches.
+    /// bytes), false for the live check, whose answer may come from the edge cache but never from a device cache.
     typealias Fetcher = (URL, Bool) throws -> FetchResponse
 
     let websiteLiveUrl: String
     private let fetcher: Fetcher
     private let defaults: UserDefaults
+    /// Logging hook so the crawl can report skipped optional assets.
+    var log: (String) -> Void = { _ in }
+    /// Crawl byte budget; only lowered by tests.
+    var totalBytesBudget = WebsiteModeUpdater.maxTotalBytes
 
     init(websiteLiveUrl: String?, fetcher: @escaping Fetcher, defaults: UserDefaults = .standard) {
         let trimmed = websiteLiveUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -84,7 +94,8 @@ final class WebsiteModeUpdater {
         guard let url = Self.buildLiveCheckUrl(websiteLiveUrl: websiteLiveUrl, appId: appId) else {
             throw WebsiteModeError.failed("Invalid websiteLiveUrl")
         }
-        // No cache bypass: the live answer is device independent and meant to be cached.
+        // No cache bypass header: the live answer is device independent and edge cached.
+        // The fetcher never serves it from a device-side cache.
         let response = try fetcher(url, false)
         guard response.isSuccess else {
             throw WebsiteModeError.failed("Website live check failed with HTTP \(response.statusCode)")
@@ -116,24 +127,46 @@ final class WebsiteModeUpdater {
         defaults.string(forKey: Self.lastModeKey) == Self.modeCapgo
     }
 
-    func isFailedVersion(_ version: String) -> Bool {
-        readFailedVersions().contains(version)
+    static func currentTimeMs() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
     }
 
-    func markFailedVersion(_ version: String) {
+    /// A failed version is skipped for `failedVersionTtlMs`, then retried.
+    func isFailedVersion(_ version: String, nowMs: Int64 = WebsiteModeUpdater.currentTimeMs()) -> Bool {
+        guard let failedAt = readFailedVersions().last(where: { $0.version == version })?.failedAt else {
+            return false
+        }
+        return !Self.isFailedEntryExpired(failedAt, nowMs: nowMs)
+    }
+
+    func markFailedVersion(_ version: String, nowMs: Int64 = WebsiteModeUpdater.currentTimeMs()) {
         guard Self.isWebsiteVersion(version) else {
             return
         }
-        var failed = readFailedVersions().filter { $0 != version }
-        failed.append(version)
+        var failed = readFailedVersions()
+            .filter { $0.version != version && !Self.isFailedEntryExpired($0.failedAt, nowMs: nowMs) }
+            .map { "\($0.version):\($0.failedAt)" }
+        failed.append("\(version):\(nowMs)")
         if failed.count > Self.maxFailedVersions {
             failed.removeFirst(failed.count - Self.maxFailedVersions)
         }
         defaults.set(failed.joined(separator: ","), forKey: Self.failedVersionsKey)
     }
 
-    private func readFailedVersions() -> [String] {
-        (defaults.string(forKey: Self.failedVersionsKey) ?? "").split(separator: ",").map(String.init)
+    /// A clock moved backwards counts as expired so a version is never blocked for longer than intended.
+    private static func isFailedEntryExpired(_ failedAt: Int64, nowMs: Int64) -> Bool {
+        failedAt <= 0 || nowMs < failedAt || nowMs - failedAt >= failedVersionTtlMs
+    }
+
+    /// Stored as "version:failedAtMs" entries; legacy entries without a timestamp count as expired.
+    private func readFailedVersions() -> [(version: String, failedAt: Int64)] {
+        let raw = defaults.string(forKey: Self.failedVersionsKey) ?? ""
+        return raw.split(separator: ",").map { entry in
+            guard let colon = entry.lastIndex(of: ":"), colon != entry.startIndex else {
+                return (String(entry), 0)
+            }
+            return (String(entry[..<colon]), Int64(entry[entry.index(after: colon)...]) ?? 0)
+        }
     }
 
     static func isWebsiteVersion(_ version: String) -> Bool {
@@ -174,19 +207,53 @@ final class WebsiteModeUpdater {
         return response.data
     }
 
+    /// A saved HTML, CSS or JS file whose same-origin absolute asset URLs are rewritten once the crawl is done.
+    private struct TextFile {
+        let path: String
+        let baseUrl: URL
+        let isJavaScript: Bool
+    }
+
+    /// Mutable state of one crawl.
+    private struct Crawl {
+        /// Keyed by lowercased path: iOS file systems are case-insensitive.
+        var saved: [String: (path: String, url: URL, sha256: String)] = [:]
+        var writtenPaths: Set<String> = []
+        var textFiles: [TextFile] = []
+        var requiredReferences: [String: [URL]] = [:]
+        var requiredOrder: [String] = []
+        var totalBytes = 0
+
+        func isSaved(_ url: URL) -> Bool {
+            guard let path = try? WebsiteModeUpdater.localPath(for: url) else {
+                return false
+            }
+            return saved[path.lowercased()] != nil
+        }
+
+        mutating func addRequired(_ candidates: [URL]) {
+            let key = candidates.map(\.absoluteString).joined(separator: "\n")
+            if requiredReferences[key] == nil {
+                requiredOrder.append(key)
+            }
+            requiredReferences[key] = candidates
+        }
+    }
+
     /// Crawls same-origin assets referenced by the entry HTML, CSS and JS into `targetDir`.
     /// Paths stay identical to the website so the bundle behaves like the webDir build.
+    /// Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
+    /// missing; every other asset is skipped on any failure.
     /// - Returns: number of files written (entry included)
     @discardableResult
     func downloadWebsite(entryHtml: Data, websiteUrl: URL, downloadBase: URL?, targetDir: URL) throws -> Int {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
-        let entryText = Self.text(entryHtml)
-        let entryData = Self.withBundleAssetUrls(entryHtml, text: entryText, baseUrl: websiteUrl, rootUrl: websiteUrl)
-        try Self.save(entryData, relativePath: "index.html", root: targetDir)
-        var written: Set<String> = ["index.html"]
-        var requiredReferences: [String: [URL]] = [:]
-        var requiredOrder: [String] = []
+        try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        try Self.save(entryHtml, relativePath: "index.html", root: targetDir)
+        var crawl = Crawl()
+        crawl.saved["index.html"] = ("index.html", websiteUrl, Self.sha256Hex(entryHtml))
+        crawl.writtenPaths.insert("index.html")
+        crawl.textFiles.append(TextFile(path: "index.html", baseUrl: websiteUrl, isJavaScript: false))
+        crawl.totalBytes = entryHtml.count
 
         var queue: [Asset] = []
         var queued = Set<String>()
@@ -195,70 +262,150 @@ final class WebsiteModeUpdater {
                 queue.append(asset)
             }
         }
+        let entryText = Self.text(entryHtml)
         enqueue(Self.discoverMarkupAssets(entryText, baseUrl: websiteUrl, rootUrl: websiteUrl, fromEntryHtml: true))
 
-        var processed = 0
         var index = 0
         while index < queue.count {
             let asset = queue[index]
             index += 1
-            processed += 1
-            if processed > Self.maxAssetCount {
+            if index > Self.maxAssetCount {
                 throw WebsiteModeError.failed("Website references more than \(Self.maxAssetCount) assets")
             }
-            let relativePath = try Self.localPath(for: asset.url)
-            if written.contains(relativePath) {
+            // The entry HTML is already saved; another URL mapping to it is ignored.
+            guard let relativePath = try bundlePath(for: asset), relativePath.lowercased() != "index.html",
+                  let response = try fetchAsset(asset, downloadBase: downloadBase, crawl: &crawl),
+                  try saveAsset(asset, path: relativePath, response: response, root: targetDir, crawl: &crawl) else {
                 continue
             }
-            let response: FetchResponse
-            do {
-                response = try fetcher(Self.rebase(asset.url, downloadBase: downloadBase), true)
-            } catch {
-                throw WebsiteModeError.failed("Failed to download \(asset.url.path): \(error.localizedDescription)")
-            }
-            if !response.isSuccess {
-                if !asset.required && (400..<500).contains(response.statusCode) {
-                    continue
-                }
-                throw WebsiteModeError.failed("HTTP \(response.statusCode) while downloading \(asset.url.path)")
-            }
-
             if Self.isCss(asset.url, contentType: response.contentType) {
+                crawl.textFiles.append(TextFile(path: relativePath, baseUrl: asset.url, isJavaScript: false))
                 let css = Self.text(response.data)
-                let data = Self.withBundleAssetUrls(response.data, text: css, baseUrl: asset.url, rootUrl: websiteUrl)
-                try Self.save(data, relativePath: relativePath, root: targetDir)
-                written.insert(relativePath)
                 enqueue(Self.discoverMarkupAssets(css, baseUrl: asset.url, rootUrl: websiteUrl, fromEntryHtml: false))
             } else if Self.isJavaScript(asset.url, contentType: response.contentType) {
-                // JS is saved as is: same-origin absolute URLs in code may be API calls.
-                try Self.save(response.data, relativePath: relativePath, root: targetDir)
-                written.insert(relativePath)
+                crawl.textFiles.append(TextFile(path: relativePath, baseUrl: asset.url, isJavaScript: true))
                 let jsText = Self.text(response.data)
                 let children = Self.discoverJavaScriptAssets(jsText, baseUrl: asset.url, rootUrl: websiteUrl)
                 for child in children where !child.requiredCandidates.isEmpty {
-                    let key = child.requiredCandidates.map(\.absoluteString).joined(separator: "\n")
-                    if requiredReferences[key] == nil {
-                        requiredOrder.append(key)
-                    }
-                    requiredReferences[key] = child.requiredCandidates
+                    crawl.addRequired(child.requiredCandidates)
                 }
                 enqueue(children)
-            } else {
-                try Self.save(response.data, relativePath: relativePath, root: targetDir)
-                written.insert(relativePath)
             }
         }
 
         // A code chunk referenced from JS must exist under at least one of its candidate paths,
         // otherwise the bundle would break when the chunk is lazily loaded (e.g. deploy race).
-        for key in requiredOrder {
-            let candidates = requiredReferences[key] ?? []
-            let found = try candidates.contains { try written.contains(Self.localPath(for: $0)) }
-            if !found, let first = candidates.first {
+        for key in crawl.requiredOrder {
+            let candidates = crawl.requiredReferences[key] ?? []
+            if !candidates.contains(where: crawl.isSaved), let first = candidates.first {
                 throw WebsiteModeError.failed("Missing code chunk referenced from JS: \(first.path)")
             }
         }
-        return written.count
+        try rewriteSavedTextFiles(crawl, websiteUrl: websiteUrl, root: targetDir)
+        return crawl.writtenPaths.count
+    }
+
+    /// Fetches one asset. Returns nil when an optional asset failed (logged and skipped).
+    private func fetchAsset(_ asset: Asset, downloadBase: URL?, crawl: inout Crawl) throws -> FetchResponse? {
+        var failure: String?
+        var response: FetchResponse?
+        do {
+            response = try fetcher(Self.rebase(asset.url, downloadBase: downloadBase), true)
+        } catch {
+            failure = error.localizedDescription
+        }
+        if let response {
+            crawl.totalBytes += response.data.count
+            if crawl.totalBytes > totalBytesBudget {
+                throw WebsiteModeError.failed("Website is larger than the \(totalBytesBudget) bytes download budget")
+            }
+            if !response.isSuccess {
+                failure = "HTTP \(response.statusCode)"
+            } else if Self.isHtmlFallback(asset.url, response: response) {
+                failure = "HTML fallback page served instead of the file"
+            }
+        }
+        if let failure {
+            if asset.required {
+                throw WebsiteModeError.failed("Failed to download \(asset.url.path): \(failure)")
+            }
+            log("Skipping website asset \(asset.url.path): \(failure)")
+            return nil
+        }
+        return response
+    }
+
+    /// Bundle path of an asset. Returns nil when an optional asset has an invalid path (logged and skipped).
+    private func bundlePath(for asset: Asset) throws -> String? {
+        do {
+            return try Self.localPath(for: asset.url)
+        } catch {
+            if asset.required {
+                throw error
+            }
+            log("Skipping website asset \(asset.url.path): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Saves a fetched asset. Returns false when nothing new was written (same path, same bytes).
+    private func saveAsset(
+        _ asset: Asset,
+        path relativePath: String,
+        response: FetchResponse,
+        root: URL,
+        crawl: inout Crawl
+    ) throws -> Bool {
+        let key = relativePath.lowercased()
+        let hash = Self.sha256Hex(response.data)
+        if let existing = crawl.saved[key] {
+            guard existing.sha256 == hash else {
+                throw WebsiteModeError.failed(
+                    "Path collision: \(existing.url.path) and \(asset.url.path) map to the same bundle file "
+                        + "\(relativePath) with different content"
+                )
+            }
+            // Same bytes: the file already exists on the case-insensitive iOS file system.
+            return false
+        } else {
+            crawl.saved[key] = (relativePath, asset.url, hash)
+        }
+        try Self.save(response.data, relativePath: relativePath, root: root)
+        crawl.writtenPaths.insert(relativePath)
+        return true
+    }
+
+    /// Same-origin absolute URLs of saved files become root-relative so the app loads them from the bundle.
+    private func rewriteSavedTextFiles(_ crawl: Crawl, websiteUrl: URL, root: URL) throws {
+        for file in crawl.textFiles {
+            let target = root.appendingPathComponent(file.path)
+            let data = try Data(contentsOf: target)
+            let text = Self.text(data)
+            let base = file.baseUrl
+            let rewritten = file.isJavaScript
+                ? Self.rewriteJavaScriptAssetUrls(text, baseUrl: base, rootUrl: websiteUrl, isSaved: crawl.isSaved)
+                : Self.rewriteAbsoluteAssetUrls(text, baseUrl: base, rootUrl: websiteUrl, accept: crawl.isSaved)
+            if rewritten != text {
+                try Self.save(Data(rewritten.utf8), relativePath: file.path, root: root)
+            }
+        }
+    }
+
+    /// SPA hosts often answer unknown paths with index.html and HTTP 200. For a script or stylesheet
+    /// that HTML page means the file is missing.
+    static func isHtmlFallback(_ url: URL, response: FetchResponse) -> Bool {
+        guard ["js", "mjs", "css"].contains(url.pathExtension.lowercased()) else {
+            return false
+        }
+        if response.contentType.lowercased().contains("text/html") {
+            return true
+        }
+        var head = String(decoding: response.data.prefix(1024), as: UTF8.self)
+        if head.hasPrefix("\u{FEFF}") {
+            head.removeFirst()
+        }
+        head = head.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return head.hasPrefix("<!doctype html") || head.hasPrefix("<html")
     }
 }
 
@@ -275,17 +422,27 @@ extension WebsiteModeUpdater {
         (#"@import\s+["']([^"']+)["']"#, false)
     ]
     private static let javaScriptAssetPattern =
-        #"["'`]([^"'`\s]+\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|mp3|mp4|webm|txt)(?:\?[^"'`\s]*)?)["'`]"#
+        #"["'`]([^"'`\s]+\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|txt)"#
+            + #"(?:\?[^"'`\s]*)?)["'`]"#
+    /// Video and audio are never bundled: they stay loaded from the network.
+    private static let mediaExtensions: Set<String> = ["mp4", "webm", "mov", "mp3", "m4a", "ogg", "wav"]
+    /// Data files referenced from JS may be API responses, so their URLs in JS are never rewritten.
+    private static let dataExtensions: Set<String> = ["json", "txt"]
+
+    static func isMedia(_ url: URL) -> Bool {
+        mediaExtensions.contains(url.pathExtension.lowercased())
+    }
 
     /// Asset refs found in HTML or CSS. Scripts and stylesheets referenced from the entry HTML are
-    /// required (a 4xx fails the update); other refs (icons, links, manifests) are best effort.
+    /// required (any failure fails the update); other refs (icons, links, manifests) are best effort.
+    /// Video and audio are never bundled.
     static func discoverMarkupAssets(_ text: String, baseUrl: URL, rootUrl: URL, fromEntryHtml: Bool) -> [Asset] {
         var result: [Asset] = []
         for (pattern, isSrcset) in markupPatterns {
             for value in regexCaptures(pattern: pattern, text: text) {
                 let candidates = isSrcset ? srcsetCandidates(value) : [value]
                 for candidate in candidates {
-                    if let url = sameOriginUrl(candidate, baseUrl: baseUrl, rootUrl: rootUrl) {
+                    if let url = sameOriginUrl(candidate, baseUrl: baseUrl, rootUrl: rootUrl), !isMedia(url) {
                         let ext = url.pathExtension.lowercased()
                         let required = fromEntryHtml && ["js", "mjs", "css"].contains(ext)
                         result.append(Asset(url: url, required: required))
@@ -298,24 +455,28 @@ extension WebsiteModeUpdater {
 
     /// Heuristic string refs inside JS bundles. Bundlers emit both module-relative refs ("./chunk.js")
     /// and base-relative refs ("assets/chunk.js"), so both resolutions are tried and a single candidate
-    /// may miss. Code refs (.js/.mjs/.css) must resolve on at least one candidate; other refs are best effort.
+    /// may miss. Only real bundler chunk URLs (literals starting with "./", "../", "/" or a same-origin
+    /// absolute URL) of code (.js/.mjs/.css) must resolve; bare names ("pdf.worker.js") are best effort.
     static func discoverJavaScriptAssets(_ text: String, baseUrl: URL, rootUrl: URL) -> [Asset] {
         var result: [Asset] = []
         for value in regexCaptures(pattern: javaScriptAssetPattern, text: text) {
+            let lower = value.lowercased()
+            let absolute = lower.hasPrefix("https://") || lower.hasPrefix("http://")
+            let explicit = absolute || value.hasPrefix("/") || value.hasPrefix("./") || value.hasPrefix("../")
             var candidates: [URL] = []
             let relativeToModule = sameOriginUrl(value, baseUrl: baseUrl, rootUrl: rootUrl)
             if let relativeToModule {
                 candidates.append(relativeToModule)
             }
-            if !value.hasPrefix("/") && !value.hasPrefix("./") && !value.hasPrefix("../") && !value.contains("://"),
+            if !explicit && !value.contains("://"),
                let relativeToRoot = sameOriginUrl(value, baseUrl: rootUrl, rootUrl: rootUrl),
                relativeToRoot != relativeToModule {
                 candidates.append(relativeToRoot)
             }
-            guard let first = candidates.first else {
+            guard let first = candidates.first, !isMedia(first) else {
                 continue
             }
-            let isCode = ["js", "mjs", "css"].contains(first.pathExtension.lowercased())
+            let isCode = explicit && ["js", "mjs", "css"].contains(first.pathExtension.lowercased())
             for candidate in candidates {
                 result.append(Asset(url: candidate, required: false, requiredCandidates: isCode ? candidates : []))
             }
@@ -323,42 +484,72 @@ extension WebsiteModeUpdater {
         return result
     }
 
-    /// HTML/CSS only: discovered same-origin absolute asset URLs (https://app.example.com/assets/a.js) become
+    /// HTML/CSS: discovered same-origin absolute asset URLs (https://app.example.com/assets/a.js) become
     /// root-relative (/assets/a.js), matching where they are stored in the bundle, so the WebView loads them
-    /// from the bundle instead of the network. Values that are not discovered assets are left untouched.
+    /// from the bundle instead of the network. Values that are not discovered assets, and media, are left untouched.
     static func rewriteAbsoluteAssetUrls(_ text: String, baseUrl: URL, rootUrl: URL) -> String {
+        rewriteAbsoluteAssetUrls(text, baseUrl: baseUrl, rootUrl: rootUrl) { !isMedia($0) }
+    }
+
+    /// Same as `rewriteAbsoluteAssetUrls(_:baseUrl:rootUrl:)`, only for URLs accepted by `accept`.
+    static func rewriteAbsoluteAssetUrls(_ text: String, baseUrl: URL, rootUrl: URL, accept: (URL) -> Bool) -> String {
         var result = text
         for (pattern, isSrcset) in markupPatterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-                continue
+            result = rewriteMatches(result, pattern: pattern) { value in
+                isSrcset
+                    ? rewriteSrcset(value, baseUrl: baseUrl, rootUrl: rootUrl, accept: accept)
+                    : rewriteAbsoluteValue(value, baseUrl: baseUrl, rootUrl: rootUrl, accept: accept)
             }
-            let source = result as NSString
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: source.length))
-            let mutable = NSMutableString(string: result)
-            // Replace from the end so earlier ranges stay valid.
-            for match in matches.reversed() where match.numberOfRanges > 1 {
-                let range = match.range(at: 1)
-                guard range.location != NSNotFound else {
-                    continue
-                }
-                let value = source.substring(with: range)
-                let rewritten = isSrcset
-                    ? rewriteSrcset(value, baseUrl: baseUrl, rootUrl: rootUrl)
-                    : rewriteAbsoluteValue(value, baseUrl: baseUrl, rootUrl: rootUrl)
-                if let rewritten {
-                    mutable.replaceCharacters(in: range, with: rewritten)
-                }
-            }
-            result = mutable as String
         }
         return result
     }
 
-    private static func rewriteAbsoluteValue(_ value: String, baseUrl: URL, rootUrl: URL) -> String? {
+    /// JS: only exact string literals that are same-origin absolute URLs of files saved into the bundle become
+    /// root-relative. Other URLs (API endpoints, data files, anything not saved) are left untouched.
+    static func rewriteJavaScriptAssetUrls(
+        _ text: String,
+        baseUrl: URL,
+        rootUrl: URL,
+        isSaved: (URL) -> Bool
+    ) -> String {
+        rewriteMatches(text, pattern: javaScriptAssetPattern) { value in
+            rewriteAbsoluteValue(value, baseUrl: baseUrl, rootUrl: rootUrl) { url in
+                !dataExtensions.contains(url.pathExtension.lowercased()) && isSaved(url)
+            }
+        }
+    }
+
+    private static func rewriteMatches(_ text: String, pattern: String, rewrite: (String) -> String?) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return text
+        }
+        let source = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: source.length))
+        let mutable = NSMutableString(string: text)
+        // Replace from the end so earlier ranges stay valid.
+        for match in matches.reversed() where match.numberOfRanges > 1 {
+            let range = match.range(at: 1)
+            guard range.location != NSNotFound else {
+                continue
+            }
+            if let rewritten = rewrite(source.substring(with: range)) {
+                mutable.replaceCharacters(in: range, with: rewritten)
+            }
+        }
+        return mutable as String
+    }
+
+    private static func rewriteAbsoluteValue(
+        _ value: String,
+        baseUrl: URL,
+        rootUrl: URL,
+        accept: (URL) -> Bool
+    ) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         guard lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("//"),
               let url = sameOriginUrl(trimmed, baseUrl: baseUrl, rootUrl: rootUrl),
+              accept(url),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return nil
         }
@@ -368,26 +559,22 @@ extension WebsiteModeUpdater {
         return path + query + fragment
     }
 
-    private static func rewriteSrcset(_ value: String, baseUrl: URL, rootUrl: URL) -> String? {
+    private static func rewriteSrcset(_ value: String, baseUrl: URL, rootUrl: URL, accept: (URL) -> Bool) -> String? {
         var changed = false
         let items = value.components(separatedBy: ",").map { item -> String in
             let leading = item.prefix { $0.isWhitespace }
             let rest = item.dropFirst(leading.count)
             let token = rest.prefix { !$0.isWhitespace }
             guard !token.isEmpty,
-                  let rewritten = rewriteAbsoluteValue(String(token), baseUrl: baseUrl, rootUrl: rootUrl) else {
+                  let rewritten = rewriteAbsoluteValue(
+                      String(token), baseUrl: baseUrl, rootUrl: rootUrl, accept: accept
+                  ) else {
                 return item
             }
             changed = true
             return String(leading) + rewritten + String(rest.dropFirst(token.count))
         }
         return changed ? items.joined(separator: ",") : nil
-    }
-
-    /// Returns the original bytes unless a same-origin absolute asset URL had to be made root-relative.
-    private static func withBundleAssetUrls(_ data: Data, text: String, baseUrl: URL, rootUrl: URL) -> Data {
-        let rewritten = rewriteAbsoluteAssetUrls(text, baseUrl: baseUrl, rootUrl: rootUrl)
-        return rewritten == text ? data : Data(rewritten.utf8)
     }
 
     static func sameOriginUrl(_ value: String, baseUrl: URL, rootUrl: URL) -> URL? {

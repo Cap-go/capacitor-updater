@@ -4574,6 +4574,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return try self.websiteFetch(url, bypassCache: bypassCache)
         })
+        updater.log = { [weak self] message in self?.logger.info(message) }
         self.websiteModeUpdater = updater
         logger.info("Website mode enabled, live check via: \(updater.websiteLiveUrl)")
         self.applyWebsiteModeTelemetry(capgoMode: updater.lastKnownModeIsCapgo)
@@ -4592,15 +4593,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let updater = websiteModeUpdater, WebsiteModeUpdater.isWebsiteVersion(versionName) else {
             return
         }
-        logger.info("Website version marked as failed and will be skipped: \(versionName)")
+        logger.info("Website version marked as failed and will be skipped for 24 hours: \(versionName)")
         updater.markFailedVersion(versionName)
     }
 
     /// Dedicated session: every redirect hop must stay on the requested origin.
     /// The shared updater session and its redirect policy are left untouched.
-    /// Cache policy is set per request in `websiteFetch`.
+    /// No URL cache: the live check always reaches the network (the edge may cache it),
+    /// and website files are always fetched fresh. Cache headers are set per request in `websiteFetch`.
     private lazy var websiteSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
         configuration.requestCachePolicy = .useProtocolCachePolicy
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
@@ -4609,8 +4612,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }()
     private let websiteFetchDelegate = WebsiteFetchDelegate(maxBytes: WebsiteModeUpdater.maxAssetBytes)
 
-    /// Plain GET (no cookies, same-origin redirects only). Website files bypass caches; the live
-    /// check does not, so its edge-cached, device independent answer can be reused.
+    /// Plain GET (no cookies, same-origin redirects only). Website files send no-cache; the live check
+    /// sends no cache header so its device independent answer can be served from the edge cache.
     private func websiteFetch(_ url: URL, bypassCache: Bool) throws -> WebsiteModeUpdater.FetchResponse {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -4664,7 +4667,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if self.shouldBlockAutoUpdateForPreviewSession() {
             return
         }
+        // Check and claim the in-progress flag atomically so concurrent triggers start one check only.
         downloadLock.lock()
+        let stillRunning = downloadStartTime.map { Date().timeIntervalSince($0) <= downloadTimeout } ?? true
+        if downloadInProgress && stillRunning {
+            downloadLock.unlock()
+            logger.info("Website check already in progress, skipping duplicate request")
+            return
+        }
         downloadInProgress = true
         downloadStartTime = Date()
         downloadLock.unlock()

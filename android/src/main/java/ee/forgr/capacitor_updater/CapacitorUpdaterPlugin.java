@@ -5035,6 +5035,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             WebsiteModeUpdater.okHttpFetcher(),
             WebsiteModeUpdater.sharedPreferencesStore(this.prefs)
         );
+        this.websiteModeUpdater.setLog((message) -> logger.info(message));
         logger.info("Website mode enabled, live check via: " + this.websiteModeUpdater.getWebsiteLiveUrl());
         this.applyWebsiteModeTelemetry(this.websiteModeUpdater.lastKnownModeIsCapgo());
     }
@@ -5050,7 +5051,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void markWebsiteVersionFailed(final String versionName) {
         if (this.websiteModeUpdater != null && WebsiteModeUpdater.isWebsiteVersion(versionName)) {
-            logger.info("Website version marked as failed and will be skipped: " + versionName);
+            logger.info("Website version marked as failed and will be skipped for 24 hours: " + versionName);
             this.websiteModeUpdater.markFailedVersion(versionName);
         }
     }

@@ -8,6 +8,7 @@ package ee.forgr.capacitor_updater;
 
 import android.content.SharedPreferences;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import okhttp3.HttpUrl;
@@ -49,8 +52,14 @@ final class WebsiteModeUpdater {
     static final String VERSION_PREFIX = "web-";
     static final int MAX_ASSET_COUNT = 1000;
     static final long MAX_ASSET_BYTES = 100L * 1024L * 1024L;
+    /** Total bytes a single crawl may download; past it the update fails. */
+    static final long MAX_TOTAL_BYTES = 300L * 1024L * 1024L;
     static final long MAX_CHECK_INTERVAL_SECONDS = 24L * 60L * 60L;
+    /** Floor for check_interval_seconds (also used when it is missing) so devices cannot stampede the backend. */
+    static final long MIN_CHECK_INTERVAL_SECONDS = 300L;
     static final int MAX_FAILED_VERSIONS = 50;
+    /** A failed website version is retried once this has elapsed (the site may be fixed without changing index.html). */
+    static final long FAILED_VERSION_TTL_MS = 24L * 60L * 60L * 1000L;
 
     static final String PREF_LAST_CHECK_MS = "CapacitorUpdater.websiteMode.lastCheckMs";
     static final String PREF_CHECK_INTERVAL_MS = "CapacitorUpdater.websiteMode.checkIntervalMs";
@@ -81,10 +90,14 @@ final class WebsiteModeUpdater {
     };
     private static final Pattern SRCSET_ITEM = Pattern.compile("^(\\s*)(\\S+)(.*)$", Pattern.DOTALL);
     private static final Pattern JS_ASSET_PATTERN = Pattern.compile(
-        "[\"'`]([^\"'`\\s]+\\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|mp3|mp4|webm|txt)(?:\\?[^\"'`\\s]*)?)[\"'`]",
+        "[\"'`]([^\"'`\\s]+\\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|txt)(?:\\?[^\"'`\\s]*)?)[\"'`]",
         Pattern.CASE_INSENSITIVE
     );
     private static final Pattern REQUIRED_EXTENSION = Pattern.compile("\\.(?:js|mjs|css)$", Pattern.CASE_INSENSITIVE);
+    /** Video and audio are never bundled: they stay loaded from the network. */
+    private static final Pattern MEDIA_EXTENSION = Pattern.compile("\\.(?:mp4|webm|mov|mp3|m4a|ogg|wav)$", Pattern.CASE_INSENSITIVE);
+    /** Data files referenced from JS may be API responses, so their URLs in JS are never rewritten. */
+    private static final Pattern DATA_EXTENSION = Pattern.compile("\\.(?:json|txt)$", Pattern.CASE_INSENSITIVE);
 
     /** Parsed body of {@code GET website_live?app_id=}. Unknown fields are ignored. */
     static final class LiveResponse {
@@ -133,8 +146,8 @@ final class WebsiteModeUpdater {
                 final String downloadBaseUrl = optString(json, "download_base_url");
                 final String reason = optString(json, "reason");
                 long interval = json.optLong("check_interval_seconds", 0L);
-                if (interval < 0) {
-                    interval = 0;
+                if (interval < MIN_CHECK_INTERVAL_SECONDS) {
+                    interval = MIN_CHECK_INTERVAL_SECONDS;
                 }
                 if (interval > MAX_CHECK_INTERVAL_SECONDS) {
                     interval = MAX_CHECK_INTERVAL_SECONDS;
@@ -174,7 +187,7 @@ final class WebsiteModeUpdater {
     interface Fetcher {
         /**
          * @param bypassCache true for website files (always fetch the deployed bytes); false for the
-         *     live check, whose answer is meant to be served from edge and device caches
+         *     live check, whose answer may come from the edge cache but never from a device cache
          */
         FetchResponse fetch(URL url, boolean bypassCache) throws IOException;
     }
@@ -216,13 +229,27 @@ final class WebsiteModeUpdater {
 
     static final int MAX_WEBSITE_REDIRECTS = 5;
 
+    /** Logging hook so the crawl can report skipped optional assets. */
+    interface Log {
+        void info(String message);
+    }
+
     static Fetcher okHttpFetcher() {
         return (url, bypassCache) -> {
             // Redirects are followed by hand so every hop can be checked against
             // the requested origin: files are saved under the requested path, so
             // another origin must never supply bundle code. The shared client and
             // its policy for other downloads stay unchanged.
-            final OkHttpClient client = DownloadService.sharedClient.newBuilder().followRedirects(false).followSslRedirects(false).build();
+            final OkHttpClient.Builder clientBuilder = DownloadService.sharedClient
+                .newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false);
+            if (!bypassCache) {
+                // The live check must reach the network (the edge may cache it): no local
+                // OkHttp cache, and no Cache-Control request header sent to the server.
+                clientBuilder.cache(null);
+            }
+            final OkHttpClient client = clientBuilder.build();
             HttpUrl target = HttpUrl.get(url.toString());
             for (int hop = 0; hop <= MAX_WEBSITE_REDIRECTS; hop++) {
                 final Request.Builder builder = new Request.Builder().url(target).header("Accept", "*/*").get();
@@ -276,6 +303,9 @@ final class WebsiteModeUpdater {
     private final Fetcher fetcher;
     private final Store store;
     private final String websiteLiveUrl;
+    private Log log = (message) -> {};
+    /** Crawl byte budget; only lowered by tests. */
+    long maxTotalBytes = MAX_TOTAL_BYTES;
 
     WebsiteModeUpdater(final String websiteLiveUrl, final Fetcher fetcher, final Store store) {
         this.websiteLiveUrl = websiteLiveUrl == null || websiteLiveUrl.trim().isEmpty() ? DEFAULT_WEBSITE_LIVE_URL : websiteLiveUrl.trim();
@@ -285,6 +315,10 @@ final class WebsiteModeUpdater {
 
     String getWebsiteLiveUrl() {
         return this.websiteLiveUrl;
+    }
+
+    void setLog(final Log log) {
+        this.log = log == null ? (message) -> {} : log;
     }
 
     // ---- Backend contract ----
@@ -331,7 +365,8 @@ final class WebsiteModeUpdater {
         if (checkUrl == null) {
             throw new IOException("Invalid websiteLiveUrl");
         }
-        // No cache bypass: the live answer is device independent and meant to be cached.
+        // No cache bypass header: the live answer is device independent and edge cached.
+        // The fetcher never serves it from a device-side cache.
         final FetchResponse response = this.fetcher.fetch(new URL(checkUrl), false);
         if (!response.isSuccess()) {
             throw new IOException("Website live check failed with HTTP " + response.statusCode);
@@ -369,32 +404,68 @@ final class WebsiteModeUpdater {
     }
 
     boolean isFailedVersion(final String version) {
-        return version != null && readFailedVersions().contains(version);
+        return isFailedVersion(version, System.currentTimeMillis());
+    }
+
+    /** A failed version is skipped for {@link #FAILED_VERSION_TTL_MS}, then retried. */
+    boolean isFailedVersion(final String version, final long nowMs) {
+        if (version == null) {
+            return false;
+        }
+        final Long failedAt = readFailedVersions().get(version);
+        return failedAt != null && !isFailedEntryExpired(failedAt, nowMs);
     }
 
     void markFailedVersion(final String version) {
+        markFailedVersion(version, System.currentTimeMillis());
+    }
+
+    void markFailedVersion(final String version, final long nowMs) {
         if (version == null || !version.startsWith(VERSION_PREFIX)) {
             return;
         }
-        final List<String> failed = new ArrayList<>(readFailedVersions());
-        failed.remove(version);
-        failed.add(version);
+        final List<String> failed = new ArrayList<>();
+        for (Map.Entry<String, Long> entry : readFailedVersions().entrySet()) {
+            if (!entry.getKey().equals(version) && !isFailedEntryExpired(entry.getValue(), nowMs)) {
+                failed.add(entry.getKey() + ":" + entry.getValue());
+            }
+        }
+        failed.add(version + ":" + nowMs);
         while (failed.size() > MAX_FAILED_VERSIONS) {
             failed.remove(0);
         }
         this.store.putString(PREF_FAILED_VERSIONS, String.join(",", failed));
     }
 
-    private Set<String> readFailedVersions() {
+    /** A clock moved backwards counts as expired so a version is never blocked for longer than intended. */
+    private static boolean isFailedEntryExpired(final long failedAtMs, final long nowMs) {
+        return failedAtMs <= 0 || nowMs < failedAtMs || nowMs - failedAtMs >= FAILED_VERSION_TTL_MS;
+    }
+
+    /** Stored as "version:failedAtMs" entries; legacy entries without a timestamp count as expired. */
+    private Map<String, Long> readFailedVersions() {
         final String raw = this.store.getString(PREF_FAILED_VERSIONS, "");
+        final Map<String, Long> result = new LinkedHashMap<>();
         if (raw == null || raw.isEmpty()) {
-            return Collections.emptySet();
+            return result;
         }
-        final Set<String> result = new LinkedHashSet<>();
         for (String value : raw.split(",")) {
-            if (!value.isEmpty()) {
-                result.add(value);
+            if (value.isEmpty()) {
+                continue;
             }
+            final int colon = value.lastIndexOf(':');
+            long failedAt = 0L;
+            String version = value;
+            if (colon > 0) {
+                version = value.substring(0, colon);
+                try {
+                    failedAt = Long.parseLong(value.substring(colon + 1));
+                } catch (NumberFormatException e) {
+                    failedAt = 0L;
+                }
+            }
+            result.remove(version);
+            result.put(version, failedAt);
         }
         return result;
     }
@@ -440,9 +511,39 @@ final class WebsiteModeUpdater {
         return response.data;
     }
 
+    /** One file saved by the crawl. */
+    private static final class SavedFile {
+
+        final String path;
+        final URL url;
+        final String sha256;
+
+        SavedFile(final String path, final URL url, final String sha256) {
+            this.path = path;
+            this.url = url;
+            this.sha256 = sha256;
+        }
+    }
+
+    /** A saved HTML, CSS or JS file whose same-origin absolute asset URLs are rewritten once the crawl is done. */
+    private static final class TextFile {
+
+        final String path;
+        final URL baseUrl;
+        final boolean javaScript;
+
+        TextFile(final String path, final URL baseUrl, final boolean javaScript) {
+            this.path = path;
+            this.baseUrl = baseUrl;
+            this.javaScript = javaScript;
+        }
+    }
+
     /**
      * Crawls same-origin assets referenced by the entry HTML, CSS and JS into {@code targetDir}.
      * Paths stay identical to the website so the bundle behaves like the webDir build.
+     * Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
+     * missing; every other asset is skipped on any failure.
      *
      * @return number of files written (entry included)
      */
@@ -451,9 +552,15 @@ final class WebsiteModeUpdater {
             throw new IOException("Unable to create website download directory");
         }
         final String entryText = new String(entryHtml, StandardCharsets.UTF_8);
-        save(withBundleAssetUrls(entryHtml, entryText, websiteUrl, websiteUrl), new File(targetDir, "index.html"), targetDir);
-        final Set<String> written = new HashSet<>();
-        written.add("index.html");
+        save(entryHtml, new File(targetDir, "index.html"), targetDir);
+        // Keyed by lowercased path: iOS file systems are case-insensitive.
+        final Map<String, SavedFile> saved = new HashMap<>();
+        final Set<String> writtenPaths = new LinkedHashSet<>();
+        final List<TextFile> textFiles = new ArrayList<>();
+        saved.put("index.html", new SavedFile("index.html", websiteUrl, sha256Hex(entryHtml)));
+        writtenPaths.add("index.html");
+        textFiles.add(new TextFile("index.html", websiteUrl, false));
+        long totalBytes = entryHtml.length;
 
         final ArrayDeque<Asset> queue = new ArrayDeque<>();
         final Set<String> queued = new HashSet<>();
@@ -468,34 +575,80 @@ final class WebsiteModeUpdater {
             if (++processed > MAX_ASSET_COUNT) {
                 throw new IOException("Website references more than " + MAX_ASSET_COUNT + " assets");
             }
-            final String relativePath = localPath(asset.url);
-            if (written.contains(relativePath)) {
+            final String relativePath;
+            try {
+                relativePath = localPath(asset.url);
+            } catch (IOException e) {
+                if (asset.required) {
+                    throw e;
+                }
+                this.log.info("Skipping website asset " + asset.url.getPath() + ": " + e.getMessage());
                 continue;
             }
-            final FetchResponse response;
+            final String key = relativePath.toLowerCase(Locale.ROOT);
+            if ("index.html".equals(key)) {
+                continue;
+            }
+            FetchResponse response = null;
+            String failure;
             try {
                 response = this.fetcher.fetch(rebase(asset.url, downloadBase), true);
+                failure = null;
             } catch (IOException e) {
-                throw new IOException("Failed to download " + asset.url.getPath() + ": " + e.getMessage(), e);
+                failure = e.getMessage();
             }
-            if (!response.isSuccess()) {
-                if (!asset.required && response.statusCode >= 400 && response.statusCode < 500) {
-                    continue;
+            if (response != null) {
+                totalBytes += response.data.length;
+                if (totalBytes > this.maxTotalBytes) {
+                    throw new IOException("Website is larger than the " + this.maxTotalBytes + " bytes download budget");
                 }
-                throw new IOException("HTTP " + response.statusCode + " while downloading " + asset.url.getPath());
+                if (!response.isSuccess()) {
+                    failure = "HTTP " + response.statusCode;
+                } else if (isHtmlFallback(asset.url, response)) {
+                    failure = "HTML fallback page served instead of the file";
+                }
+            }
+            if (failure != null) {
+                if (asset.required) {
+                    throw new IOException("Failed to download " + asset.url.getPath() + ": " + failure);
+                }
+                this.log.info("Skipping website asset " + asset.url.getPath() + ": " + failure);
+                continue;
             }
 
+            final String hash = sha256Hex(response.data);
+            final SavedFile existing = saved.get(key);
+            if (existing != null) {
+                if (!existing.sha256.equals(hash)) {
+                    throw new IOException(
+                        "Path collision: " +
+                            existing.url.getPath() +
+                            " and " +
+                            asset.url.getPath() +
+                            " map to the same bundle file " +
+                            relativePath +
+                            " with different content"
+                    );
+                }
+                // Same bytes: nothing new for the exact path. A path differing only by case is still written
+                // because Android file systems are case-sensitive (iOS skips it: there it is the same file).
+                if (writtenPaths.contains(relativePath)) {
+                    continue;
+                }
+            } else {
+                saved.put(key, new SavedFile(relativePath, asset.url, hash));
+            }
+            save(response.data, new File(targetDir, relativePath), targetDir);
+            writtenPaths.add(relativePath);
+
             if (isCss(asset.url, response.contentType)) {
+                textFiles.add(new TextFile(relativePath, asset.url, false));
                 final String text = new String(response.data, StandardCharsets.UTF_8);
-                save(withBundleAssetUrls(response.data, text, asset.url, websiteUrl), new File(targetDir, relativePath), targetDir);
-                written.add(relativePath);
                 for (Asset child : discoverMarkupAssets(text, asset.url, websiteUrl, false)) {
                     enqueue(child, queue, queued);
                 }
             } else if (isJavaScript(asset.url, response.contentType)) {
-                // JS is saved as is: same-origin absolute URLs in code may be API calls.
-                save(response.data, new File(targetDir, relativePath), targetDir);
-                written.add(relativePath);
+                textFiles.add(new TextFile(relativePath, asset.url, true));
                 final String text = new String(response.data, StandardCharsets.UTF_8);
                 for (Asset child : discoverJavaScriptAssets(text, asset.url, websiteUrl)) {
                     if (!child.requiredCandidates.isEmpty()) {
@@ -503,18 +656,22 @@ final class WebsiteModeUpdater {
                     }
                     enqueue(child, queue, queued);
                 }
-            } else {
-                save(response.data, new File(targetDir, relativePath), targetDir);
-                written.add(relativePath);
             }
         }
 
         // A code chunk referenced from JS must exist under at least one of its candidate paths,
         // otherwise the bundle would break when the chunk is lazily loaded (e.g. deploy race).
+        final Predicate<URL> isSaved = (url) -> {
+            try {
+                return saved.containsKey(localPath(url).toLowerCase(Locale.ROOT));
+            } catch (IOException e) {
+                return false;
+            }
+        };
         for (List<URL> candidates : requiredReferences.values()) {
             boolean found = false;
             for (URL candidate : candidates) {
-                if (written.contains(localPath(candidate))) {
+                if (isSaved.test(candidate)) {
                     found = true;
                     break;
                 }
@@ -523,7 +680,39 @@ final class WebsiteModeUpdater {
                 throw new IOException("Missing code chunk referenced from JS: " + candidates.get(0).getPath());
             }
         }
-        return written.size();
+
+        // Same-origin absolute URLs of saved files become root-relative so the app loads them from the bundle.
+        for (TextFile textFile : textFiles) {
+            final File file = new File(targetDir, textFile.path);
+            final String text = new String(readFile(file), StandardCharsets.UTF_8);
+            final String rewritten = textFile.javaScript
+                ? rewriteJavaScriptAssetUrls(text, textFile.baseUrl, websiteUrl, isSaved)
+                : rewriteAbsoluteAssetUrls(text, textFile.baseUrl, websiteUrl, isSaved);
+            if (!rewritten.equals(text)) {
+                save(rewritten.getBytes(StandardCharsets.UTF_8), file, targetDir);
+            }
+        }
+        return writtenPaths.size();
+    }
+
+    /**
+     * SPA hosts often answer unknown paths with index.html and HTTP 200. For a script or stylesheet
+     * that HTML page means the file is missing.
+     */
+    static boolean isHtmlFallback(final URL url, final FetchResponse response) {
+        if (!REQUIRED_EXTENSION.matcher(url.getPath()).find()) {
+            return false;
+        }
+        if (response.contentType.contains("text/html")) {
+            return true;
+        }
+        final int length = Math.min(response.data.length, 1024);
+        String head = new String(response.data, 0, length, StandardCharsets.UTF_8);
+        if (head.startsWith("﻿")) {
+            head = head.substring(1);
+        }
+        head = head.trim().toLowerCase(Locale.ROOT);
+        return head.startsWith("<!doctype html") || head.startsWith("<html");
     }
 
     private static String candidatesKey(final List<URL> candidates) {
@@ -534,51 +723,76 @@ final class WebsiteModeUpdater {
         return key.toString();
     }
 
-    /** Returns the original bytes unless a same-origin absolute asset URL had to be made root-relative. */
-    private static byte[] withBundleAssetUrls(final byte[] data, final String text, final URL baseUrl, final URL rootUrl) {
-        final String rewritten = rewriteAbsoluteAssetUrls(text, baseUrl, rootUrl);
-        return rewritten.equals(text) ? data : rewritten.getBytes(StandardCharsets.UTF_8);
+    static boolean isMedia(final URL url) {
+        return MEDIA_EXTENSION.matcher(url.getPath()).find();
     }
 
     /**
-     * HTML/CSS only: discovered same-origin absolute asset URLs (https://app.example.com/assets/a.js) become
+     * HTML/CSS: discovered same-origin absolute asset URLs (https://app.example.com/assets/a.js) become
      * root-relative (/assets/a.js), matching where they are stored in the bundle, so the WebView loads them
-     * from the bundle instead of the network. Values that are not discovered assets are left untouched.
+     * from the bundle instead of the network. Values that are not discovered assets, and media, are left untouched.
      */
     static String rewriteAbsoluteAssetUrls(final String text, final URL baseUrl, final URL rootUrl) {
+        return rewriteAbsoluteAssetUrls(text, baseUrl, rootUrl, (url) -> !isMedia(url));
+    }
+
+    /** Same as {@link #rewriteAbsoluteAssetUrls(String, URL, URL)}, only for URLs accepted by {@code accept}. */
+    static String rewriteAbsoluteAssetUrls(final String text, final URL baseUrl, final URL rootUrl, final Predicate<URL> accept) {
         if (text == null) {
             return null;
         }
         String result = text;
         for (Pattern pattern : COMPILED_MARKUP_PATTERNS) {
-            final Matcher matcher = pattern.matcher(result);
-            final StringBuilder out = new StringBuilder();
-            int last = 0;
-            while (matcher.find()) {
-                final String value = matcher.group(1);
-                final String rewritten =
-                    pattern == SRCSET_PATTERN ? rewriteSrcset(value, baseUrl, rootUrl) : rewriteAbsoluteValue(value, baseUrl, rootUrl);
-                if (rewritten != null) {
-                    out.append(result, last, matcher.start(1)).append(rewritten);
-                    last = matcher.end(1);
-                }
-            }
-            if (last > 0) {
-                out.append(result, last, result.length());
-                result = out.toString();
-            }
+            final boolean srcset = pattern == SRCSET_PATTERN;
+            result = rewriteMatches(result, pattern, (value) ->
+                srcset ? rewriteSrcset(value, baseUrl, rootUrl, accept) : rewriteAbsoluteValue(value, baseUrl, rootUrl, accept)
+            );
         }
         return result;
     }
 
-    private static String rewriteAbsoluteValue(final String value, final URL baseUrl, final URL rootUrl) {
+    /**
+     * JS: only exact string literals that are same-origin absolute URLs of files saved into the bundle become
+     * root-relative. Other URLs (API endpoints, data files, anything not saved) are left untouched.
+     */
+    static String rewriteJavaScriptAssetUrls(final String text, final URL baseUrl, final URL rootUrl, final Predicate<URL> isSaved) {
+        if (text == null) {
+            return null;
+        }
+        final Predicate<URL> accept = (url) -> !DATA_EXTENSION.matcher(url.getPath()).find() && isSaved.test(url);
+        return rewriteMatches(text, JS_ASSET_PATTERN, (value) -> rewriteAbsoluteValue(value, baseUrl, rootUrl, accept));
+    }
+
+    private interface ValueRewriter {
+        String rewrite(String value);
+    }
+
+    private static String rewriteMatches(final String text, final Pattern pattern, final ValueRewriter rewriter) {
+        final Matcher matcher = pattern.matcher(text);
+        final StringBuilder out = new StringBuilder();
+        int last = 0;
+        while (matcher.find()) {
+            final String rewritten = rewriter.rewrite(matcher.group(1));
+            if (rewritten != null) {
+                out.append(text, last, matcher.start(1)).append(rewritten);
+                last = matcher.end(1);
+            }
+        }
+        if (last == 0) {
+            return text;
+        }
+        out.append(text, last, text.length());
+        return out.toString();
+    }
+
+    private static String rewriteAbsoluteValue(final String value, final URL baseUrl, final URL rootUrl, final Predicate<URL> accept) {
         final String trimmed = value.trim();
         final String lower = trimmed.toLowerCase(Locale.ROOT);
         if (!lower.startsWith("https://") && !lower.startsWith("http://") && !lower.startsWith("//")) {
             return null;
         }
         final URL url = sameOriginUrl(trimmed, baseUrl, rootUrl);
-        if (url == null) {
+        if (url == null || !accept.test(url)) {
             return null;
         }
         final String path = url.getPath() == null || url.getPath().isEmpty() ? "/" : url.getPath();
@@ -587,7 +801,7 @@ final class WebsiteModeUpdater {
         return path + query + (hash >= 0 ? trimmed.substring(hash) : "");
     }
 
-    private static String rewriteSrcset(final String value, final URL baseUrl, final URL rootUrl) {
+    private static String rewriteSrcset(final String value, final URL baseUrl, final URL rootUrl, final Predicate<URL> accept) {
         final String[] items = value.split(",", -1);
         boolean changed = false;
         for (int i = 0; i < items.length; i++) {
@@ -595,7 +809,7 @@ final class WebsiteModeUpdater {
             if (!item.matches()) {
                 continue;
             }
-            final String rewritten = rewriteAbsoluteValue(item.group(2), baseUrl, rootUrl);
+            final String rewritten = rewriteAbsoluteValue(item.group(2), baseUrl, rootUrl, accept);
             if (rewritten != null) {
                 items[i] = item.group(1) + rewritten + item.group(3);
                 changed = true;
@@ -634,7 +848,8 @@ final class WebsiteModeUpdater {
 
     /**
      * Asset refs found in HTML or CSS. Scripts and stylesheets referenced from the entry HTML are
-     * required (a 4xx fails the update); other refs (icons, links, manifests) are best effort.
+     * required (any failure fails the update); other refs (icons, links, manifests) are best effort.
+     * Video and audio are never bundled.
      */
     static List<Asset> discoverMarkupAssets(final String text, final URL baseUrl, final URL rootUrl, final boolean fromEntryHtml) {
         final List<Asset> result = new ArrayList<>();
@@ -648,7 +863,7 @@ final class WebsiteModeUpdater {
                 final List<String> candidates = pattern == SRCSET_PATTERN ? srcsetCandidates(value) : Collections.singletonList(value);
                 for (String candidate : candidates) {
                     final URL url = sameOriginUrl(candidate, baseUrl, rootUrl);
-                    if (url != null) {
+                    if (url != null && !isMedia(url)) {
                         final boolean required = fromEntryHtml && REQUIRED_EXTENSION.matcher(url.getPath()).find();
                         result.add(new Asset(url, required));
                     }
@@ -661,7 +876,8 @@ final class WebsiteModeUpdater {
     /**
      * Heuristic string refs inside JS bundles. Bundlers emit both module-relative refs ("./chunk.js")
      * and base-relative refs ("assets/chunk.js"), so both resolutions are tried and a single candidate
-     * may miss. Code refs (.js/.mjs/.css) must resolve on at least one candidate; other refs are best effort.
+     * may miss. Only real bundler chunk URLs (literals starting with "./", "../", "/" or a same-origin
+     * absolute URL) of code (.js/.mjs/.css) must resolve; bare names ("pdf.worker.js") are best effort.
      */
     static List<Asset> discoverJavaScriptAssets(final String text, final URL baseUrl, final URL rootUrl) {
         final List<Asset> result = new ArrayList<>();
@@ -671,12 +887,15 @@ final class WebsiteModeUpdater {
         final Matcher matcher = JS_ASSET_PATTERN.matcher(text);
         while (matcher.find()) {
             final String value = matcher.group(1);
+            final String lower = value.toLowerCase(Locale.ROOT);
+            final boolean absolute = lower.startsWith("https://") || lower.startsWith("http://");
+            final boolean explicit = absolute || value.startsWith("/") || value.startsWith("./") || value.startsWith("../");
             final List<URL> candidates = new ArrayList<>(2);
             final URL relativeToModule = sameOriginUrl(value, baseUrl, rootUrl);
             if (relativeToModule != null) {
                 candidates.add(relativeToModule);
             }
-            if (!value.startsWith("/") && !value.startsWith("./") && !value.startsWith("../") && !value.contains("://")) {
+            if (!explicit && !value.contains("://")) {
                 final URL relativeToRoot = sameOriginUrl(value, rootUrl, rootUrl);
                 if (
                     relativeToRoot != null && (relativeToModule == null || !relativeToRoot.toString().equals(relativeToModule.toString()))
@@ -684,10 +903,10 @@ final class WebsiteModeUpdater {
                     candidates.add(relativeToRoot);
                 }
             }
-            if (candidates.isEmpty()) {
+            if (candidates.isEmpty() || isMedia(candidates.get(0))) {
                 continue;
             }
-            final boolean code = REQUIRED_EXTENSION.matcher(candidates.get(0).getPath()).find();
+            final boolean code = explicit && REQUIRED_EXTENSION.matcher(candidates.get(0).getPath()).find();
             final List<URL> required = code ? Collections.unmodifiableList(candidates) : Collections.emptyList();
             for (URL candidate : candidates) {
                 result.add(new Asset(candidate, false, required));
@@ -785,6 +1004,18 @@ final class WebsiteModeUpdater {
             return url;
         } catch (MalformedURLException e) {
             return null;
+        }
+    }
+
+    private static byte[] readFile(final File file) throws IOException {
+        try (FileInputStream input = new FileInputStream(file)) {
+            final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            final byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
         }
     }
 

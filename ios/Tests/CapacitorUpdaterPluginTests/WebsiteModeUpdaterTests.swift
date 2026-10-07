@@ -24,14 +24,18 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         var responses: [String: WebsiteModeUpdater.FetchResponse] = [:]
         var requested: [String] = []
         var bypassCache: [String: Bool] = [:]
+        var errors: [String: String] = [:]
 
-        func put(_ url: String, _ body: String, _ contentType: String) {
-            responses[url] = WebsiteModeUpdater.FetchResponse(statusCode: 200, data: Data(body.utf8), contentType: contentType)
+        func put(_ url: String, _ body: String, _ contentType: String, status: Int = 200) {
+            responses[url] = WebsiteModeUpdater.FetchResponse(statusCode: status, data: Data(body.utf8), contentType: contentType)
         }
 
         func fetch(_ url: URL, bypass: Bool) throws -> WebsiteModeUpdater.FetchResponse {
             requested.append(url.absoluteString)
             bypassCache[url.absoluteString] = bypass
+            if let message = errors[url.absoluteString] {
+                throw WebsiteModeUpdater.WebsiteModeError.failed(message)
+            }
             return responses[url.absoluteString] ?? WebsiteModeUpdater.FetchResponse(statusCode: 404, data: Data(), contentType: "text/plain")
         }
     }
@@ -77,6 +81,13 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         )
         XCTAssertEqual(res?.downloadBaseUrl, "https://cdn.example.com/site")
         XCTAssertEqual(res?.checkIntervalSeconds, WebsiteModeUpdater.maxCheckIntervalSeconds)
+    }
+
+    func testFloorsCheckIntervalAtFiveMinutes() {
+        XCTAssertEqual(parse(#"{"allowed":true,"mode":"website"}"#)?.checkIntervalSeconds, 300)
+        XCTAssertEqual(parse(#"{"allowed":true,"mode":"website","check_interval_seconds":0}"#)?.checkIntervalSeconds, 300)
+        XCTAssertEqual(parse(#"{"allowed":true,"mode":"website","check_interval_seconds":299}"#)?.checkIntervalSeconds, 300)
+        XCTAssertEqual(parse(#"{"allowed":true,"mode":"website","check_interval_seconds":301}"#)?.checkIntervalSeconds, 301)
     }
 
     func testRejectsInvalidOrInsecureResponses() {
@@ -190,14 +201,54 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         let root = URL(string: "https://app.example.com/")!
         let module = URL(string: "https://app.example.com/assets/index.js")!
         let assets = WebsiteModeUpdater.discoverJavaScriptAssets(
-            #"const a=["assets/Home-2.js","assets/logo.png"]"#,
+            #"const a=["./Home-2.js","../x/Abs.css","/assets/Root.mjs","https://app.example.com/assets/Full.js","#
+                + #""assets/Bare-1.js","pdf.worker.js","src/foo.js","./logo.png"]"#,
             baseUrl: module,
             rootUrl: root
         )
+        var required: [String: Int] = [:]
         for asset in assets {
             XCTAssertFalse(asset.required)
-            XCTAssertEqual(asset.requiredCandidates.count, asset.url.pathExtension == "js" ? 2 : 0)
+            required[asset.url.path] = asset.requiredCandidates.count
         }
+        XCTAssertEqual(required["/assets/Home-2.js"], 1)
+        XCTAssertEqual(required["/x/Abs.css"], 1)
+        XCTAssertEqual(required["/assets/Root.mjs"], 1)
+        XCTAssertEqual(required["/assets/Full.js"], 1)
+        // Bare names are tried module- and root-relative but stay best effort.
+        XCTAssertEqual(required["/assets/assets/Bare-1.js"], 0)
+        XCTAssertEqual(required["/assets/Bare-1.js"], 0)
+        XCTAssertEqual(required["/assets/pdf.worker.js"], 0)
+        XCTAssertEqual(required["/src/foo.js"], 0)
+        XCTAssertEqual(required["/assets/logo.png"], 0)
+    }
+
+    func testNeverDiscoversVideoOrAudio() {
+        let root = URL(string: "https://app.example.com/")!
+        let html = #"<video src="/media/intro.mp4"></video><audio src="/a.mp3"></audio><source src="/b.webm">"#
+            + #"<source src="/c.MOV"><audio src="/d.m4a"></audio><audio src="/e.ogg"></audio><audio src="/f.wav"></audio>"#
+            + #"<img src="/g.png">"#
+        XCTAssertEqual(WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: true).count, 1)
+        let js = "const v=['./intro.mp4','./a.mp3','./b.webm','./c.mov','./d.m4a','./e.ogg','./f.wav','./g.png']"
+        let found = WebsiteModeUpdater.discoverJavaScriptAssets(js, baseUrl: root, rootUrl: root).map(\.url.absoluteString)
+        XCTAssertEqual(found, ["https://app.example.com/g.png"])
+        // Media stays network loaded, so absolute media URLs are not rewritten either.
+        let video = #"<video src="https://app.example.com/intro.mp4"></video>"#
+        XCTAssertEqual(WebsiteModeUpdater.rewriteAbsoluteAssetUrls(video, baseUrl: root, rootUrl: root), video)
+    }
+
+    func testDetectsHtmlFallbackForCode() {
+        let js = URL(string: "https://app.example.com/assets/a.js")!
+        let css = URL(string: "https://app.example.com/assets/a.css")!
+        let png = URL(string: "https://app.example.com/a.png")!
+        func response(_ body: String, _ type: String) -> WebsiteModeUpdater.FetchResponse {
+            WebsiteModeUpdater.FetchResponse(statusCode: 200, data: Data(body.utf8), contentType: type)
+        }
+        XCTAssertTrue(WebsiteModeUpdater.isHtmlFallback(js, response: response("export{}", "text/html; charset=utf-8")))
+        XCTAssertTrue(WebsiteModeUpdater.isHtmlFallback(js, response: response("  \n<!DOCTYPE html><html>", "application/octet-stream")))
+        XCTAssertTrue(WebsiteModeUpdater.isHtmlFallback(css, response: response("\u{FEFF}<HTML lang=en>", "")))
+        XCTAssertFalse(WebsiteModeUpdater.isHtmlFallback(js, response: response("export{}", "text/javascript")))
+        XCTAssertFalse(WebsiteModeUpdater.isHtmlFallback(png, response: response("<!doctype html>", "text/html")))
     }
 
     func testRewritesAbsoluteSameOriginAssetUrlsInMarkup() {
@@ -350,6 +401,147 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertEqual(site.bypassCache["https://cdn.example.com/v1/assets/index.js"], true)
     }
 
+    private func download(_ site: FakeSite, _ html: String, _ name: String, updater: WebsiteModeUpdater? = nil) throws -> URL {
+        let dir = tempRoot.appendingPathComponent(name, isDirectory: true)
+        try (updater ?? makeUpdater(site)).downloadWebsite(
+            entryHtml: Data(html.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: dir
+        )
+        return dir
+    }
+
+    private func exists(_ dir: URL, _ path: String) -> Bool {
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent(path).path)
+    }
+
+    func testDownloadSkipsOptionalAssetsOnAnyFailure() throws {
+        let site = FakeSite()
+        site.put("https://app.example.com/assets/index.js", "const m=['assets/data.json','pdf.worker.js']", "text/javascript")
+        site.put("https://app.example.com/manifest.webmanifest", "", "text/plain", status: 500)
+        site.errors["https://app.example.com/icon.png"] = "Cross-origin redirect blocked"
+        site.errors["https://app.example.com/big.png"] = "Asset too large"
+        site.errors["https://app.example.com/assets/data.json"] = "timeout"
+        site.put("https://app.example.com/assets/pdf.worker.js", "<!doctype html><html></html>", "text/html")
+        site.put("https://app.example.com/ok.png", "PNG", "image/png")
+        let updater = makeUpdater(site)
+        var logs: [String] = []
+        updater.log = { logs.append($0) }
+        let html = #"<script src="/assets/index.js"></script><link rel=manifest href="/manifest.webmanifest">"#
+            + #"<link rel=icon href="/icon.png"><img src="/big.png"><img src="/ok.png">"#
+        let dir = tempRoot.appendingPathComponent("optional", isDirectory: true)
+        let files = try updater.downloadWebsite(
+            entryHtml: Data(html.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: dir
+        )
+        XCTAssertEqual(files, 3)
+        XCTAssertTrue(exists(dir, "ok.png"))
+        XCTAssertFalse(exists(dir, "assets/pdf.worker.js"))
+        XCTAssertFalse(exists(dir, "manifest.webmanifest"))
+        XCTAssertGreaterThanOrEqual(logs.count, 5)
+    }
+
+    func testDownloadFailsWhenRequiredAssetFailsInAnyWay() {
+        let html = #"<script src="/assets/index.js"></script>"#
+
+        let serverError = FakeSite()
+        serverError.put("https://app.example.com/assets/index.js", "", "text/plain", status: 503)
+        XCTAssertThrowsError(try download(serverError, html, "e1"))
+
+        let network = FakeSite()
+        network.errors["https://app.example.com/assets/index.js"] = "offline"
+        XCTAssertThrowsError(try download(network, html, "e2"))
+
+        // SPA fallback: index.html served with 200 for a missing script.
+        let fallback = FakeSite()
+        fallback.put("https://app.example.com/assets/index.js", "<!DOCTYPE html><html></html>", "text/html")
+        XCTAssertThrowsError(try download(fallback, html, "e3")) { error in
+            XCTAssertTrue(error.localizedDescription.contains("HTML fallback"), error.localizedDescription)
+        }
+
+        // A required JS chunk answered with the HTML fallback counts as missing.
+        let chunk = FakeSite()
+        chunk.put("https://app.example.com/assets/index.js", "import('./About-1.js')", "text/javascript")
+        chunk.put("https://app.example.com/assets/About-1.js", "\n <html><body></body></html>", "application/javascript")
+        XCTAssertThrowsError(try download(chunk, html, "e4")) { error in
+            XCTAssertTrue(error.localizedDescription.contains("About-1.js"), error.localizedDescription)
+        }
+    }
+
+    func testDownloadRewritesSavedAbsoluteUrlsInJavaScript() throws {
+        let site = FakeSite()
+        let js = #"const a="https://app.example.com/assets/logo.png";const b='https://app.example.com/assets/missing.png';"#
+            + "fetch('https://app.example.com/api/users');fetch(`https://app.example.com/data/x.json`);"
+            + "const c='https://cdn.other.com/assets/logo.png'"
+        site.put("https://app.example.com/assets/index.js", js, "text/javascript")
+        site.put("https://app.example.com/assets/logo.png", "PNG", "image/png")
+        site.put("https://app.example.com/data/x.json", "{}", "application/json")
+        let dir = try download(site, #"<script src="/assets/index.js"></script>"#, "jsrewrite")
+        XCTAssertTrue(exists(dir, "data/x.json"))
+        XCTAssertEqual(
+            try String(contentsOf: dir.appendingPathComponent("assets/index.js"), encoding: .utf8),
+            #"const a="/assets/logo.png";const b='https://app.example.com/assets/missing.png';"#
+                + "fetch('https://app.example.com/api/users');fetch(`https://app.example.com/data/x.json`);"
+                + "const c='https://cdn.other.com/assets/logo.png'"
+        )
+    }
+
+    func testDownloadDoesNotRewriteSkippedAssetsInMarkup() throws {
+        let site = FakeSite()
+        let html = #"<link rel=icon href="https://app.example.com/missing.ico"><img src="https://app.example.com/ok.png">"#
+        site.put("https://app.example.com/ok.png", "PNG", "image/png")
+        let dir = try download(site, html, "skipped")
+        XCTAssertEqual(
+            try String(contentsOf: dir.appendingPathComponent("index.html"), encoding: .utf8),
+            #"<link rel=icon href="https://app.example.com/missing.ico"><img src="/ok.png">"#
+        )
+    }
+
+    func testDownloadFailsOverTotalByteBudget() {
+        let site = FakeSite()
+        site.put("https://app.example.com/a.png", "0123456789", "image/png")
+        site.put("https://app.example.com/b.png", "0123456789", "image/png")
+        let html = #"<img src="/a.png"><img src="/b.png">"#
+        let updater = makeUpdater(site)
+        updater.totalBytesBudget = html.utf8.count + 15
+        XCTAssertThrowsError(try download(site, html, "budget", updater: updater)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("budget"), error.localizedDescription)
+        }
+        XCTAssertEqual(WebsiteModeUpdater.maxTotalBytes, 300 * 1024 * 1024)
+    }
+
+    func testDownloadFailsOnCaseInsensitivePathCollisionWithDifferentBytes() {
+        let site = FakeSite()
+        site.put("https://app.example.com/assets/App.png", "one", "image/png")
+        site.put("https://app.example.com/assets/app.png", "two", "image/png")
+        XCTAssertThrowsError(try download(site, #"<img src="/assets/App.png"><img src="/assets/app.png">"#, "c1")) { error in
+            XCTAssertTrue(error.localizedDescription.contains("collision"), error.localizedDescription)
+        }
+
+        let query = FakeSite()
+        query.put("https://app.example.com/a.css?v=1", ".a{}", "text/css")
+        query.put("https://app.example.com/a.css?v=2", ".b{}", "text/css")
+        let html = #"<link rel=stylesheet href="/a.css?v=1"><link rel=stylesheet href="/a.css?v=2">"#
+        XCTAssertThrowsError(try download(query, html, "c2"))
+    }
+
+    func testDownloadAcceptsSamePathWithSameBytes() throws {
+        let site = FakeSite()
+        site.put("https://app.example.com/a.css?v=1", ".a{}", "text/css")
+        site.put("https://app.example.com/a.css?v=2", ".a{}", "text/css")
+        site.put("https://app.example.com/assets/Logo.png", "PNG", "image/png")
+        site.put("https://app.example.com/assets/logo.png", "PNG", "image/png")
+        let html = #"<link rel=stylesheet href="/a.css?v=1"><link rel=stylesheet href="/a.css?v=2">"#
+            + #"<img src="/assets/Logo.png"><img src="/assets/logo.png">"#
+        let dir = try download(site, html, "same")
+        XCTAssertTrue(exists(dir, "a.css"))
+        // The case variant with the same bytes is not written again (one file on a case-insensitive file system).
+        XCTAssertTrue(exists(dir, "assets/Logo.png"))
+    }
+
     func testFetchLiveResponseCallsEndpointWithAppId() throws {
         let site = FakeSite()
         site.put(
@@ -359,7 +551,7 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         )
         let updater = makeUpdater(site)
         XCTAssertTrue(try updater.fetchLiveResponse(appId: "com.example.app").isWebsiteUpdateAllowed)
-        // The live check must stay cacheable (edge and device); website files bypass caches.
+        // The live check carries no cache-bypass header (edge cacheable); website files bypass caches.
         XCTAssertEqual(site.bypassCache["https://plugin.capgo.app/website_live?app_id=com.example.app"], false)
         XCTAssertThrowsError(try updater.fetchLiveResponse(appId: "unknown.app"))
     }
@@ -375,7 +567,9 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertFalse(updater.isThrottled(nowMs: 500))
         XCTAssertFalse(updater.lastKnownModeIsCapgo)
         updater.recordCheck(nowMs: 2_000, response: WebsiteModeUpdater.LiveResponse.parse(Data(#"{"allowed":false,"mode":"capgo"}"#.utf8)))
-        XCTAssertFalse(updater.isThrottled(nowMs: 2_001))
+        // Missing interval falls back to the 300 s floor.
+        XCTAssertTrue(updater.isThrottled(nowMs: 2_000 + 299_000))
+        XCTAssertFalse(updater.isThrottled(nowMs: 2_000 + 300_000))
         XCTAssertTrue(updater.lastKnownModeIsCapgo)
     }
 
@@ -390,5 +584,22 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         }
         XCTAssertFalse(updater.isFailedVersion("web-aaaaaaaaaaaa"))
         XCTAssertTrue(updater.isFailedVersion(String(format: "web-%012d", WebsiteModeUpdater.maxFailedVersions + 4)))
+    }
+
+    func testFailedWebsiteVersionsExpireAfterOneDay() {
+        let updater = makeUpdater(FakeSite())
+        let day = WebsiteModeUpdater.failedVersionTtlMs
+        updater.markFailedVersion("web-aaaaaaaaaaaa", nowMs: 1_000)
+        XCTAssertTrue(updater.isFailedVersion("web-aaaaaaaaaaaa", nowMs: 1_000))
+        XCTAssertTrue(updater.isFailedVersion("web-aaaaaaaaaaaa", nowMs: 1_000 + day - 1))
+        XCTAssertFalse(updater.isFailedVersion("web-aaaaaaaaaaaa", nowMs: 1_000 + day))
+        // Clock moved backwards: retry rather than block.
+        XCTAssertFalse(updater.isFailedVersion("web-aaaaaaaaaaaa", nowMs: 500))
+        // Expired entries are dropped when a new failure is recorded.
+        updater.markFailedVersion("web-bbbbbbbbbbbb", nowMs: 1_000 + day)
+        XCTAssertEqual(defaults.string(forKey: WebsiteModeUpdater.failedVersionsKey), "web-bbbbbbbbbbbb:\(1_000 + day)")
+        // Legacy entries without a timestamp are retried.
+        defaults.set("web-cccccccccccc", forKey: WebsiteModeUpdater.failedVersionsKey)
+        XCTAssertFalse(updater.isFailedVersion("web-cccccccccccc", nowMs: 1_000))
     }
 }

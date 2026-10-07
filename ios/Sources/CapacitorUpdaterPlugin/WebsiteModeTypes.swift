@@ -42,9 +42,12 @@ extension WebsiteModeUpdater {
             }
             let interval: Int
             if let number = json["check_interval_seconds"] as? NSNumber {
-                interval = min(max(0, number.intValue), WebsiteModeUpdater.maxCheckIntervalSeconds)
+                interval = min(
+                    max(WebsiteModeUpdater.minCheckIntervalSeconds, number.intValue),
+                    WebsiteModeUpdater.maxCheckIntervalSeconds
+                )
             } else {
-                interval = 0
+                interval = WebsiteModeUpdater.minCheckIntervalSeconds
             }
             return LiveResponse(
                 allowed: (json["allowed"] as? Bool) ?? false,
