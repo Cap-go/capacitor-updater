@@ -4801,7 +4801,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void ensureBridgeSet() {
-        if (this.bridge != null && this.bridge.getWebView() != null) {
+        if (this.bridge != null && this.bridge.getWebView() != null && !this.getConfig().getBoolean("disableJSLogging", false)) {
             logger.setBridge(this.bridge);
         }
     }
