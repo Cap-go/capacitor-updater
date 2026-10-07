@@ -2997,6 +2997,47 @@ import UIKit
         return try Self.resolveBundleDirectory(libraryDir: libraryDir, bundleId: id)
     }
 
+    /// Temp folder for a website-mode download. Uses the unzip prefix so orphans are cleaned at launch.
+    func createWebsiteTempDir() throws -> URL {
+        let temp = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + "web_" + randomString(length: 10), isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp
+    }
+
+    func discardWebsiteTempDir(_ tempDir: URL) {
+        guard tempDir.standardizedFileURL.path.hasPrefix(libraryDir.standardizedFileURL.path + "/"),
+              tempDir.lastPathComponent.hasPrefix(TEMP_UNZIP_PREFIX) else {
+            return
+        }
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
+    /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
+    func installWebsiteBundle(tempDir: URL, version: String) throws -> BundleInfo {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: tempDir.appendingPathComponent("index.html").path) else {
+            discardWebsiteTempDir(tempDir)
+            throw NSError(domain: "WebsiteMode", code: 1, userInfo: [NSLocalizedDescriptionKey: "Website download has no index.html"])
+        }
+        if let existing = getBundleInfoByVersionName(version: version),
+           existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting() {
+            _ = delete(id: existing.getId(), removeInfo: true)
+        }
+        let id = randomString(length: 10)
+        let target = try getBundleDirectory(id: id)
+        do {
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: tempDir, to: target)
+        } catch {
+            discardWebsiteTempDir(tempDir)
+            throw error
+        }
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
+        saveBundleInfo(id: id, bundle: info)
+        return info
+    }
+
     struct ResetState {
         let currentBundlePath: String
         let fallbackBundleId: String

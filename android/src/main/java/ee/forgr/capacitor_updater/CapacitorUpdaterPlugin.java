@@ -188,6 +188,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
+    // Website mode (Capgo Website Live plan): the deployed website is the source of truth.
+    private boolean websiteMode = false;
+    private WebsiteModeUpdater websiteModeUpdater;
+    private String configuredStatsUrl = "";
+    private String configuredChannelUrl = "";
 
     String getUpdateUrl() {
         return this.updateUrl;
@@ -809,6 +814,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
         }
+        this.configureWebsiteMode();
 
         final boolean resetWhenUpdate = this.getConfig().getBoolean("resetWhenUpdate", true);
         final boolean nativeBuildVersionChanged = this.hasNativeBuildVersionChanged();
@@ -4547,6 +4553,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (this.shouldBlockAutoUpdateForPreviewSession()) {
                 return;
             }
+            if (this.websiteMode) {
+                if (!this.isDownloadStuckOrTimedOut()) {
+                    this.backgroundDownload();
+                }
+                return;
+            }
             this.implementation.getLatest(this.updateUrl, null, (res) -> {
                 if (this.shouldBlockAutoUpdateForPreviewSession()) {
                     return;
@@ -5008,7 +5020,183 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return null;
     }
 
+    // ---- Website mode ----
+
+    private void configureWebsiteMode() {
+        this.configuredStatsUrl = this.implementation.statsUrl;
+        this.configuredChannelUrl = this.implementation.channelUrl;
+        this.websiteMode = Boolean.TRUE.equals(this.getConfig().getBoolean("websiteMode", false));
+        if (!this.websiteMode) {
+            return;
+        }
+        final String websiteLiveUrl = this.getConfig().getString("websiteLiveUrl", WebsiteModeUpdater.DEFAULT_WEBSITE_LIVE_URL);
+        this.websiteModeUpdater = new WebsiteModeUpdater(
+            websiteLiveUrl,
+            WebsiteModeUpdater.okHttpFetcher(),
+            WebsiteModeUpdater.sharedPreferencesStore(this.prefs)
+        );
+        logger.info("Website mode enabled, live check via: " + this.websiteModeUpdater.getWebsiteLiveUrl());
+        this.applyWebsiteModeTelemetry(this.websiteModeUpdater.lastKnownModeIsCapgo());
+    }
+
+    /** Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo. */
+    private void applyWebsiteModeTelemetry(final boolean capgoMode) {
+        if (!this.websiteMode) {
+            return;
+        }
+        this.implementation.statsUrl = capgoMode ? this.configuredStatsUrl : "";
+        this.implementation.channelUrl = capgoMode ? this.configuredChannelUrl : "";
+    }
+
+    private void markWebsiteVersionFailed(final String versionName) {
+        if (this.websiteModeUpdater != null && WebsiteModeUpdater.isWebsiteVersion(versionName)) {
+            logger.info("Website version marked as failed and will be skipped: " + versionName);
+            this.websiteModeUpdater.markFailedVersion(versionName);
+        }
+    }
+
+    private synchronized Thread websiteBackgroundCheck() {
+        if (this.shouldBlockAutoUpdateForPreviewSession()) {
+            return null;
+        }
+        if (this.isDownloadStuckOrTimedOut()) {
+            logger.info("Website check already in progress, skipping duplicate request");
+            return this.backgroundDownloadTask;
+        }
+        final Thread newTask = startNewThread(this::runWebsiteCheck);
+        this.backgroundDownloadTask = newTask;
+        this.downloadStartTimeMs = System.currentTimeMillis();
+        return newTask;
+    }
+
+    private void runWebsiteCheck() {
+        final WebsiteModeUpdater updater = this.websiteModeUpdater;
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (this.shouldBlockAutoUpdateForPreviewSession()) {
+            this.clearBackgroundDownloadState();
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (updater.isThrottled(now)) {
+            logger.info("Website check skipped: check_interval_seconds not elapsed");
+            this.endBackGroundTaskWithNotif("Website check throttled", current.getVersionName(), current, false, true);
+            return;
+        }
+
+        final WebsiteModeUpdater.LiveResponse live;
+        try {
+            live = updater.fetchLiveResponse(this.implementation.appId);
+        } catch (final Exception e) {
+            logger.error("Website live check failed: " + e.getMessage());
+            this.endBackGroundTaskWithNotif("Website live check failed", current.getVersionName(), current, false, true);
+            return;
+        }
+        updater.recordCheck(now, live);
+
+        if (live.isCapgoMode()) {
+            logger.info("Website live check: app uses full Capgo, running classic update check");
+            this.applyWebsiteModeTelemetry(true);
+            synchronized (this) {
+                this.clearBackgroundDownloadState();
+                this.classicBackgroundDownload();
+            }
+            return;
+        }
+        this.applyWebsiteModeTelemetry(false);
+
+        if (!live.isWebsiteUpdateAllowed()) {
+            logger.info("Website update not allowed: " + (live.reason.isEmpty() ? "no reason" : live.reason));
+            this.endBackGroundTaskWithNotif("Website update not allowed", current.getVersionName(), current, false, true);
+            return;
+        }
+
+        final URL websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl);
+        final URL downloadBase = live.downloadBaseUrl.isEmpty() ? null : WebsiteModeUpdater.parseHttpsUrl(live.downloadBaseUrl);
+        if (!live.downloadBaseUrl.isEmpty() && downloadBase == null) {
+            logger.error("Website live check returned an invalid download_base_url");
+            this.endBackGroundTaskWithNotif("Invalid download_base_url", current.getVersionName(), current, false, true);
+            return;
+        }
+
+        String version = current.getVersionName();
+        File tempDir = null;
+        try {
+            final byte[] entryHtml = updater.fetchEntryHtml(websiteUrl, downloadBase);
+            version = WebsiteModeUpdater.versionForEntryHtml(entryHtml);
+            if (version.equals(current.getVersionName())) {
+                logger.info("Website is up to date: " + version);
+                this.endBackGroundTaskWithNotif("No need to update", version, current, false, true);
+                return;
+            }
+            if (updater.isFailedVersion(version)) {
+                logger.info("Website version previously failed, skipping: " + version);
+                this.endBackGroundTaskWithNotif("Website version previously failed", version, current, false, true);
+                return;
+            }
+            this.waitForCleanupIfNeeded();
+
+            BundleInfo target = this.implementation.getBundleInfoByName(version);
+            if (target == null || !this.implementation.canSet(target) || target.isErrorStatus()) {
+                logger.info("New website version found: " + version + ". Downloading from website.");
+                tempDir = this.implementation.createWebsiteTempDir();
+                final int files = updater.downloadWebsite(entryHtml, websiteUrl, downloadBase, tempDir);
+                target = this.implementation.installWebsiteBundle(tempDir, version);
+                tempDir = null;
+                logger.info("Website version " + version + " downloaded (" + files + " files)");
+            } else {
+                logger.info("Website version already downloaded: " + version);
+            }
+            final JSObject downloaded = new JSObject();
+            downloaded.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
+            this.notifyListeners("downloadComplete", downloaded);
+            this.applyWebsiteBundle(target, current);
+        } catch (final Exception e) {
+            logger.error("Website download failed: " + e.getMessage());
+            if (tempDir != null) {
+                this.implementation.discardWebsiteTempDir(tempDir);
+            }
+            this.endBackGroundTaskWithNotif("Website download failed", version, current, true, true);
+        }
+    }
+
+    /** Website mode always applies updates directly, through the regular set/reload path. */
+    private void applyWebsiteBundle(final BundleInfo target, final BundleInfo current) {
+        final String version = target.getVersionName();
+        final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(
+            this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")
+        );
+        if (!delayConditionList.isEmpty() || !this.isDirectUpdateCurrentlyAllowed(true)) {
+            logger.info("Website update cannot be applied now, it will install on next background");
+            this.implementation.setNextBundle(target.getId());
+            final JSObject ret = new JSObject();
+            ret.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
+            this.notifyListeners("updateAvailable", ret);
+            this.endBackGroundTaskWithNotif("Website update will install next background", version, current, false, true);
+            return;
+        }
+        if (this.applyDownloadedBundleForDirectUpdate(target)) {
+            this.implementation.setNextBundle(null);
+            this.notifyBundleSet(target);
+            this.endBackGroundTaskWithNotif("Update installed", version, target, false, true);
+            return;
+        }
+        // The new website did not call notifyAppReady in time: previous bundle was restored.
+        this.implementation.setError(target);
+        this.markWebsiteVersionFailed(version);
+        final JSObject ret = new JSObject();
+        ret.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
+        this.notifyListeners("updateFailed", ret);
+        this.endBackGroundTaskWithNotif("Website update failed", version, this.implementation.getCurrentBundle(), true, true);
+    }
+
     private synchronized Thread backgroundDownload() {
+        if (this.websiteMode) {
+            return this.websiteBackgroundCheck();
+        }
+        return this.classicBackgroundDownload();
+    }
+
+    private synchronized Thread classicBackgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
         }
@@ -5435,6 +5623,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.reportAppLaunchTimeout(current);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
+            this.markWebsiteVersionFailed(current.getVersionName());
             this.performReset(true, false, true);
             if (CapacitorUpdaterPlugin.this.autoDeleteFailed && !current.isBuiltin()) {
                 final String failedId = current.getId();
