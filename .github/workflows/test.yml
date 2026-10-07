@@ -74,6 +74,9 @@ jobs:
       - name: Verify packed package in example app (Android)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
+      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
+        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
+        run: bun run generate:cli-crypto && bun run native:contract:cli:android
 
   build_ios:
     permissions:
@@ -105,6 +108,9 @@ jobs:
       - name: Run iOS native tests
         id: test_ios
         run: bun run native:test:ios
+      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
+        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
+        run: bun run generate:cli-crypto && bun run native:contract:cli:ios
 
   maestro_web_assets:
     permissions:

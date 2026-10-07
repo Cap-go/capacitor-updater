@@ -1104,6 +1104,39 @@ public class CapacitorUpdaterUnitTest {
         return zipPath;
     }
 
+    /** Builds a zip whose entries named in {@code symlinks} carry the unix symlink mode, with the target as content. */
+    private static Path createZipWithSymlinkEntries(final String[][] entries, final Set<String> symlinks) throws Exception {
+        final Path zipPath = Files.createTempFile("capgo-zip-symlink", ".zip");
+        zipPath.toFile().deleteOnExit();
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+            for (final String[] entry : entries) {
+                zip.putNextEntry(new ZipEntry(entry[0]));
+                zip.write(entry[1].getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        // ZipOutputStream cannot set external attributes: patch the central directory (version made by = unix,
+        // external attributes = S_IFLNK | 0777 in the high 16 bits).
+        final byte[] bytes = Files.readAllBytes(zipPath);
+        for (int i = 0; i + 46 <= bytes.length; i++) {
+            if (bytes[i] != 0x50 || bytes[i + 1] != 0x4b || bytes[i + 2] != 0x01 || bytes[i + 3] != 0x02) {
+                continue;
+            }
+            final int nameLength = (bytes[i + 28] & 0xff) | ((bytes[i + 29] & 0xff) << 8);
+            final String name = new String(bytes, i + 46, nameLength, StandardCharsets.UTF_8);
+            if (symlinks.contains(name)) {
+                bytes[i + 5] = 3;
+                final int attributes = 0120777 << 16;
+                bytes[i + 38] = (byte) attributes;
+                bytes[i + 39] = (byte) (attributes >>> 8);
+                bytes[i + 40] = (byte) (attributes >>> 16);
+                bytes[i + 41] = (byte) (attributes >>> 24);
+            }
+        }
+        Files.write(zipPath, bytes);
+        return zipPath;
+    }
+
     private static File invokeUnzip(final CapgoUpdater updater, final String id, final Path zipPath, final String dest) throws Exception {
         final Method method = CapgoUpdater.class.getDeclaredMethod("unzip", String.class, File.class, String.class);
         method.setAccessible(true);
@@ -3569,6 +3602,49 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testUnzipNeverCreatesSymlinksOrEscapesThroughSymlinkChains() throws Exception {
+        final Path parentDir = Files.createTempDirectory("capgo-zip-symlink-chain");
+        final Path documentsDir = Files.createDirectories(parentDir.resolve("documents"));
+        final Path zipPath = createZipWithSymlinkEntries(
+            new String[][] { { "index.html", "<html></html>" }, { "m", "." }, { "l", "m/.." }, { "abs", "/" }, { "l/x", "owned" } },
+            new HashSet<>(Arrays.asList("m", "l", "abs"))
+        );
+
+        final CapgoUpdater updater = new StatsIgnoringCapgoUpdater();
+        updater.documentsDir = documentsDir.toFile();
+
+        // Symlink entries are written as regular files, so "l/x" has a file as parent and extraction fails.
+        assertThrows(IOException.class, () -> invokeUnzip(updater, "bundle-id", zipPath, "bundle"));
+        assertFalse(Files.exists(parentDir.resolve("x")));
+        assertFalse(Files.exists(documentsDir.resolve("x")));
+        final Path bundleDir = documentsDir.resolve("bundle");
+        for (final String name : new String[] { "m", "l", "abs" }) {
+            final Path extracted = bundleDir.resolve(name);
+            if (Files.exists(extracted, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                assertFalse(name + " must not be extracted as a symlink", Files.isSymbolicLink(extracted));
+            }
+        }
+    }
+
+    @Test
+    public void testUnzipWritesSymlinkEntriesAsRegularFilesInsideTheBundle() throws Exception {
+        final Path parentDir = Files.createTempDirectory("capgo-zip-symlink-file");
+        final Path documentsDir = Files.createDirectories(parentDir.resolve("documents"));
+        final Path zipPath = createZipWithSymlinkEntries(
+            new String[][] { { "index.html", "<html></html>" }, { "assets/link", "../../../../etc/hosts" } },
+            new HashSet<>(Arrays.asList("assets/link"))
+        );
+
+        final CapgoUpdater updater = new StatsIgnoringCapgoUpdater();
+        updater.documentsDir = documentsDir.toFile();
+
+        final File extractedDir = invokeUnzip(updater, "bundle-id", zipPath, "bundle");
+        final Path link = extractedDir.toPath().resolve("assets/link");
+        assertFalse(Files.isSymbolicLink(link));
+        assertEquals("../../../../etc/hosts", new String(Files.readAllBytes(link), StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void testManifestBuiltinStripsBrotliSuffixBeforeResolvingPath() throws Exception {
         final Path builtinFolder = Files.createTempDirectory("capgo-builtin");
         try {
@@ -4778,6 +4854,61 @@ public class CapacitorUpdaterUnitTest {
         } catch (IOException e) {
             assertTrue(e.getMessage().contains("AES file decryption failed"));
             assertArrayEquals(originalCipher, Files.readAllBytes(file.toPath()));
+        }
+    }
+
+    @Test
+    public void decryptFileFailsWhenPublicKeyIsUnusable() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes-unusable-key");
+        final File file = dir.resolve("cipher.bin").toFile();
+        final byte[] cipherBytes = new byte[32];
+        Arrays.fill(cipherBytes, (byte) 7);
+        Files.write(file.toPath(), cipherBytes);
+        try {
+            CryptoCipher.decryptFile(file, "not-a-public-key", "aXY=:c2Vzc2lvbg==");
+            fail("an unusable public key must not leave the bundle encrypted silently");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("AES file decryption failed"));
+        }
+        assertArrayEquals(cipherBytes, Files.readAllBytes(file.toPath()));
+    }
+
+    @Test
+    public void decryptAesFileRejectsCorruptedPaddingAndUnalignedCiphertext() throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-aes-strict");
+        final byte[] iv = new byte[16];
+        final byte[] keyBytes = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            iv[i] = (byte) (i + 3);
+            keyBytes[i] = (byte) (i * 7);
+        }
+        final javax.crypto.SecretKey key = new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+        // A final block claiming 4 bytes of padding whose padding bytes do not all match.
+        final byte[] badPadding = new byte[16];
+        Arrays.fill(badPadding, (byte) 'A');
+        badPadding[12] = 1;
+        badPadding[13] = 4;
+        badPadding[14] = 4;
+        badPadding[15] = 4;
+        final javax.crypto.Cipher raw = javax.crypto.Cipher.getInstance("AES/CBC/NoPadding");
+        raw.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        final byte[] badPaddingCipher = raw.doFinal(badPadding);
+
+        final javax.crypto.Cipher enc = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding");
+        enc.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.IvParameterSpec(iv));
+        final byte[] valid = enc.doFinal("capgo-strict-aes".getBytes(StandardCharsets.UTF_8));
+        final byte[] unaligned = Arrays.copyOf(valid, valid.length + 3);
+
+        for (final byte[] cipherBytes : new byte[][] { badPaddingCipher, unaligned }) {
+            final File file = Files.createTempFile(dir, "cipher", ".bin").toFile();
+            Files.write(file.toPath(), cipherBytes);
+            try {
+                CryptoCipher.decryptAesFile(file, key, iv);
+                fail("corrupted AES ciphertext must be rejected");
+            } catch (IOException e) {
+                assertTrue(e.getMessage().contains("AES file decryption failed"));
+            }
+            assertArrayEquals(cipherBytes, Files.readAllBytes(file.toPath()));
         }
     }
 
