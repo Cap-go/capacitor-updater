@@ -230,6 +230,28 @@ public class CapacitorUpdaterUnitTest {
         assertTrue(script.contains("reportWebViewError"));
     }
 
+    // ---- JavaScript logging ----------------------------------------------------------------------
+
+    /** {@code disableJSLogging} keeps native logs out of the WebView console (the logger never gets the bridge). */
+    @Test
+    public void disabledJavaScriptLoggingNeverForwardsLogsToTheWebView() throws Exception {
+        for (final boolean enabled : new boolean[] { false, true }) {
+            onMainThread((plugin, bridge) -> {
+                when(bridge.getWebView()).thenReturn(mock(android.webkit.WebView.class));
+                final Logger logger = mock(Logger.class);
+                plugin.setLoggerForTesting(logger);
+                final java.lang.reflect.Field jsLogging = CapacitorUpdaterPlugin.class.getDeclaredField("jsLoggingEnabled");
+                jsLogging.setAccessible(true);
+                jsLogging.setBoolean(plugin, enabled);
+                final Method ensureBridgeSet = CapacitorUpdaterPlugin.class.getDeclaredMethod("ensureBridgeSet");
+                ensureBridgeSet.setAccessible(true);
+
+                assertEquals(enabled, ensureBridgeSet.invoke(plugin));
+                verify(logger, times(enabled ? 1 : 0)).setBridge(bridge);
+            });
+        }
+    }
+
     // ---- reflection safety -----------------------------------------------------------------------
 
     /** Capacitor reflects every plugin method: types missing on old Android versions must not appear in signatures. */
