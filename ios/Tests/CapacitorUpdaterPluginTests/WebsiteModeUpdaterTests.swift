@@ -90,6 +90,18 @@ final class WebsiteModeUpdaterTests: XCTestCase {
             "https://plugin.capgo.app/website_live?app_id=com.example.app"
         )
         XCTAssertNil(WebsiteModeUpdater.buildLiveCheckUrl(websiteLiveUrl: "not a url", appId: "com.example.app"))
+        XCTAssertNil(WebsiteModeUpdater.buildLiveCheckUrl(websiteLiveUrl: "http://plugin.example.com/website_live", appId: "com.example.app"))
+        XCTAssertEqual(
+            WebsiteModeUpdater.buildLiveCheckUrl(websiteLiveUrl: "http://localhost:8788/website_live", appId: "com.example.app")?.absoluteString,
+            "http://localhost:8788/website_live?app_id=com.example.app"
+        )
+    }
+
+    func testRequiresWebsiteServedFromRoot() {
+        XCTAssertTrue(WebsiteModeUpdater.isRootWebsiteUrl(URL(string: "https://app.example.com")!))
+        XCTAssertTrue(WebsiteModeUpdater.isRootWebsiteUrl(URL(string: "https://app.example.com/")!))
+        XCTAssertTrue(WebsiteModeUpdater.isRootWebsiteUrl(URL(string: "https://app.example.com/index.html")!))
+        XCTAssertFalse(WebsiteModeUpdater.isRootWebsiteUrl(URL(string: "https://example.com/app/")!))
     }
 
     // MARK: - Version id

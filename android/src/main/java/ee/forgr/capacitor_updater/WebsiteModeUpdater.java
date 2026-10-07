@@ -258,10 +258,24 @@ final class WebsiteModeUpdater {
 
     // ---- Backend contract ----
 
-    /** Only app_id is sent: the response is device independent and edge cached. */
+    /** Plain HTTP is only accepted for loopback hosts (local development). */
+    static boolean isLoopbackHost(final String host) {
+        return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
+    }
+
+    /** Asset paths are stored relative to the bundle root, so the website must be served from its root. */
+    static boolean isRootWebsiteUrl(final URL url) {
+        final String path = url.getPath();
+        return path == null || path.isEmpty() || "/".equals(path) || "/index.html".equals(path);
+    }
+
+    /**
+     * Only app_id is sent: the response is device independent and edge cached.
+     * The live answer picks the code the app runs, so it must come over HTTPS.
+     */
     static String buildLiveCheckUrl(final String websiteLiveUrl, final String appId) {
         final HttpUrl base = HttpUrl.parse(websiteLiveUrl);
-        if (base == null) {
+        if (base == null || (!base.isHttps() && !isLoopbackHost(base.host()))) {
             return null;
         }
         return base

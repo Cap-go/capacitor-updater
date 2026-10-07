@@ -145,6 +145,19 @@ public class WebsiteModeUpdaterTest {
             WebsiteModeUpdater.buildLiveCheckUrl(WebsiteModeUpdater.DEFAULT_WEBSITE_LIVE_URL, "com.example.app")
         );
         assertNull(WebsiteModeUpdater.buildLiveCheckUrl("not a url", "com.example.app"));
+        assertNull(WebsiteModeUpdater.buildLiveCheckUrl("http://plugin.example.com/website_live", "com.example.app"));
+        assertEquals(
+            "http://localhost:8788/website_live?app_id=com.example.app",
+            WebsiteModeUpdater.buildLiveCheckUrl("http://localhost:8788/website_live", "com.example.app")
+        );
+    }
+
+    @Test
+    public void requiresWebsiteServedFromRoot() throws Exception {
+        assertTrue(WebsiteModeUpdater.isRootWebsiteUrl(new java.net.URL("https://app.example.com")));
+        assertTrue(WebsiteModeUpdater.isRootWebsiteUrl(new java.net.URL("https://app.example.com/")));
+        assertTrue(WebsiteModeUpdater.isRootWebsiteUrl(new java.net.URL("https://app.example.com/index.html")));
+        assertFalse(WebsiteModeUpdater.isRootWebsiteUrl(new java.net.URL("https://example.com/app/")));
     }
 
     // ---- Version id ----

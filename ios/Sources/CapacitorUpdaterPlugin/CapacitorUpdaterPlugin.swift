@@ -4657,6 +4657,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         if updater.isThrottled(nowMs: nowMs) {
+            // Apps moved to full Capgo keep their classic checks between live checks.
+            if updater.lastKnownModeIsCapgo {
+                self.clearDownloadInProgressState()
+                self.endBackGroundTask()
+                self.classicBackgroundDownload()
+                return
+            }
             logger.info("Website check skipped: check_interval_seconds not elapsed")
             self.endBackGroundTaskWithNotif(
                 msg: "Website check throttled",
@@ -4694,7 +4701,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.applyWebsiteModeTelemetry(capgoMode: false)
 
-        guard live.isWebsiteUpdateAllowed, let websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl) else {
+        guard live.isWebsiteUpdateAllowed,
+              let websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl),
+              WebsiteModeUpdater.isRootWebsiteUrl(websiteUrl) else {
             logger.info("Website update not allowed: \(live.reason.isEmpty ? "no reason" : live.reason)")
             self.endBackGroundTaskWithNotif(
                 msg: "Website update not allowed",
@@ -4815,15 +4824,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             )
             return
         }
-        // The new website did not call notifyAppReady in time: previous bundle was restored.
-        self.implementation.setError(bundle: target)
-        self.markWebsiteVersionFailed(version)
-        self.notifyListenersOnMain("updateFailed", data: ["bundle": target.toJSON()])
+        // Staging or reload failed before the bundle ran: retry it at the next
+        // background instead of blacklisting it. notifyAppReady failures are
+        // handled (and marked failed) by checkRevert.
+        if self.queueBundleForNextBackgroundInstall(target) {
+            self.notifyListenersOnMain("updateAvailable", data: ["bundle": target.toJSON()])
+        }
         self.endBackGroundTaskWithNotif(
-            msg: "Website update failed",
+            msg: "Website update will install next background",
             latestVersionName: version,
             current: self.implementation.getCurrentBundle(),
-            error: true,
+            error: false,
             plannedDirectUpdate: true
         )
     }

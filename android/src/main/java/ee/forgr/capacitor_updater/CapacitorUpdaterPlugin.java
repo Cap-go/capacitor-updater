@@ -5078,6 +5078,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         final long now = System.currentTimeMillis();
         if (updater.isThrottled(now)) {
+            // Apps moved to full Capgo keep their classic checks between live checks.
+            if (updater.lastKnownModeIsCapgo()) {
+                synchronized (this) {
+                    this.clearBackgroundDownloadState();
+                    this.classicBackgroundDownload();
+                }
+                return;
+            }
             logger.info("Website check skipped: check_interval_seconds not elapsed");
             this.endBackGroundTaskWithNotif("Website check throttled", current.getVersionName(), current, false, true);
             return;
@@ -5111,6 +5119,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final URL websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl);
+        if (websiteUrl != null && !WebsiteModeUpdater.isRootWebsiteUrl(websiteUrl)) {
+            logger.error("Website mode needs a website served from its root, got: " + websiteUrl);
+            this.endBackGroundTaskWithNotif("Website URL must be served from its root", current.getVersionName(), current, false, true);
+            return;
+        }
         final URL downloadBase = live.downloadBaseUrl.isEmpty() ? null : WebsiteModeUpdater.parseHttpsUrl(live.downloadBaseUrl);
         if (!live.downloadBaseUrl.isEmpty() && downloadBase == null) {
             logger.error("Website live check returned an invalid download_base_url");
@@ -5180,13 +5193,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.endBackGroundTaskWithNotif("Update installed", version, target, false, true);
             return;
         }
-        // The new website did not call notifyAppReady in time: previous bundle was restored.
-        this.implementation.setError(target);
-        this.markWebsiteVersionFailed(version);
+        // Staging or reload failed before the bundle ran: retry it at the next
+        // background instead of blacklisting it. notifyAppReady failures are
+        // handled (and marked failed) by the rollback check.
+        logger.info("Website update could not be applied now, it will install on next background");
+        this.implementation.setNextBundle(target.getId());
         final JSObject ret = new JSObject();
         ret.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
-        this.notifyListeners("updateFailed", ret);
-        this.endBackGroundTaskWithNotif("Website update failed", version, this.implementation.getCurrentBundle(), true, true);
+        this.notifyListeners("updateAvailable", ret);
+        this.endBackGroundTaskWithNotif(
+            "Website update will install next background",
+            version,
+            this.implementation.getCurrentBundle(),
+            false,
+            true
+        );
     }
 
     private synchronized Thread backgroundDownload() {

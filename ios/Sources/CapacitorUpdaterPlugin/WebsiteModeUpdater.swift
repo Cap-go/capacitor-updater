@@ -41,11 +41,24 @@ final class WebsiteModeUpdater {
 
     // MARK: - Backend contract
 
+    /// The live answer picks the code the app runs, so it must come over HTTPS.
+    /// Plain HTTP is only accepted for loopback hosts (local development).
+    static func isLoopbackHost(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+    }
+
+    /// Asset paths are stored relative to the bundle root, so the website must be served from its root.
+    static func isRootWebsiteUrl(_ url: URL) -> Bool {
+        let path = url.path
+        return path.isEmpty || path == "/" || path == "/index.html"
+    }
+
     /// Only app_id is sent: the response is device independent and edge cached.
     static func buildLiveCheckUrl(websiteLiveUrl: String, appId: String) -> URL? {
         guard var components = URLComponents(string: websiteLiveUrl),
-              let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
-              components.host?.isEmpty == false else {
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(), !host.isEmpty,
+              scheme == "https" || (scheme == "http" && isLoopbackHost(host)) else {
             return nil
         }
         var items = (components.queryItems ?? []).filter { $0.name != "app_id" }
