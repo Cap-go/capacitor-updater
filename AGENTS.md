@@ -8,6 +8,9 @@ This file provides guidance to AI agents and contributors working on this Capaci
 # Install dependencies
 bun install
 
+# Build the shared Rust core for Android and iOS (needed before native builds)
+bun run core:build
+
 # Build the plugin (TypeScript + Rollup + docgen)
 bun run build
 
@@ -49,6 +52,15 @@ bun run start
 
 The example app references the plugin via `file:..`. Use `bunx cap sync <platform>` to sync native platforms.
 
+## Rust Core
+
+The whole updater (update cycle, downloads, bundle store, rollback, delays, previews, channels, stats, crypto and path guards) lives in one Rust crate, `core/`, used by both Android (JNI) and iOS (xcframework). The Java/Swift plugins only keep Capacitor glue and platform work (WebView, lifecycle, UI, app store APIs), reached through engine hooks. See `core/README.md`.
+
+- Requires rustup (`rustup` adds cross targets automatically), `cargo-ndk` + an Android NDK for Android, Xcode for iOS.
+- `bun run core:test` runs the Rust unit tests and every shared fixture in `native-contract-tests/` (`core/tests/contract.rs`).
+- `bun run core:build:android` / `bun run core:build:ios` produce the prebuilt binaries (git-ignored, shipped in the npm package by CI). `scripts/test-ios.sh` rebuilds the xcframework automatically; Android JVM tests build a host library through Gradle.
+- Change behavior in `core/` with a Rust test (`core/tests/plugin.rs` for plugin flows; fixture-first via `scripts/generate-core-contract-fixtures.mjs` for pure rules). Rust runs the fixtures; the Android and iOS tests only smoke-test the binding (`CoreBindingTest.java`, `CoreBindingTests.swift`). Do not reimplement engine logic in Swift/Java; call the engine.
+
 ## Project Structure
 
 - `src/definitions.ts` - TypeScript interfaces and types (source of truth for API docs)
@@ -56,6 +68,8 @@ The example app references the plugin via `file:..`. Use `bunx cap sync <platfor
 - `src/web.ts` - Web implementation
 - `ios/Sources/` - iOS native code (Swift)
 - `android/src/main/` - Android native code (Java/Kotlin)
+- `core/` - Shared Rust updater core (C ABI + JNI)
+- `native-contract-tests/` - Language-neutral fixtures for the core rules, run by `core/tests/contract.rs`
 - `dist/` - Generated output (do not edit manually)
 - `Package.swift` - SwiftPM definition
 - `*.podspec` - CocoaPods spec

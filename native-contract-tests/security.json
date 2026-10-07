@@ -1,0 +1,610 @@
+{
+  "version": 1,
+  "description": "Path, cache and bundle-id guards. These are security boundaries: manifest file_name, zip entries and bundle ids must never escape their root.",
+  "pathTraversalSegment": [
+    {
+      "id": "traversal.a/b",
+      "input": {
+        "path": "a/b"
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal.../a",
+      "input": {
+        "path": "../a"
+      },
+      "expect": {
+        "traversal": true
+      }
+    },
+    {
+      "id": "traversal.a/../b",
+      "input": {
+        "path": "a/../b"
+      },
+      "expect": {
+        "traversal": true
+      }
+    },
+    {
+      "id": "traversal.a/..",
+      "input": {
+        "path": "a/.."
+      },
+      "expect": {
+        "traversal": true
+      }
+    },
+    {
+      "id": "traversal...",
+      "input": {
+        "path": ".."
+      },
+      "expect": {
+        "traversal": true
+      }
+    },
+    {
+      "id": "traversal...a/b",
+      "input": {
+        "path": "..a/b"
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal.a..b",
+      "input": {
+        "path": "a..b"
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal....",
+      "input": {
+        "path": "..."
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal.a//b",
+      "input": {
+        "path": "a//b"
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal../a",
+      "input": {
+        "path": "./a"
+      },
+      "expect": {
+        "traversal": false
+      }
+    },
+    {
+      "id": "traversal.a\\..\\b",
+      "input": {
+        "path": "a\\..\\b"
+      },
+      "expect": {
+        "traversal": false
+      }
+    }
+  ],
+  "resolvePathInside": [
+    {
+      "id": "resolve.file",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "index.html"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/index.html"
+      }
+    },
+    {
+      "id": "resolve.nested",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "assets/app.js"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/assets/app.js"
+      }
+    },
+    {
+      "id": "resolve.dot-prefix",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "./index.html"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/index.html"
+      }
+    },
+    {
+      "id": "resolve.dot-segment",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a/./b.js"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/a/b.js"
+      }
+    },
+    {
+      "id": "resolve.trailing-slash",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a/"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/a"
+      }
+    },
+    {
+      "id": "resolve.triple-dot-name",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "..."
+      },
+      "expect": {
+        "path": "/capgo-contract/base/..."
+      }
+    },
+    {
+      "id": "resolve.dotdot-prefix-name",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "..hidden"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/..hidden"
+      }
+    },
+    {
+      "id": "resolve.empty",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": ""
+      },
+      "expect": {
+        "error": "empty_path"
+      }
+    },
+    {
+      "id": "resolve.backslash",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a\\b"
+      },
+      "expect": {
+        "error": "invalid_separator"
+      }
+    },
+    {
+      "id": "resolve.nul",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a\u0000b"
+      },
+      "expect": {
+        "error": "invalid_separator"
+      }
+    },
+    {
+      "id": "resolve.parent",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "../x"
+      },
+      "expect": {
+        "error": "path_traversal"
+      }
+    },
+    {
+      "id": "resolve.nested-parent",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a/../../x"
+      },
+      "expect": {
+        "error": "path_traversal"
+      }
+    },
+    {
+      "id": "resolve.inner-parent",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "a/../b"
+      },
+      "expect": {
+        "error": "path_traversal"
+      }
+    },
+    {
+      "id": "resolve.absolute",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "/etc/passwd"
+      },
+      "expect": {
+        "error": "absolute_path"
+      }
+    },
+    {
+      "id": "resolve.tilde",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "~/x"
+      },
+      "expect": {
+        "error": "absolute_path"
+      }
+    },
+    {
+      "id": "resolve.self",
+      "input": {
+        "base": "/capgo-contract/base",
+        "path": "."
+      },
+      "expect": {
+        "error": "escapes_base"
+      }
+    }
+  ],
+  "manifestTargetPath": [
+    {
+      "id": "manifest-target.brotli",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": "a.js.br"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/a.js"
+      }
+    },
+    {
+      "id": "manifest-target.plain",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": "a.js"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/a.js"
+      }
+    },
+    {
+      "id": "manifest-target.nested-brotli",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": "dir/b.css.br"
+      },
+      "expect": {
+        "path": "/capgo-contract/base/dir/b.css"
+      }
+    },
+    {
+      "id": "manifest-target.only-extension",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": ".br"
+      },
+      "expect": {
+        "error": "empty_path"
+      }
+    },
+    {
+      "id": "manifest-target.traversal",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": "../x.js.br"
+      },
+      "expect": {
+        "error": "path_traversal"
+      }
+    },
+    {
+      "id": "manifest-target.absolute",
+      "input": {
+        "base": "/capgo-contract/base",
+        "fileName": "/x.js"
+      },
+      "expect": {
+        "error": "absolute_path"
+      }
+    }
+  ],
+  "builtinAssetPath": [
+    {
+      "id": "builtin-asset.file",
+      "input": {
+        "fileName": "index.html"
+      },
+      "expect": {
+        "assetPath": "public/index.html"
+      }
+    },
+    {
+      "id": "builtin-asset.brotli",
+      "input": {
+        "fileName": "js/app.js.br"
+      },
+      "expect": {
+        "assetPath": "public/js/app.js"
+      }
+    },
+    {
+      "id": "builtin-asset.dot-prefix",
+      "input": {
+        "fileName": "./a.js"
+      },
+      "expect": {
+        "assetPath": "public/a.js"
+      }
+    },
+    {
+      "id": "builtin-asset.traversal",
+      "input": {
+        "fileName": "../secret"
+      },
+      "expect": {
+        "error": "path_traversal"
+      }
+    },
+    {
+      "id": "builtin-asset.absolute",
+      "input": {
+        "fileName": "/etc/hosts"
+      },
+      "expect": {
+        "error": "absolute_path"
+      }
+    }
+  ],
+  "safeCacheHash": [
+    {
+      "id": "safe-cache-hash.sha256",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
+      },
+      "expect": {
+        "safe": true
+      }
+    },
+    {
+      "id": "safe-cache-hash.sha256-upper",
+      "input": {
+        "hash": "02E69324016FDFFF184910135B6581C076321B6BB403FEE18FE31373EDCDA590"
+      },
+      "expect": {
+        "safe": true
+      }
+    },
+    {
+      "id": "safe-cache-hash.crc32",
+      "input": {
+        "hash": "deadbeef"
+      },
+      "expect": {
+        "safe": true
+      }
+    },
+    {
+      "id": "safe-cache-hash.too-short",
+      "input": {
+        "hash": "2e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590"
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.too-long",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda5900"
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.md5-length",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c0"
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.non-hex",
+      "input": {
+        "hash": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.path-chars",
+      "input": {
+        "hash": "../../../../../../../../../../../../../../../../../../../../../.."
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.empty",
+      "input": {
+        "hash": ""
+      },
+      "expect": {
+        "safe": false
+      }
+    },
+    {
+      "id": "safe-cache-hash.missing",
+      "input": {
+        "hash": null
+      },
+      "expect": {
+        "safe": false
+      }
+    }
+  ],
+  "reusableCacheFile": [
+    {
+      "id": "reusable-cache.sha256-non-empty",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590",
+        "size": 10
+      },
+      "expect": {
+        "reusable": true
+      }
+    },
+    {
+      "id": "reusable-cache.sha256-empty-file",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590",
+        "size": 0
+      },
+      "expect": {
+        "reusable": false
+      }
+    },
+    {
+      "id": "reusable-cache.empty-sha256-empty-file",
+      "input": {
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "expect": {
+        "reusable": true
+      }
+    },
+    {
+      "id": "reusable-cache.empty-sha256-upper-empty-file",
+      "input": {
+        "hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "size": 0
+      },
+      "expect": {
+        "reusable": true
+      }
+    },
+    {
+      "id": "reusable-cache.crc32-never-trusted",
+      "input": {
+        "hash": "deadbeef",
+        "size": 10
+      },
+      "expect": {
+        "reusable": false
+      }
+    },
+    {
+      "id": "reusable-cache.missing-file",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590",
+        "size": null
+      },
+      "expect": {
+        "reusable": false
+      }
+    },
+    {
+      "id": "reusable-cache.unsafe-hash",
+      "input": {
+        "hash": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "size": 10
+      },
+      "expect": {
+        "reusable": false
+      }
+    }
+  ],
+  "manifestPartialName": [
+    {
+      "id": "partial-name.sha256",
+      "input": {
+        "hash": "02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590",
+        "fileName": "assets/app.js"
+      },
+      "expect": {
+        "name": "partial_02e69324016fdfff184910135b6581c076321b6bb403fee18fe31373edcda590_489e15dd56f2315d.tmp"
+      }
+    },
+    {
+      "id": "partial-name.crc32",
+      "input": {
+        "hash": "deadbeef",
+        "fileName": "assets/app.js"
+      },
+      "expect": {
+        "name": "partial_75868027b5304832_489e15dd56f2315d.tmp"
+      }
+    },
+    {
+      "id": "partial-name.unsafe-hash",
+      "input": {
+        "hash": "../../x",
+        "fileName": "a.js"
+      },
+      "expect": {
+        "name": "partial_107dae1e06d597d5_dc5985b2a377c4ea.tmp"
+      }
+    }
+  ],
+  "shortPathKey": [
+    {
+      "id": "short-path-key.index.html",
+      "input": {
+        "value": "index.html"
+      },
+      "expect": {
+        "key": "0eb547304658805a"
+      }
+    },
+    {
+      "id": "short-path-key.empty",
+      "input": {
+        "value": ""
+      },
+      "expect": {
+        "key": "e3b0c44298fc1c14"
+      }
+    },
+    {
+      "id": "short-path-key.a/b/c.js",
+      "input": {
+        "value": "a/b/c.js"
+      },
+      "expect": {
+        "key": "998f7a75c2b246b6"
+      }
+    },
+    {
+      "id": "short-path-key.café/é.js",
+      "input": {
+        "value": "café/é.js"
+      },
+      "expect": {
+        "key": "fcf9c9bdc91c3651"
+      }
+    }
+  ]
+}

@@ -16,7 +16,6 @@
         "compileSdk": 35,
         "targetSdk": 35,
         "java": 21,
-        "okhttp": "4.12.0",
         "agp": "8.7.2"
       }
     },
@@ -34,7 +33,6 @@
         "compileSdk": 35,
         "targetSdk": 35,
         "java": 17,
-        "okhttp": "4.12.0",
         "agp": "8.7.2"
       }
     },
@@ -52,7 +50,6 @@
         "compileSdk": 35,
         "targetSdk": 35,
         "java": 21,
-        "okhttp": "4.12.0",
         "agp": "8.7.2"
       }
     }

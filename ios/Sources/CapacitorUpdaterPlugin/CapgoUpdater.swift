@@ -5,641 +5,52 @@
  */
 
 import Foundation
-import Compression
+import Network
 import UIKit
 
-@objc public class CapgoUpdater: NSObject {
-    private var logger: Logger!
+/// iOS host of the shared Rust updater engine (`core/src/engine`).
+///
+/// The engine owns every updater decision (update cycle, bundle store, downloads,
+/// channels, previews, stats). This class creates it and provides the platform
+/// services it calls back into: UserDefaults storage, logs, background tasks and
+/// backup exclusion. Events and UI hooks are forwarded to the plugin.
+@objc public class CapgoUpdater: NSObject, CapgoEngineHost {
+    private var logger: Logger?
 
     private let versionCode: String = Bundle.main.versionCode ?? ""
     private let versionOs = UIDevice.current.systemVersion
-    private let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-    private let DEFAULT_FOLDER: String = ""
-    private let bundleDirectory: String = "NoCloud/ionic_built_snapshots"
-    private let INFO_SUFFIX: String = "_info"
-    private let FALLBACK_VERSION: String = "pastVersion"
-    private let NEXT_VERSION: String = "nextVersion"
-    private let PREVIEW_FALLBACK_VERSION: String = "previewFallbackVersion"
-    private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
-    private var unzipPercent = 0
-    private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
-    static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
+    let libraryDir: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library")
+    static let bundleDirectory = "NoCloud/ionic_built_snapshots"
+    private static let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Caches")
+    let cacheFolder: URL = CapgoUpdater.cachesDir.appendingPathComponent("capgo_downloads")
 
-    static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        min(64, max(8, max(1, processorCount) * 2))
-    }
-    private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    private let deletePaceSeconds: TimeInterval = 0.075
-    private let deleteLock = NSLock()
-
-    // Add this line to declare cacheFolder
-    private let cacheFolder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!.appendingPathComponent("capgo_downloads")
-
-    public let CAP_SERVER_PATH: String = "serverBasePath"
-    public var versionBuild: String = ""
-    public var customId: String = ""
-    public var pluginVersion: String = ""
-    public var timeout: Double = 20
-    public var statsUrl: String = ""
-    /// Optional gate run before any download touches disk (e.g. wait for launch cleanup).
-    public var beforeDownload: (() throws -> Void)?
-    public var channelUrl: String = ""
-    public var defaultChannel: String = ""
     public var appId: String = ""
     public var deviceID = ""
-    public var previewSession = false
-    public var publicKey: String = ""
+    public var pluginVersion: String = ""
+    /// Builtin bundle version name (config `version` or CFBundleShortVersionString).
+    public var versionBuild: String = ""
+    /// Tests point the builtin web assets somewhere else.
+    var builtinFolderOverride: URL?
 
-    // Cached key ID calculated once from publicKey
-    private var cachedKeyId: String?
+    /// JavaScript events emitted by the engine: name, payload, keep for late listeners.
+    var onEvent: ((String, [String: Any], Bool) -> Void)?
+    /// Engine payload flag (`host::RETAIN_EVENT_KEY`): deliver with `retainUntilConsumed`.
+    static let retainEventKey = "__retainUntilConsumed"
+    /// Engine hooks that need the Capacitor bridge or UI.
+    var onHook: ((String, [String: Any]) -> [String: Any]?)?
 
-    // Temporary 429 block until this epoch ms (Retry-After / rateLimitResetAt). No sticky latch.
-    // Guarded by rateLimitStateLock so concurrent 429s cannot shorten the window or mix metadata.
-    private static let rateLimitStateLock = NSLock()
-    private static var rateLimitBlockedUntilMs: Double = 0
-    private static var rateLimitBlockedError: String = "too_many_requests"
-    private static var rateLimitBlockedMessage: String = "Too many requests"
-
-    // Flag to track if we've already sent the rate limit statistic - prevents infinite loop.
-    // Released again when the send fails, so a later 429 can retry it.
-    private static var rateLimitStatisticSent = false
-
-    // Upper bound for a client-side 429 block, so a bogus Retry-After cannot block the app for days.
-    private static let maxRateLimitWindowMs: Double = 24 * 60 * 60 * 1000
-
-    // Stats batching - queue events and send max once per second
-    private var statsQueue: [QueuedStatsEvent] = []
-    private var statsInFlight: [QueuedStatsEvent] = []
-    private let statsQueueLock = NSLock()
-    private let statsPersistLock = NSLock()
-    private var statsFlushTimer: Timer?
-    private var statsStopped = false
-    private static let statsFlushInterval: TimeInterval = 1.0
-    private static let maxPendingStats = 200
-    private let pendingStatsFileName = "capgo_pending_stats.json"
-
-    private struct QueuedStatsEvent {
-        let event: StatsEvent
-        let onSent: (() -> Void)?
-    }
-
-    private static func sanitizeHeaderValue(_ value: String) -> String {
-        if value.isEmpty {
-            return "unknown"
-        }
-
-        let filteredScalars = value.unicodeScalars.filter { scalar in
-            let cp = scalar.value
-            let isVisibleAscii = (0x20...0x7E).contains(cp)
-            let isIso88591 = (0xA0...0xFF).contains(cp)
-            return isVisibleAscii || isIso88591
-        }
-
-        let sanitized = String(String.UnicodeScalarView(filteredScalars)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? "unknown" : sanitized
-    }
-
-    static func buildUserAgent(appId: String, pluginVersion: String, versionOs: String) -> String {
-        let safePluginVersion = sanitizeHeaderValue(pluginVersion)
-        let safeAppId = sanitizeHeaderValue(appId)
-        let safeVersionOs = sanitizeHeaderValue(versionOs)
-        return "CapacitorUpdater/\(safePluginVersion) (\(safeAppId)) ios/\(safeVersionOs)"
-    }
-
-    private var userAgent: String {
-        CapgoUpdater.buildUserAgent(appId: appId, pluginVersion: pluginVersion, versionOs: versionOs)
-    }
-
-    struct RequestResult {
-        let data: Data?
-        let response: HTTPURLResponse?
-        let error: Error?
-        let timedOut: Bool
-    }
-
-    struct DownloadRequestResult {
-        let fileURL: URL?
-        let response: HTTPURLResponse?
-        let error: Error?
-        let timedOut: Bool
-    }
-
-    enum SecurePathError: Error {
-        case emptyPath
-        case windowsPath
-        case absolutePath
-        case pathTraversal
-    }
-
-    static func containsPathTraversalSegment(_ relativePath: String) -> Bool {
-        return relativePath.split(separator: "/").contains(where: { $0 == ".." })
-    }
-
-    static func resolvePathInsideDirectory(baseDirectory: URL, relativePath: String) throws -> URL {
-        if relativePath.isEmpty {
-            throw SecurePathError.emptyPath
-        }
-        if relativePath.contains("\\") || relativePath.contains("\0") {
-            throw SecurePathError.windowsPath
-        }
-        if containsPathTraversalSegment(relativePath) {
-            throw SecurePathError.pathTraversal
-        }
-        if (relativePath as NSString).isAbsolutePath {
-            throw SecurePathError.absolutePath
-        }
-
-        let canonicalBase = baseDirectory.standardizedFileURL
-        let canonicalBasePath = canonicalBase.path
-        let normalizedBasePath = canonicalBasePath.hasSuffix("/") ? canonicalBasePath : "\(canonicalBasePath)/"
-        let canonicalTarget = canonicalBase.appendingPathComponent(relativePath).standardizedFileURL
-        let canonicalTargetPath = canonicalTarget.path
-
-        // Require a strict child of the base. Equality would accept "." and wipe/write the root.
-        if !canonicalTargetPath.hasPrefix(normalizedBasePath) {
-            throw SecurePathError.pathTraversal
-        }
-
-        return canonicalTarget
-    }
-
-    static func resolveBundleDirectory(libraryDir: URL, bundleId: String) throws -> URL {
-        let bundleRoot = libraryDir.appendingPathComponent("NoCloud/ionic_built_snapshots")
-        return try resolvePathInsideDirectory(baseDirectory: bundleRoot, relativePath: bundleId)
-    }
-
-    static func resolveManifestTargetPath(baseDirectory: URL, fileName: String) throws -> URL {
-        let isBrotli = fileName.hasSuffix(".br")
-        let targetFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-        return try resolvePathInsideDirectory(baseDirectory: baseDirectory, relativePath: targetFileName)
-    }
-
-    static func rememberManifestTarget(_ seenTargets: inout Set<String>, targetFile: URL) -> Bool {
-        return seenTargets.insert(targetFile.standardizedFileURL.path).inserted
-    }
-
-    private struct ManifestDownloadTask {
-        let fileName: String
-        let downloadUrl: String
-        let finalFileHash: String
-        let isBrotli: Bool
-        let destFileName: String
-        let destFilePath: URL
-        let builtinFilePath: URL
-        let cacheFilePath: URL?
-        let legacyCacheFilePath: URL?
-    }
-
-    private func isTimedOutError(_ error: Error?) -> Bool {
-        if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
-            return isTimedOutError(underlying)
-        }
-        guard let nsError = error as NSError? else {
-            return false
-        }
-
-        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
-    }
-
-    /// Errors produced by the URLSession transport. Descriptions intentionally match the messages the
-    /// previous Alamofire transport surfaced so logs and JS-facing error strings stay the same.
-    enum NetworkError: LocalizedError {
-        case sessionTaskFailed(Error)
-        case emptyResponse
-        case invalidURL(String)
-        case bodyEncodingFailed(Error?)
-        case downloadedFileMoveFailed(Error, source: URL, destination: URL)
-
-        var errorDescription: String? {
-            switch self {
-            case let .sessionTaskFailed(error):
-                return "URLSessionTask failed with error: \(error.localizedDescription)"
-            case .emptyResponse:
-                return "Response could not be serialized, input data was nil or zero length."
-            case let .invalidURL(url):
-                return "URL is not valid: \(url)"
-            case let .bodyEncodingFailed(error):
-                return "JSON could not be encoded because of error:\n\(error?.localizedDescription ?? "Invalid JSON object provided for parameter or object encoding.")"
-            case let .downloadedFileMoveFailed(error, source, destination):
-                return "Moving downloaded file from: \(source) to: \(destination) failed with error: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    /// Mirrors Alamofire's `responseData` serializer: an empty body is an error unless the status allows it.
-    static func emptyResponseError(data: Data?, response: HTTPURLResponse?, method: String?) -> Error? {
-        if let data, !data.isEmpty {
-            return nil
-        }
-        if method?.uppercased() == "HEAD" || [204, 205].contains(response?.statusCode ?? 0) {
-            return nil
-        }
-        return NetworkError.emptyResponse
-    }
-
-    // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
-    private var cachedUrlSession: URLSession?
-    private let urlSessionLock = NSLock()
-    private var urlSession: URLSession {
-        urlSessionLock.lock()
-        defer { urlSessionLock.unlock() }
-        if let session = cachedUrlSession {
-            return session
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.urlCache = nil
-        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
-        redirectPolicy.onBlockedRedirect = { [weak self] source, target in
-            self?.logger?.error("Blocked HTTPS to HTTP redirect; set allowHttpsToHttpRedirect to true to allow it")
-            self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
-        }
-        let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
-        cachedUrlSession = session
-        return session
-    }
-
-    /// Owned separately from `CapgoUpdater` because URLSession retains its delegate strongly.
-    private let redirectPolicy = RedirectPolicyDelegate()
-
-    /// Follow redirects from HTTPS to plain HTTP. Off by default so a redirect can never downgrade updater traffic.
-    public var allowHttpsToHttpRedirect: Bool {
-        get { redirectPolicy.allowHttpsToHttpRedirect }
-        set { redirectPolicy.allowHttpsToHttpRedirect = newValue }
-    }
-
-    /// Runs a raw data task on the updater session (no cookies, no cache, redirect policy applied).
-    @discardableResult
-    func startRawDataTask(_ request: URLRequest, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionDataTask {
-        let task = self.urlSession.dataTask(with: request, completionHandler: completion)
-        task.resume()
-        return task
-    }
-
-    /// Runs a data task and reports `(data, response, error)` like Alamofire's `responseData` did:
-    /// `data` is nil when no bytes were received, transport errors are wrapped, and an empty body is an error
-    /// unless the status code is 204/205 (or the request is HEAD).
-    @discardableResult
-    private func startDataTask(
-        _ request: URLRequest,
-        completionQueue: DispatchQueue,
-        completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
-    ) -> URLSessionDataTask {
-        let task = self.urlSession.dataTask(with: request) { data, response, error in
-            let httpResponse = response as? HTTPURLResponse
-            let body = (data?.isEmpty ?? true) ? nil : data
-            let resultError: Error?
-            if let error {
-                resultError = NetworkError.sessionTaskFailed(error)
-            } else {
-                resultError = Self.emptyResponseError(data: body, response: httpResponse, method: request.httpMethod)
-            }
-            completionQueue.async {
-                completion(body, httpResponse, resultError)
-            }
-        }
-        task.resume()
-        return task
-    }
-
-    /// Builds a POST request with a JSON body (same headers as Alamofire's JSON encoders).
-    func makeJSONPostRequest(urlString: String, body: () throws -> Data) -> Result<URLRequest, Error> {
-        guard let url = URL(string: urlString) else {
-            return .failure(NetworkError.invalidURL(urlString))
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = self.timeout
-        do {
-            request.httpBody = try body()
-        } catch let error as NetworkError {
-            return .failure(error)
-        } catch {
-            return .failure(NetworkError.bodyEncodingFailed(error))
-        }
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        return .success(request)
-    }
-
-    /// Fire-and-forget JSON POST whose completion runs on the main queue, like Alamofire's default `responseData`.
-    private func sendJSONPost(
-        urlString: String,
-        body: () throws -> Data,
-        completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
-    ) {
-        switch makeJSONPostRequest(urlString: urlString, body: body) {
-        case let .success(request):
-            self.startDataTask(request, completionQueue: .main, completion: completion)
-        case let .failure(error):
-            DispatchQueue.main.async {
-                completion(nil, nil, error)
-            }
-        }
-    }
-    private let networkResponseQueue = DispatchQueue(label: "ee.forgr.capacitor-updater.network-response", qos: .utility)
-
-    public var notifyDownloadRaw: (String, Int, Bool, BundleInfo?) -> Void = { _, _, _, _  in }
-    public func notifyDownload(id: String, percent: Int, ignoreMultipleOfTen: Bool = false, bundle: BundleInfo? = nil) {
-        let emit = {
-            self.notifyDownloadRaw(id, percent, ignoreMultipleOfTen, bundle)
-        }
-        if Thread.isMainThread {
-            emit()
-        } else {
-            DispatchQueue.main.async {
-                emit()
-            }
-        }
-    }
-    public var notifyDownload: (String, Int) -> Void = { _, _  in }
-    public var notifyListeners: (String, [String: Any]) -> Void = { _, _ in }
+    private let engineLock = NSLock()
+    private var engineInstance: CapgoEngine?
+    private let backgroundTasksLock = NSLock()
+    private var backgroundTasks: [String: UIBackgroundTaskIdentifier] = [:]
 
     public func setLogger(_ logger: Logger) {
         self.logger = logger
     }
 
-    private func createRequest(url: URL, method: String, parameters: [String: Any]? = nil, expectsJSONResponse: Bool = false) -> URLRequest? {
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = self.timeout
-        request.setValue(self.userAgent, forHTTPHeaderField: "User-Agent")
-        if expectsJSONResponse || parameters != nil {
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-        }
-
-        guard let parameters else {
-            return request
-        }
-
-        guard JSONSerialization.isValidJSONObject(parameters) else {
-            logger.error("Invalid JSON body for \(method) \(url.absoluteString)")
-            return nil
-        }
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: parameters)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            return request
-        } catch {
-            logger.error("Error encoding request body for \(method) \(url.absoluteString)")
-            logger.debug("Error: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    func performRequest(_ request: URLRequest, label: String) -> RequestResult {
-        let waitTimeout = max(self.timeout + 5, 10)
-        let semaphore = DispatchSemaphore(value: 0)
-        var responseData: Data?
-        var httpResponse: HTTPURLResponse?
-        var requestError: Error?
-        let dataTask = self.startDataTask(request, completionQueue: self.networkResponseQueue) { data, response, error in
-            responseData = data
-            httpResponse = response
-            requestError = error
-            semaphore.signal()
-        }
-
-        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            dataTask.cancel()
-            logger.error("\(label) timed out after \(Int(waitTimeout))s")
-            return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: true)
-        }
-
-        // URLSession can report its own timeout (NSURLErrorTimedOut) before the semaphore deadline.
-        let timedOut = isTimedOutError(requestError)
-        if timedOut {
-            logger.error("\(label) timed out after \(Int(request.timeoutInterval))s")
-        }
-        return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
-    }
-
-    func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
-        let waitTimeout = max(self.timeout + 5, 10)
-        let semaphore = DispatchSemaphore(value: 0)
-        var tempFileURL: URL?
-        var httpResponse: HTTPURLResponse?
-        var requestError: Error?
-        let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let downloadTask = self.urlSession.downloadTask(with: request) { location, response, error in
-            // URLSession deletes `location` once this handler returns, so move it synchronously here.
-            var movedFileURL: URL?
-            var resultError: Error?
-            if let error {
-                resultError = NetworkError.sessionTaskFailed(error)
-            } else if let location {
-                do {
-                    let fileManager = FileManager.default
-                    try fileManager.createDirectory(
-                        at: temporaryDownloadURL.deletingLastPathComponent(),
-                        withIntermediateDirectories: true,
-                        attributes: nil
-                    )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
-                    try fileManager.moveItem(at: location, to: temporaryDownloadURL)
-                    movedFileURL = temporaryDownloadURL
-                } catch {
-                    resultError = NetworkError.downloadedFileMoveFailed(error, source: location, destination: temporaryDownloadURL)
-                }
-            }
-            let taskResponse = response as? HTTPURLResponse
-            self.networkResponseQueue.async {
-                tempFileURL = movedFileURL
-                httpResponse = taskResponse
-                requestError = resultError
-                semaphore.signal()
-            }
-        }
-        downloadTask.resume()
-
-        if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
-            downloadTask.cancel()
-            logger.error("\(label) timed out after \(Int(waitTimeout))s")
-            return DownloadRequestResult(
-                fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
-                response: httpResponse,
-                error: requestError,
-                timedOut: true
-            )
-        }
-
-        if isTimedOutError(requestError) {
-            logger.error("\(label) timed out after \(Int(waitTimeout))s")
-        }
-
-        return DownloadRequestResult(
-            fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
-            response: httpResponse,
-            error: requestError,
-            timedOut: isTimedOutError(requestError)
-        )
-    }
-
-    private func existingDownloadFileURL(_ fileURL: URL?, fallback: URL) -> URL? {
-        let fileManager = FileManager.default
-        if let fileURL, fileManager.fileExists(atPath: fileURL.path) {
-            return fileURL
-        }
-        return fileManager.fileExists(atPath: fallback.path) ? fallback : nil
-    }
-
-    static func shouldAppendHttpBody(statusCode: Int, existingBytes: Int64) -> Bool {
-        existingBytes > 0 && statusCode == 206
-    }
-
-    static func safePartialToken(_ fileName: String) -> String {
-        CryptoCipher.shortPathKey(fileName)
-    }
-
-    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
-        let token = safePartialToken(fileName)
-        if isSafeCacheHash(hash) && hash.count == 64 {
-            return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
-        }
-        let digest = CryptoCipher.shortPathKey("\(hash)|\(fileName)")
-        return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
-    }
-
-    private func cleanupOldManifestPartials() {
-        let cutoff = Date().addingTimeInterval(-3600)
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: cacheFolder,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return
-        }
-        for url in files {
-            let name = url.lastPathComponent
-            guard name.hasPrefix("partial_") && name.hasSuffix(".tmp") else {
-                continue
-            }
-            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            if modified < cutoff {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-    }
-
-    func storeDownloadedFile(_ downloadedFileURL: URL, at tempPath: URL, existingBytes: Int64, response: HTTPURLResponse?) throws {
-        let fileManager = FileManager.default
-        if Self.shouldAppendHttpBody(statusCode: response?.statusCode ?? 0, existingBytes: existingBytes) ||
-            (existingBytes > 0 && response == nil) {
-            let fileHandle = try FileHandle(forWritingTo: tempPath)
-            defer {
-                try? fileHandle.close()
-            }
-            fileHandle.seek(toFileOffset: UInt64(existingBytes))
-            let input = try FileHandle(forReadingFrom: downloadedFileURL)
-            defer {
-                try? input.close()
-            }
-            let chunkSize = CryptoCipher.copyBufferBytes()
-            while true {
-                let done: Bool = try autoreleasepool {
-                    let chunk = try input.read(upToCount: chunkSize) ?? Data()
-                    if chunk.isEmpty {
-                        return true
-                    }
-                    fileHandle.write(chunk)
-                    return false
-                }
-                if done {
-                    break
-                }
-            }
-            try? fileManager.removeItem(at: downloadedFileURL)
-            return
-        }
-
-        if fileManager.fileExists(atPath: tempPath.path) {
-            try fileManager.removeItem(at: tempPath)
-        }
-        try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
-    }
-
-    private func persistPartialDownload(_ downloadResult: DownloadRequestResult, id: String, tempPath: URL, existingBytes: Int64) {
-        guard let downloadedFileURL = downloadResult.fileURL else {
-            return
-        }
-        guard FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
-            return
-        }
-        if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
-            return
-        }
-
-        do {
-            try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: existingBytes, response: downloadResult.response)
-            logger.info("Stored partial download for retry")
-        } catch {
-            logger.error("Failed to store partial download")
-            logger.debug("Path: \(downloadedFileURL.path), Error: \(error)")
-        }
-    }
-
-    deinit {
-        shutdown()
-        // Alamofire's Session invalidated its URLSession on deinit; keep releasing the session the same way.
-        cachedUrlSession?.invalidateAndCancel()
-    }
-
-    public func shutdown() {
-        statsPersistLock.lock()
-        statsStopped = true
-        statsPersistLock.unlock()
-        statsFlushTimer?.invalidate()
-        statsFlushTimer = nil
-        persistStatsQueue(force: true)
-    }
-
-    private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
-        return (percent * (max - min)) / 100 + min
-    }
-
-    private func randomString(length: Int) -> String {
-        let letters: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return String((0..<length).map { _ in letters.randomElement()! })
-    }
-
-    private func requireSessionKeyForEncryptedUpdate(sessionKey: String, versionName: String? = nil) throws {
-        if !self.publicKey.isEmpty && !CryptoCipher.isValidSessionKey(sessionKey) {
-            logger.error("Public key present but no valid session key provided")
-            self.sendStats(action: "session_key_required", versionName: versionName)
-            throw NSError(
-                domain: "CapgoUpdater",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
-            )
-        }
-    }
-
-    public func setPublicKey(_ publicKey: String) {
-        // Empty string means no encryption - proceed normally
-        if publicKey.isEmpty {
-            self.publicKey = ""
-            self.cachedKeyId = nil
-            return
-        }
-
-        // Non-empty: must be a valid RSA key or crash
-        guard RSAPublicKey.load(rsaPublicKey: publicKey) != nil else {
-            fatalError("Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the key or provide a valid PEM-formatted RSA public key.")
-        }
-
-        self.publicKey = publicKey
-        self.cachedKeyId = CryptoCipher.calcKeyId(publicKey: publicKey)
-    }
-
-    public func getKeyId() -> String? {
-        return self.cachedKeyId
-    }
+    // MARK: - Device facts
 
     private var isDevEnvironment: Bool {
         #if DEBUG
@@ -649,270 +60,6 @@ import UIKit
         #endif
     }
 
-    private func isProd() -> Bool {
-        return !self.isDevEnvironment && !self.isAppStoreReceiptSandbox() && !self.hasEmbeddedMobileProvision()
-    }
-
-    private func installSource() -> String? {
-        if isEmulator() || self.isDevEnvironment || self.hasEmbeddedMobileProvision() {
-            return nil
-        }
-        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
-            return nil
-        }
-        if receiptURL.lastPathComponent == "sandboxReceipt" {
-            return "testflight"
-        }
-        guard FileManager.default.fileExists(atPath: receiptURL.path) else {
-            return nil
-        }
-        return "app_store"
-    }
-
-    /**
-     * Checks if there is sufficient disk space for a download.
-     * Matches Android behavior: 2x safety margin, throws "insufficient_disk_space"
-     * - Parameter estimatedSize: The estimated size of the download in bytes. Defaults to 50MB.
-     */
-    private func checkDiskSpace(estimatedSize: Int64 = 50 * 1024 * 1024) throws {
-        let fileManager = FileManager.default
-        guard let documentDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return
-        }
-
-        do {
-            let attributes = try fileManager.attributesOfFileSystem(forPath: documentDirectory.path)
-            guard let freeSpace = attributes[.systemFreeSize] as? Int64 else {
-                logger.warn("Could not determine free disk space, proceeding with download")
-                return
-            }
-
-            let requiredSpace = estimatedSize * 2 // 2x safety margin like Android
-
-            if freeSpace < requiredSpace {
-                logger.error("Insufficient disk space. Available: \(freeSpace), Required: \(requiredSpace)")
-                self.sendStats(action: "insufficient_disk_space")
-                throw CustomError.insufficientDiskSpace
-            }
-        } catch let error as CustomError {
-            throw error
-        } catch {
-            logger.warn("Error checking disk space: \(error.localizedDescription)")
-        }
-    }
-
-    private struct RemoteBlockResult {
-        let blocked: Bool
-        let error: String
-        let message: String
-    }
-
-    /**
-     * Handle HTTP 429 responses by honouring Retry-After / rateLimitResetAt.
-     * All 429s use the same temporary client block — no sticky latch until restart.
-     */
-    private func checkAndHandleRateLimitResponse(
-        statusCode: Int?,
-        data: Data? = nil,
-        response: HTTPURLResponse? = nil
-    ) -> RemoteBlockResult {
-        guard statusCode == 429 else {
-            return RemoteBlockResult(blocked: false, error: "", message: "")
-        }
-
-        let parsed = parseRemoteError(from: data)
-        let errorCode = parsed.error.isEmpty ? "too_many_requests" : parsed.error
-        let message = parsed.message.isEmpty ? "Too many requests" : parsed.message
-
-        let retryUntilMs = resolveRateLimitBlockedUntilMs(data: data, response: response)
-        CapgoUpdater.recordRateLimitBlock(untilMs: retryUntilMs, error: errorCode, message: message)
-
-        // Claim last, and only when there is somewhere to send it, so a 429 burst with no
-        // stats URL does not claim and release the latch once per response.
-        if errorCode == "too_many_requests" && !previewSession && !statsUrl.isEmpty && CapgoUpdater.claimRateLimitStatistic() {
-            DispatchQueue.global(qos: .utility).async {
-                self.sendRateLimitStatistic()
-            }
-        }
-
-        let nowMs = Date().timeIntervalSince1970 * 1000
-        let retryAfter = CapgoUpdater.retryAfterSecondsForLog(untilMs: retryUntilMs, nowMs: nowMs)
-        logger.warn("Received 429 (\(errorCode)). Honouring Retry-After: \(retryAfter)s.")
-        return RemoteBlockResult(blocked: true, error: errorCode, message: message)
-    }
-
-    /// Stores the block deadline and its metadata together, keeping the longest deadline
-    /// so a concurrent 429 with a shorter window cannot cut the block short.
-    private static func recordRateLimitBlock(untilMs: Double, error: String, message: String) {
-        rateLimitStateLock.lock()
-        defer { rateLimitStateLock.unlock() }
-        if untilMs > rateLimitBlockedUntilMs {
-            rateLimitBlockedUntilMs = untilMs
-            rateLimitBlockedError = error
-            rateLimitBlockedMessage = message
-        } else if rateLimitBlockedUntilMs <= 0 {
-            rateLimitBlockedError = error
-            rateLimitBlockedMessage = message
-        }
-    }
-
-    /// Seconds left in the block, clamped and finite so the Int conversion can never trap.
-    private static func retryAfterSecondsForLog(untilMs: Double, nowMs: Double) -> Int {
-        let seconds = ((untilMs - nowMs) / 1000).rounded(.up)
-        guard seconds.isFinite, seconds > 0 else {
-            return 0
-        }
-        return Int(min(seconds, maxRateLimitWindowMs / 1000))
-    }
-
-    /// Returns true for the first 429 only, so the rate-limit statistic is sent once.
-    private static func claimRateLimitStatistic() -> Bool {
-        rateLimitStateLock.lock()
-        defer { rateLimitStateLock.unlock() }
-        if rateLimitStatisticSent {
-            return false
-        }
-        rateLimitStatisticSent = true
-        return true
-    }
-
-    /// Gives the claim back when the statistic never made it out, so a later 429 can retry it.
-    private static func releaseRateLimitStatisticClaim() {
-        rateLimitStateLock.lock()
-        defer { rateLimitStateLock.unlock() }
-        rateLimitStatisticSent = false
-    }
-
-    private func parseRemoteError(from data: Data?) -> (error: String, message: String) {
-        guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return ("", "")
-        }
-        let error = json["error"] as? String ?? ""
-        let message = json["message"] as? String ?? ""
-        return (error, message)
-    }
-
-    private func resolveRateLimitBlockedUntilMs(data: Data?, response: HTTPURLResponse?) -> Double {
-        let nowMs = Date().timeIntervalSince1970 * 1000
-        let candidate = rawRateLimitDeadlineMs(data: data, response: response, nowMs: nowMs)
-        // NaN and past deadlines mean "no client-side block"; anything further out is capped.
-        guard candidate > nowMs else {
-            return 0
-        }
-        return min(candidate, nowMs + CapgoUpdater.maxRateLimitWindowMs)
-    }
-
-    private func rawRateLimitDeadlineMs(data: Data?, response: HTTPURLResponse?, nowMs: Double) -> Double {
-        if let header = response?.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let seconds = Double(header), seconds >= 0 {
-            return nowMs + seconds * 1000
-        }
-
-        if let data = data,
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let moreInfo = json["moreInfo"] as? [String: Any]
-            if let retryAfter = (moreInfo?["retryAfterSeconds"] as? NSNumber)?.doubleValue
-                ?? (json["retryAfterSeconds"] as? NSNumber)?.doubleValue,
-               retryAfter >= 0 {
-                return nowMs + retryAfter * 1000
-            }
-            if let resetAt = (moreInfo?["rateLimitResetAt"] as? NSNumber)?.doubleValue
-                ?? (json["rateLimitResetAt"] as? NSNumber)?.doubleValue {
-                return resetAt
-            }
-        }
-
-        // No retry hint — do not hold a client-side block; allow immediate retry to the worker
-        return 0
-    }
-
-    private func isRemoteBlocked() -> Bool {
-        CapgoUpdater.rateLimitStateLock.lock()
-        defer { CapgoUpdater.rateLimitStateLock.unlock() }
-        if CapgoUpdater.rateLimitBlockedUntilMs <= 0 {
-            return false
-        }
-        if Date().timeIntervalSince1970 * 1000 >= CapgoUpdater.rateLimitBlockedUntilMs {
-            CapgoUpdater.rateLimitBlockedUntilMs = 0
-            return false
-        }
-        return true
-    }
-
-    private func remoteBlockedClientError() -> (error: String, message: String) {
-        CapgoUpdater.rateLimitStateLock.lock()
-        defer { CapgoUpdater.rateLimitStateLock.unlock() }
-        return (CapgoUpdater.rateLimitBlockedError, CapgoUpdater.rateLimitBlockedMessage)
-    }
-
-    /**
-     * Send a synchronous statistic about rate limiting
-     * Note: This method uses a semaphore to block until the request completes.
-     * It MUST be called from a background queue to avoid blocking the main thread.
-     */
-    private func sendRateLimitStatistic() {
-        guard !statsUrl.isEmpty else {
-            // The URL was cleared after the claim was taken; nothing went out, so hand it back.
-            CapgoUpdater.releaseRateLimitStatisticClaim()
-            return
-        }
-
-        let current = getCurrentBundle()
-        var parameters = createInfoObject()
-        parameters.action = "rate_limit_reached"
-        parameters.version_name = current.getVersionName()
-        parameters.old_version_name = ""
-
-        // Send synchronously using semaphore (safe because we're on a background queue)
-        let semaphore = DispatchSemaphore(value: 0)
-        let parameterValues = parameters.toParameters()
-        self.sendJSONPost(urlString: self.statsUrl, body: {
-            guard JSONSerialization.isValidJSONObject(parameterValues) else {
-                throw NetworkError.bodyEncodingFailed(nil)
-            }
-            return try JSONSerialization.data(withJSONObject: parameterValues)
-        }, completion: { _, response, error in
-            let statusCode = response?.statusCode
-            if let error {
-                CapgoUpdater.releaseRateLimitStatisticClaim()
-                self.logger.error("Error sending rate limit statistic")
-                self.logger.debug("Error: \(error.localizedDescription)")
-            } else if (200...299).contains(statusCode ?? 0) {
-                self.logger.info("Rate limit statistic sent")
-            } else {
-                CapgoUpdater.releaseRateLimitStatisticClaim()
-                self.logger.error("Error sending rate limit statistic")
-                self.logger.debug("Response code: \(statusCode.map(String.init) ?? "nil")")
-            }
-            semaphore.signal()
-        })
-        semaphore.wait()
-    }
-
-    // MARK: Private
-    private func hasEmbeddedMobileProvision() -> Bool {
-        guard Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") == nil else {
-            return true
-        }
-        return false
-    }
-
-    private func isAppStoreReceiptSandbox() -> Bool {
-
-        if isEmulator() {
-            return false
-        } else {
-            guard let url: URL = Bundle.main.appStoreReceiptURL else {
-                return false
-            }
-            guard url.lastPathComponent == "sandboxReceipt" else {
-                return false
-            }
-            return true
-        }
-    }
-
     private func isEmulator() -> Bool {
         #if targetEnvironment(simulator)
         return true
@@ -920,3040 +67,413 @@ import UIKit
         return false
         #endif
     }
-    // Persistent path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Library/NoCloud/ionic_built_snapshots/FOLDER
-    // Hot Reload path /var/mobile/Containers/Data/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/Documents/FOLDER
-    // Normal /private/var/containers/Bundle/Application/8C0C07BE-0FD3-4FD4-B7DF-90A88E12B8C3/App.app/public
 
-    private func prepareFolder(source: URL) throws {
-        if !FileManager.default.fileExists(atPath: source.path) {
-            do {
-                try FileManager.default.createDirectory(atPath: source.path, withIntermediateDirectories: true, attributes: nil)
-            } catch {
-                logger.error("Cannot create directory")
-                logger.debug("Directory path: \(source.path)")
-                throw CustomError.cannotCreateDirectory
-            }
-        }
+    private func hasEmbeddedMobileProvision() -> Bool {
+        Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil
     }
 
-    private func deleteFolder(source: URL) throws {
-        do {
-            try FileManager.default.removeItem(atPath: source.path)
-        } catch {
-            logger.error("File not removed")
-            logger.debug("Path: \(source.path)")
-            throw CustomError.cannotDeleteDirectory
-        }
+    private func isAppStoreReceiptSandbox() -> Bool {
+        !isEmulator() && Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
     }
 
-    private func unflatFolder(source: URL, dest: URL) throws -> Bool {
-        let index: URL = source.appendingPathComponent("index.html")
-        do {
-            let files: [String] = try FileManager.default.contentsOfDirectory(atPath: source.path)
-            if files.count == 1 && source.appendingPathComponent(files[0]).isDirectory && !FileManager.default.fileExists(atPath: index.path) {
-                try FileManager.default.moveItem(at: source.appendingPathComponent(files[0]), to: dest)
-                return true
-            } else {
-                try FileManager.default.moveItem(at: source, to: dest)
-                return false
-            }
-        } catch {
-            logger.error("File not moved")
-            logger.debug("Source: \(source.path), Dest: \(dest.path)")
-            throw CustomError.cannotUnflat
-        }
+    private func isProd() -> Bool {
+        !isDevEnvironment && !isAppStoreReceiptSandbox() && !hasEmbeddedMobileProvision()
     }
 
-    private func resolveZipEntry(path: String, destUnZip: URL) throws -> URL {
-        do {
-            return try Self.resolvePathInsideDirectory(baseDirectory: destUnZip, relativePath: path)
-        } catch SecurePathError.windowsPath {
-            logger.error("Unzip failed: Windows path not supported")
-            logger.debug("Invalid path: \(path)")
-            self.sendStats(action: "windows_path_fail")
-            throw CustomError.cannotUnzip
-        } catch {
-            self.sendStats(action: "canonical_path_fail")
-            throw CustomError.cannotUnzip
+    private func installSource() -> String {
+        if isEmulator() || isDevEnvironment || hasEmbeddedMobileProvision() {
+            return ""
         }
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+            return ""
+        }
+        if receiptURL.lastPathComponent == "sandboxReceipt" {
+            return "testflight"
+        }
+        return FileManager.default.fileExists(atPath: receiptURL.path) ? "app_store" : ""
     }
 
-    // Symlink targets are paths; anything bigger than this is not a legitimate link.
-    private static let maxZipSymlinkTargetBytes = 64 * 1024
-
-    /// A zip symlink target must be a relative path without `..`, so a link can only point further down.
-    /// A lexical check alone is not enough: with `m -> .`, the target `m/..` normalizes to the link folder but
-    /// physically resolves to its parent.
-    static func isSafeZipSymlinkTarget(_ target: String) -> Bool {
-        if target.isEmpty || target.contains("\0") || target.contains("\\") {
-            return false
-        }
-        if (target as NSString).isAbsolutePath {
-            return false
-        }
-        return !containsPathTraversalSegment(target)
-    }
-
-    private static func realPath(_ path: String) -> String? {
-        guard let resolved = Darwin.realpath(path, nil) else {
-            return nil
-        }
-        defer { free(resolved) }
-        return String(cString: resolved)
-    }
-
-    /// Resolves symlinks on the deepest existing ancestor of `url` and throws when it is outside `root`.
-    /// Run before creating anything, so a symlinked folder can never redirect a write out of the bundle.
-    static func assertPhysicallyInsideDirectory(_ url: URL, root: URL) throws {
-        guard let rootPath = realPath(root.path) else {
-            throw SecurePathError.pathTraversal
-        }
-        let normalizedRoot = rootPath.hasSuffix("/") ? rootPath : "\(rootPath)/"
-        var candidate = url.standardizedFileURL.path
-        while true {
-            if let resolved = realPath(candidate) {
-                if resolved != rootPath && !resolved.hasPrefix(normalizedRoot) {
-                    throw SecurePathError.pathTraversal
-                }
-                return
-            }
-            let parent = (candidate as NSString).deletingLastPathComponent
-            if parent == candidate || parent.isEmpty {
-                throw SecurePathError.pathTraversal
-            }
-            candidate = parent
-        }
-    }
-
-    /// `fileExists` follows symlinks, so a dangling link would be missed; this does not follow the last component.
-    private static func itemExistsWithoutFollowingLink(at url: URL) -> Bool {
-        return (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
-    }
-
-    private func extractZipEntry(_ archive: ZipArchiveReader, entry: ZipEntry, to destPath: URL, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
-        let fileManager = FileManager.default
-
-        switch entry.type {
-        case .directory:
-            try fileManager.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
-        case .file:
-            let parentDir = destPath.deletingLastPathComponent()
-            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
-
-            if Self.itemExistsWithoutFollowingLink(at: destPath) {
-                try fileManager.removeItem(at: destPath)
-            }
-
-            guard fileManager.createFile(atPath: destPath.path, contents: nil) else {
-                throw CustomError.cannotUnzip
-            }
-
-            let fileHandle = try FileHandle(forWritingTo: destPath)
-            defer {
-                fileHandle.closeFile()
-            }
-
-            try archive.extract(entry, bufferSize: bufferSize) { data in
-                if !data.isEmpty {
-                    fileHandle.write(data)
-                }
-            }
-        case .symlink:
-            let linkData = try archive.readSmallEntry(entry, maxBytes: Self.maxZipSymlinkTargetBytes, bufferSize: bufferSize)
-
-            guard let linkPath = String(data: linkData, encoding: .utf8), Self.isSafeZipSymlinkTarget(linkPath) else {
-                logger.error("Unzip failed: unsafe symlink target")
-                logger.debug("Entry: \(entry.path)")
-                self.sendStats(action: "canonical_path_fail")
-                throw CustomError.cannotUnzip
-            }
-
-            let parentDir = destPath.deletingLastPathComponent()
-            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
-
-            let isAbsolutePath = (linkPath as NSString).isAbsolutePath
-            let linkURL = URL(fileURLWithPath: linkPath, relativeTo: isAbsolutePath ? nil : parentDir)
-            let canonicalPath = linkURL.standardizedFileURL.path
-            let canonicalDir = parentDir.standardizedFileURL.path
-            let normalizedDir = canonicalDir.hasSuffix("/") ? canonicalDir : "\(canonicalDir)/"
-
-            if canonicalPath != canonicalDir && !canonicalPath.hasPrefix(normalizedDir) {
-                throw CustomError.cannotUnzip
-            }
-
-            if Self.itemExistsWithoutFollowingLink(at: destPath) {
-                try fileManager.removeItem(at: destPath)
-            }
-
-            try fileManager.createSymbolicLink(atPath: destPath.path, withDestinationPath: linkPath)
-        }
-    }
-
-    func saveDownloaded(sourceZip: URL, id: String, base: URL, notify: Bool, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
-        try prepareFolder(source: base)
-        let destPersist: URL = base.appendingPathComponent(id)
-        let destUnZip: URL = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + randomString(length: 10))
-
-        self.unzipPercent = 0
-        self.notifyDownload(id: id, percent: 75)
-
-        // Open the archive
-        let archive: ZipArchiveReader
-        do {
-            archive = try ZipArchiveReader(url: sourceZip)
-        } catch {
-            self.sendStats(action: "unzip_fail")
-            throw CustomError.cannotUnzip
-        }
-
-        // Create destination directory
-        try FileManager.default.createDirectory(at: destUnZip, withIntermediateDirectories: true, attributes: nil)
-
-        // Count total entries for progress
-        let totalEntries = archive.entries.count
-        var processedEntries = 0
-
-        do {
-            for entry in archive.entries {
-                let destPath = try resolveZipEntry(path: entry.path, destUnZip: destUnZip)
-                do {
-                    // Symlinks extracted earlier must not move this entry out of the bundle folder.
-                    try Self.assertPhysicallyInsideDirectory(destPath.deletingLastPathComponent(), root: destUnZip)
-                } catch {
-                    logger.error("Unzip failed: entry resolves outside the bundle folder")
-                    logger.debug("Entry: \(entry.path)")
-                    self.sendStats(action: "canonical_path_fail")
-                    throw CustomError.cannotUnzip
-                }
-
-                if entry.type == .directory {
-                    try FileManager.default.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
-                    processedEntries += 1
-                    if notify && totalEntries > 0 {
-                        let newPercent = self.calcTotalPercent(percent: Int(Double(processedEntries) / Double(totalEntries) * 100), min: 75, max: 81)
-                        if newPercent != self.unzipPercent {
-                            self.unzipPercent = newPercent
-                            self.notifyDownload(id: id, percent: newPercent)
-                        }
-                    }
-                    continue
-                }
-
-                // Create parent directories if needed
-                let parentDir = destPath.deletingLastPathComponent()
-                if !FileManager.default.fileExists(atPath: parentDir.path) {
-                    try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
-                }
-
-                try self.extractZipEntry(archive, entry: entry, to: destPath, bufferSize: bufferSize)
-
-                // Update progress
-                processedEntries += 1
-                if notify && totalEntries > 0 {
-                    let newPercent = self.calcTotalPercent(percent: Int(Double(processedEntries) / Double(totalEntries) * 100), min: 75, max: 81)
-                    if newPercent != self.unzipPercent {
-                        self.unzipPercent = newPercent
-                        self.notifyDownload(id: id, percent: newPercent)
-                    }
-                }
-            }
-        } catch {
-            self.sendStats(action: "unzip_fail")
-            try? FileManager.default.removeItem(at: destUnZip)
-            throw error
-        }
-
-        if try unflatFolder(source: destUnZip, dest: destPersist) {
-            try deleteFolder(source: destUnZip)
-        }
-
-        // Cleanup: remove the downloaded/decrypted zip after successful extraction
-        do {
-            if FileManager.default.fileExists(atPath: sourceZip.path) {
-                try FileManager.default.removeItem(at: sourceZip)
-            }
-        } catch {
-            logger.error("Could not delete source zip")
-            logger.debug("Path: \(sourceZip.path), Error: \(error)")
-        }
-    }
-
-    private func populateDeltaCacheAsync(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.populateDeltaCache(for: id, manifest: manifest, sessionKey: sessionKey)
-        }
-    }
-
-    struct ManifestLookupEntry {
-        let hash: String
-        /// The manifest's own file name, `.br` suffix included when present.
-        let originalFileName: String
-    }
-
-    /// Keys are stripped of the `.br` suffix so they match the extracted file names on
-    /// disk, not the manifest's (possibly brotli-compressed) original file names.
-    func manifestHashLookup(manifest: [ManifestEntry]?, sessionKey: String) -> [String: ManifestLookupEntry] {
-        guard let manifest else {
-            return [:]
-        }
-        var lookup: [String: ManifestLookupEntry] = [:]
-        for entry in manifest {
-            guard let fileName = entry.file_name,
-                  let hash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
-                continue
-            }
-            let destFileName = fileName.hasSuffix(".br") ? String(fileName.dropLast(3)) : fileName
-            lookup[destFileName] = ManifestLookupEntry(hash: hash, originalFileName: fileName)
-        }
-        return lookup
-    }
-
-    /// `manifest` must only contain entries the caller already checksum-verified
-    /// (as `downloadManifest` does) — the hashes are trusted as-is, not re-checked.
-    func populateDeltaCache(for id: String, manifest: [ManifestEntry]? = nil, sessionKey: String = "") {
-        let bundleDir: URL
-        do {
-            bundleDir = try self.getBundleDirectory(id: id)
-        } catch {
-            logger.debug("Skip delta cache population: invalid bundle id")
-            return
-        }
-        let fileManager = FileManager.default
-
-        guard fileManager.fileExists(atPath: bundleDir.path) else {
-            logger.debug("Skip delta cache population: bundle dir missing")
-            return
-        }
-
-        do {
-            try fileManager.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
-        } catch {
-            logger.debug("Skip delta cache population: failed to create cache dir")
-            return
-        }
-
-        guard let enumerator = fileManager.enumerator(at: bundleDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
-            return
-        }
-
-        let knownEntries = manifestHashLookup(manifest: manifest, sessionKey: sessionKey)
-        let builtinFolder = self.builtinFolderURL()
-
-        for case let fileURL as URL in enumerator {
-            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey])
-            if resourceValues?.isDirectory == true {
-                continue
-            }
-
-            let relativePath = String(fileURL.path.dropFirst(bundleDir.path.count + 1))
-            let knownEntry = knownEntries[relativePath]
-
-            let checksum = knownEntry?.hash ?? CryptoCipher.calcChecksum(filePath: fileURL)
-            if checksum.isEmpty {
-                continue
-            }
-
-            // Builtin is already a permanent reuse source (see isManifestEntryAvailableLocally),
-            // so there's no need to also duplicate this file into the delta cache
-            let builtinLookupName = knownEntry?.originalFileName ?? relativePath
-            let isBuiltinOrigin: Bool
-            if let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: builtinLookupName) {
-                isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
-                    verifyChecksum(file: builtinFilePath, expectedHash: checksum)
-            } else {
-                isBuiltinOrigin = false
-            }
-            if isBuiltinOrigin {
-                continue
-            }
-
-            let cacheFile = cacheFolder.appendingPathComponent("\(checksum)_\(fileURL.lastPathComponent)")
-            if fileManager.fileExists(atPath: cacheFile.path) {
-                continue
-            }
-
-            do {
-                try copyItemAtomically(from: fileURL, to: cacheFile)
-            } catch {
-                logger.debug("Delta cache copy failed: \(fileURL.path)")
-            }
-        }
-    }
-
-    private func createInfoObject(appIdOverride: String? = nil) -> InfoObject {
-        return InfoObject(
-            platform: "ios",
-            device_id: self.deviceID,
-            app_id: appIdOverride ?? self.appId,
-            custom_id: self.customId,
-            version_build: self.versionBuild,
-            version_code: self.versionCode,
-            version_os: self.versionOs,
-            version_name: self.getCurrentBundle().getVersionName(),
-            plugin_version: self.pluginVersion,
-            is_emulator: self.isEmulator(),
-            is_prod: self.isProd(),
-            installSource: self.installSource(),
-            action: nil,
-            channel: nil,
-            defaultChannel: self.defaultChannel,
-            key_id: self.cachedKeyId
-        )
-    }
-
-    public func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
-        let latest: AppVersion = AppVersion()
-        if isRemoteBlocked() {
-            let blocked = remoteBlockedClientError()
-            logger.debug("Skipping getLatest due to remote block (\(blocked.error)).")
-            latest.message = blocked.message
-            latest.error = blocked.error
-            latest.kind = "failed"
-            return latest
-        }
-        func applyLatestResponse(_ value: AppVersionDec?) {
-            if let url = value?.url {
-                latest.url = url
-            }
-            if let checksum = value?.checksum {
-                latest.checksum = checksum
-            }
-            if let version = value?.version {
-                latest.version = version
-            }
-            if let major = value?.major {
-                latest.major = major
-            }
-            if let breaking = value?.breaking {
-                latest.breaking = breaking
-            }
-            if let error = value?.error {
-                latest.error = error
-            }
-            if let kind = value?.kind {
-                latest.kind = kind
-            }
-            if let message = value?.message {
-                latest.message = message
-            }
-            if let sessionKey = value?.session_key {
-                latest.sessionKey = sessionKey
-            }
-            if let data = value?.data {
-                latest.data = data
-            }
-            if let manifest = value?.manifest {
-                latest.manifest = manifest
-            }
-            if let link = value?.link {
-                latest.link = link
-            }
-            if let comment = value?.comment {
-                latest.comment = comment
-            }
-        }
-
-        var parameters: InfoObject = self.createInfoObject(appIdOverride: appIdOverride)
-        if let channel = channel {
-            parameters.defaultChannel = channel
-        }
-        guard let request = createRequest(url: url, method: "POST", parameters: parameters.toParameters()) else {
-            latest.message = "Error getting Latest"
-            latest.error = "request_error"
-            latest.kind = "failed"
-            return latest
-        }
-
-        let result = performRequest(request, label: "getLatest")
-        latest.statusCode = result.response?.statusCode ?? 0
-
-        if result.timedOut {
-            latest.message = "Error getting Latest"
-            latest.error = "timeout_error"
-            latest.kind = "failed"
-            return latest
-        }
-
-        if let error = result.error {
-            self.logger.error("Error getting latest version")
-            self.logger.debug("Error: \(error.localizedDescription)")
-            latest.message = "Error getting Latest"
-            latest.error = "response_error"
-            latest.kind = "failed"
-            return latest
-        }
-
-        guard let data = result.data else {
-            self.logger.error("Missing latest version response data")
-            latest.message = "Error getting Latest"
-            latest.error = "response_error"
-            latest.kind = "failed"
-            return latest
-        }
-
-        let rateLimit = self.checkAndHandleRateLimitResponse(
-            statusCode: latest.statusCode,
-            data: data,
-            response: result.response
-        )
-        if rateLimit.blocked {
-            latest.message = rateLimit.message
-            latest.error = rateLimit.error
-            latest.kind = "failed"
-            return latest
-        }
-
-        guard let responseValue = try? JSONDecoder().decode(AppVersionDec.self, from: data) else {
-            self.logger.error("Error decoding latest version")
-            latest.message = "Error getting Latest"
-            latest.error = "decode_error"
-            latest.kind = "failed"
-            return latest
-        }
-
-        applyLatestResponse(responseValue)
-
-        if latest.statusCode < 200 || latest.statusCode >= 300 {
-            if latest.message == nil || latest.message?.isEmpty == true {
-                latest.message = responseValue.message ?? "Server error: \(latest.statusCode)"
-            }
-            if latest.error == nil || latest.error?.isEmpty == true {
-                latest.error = responseValue.error ?? "response_error"
-            }
-            if latest.kind == nil || latest.kind?.isEmpty == true {
-                latest.kind = responseValue.kind ?? "failed"
-            }
-            return latest
-        }
-
-        return latest
-    }
-
-    private func setCurrentBundle(bundle: String) {
-        UserDefaults.standard.set(bundle, forKey: self.CAP_SERVER_PATH)
-        UserDefaults.standard.synchronize()
-        logger.info("Current bundle set to: \((bundle ).isEmpty ? BundleInfo.ID_BUILTIN : bundle)")
-    }
-
-    static func shouldResetForForeignBundle(bundlePath: String?, isBuiltin: Bool, hasStoredBundleInfo: Bool) -> Bool {
-        guard let bundlePath, !bundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        return !isBuiltin && !hasStoredBundleInfo
-    }
-
-    private func hasStoredBundleInfo(id: String) -> Bool {
-        guard !id.isEmpty,
-              id != BundleInfo.ID_BUILTIN,
-              id != BundleInfo.VERSION_UNKNOWN else {
-            return false
-        }
-        return UserDefaults.standard.object(forKey: "\(id)\(self.INFO_SUFFIX)") != nil
-    }
-
-    // Per-download temp file paths to prevent collisions when multiple downloads run concurrently
-    private func tempDataPath(for id: String) -> URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("package_\(id).tmp")
-    }
-
-    private func updateInfoPath(for id: String) -> URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("update_\(id).dat")
-    }
-
-    private var tempData = Data()
-
-    private func verifyChecksum(file: URL, expectedHash: String) -> Bool {
-        let actualHash =    CryptoCipher.calcChecksum(filePath: file)
-        return actualHash == expectedHash
-    }
-
-    /// Overridable so tests can point it at a writable directory instead of the
-    /// real (read-only) app bundle.
     func builtinFolderURL() -> URL {
-        Bundle.main.bundleURL.appendingPathComponent("public")
+        builtinFolderOverride ?? Bundle.main.bundleURL.appendingPathComponent("public")
     }
 
-    private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
-        guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
-            return nil
+    /// Folder of a downloaded bundle; the id is confined to the bundle root by the core.
+    func bundleDirectory(id: String) throws -> URL {
+        let root = libraryDir.appendingPathComponent(Self.bundleDirectory).standardizedFileURL.path
+        let result = try CapgoCore.call("resolvePathInside", ["base": root, "path": id])
+        guard let path = result["path"] as? String else {
+            throw CapgoCore.Failure(code: "path_traversal", message: "Invalid bundle id")
         }
-        if !self.publicKey.isEmpty {
-            if !CryptoCipher.isValidSessionKey(sessionKey) {
-                return nil
-            }
-            do {
-                fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
-            } catch {
-                logger.error("Checksum decryption failed while checking missing manifest files")
-                logger.debug("File: \(entry.file_name ?? "unknown"), Error: \(error.localizedDescription)")
-                return nil
-            }
-        }
-        return fileHash
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
-    private func isManifestEntryAvailableLocally(entry: ManifestEntry, sessionKey: String) -> Bool {
-        guard let fileName = entry.file_name,
-              let fileHash = resolveManifestFileHash(entry: entry, sessionKey: sessionKey) else {
-            return false
-        }
+    // MARK: - Engine
 
-        let builtinFolder = self.builtinFolderURL()
-        // The .br suffix describes transport; builtin assets are uncompressed.
-        guard let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName) else {
-            return false
+    /// The engine, created on first use with the current device facts.
+    func engine() -> CapgoEngine? {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        if let engine = engineInstance {
+            return engine
         }
-        if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
-            return true
-        }
-
-        let fileNameWithoutPath = (fileName as NSString).lastPathComponent
-        let isBrotli = fileName.hasSuffix(".br")
-        let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-        if Self.isSafeCacheHash(fileHash) {
-            let cacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(cacheBaseName)")
-            // Cache files are named `{hash}_{filename}` and were checksum-verified
-            // when written. Re-hashing every hit re-reads the whole bundle and
-            // OOMs/janks low-RAM devices during getMissing / delta apply.
-            if isReusableCacheFile(cacheFilePath, expectedHash: fileHash) {
-                return true
-            }
-
-            if isBrotli {
-                let legacyCacheFilePath = cacheFolder.appendingPathComponent("\(fileHash)_\(fileNameWithoutPath)")
-                if isReusableCacheFile(legacyCacheFilePath, expectedHash: fileHash) {
-                    return true
-                }
-            }
-        }
-
-        return false
-    }
-
-    /// SHA-256 hash-named cache files were verified when written. Existence is
-    /// enough for non-empty files; empty files are reused only for the empty SHA-256.
-    /// CRC32 (8 hex) is too collision-prone to trust without a re-read.
-    private func isReusableCacheFile(_ url: URL, expectedHash: String) -> Bool {
-        guard Self.isSafeCacheHash(expectedHash), expectedHash.count == 64 else {
-            return false
-        }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-        if size > 0 {
-            return true
-        }
-        return size == 0 && expectedHash.lowercased() == Self.emptySha256
-    }
-
-    static func isSafeCacheHash(_ hash: String) -> Bool {
-        let count = hash.count
-        guard count == 64 || count == 8 else {
-            return false
-        }
-        return hash.unicodeScalars.allSatisfy { scalar in
-            (0x30...0x39).contains(scalar.value) ||
-                (0x41...0x46).contains(scalar.value) ||
-                (0x61...0x66).contains(scalar.value)
-        }
-    }
-
-    public func getMissingBundleFiles(manifest: [ManifestEntry], sessionKey: String) -> [ManifestEntry] {
-        return manifest.filter { entry in
-            !isManifestEntryAvailableLocally(entry: entry, sessionKey: sessionKey)
-        }
-    }
-
-    public func missingBundleFilesResult(manifest: [ManifestEntry], sessionKey: String) -> [String: Any] {
-        let missing = getMissingBundleFiles(manifest: manifest, sessionKey: sessionKey)
-        return [
-            "missing": missing.map { $0.toDict() },
-            "total": manifest.count,
-            "missingCount": missing.count,
-            "reusableCount": manifest.count - missing.count
+        let config: [String: Any] = [
+            "platform": "ios",
+            "appId": appId,
+            "pluginVersion": pluginVersion,
+            "versionBuild": versionBuild,
+            "versionCode": versionCode,
+            "versionOs": versionOs,
+            "deviceId": deviceID,
+            "isEmulator": isEmulator(),
+            "isProd": isProd(),
+            "installSource": installSource(),
+            "bundleRoot": libraryDir.appendingPathComponent(Self.bundleDirectory).path,
+            "storageRoot": libraryDir.path,
+            "statsDir": libraryDir.path,
+            "cacheDir": cacheFolder.path,
+            "builtinDir": builtinFolderURL().path,
+            "builtinServerPath": "",
+            "keys": ["serverPath": "serverBasePath"]
         ]
+        engineInstance = CapgoEngine(config: config, host: self)
+        if engineInstance == nil {
+            logger?.error("Capgo updater engine could not be created")
+        }
+        DispatchQueue.global(qos: .utility).async { Self.removeLegacyDownloadTempFiles() }
+        return engineInstance
     }
 
-    private func manifestSizeUrl(from updateUrl: URL) -> URL {
-        var components = URLComponents(url: updateUrl, resolvingAgainstBaseURL: false)
-        let path = components?.path ?? updateUrl.path
-        let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        components?.path = trimmedPath == ""
-            ? "/manifest_size"
-            : "/\(trimmedPath)/manifest_size"
-        components?.query = nil
-        return components?.url ?? updateUrl.appendingPathComponent("manifest_size")
-    }
-
-    private func unavailableBundleSizeResult(manifest: [ManifestEntry], error: String) -> [String: Any] {
-        return [
-            "totalSize": 0,
-            "knownFiles": 0,
-            "unknownFiles": manifest.count,
-            "files": manifest.map {
-                var dict = $0.toDict()
-                dict["error"] = error
-                return dict
-            }
-        ]
-    }
-
-    public func getBundleDownloadSize(updateUrl: URL, version: String?, manifest: [ManifestEntry]) -> [String: Any] {
-        if manifest.isEmpty {
-            return [
-                "totalSize": 0,
-                "knownFiles": 0,
-                "unknownFiles": 0,
-                "files": []
-            ]
-        }
-
-        var parameters = self.createInfoObject().toParameters()
-        parameters["version"] = version ?? ""
-        parameters["manifest"] = manifest.map { $0.toDict() }
-
-        guard let request = createRequest(url: manifestSizeUrl(from: updateUrl), method: "POST", parameters: parameters) else {
-            return unavailableBundleSizeResult(manifest: manifest, error: "request_error")
-        }
-
-        let result = performRequest(request, label: "getBundleDownloadSize")
-        if result.timedOut {
-            return unavailableBundleSizeResult(manifest: manifest, error: "timeout_error")
-        }
-        if let error = result.error {
-            logger.error("Error getting bundle download size")
-            logger.debug("Error: \(error.localizedDescription)")
-            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
-        }
-        guard let data = result.data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return unavailableBundleSizeResult(manifest: manifest, error: "parse_error")
-        }
-
-        let statusCode = result.response?.statusCode ?? 0
-        if statusCode < 200 || statusCode >= 300 {
-            return unavailableBundleSizeResult(manifest: manifest, error: "response_error")
-        }
-
-        return json
-    }
-
-    private func runBeforeDownload() throws {
-        try beforeDownload?()
-    }
-
-    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
-        try self.runBeforeDownload()
-        let id = self.randomString(length: 10)
-        logger.info("downloadManifest start \(id)")
-        let destFolder = try self.getBundleDirectory(id: id)
-        let builtinFolder = self.builtinFolderURL()
-
-        // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
-        let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
-        try checkDiskSpace(estimatedSize: estimatedSize)
-
-        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
-        cleanupOldManifestPartials()
-        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
-
-        // Create and save BundleInfo before starting the download process
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "", link: link, comment: comment)
-        self.saveBundleInfo(id: id, bundle: bundleInfo)
-
-        // Send stats for manifest download start
-        self.sendStats(action: "download_manifest_start", versionName: version)
-
-        // Notify the start of the download process
-        self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
-
-        let totalFiles = manifest.count
-
-        // Thread-safe counters for concurrent operations
-        let completedFiles = AtomicCounter()
-        let hasError = AtomicBool(initialValue: false)
-        var downloadError: Error?
-        let errorLock = NSLock()
-
-        var tasks: [ManifestDownloadTask] = []
-        var seenTargets = Set<String>()
-
-        for entry in manifest {
-            guard let fileName = entry.file_name,
-                  let downloadUrl = entry.download_url else {
-                let error = NSError(
-                    domain: "ManifestEntryError",
-                    code: 1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
-                    ]
-                )
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
-                logger.error("Manifest entry is missing file_name or download_url")
-                continue
-            }
-            guard let entryFileHash = entry.file_hash, !entryFileHash.isEmpty else {
-                logger.error("Missing file_hash for manifest entry: \(entry.file_name ?? "unknown")")
-                let error = NSError(
-                    domain: "ManifestEntryError",
-                    code: 2,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
-                    ]
-                )
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
-                continue
-            }
-            var fileHash = entryFileHash
-
-            // Decrypt checksum if needed (done before creating operation)
-            if !self.publicKey.isEmpty {
-                if !CryptoCipher.isValidSessionKey(sessionKey) {
-                    let error = NSError(
-                        domain: "CapgoUpdater",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
-                    )
-                    self.sendStats(action: "session_key_required", versionName: version)
-                    errorLock.lock()
-                    if downloadError == nil {
-                        downloadError = error
-                    }
-                    errorLock.unlock()
-                    hasError.value = true
-                    logger.error("Public key present but no valid session key provided")
-                    continue
-                }
-                do {
-                    fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
-                } catch {
-                    errorLock.lock()
-                    downloadError = error
-                    errorLock.unlock()
-                    hasError.value = true
-                    logger.error("Checksum decryption failed")
-                    logger.debug("Bundle: \(id), File: \(fileName), Error: \(error)")
-                    continue
-                }
-            }
-
-            let finalFileHash = fileHash
-            let fileNameWithoutPath = (fileName as NSString).lastPathComponent
-            let isBrotli = fileName.hasSuffix(".br")
-            let cacheBaseName = isBrotli ? String(fileNameWithoutPath.dropLast(3)) : fileNameWithoutPath
-            let cacheFilePath: URL? = Self.isSafeCacheHash(finalFileHash)
-                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(cacheBaseName)")
-                : nil
-            let legacyCacheFilePath: URL? = isBrotli && cacheFilePath != nil
-                ? cacheFolder.appendingPathComponent("\(finalFileHash)_\(fileNameWithoutPath)")
-                : nil
-
-            let destFileName = isBrotli ? String(fileName.dropLast(3)) : fileName
-            let destFilePath: URL
-            let builtinFilePath: URL
-            do {
-                destFilePath = try Self.resolveManifestTargetPath(baseDirectory: destFolder, fileName: fileName)
-                builtinFilePath = try Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName)
-                if !Self.rememberManifestTarget(&seenTargets, targetFile: destFilePath) {
-                    logger.error("Duplicate manifest target path: \(fileName)")
-                    self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
-                    let error = NSError(
-                        domain: "ManifestEntryError",
-                        code: 3,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: "Duplicate manifest target path for \(fileName)"
-                        ]
-                    )
-                    errorLock.lock()
-                    if downloadError == nil {
-                        downloadError = error
-                    }
-                    errorLock.unlock()
-                    hasError.value = true
-                    continue
-                }
-            } catch {
-                logger.error("Invalid manifest file path: \(fileName)")
-                self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
-                continue
-            }
-
-            tasks.append(
-                ManifestDownloadTask(
-                    fileName: fileName,
-                    downloadUrl: downloadUrl,
-                    finalFileHash: finalFileHash,
-                    isBrotli: isBrotli,
-                    destFileName: destFileName,
-                    destFilePath: destFilePath,
-                    builtinFilePath: builtinFilePath,
-                    cacheFilePath: cacheFilePath,
-                    legacyCacheFilePath: legacyCacheFilePath
-                )
-            )
-        }
-
-        if hasError.value {
-            let resolvedError = downloadError ?? NSError(
-                domain: "ManifestDownloadError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
-            )
-            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
-            self.saveBundleInfo(id: id, bundle: errorBundle)
-            throw resolvedError
-        }
-
-        var operations: [Operation] = []
-
-        for task in tasks {
-            try FileManager.default.createDirectory(
-                at: task.destFilePath.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-
-            let operation = BlockOperation { [weak self] in
-                guard let self = self else { return }
-                guard !hasError.value else { return } // Skip if error already occurred
-
-                do {
-                    // Try builtin first
-                    if FileManager.default.fileExists(atPath: task.builtinFilePath.path) &&
-                        self.verifyChecksum(file: task.builtinFilePath, expectedHash: task.finalFileHash) {
-                        try self.copyItemReplacing(from: task.builtinFilePath, to: task.destFilePath)
-                        self.logger.info("downloadManifest \(task.fileName) using builtin file \(id)")
-                    }
-                    // Try cache
-                    else if
-                        (task.cacheFilePath != nil &&
-                            self.tryCopyFromCache(from: task.cacheFilePath!, to: task.destFilePath, expectedHash: task.finalFileHash)) ||
-                            (task.legacyCacheFilePath != nil &&
-                                self.tryCopyFromCache(from: task.legacyCacheFilePath!, to: task.destFilePath, expectedHash: task.finalFileHash)) {
-                        self.logger.info("downloadManifest \(task.fileName) copy from cache \(id)")
-                    }
-                    // Download
-                    else {
-                        try self.downloadManifestFile(
-                            downloadUrl: task.downloadUrl,
-                            destFilePath: task.destFilePath,
-                            cacheFilePath: task.cacheFilePath,
-                            fileHash: task.finalFileHash,
-                            fileName: task.fileName,
-                            destFileName: task.destFileName,
-                            isBrotli: task.isBrotli,
-                            sessionKey: sessionKey,
-                            version: version,
-                            bundleId: id
-                        )
-                    }
-
-                    let completed = completedFiles.increment()
-                    let percent = self.calcTotalPercent(percent: Int((Double(completed) / Double(totalFiles)) * 100), min: 10, max: 70)
-                    self.notifyDownload(id: id, percent: percent)
-
-                } catch {
-                    errorLock.lock()
-                    if downloadError == nil {
-                        downloadError = error
-                    }
-                    errorLock.unlock()
-                    hasError.value = true
-                    self.logger.error("Manifest file download failed: \(task.fileName)")
-                    self.logger.debug("Bundle: \(id), File: \(task.fileName), Error: \(error.localizedDescription)")
-                }
-            }
-
-            operations.append(operation)
-        }
-
-        // Execute all operations concurrently and wait for completion
-        manifestDownloadQueue.addOperations(operations, waitUntilFinished: true)
-
-        if hasError.value {
-            let resolvedError = downloadError ?? NSError(
-                domain: "ManifestDownloadError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
-            )
-            // Update bundle status to ERROR if download failed
-            let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
-            self.saveBundleInfo(id: id, bundle: errorBundle)
-            throw resolvedError
-        }
-
-        // Update bundle status to PENDING after successful download
-        let updatedBundle = bundleInfo.setStatus(status: BundleStatus.PENDING.storedValue)
-        self.saveBundleInfo(id: id, bundle: updatedBundle)
-
-        // Send stats for manifest download complete
-        self.sendStats(action: "download_manifest_complete", versionName: version)
-
-        self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
-        logger.info("downloadManifest done \(id)")
-        return updatedBundle
-    }
-
-    /// Downloads a single manifest file synchronously
-    /// Used by downloadManifest for concurrent file downloads
-    private func downloadManifestFile(
-        downloadUrl: String,
-        destFilePath: URL,
-        cacheFilePath: URL?,
-        fileHash: String,
-        fileName: String,
-        destFileName: String,
-        isBrotli: Bool,
-        sessionKey: String,
-        version: String,
-        bundleId: String
-    ) throws {
-        guard let url = URL(string: downloadUrl) else {
-            throw NSError(
-                domain: "ManifestDownloadError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid manifest download URL for file \(fileName): \(downloadUrl)"]
-            )
-        }
-
-        guard var request = createRequest(url: url, method: "GET") else {
-            throw NSError(
-                domain: "ManifestDownloadError",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid manifest request for file \(fileName): \(downloadUrl)"]
-            )
-        }
-
-        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
-        let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, hash: fileHash, fileName: fileName)
-        let existingBytes: Int64
-        if FileManager.default.fileExists(atPath: partialURL.path) {
-            existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
-        } else {
-            existingBytes = 0
-        }
-        if existingBytes > 0 {
-            request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
-        }
-
-        let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
-        defer {
-            if let fileURL = result.fileURL {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
-
-        if result.timedOut {
-            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            throw NSError(
-                domain: NSURLErrorDomain,
-                code: NSURLErrorTimedOut,
-                userInfo: [NSLocalizedDescriptionKey: "Timed out downloading manifest file \(fileName) at url \(downloadUrl)"]
-            )
-        }
-
-        if let error = result.error {
-            persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            self.logger.error("Manifest file download network error")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
-            throw error
-        }
-
-        let statusCode = result.response?.statusCode ?? 200
-        if statusCode == 416 && existingBytes > 0 {
-            logger.debug("Range not satisfiable, using existing partial \(partialURL.lastPathComponent)")
-        } else if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
-        } else {
-            guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
-                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-                throw NSError(
-                    domain: "ManifestDownloadError",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
-                )
-            }
-            try storeDownloadedFile(downloadedFileURL, at: partialURL, existingBytes: existingBytes, response: result.response)
-        }
-
-        guard FileManager.default.fileExists(atPath: partialURL.path) else {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
-            throw NSError(
-                domain: "ManifestDownloadError",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
-            )
-        }
-
-        var workURL: URL?
-        defer {
-            if let workURL {
-                try? FileManager.default.removeItem(at: workURL)
-            }
-        }
-
-        do {
-            var source = partialURL
-            if !self.publicKey.isEmpty && CryptoCipher.isValidSessionKey(sessionKey) {
-                let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
-                try FileManager.default.copyItem(at: partialURL, to: work)
-                workURL = work
-                do {
-                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-                } catch {
-                    try? FileManager.default.removeItem(at: partialURL)
-                    self.sendStats(action: "decrypt_fail", versionName: version)
-                    throw error
-                }
-                source = work
-            }
-
-            let calculatedChecksum: String
-            if isBrotli {
-                do {
-                    calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
-                } catch {
-                    try? FileManager.default.removeItem(at: partialURL)
-                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
-                    throw error
-                }
-            } else {
-                let handle = try FileHandle(forReadingFrom: source)
-                defer {
-                    try? handle.close()
-                }
-                let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
-                calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
-            }
-
-            CryptoCipher.logChecksumInfo(label: "Calculated checksum", hexChecksum: calculatedChecksum)
-            CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: fileHash)
-            if calculatedChecksum != fileHash {
-                try? FileManager.default.removeItem(at: destFilePath)
-                try? FileManager.default.removeItem(at: partialURL)
-                self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
-                throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
-            }
-
-            if let cacheFilePath {
-                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
-            }
-            try? FileManager.default.removeItem(at: partialURL)
-
-            self.logger.info("Manifest file downloaded and cached")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
-        } catch {
-            self.logger.error("Manifest file download failed")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
-            throw error
-        }
-    }
-
-    /// Copy a file to the destination, replacing any existing file.
-    private func copyItemReplacing(from source: URL, to destination: URL) throws {
+    /// Plugin versions before the Rust engine downloaded into Documents/package_<id>.tmp and
+    /// update_<id>.dat; one left by an interrupted download would otherwise stay forever.
+    static func removeLegacyDownloadTempFiles(in directory: URL? = nil) {
         let fileManager = FileManager.default
-        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
-        try fileManager.copyItem(at: source, to: destination)
-    }
-
-    func copyMatchingBuiltinFilesForTests(files: [(source: URL, dest: URL, hash: String)]) throws {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
-        let lock = NSLock()
-        var firstError: Error?
-        for file in files {
-            queue.addOperation { [weak self] in
-                guard let self else { return }
-                do {
-                    guard self.verifyChecksum(file: file.source, expectedHash: file.hash) else {
-                        throw NSError(
-                            domain: "CapgoInstallPerf",
-                            code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "builtin checksum mismatch"]
-                        )
-                    }
-                    try self.copyItemReplacing(from: file.source, to: file.dest)
-                } catch {
-                    lock.lock()
-                    if firstError == nil {
-                        firstError = error
-                    }
-                    lock.unlock()
-                }
-            }
-        }
-        queue.waitUntilAllOperationsAreFinished()
-        if let firstError {
-            throw firstError
-        }
-    }
-
-    /// Copy via a unique temp name then rename, so a crash cannot leave a
-    /// non-empty partial file that `isReusableCacheFile` would trust.
-    private func copyItemAtomically(from source: URL, to destination: URL) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-        let tempURL = destination.deletingLastPathComponent().appendingPathComponent("\(destination.lastPathComponent).\(UUID().uuidString).tmp")
-        defer {
-            try? fileManager.removeItem(at: tempURL)
-        }
-        try fileManager.copyItem(at: source, to: tempURL)
-        try replaceItemAtomically(at: destination, withItemAt: tempURL)
-    }
-
-    /// One-step replace when dest exists, move when it does not. Avoids the
-    /// fileExists/removeItem race that can fail a verified install.
-    private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
-        let fileManager = FileManager.default
-        do {
-            _ = try fileManager.replaceItemAt(destination, withItemAt: tempURL)
-        } catch {
-            if fileManager.fileExists(atPath: destination.path) {
-                throw error
-            }
-            try fileManager.moveItem(at: tempURL, to: destination)
-        }
-    }
-
-    /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
-    /// This handles the race condition where OS can delete cache files between exists() check and copy
-    private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
-        // First quick check - if file doesn't exist or was truncated, don't bother
-        guard isReusableCacheFile(source, expectedHash: expectedHash) else {
-            return false
-        }
-
-        // Hash is in the cache file name and was verified when written.
-        // Re-hashing here would re-read every reused file on low-RAM devices.
-        do {
-            try copyItemAtomically(from: source, to: destination)
-            return true
-        } catch {
-            // File was deleted between check and copy, or other IO error - caller should download instead
-            logger.debug("Cache copy failed (likely OS eviction): \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    /// Stream Brotli from disk to disk. Peek only the 3-byte header and last byte
-    /// for the empty/wrapper special cases; never load the whole file.
-    func decompressBrotli(from source: URL, to dest: URL, fileName: String) throws -> String {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-        let length = (try fileManager.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
-        if length == 0 {
-            try Data().write(to: dest, options: .atomic)
-            return CryptoCipher.RunningChecksum().hex()
-        }
-
-        let handle = try FileHandle(forReadingFrom: source)
-        defer {
-            try? handle.close()
-        }
-
-        let head = try handle.read(upToCount: 3) ?? Data()
-        var last: UInt8 = 0
-        if length >= 1 {
-            try handle.seek(toOffset: length - 1)
-            last = try handle.read(upToCount: 1)?.first ?? 0
-        }
-
-        if length == 3 && head.count == 3 && head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06 {
-            try Data().write(to: dest, options: .atomic)
-            return CryptoCipher.RunningChecksum().hex()
-        }
-
-        if length > 3 && head.count == 3 && last == 0x03 {
-            let isEmptyWrapper = head[0] == 0x1B && head[1] == 0x00 && head[2] == 0x06
-            let isQualityZeroWrapper = head[0] == 0x0b && head[1] == 0x02 && head[2] == 0x80
-            if isEmptyWrapper || isQualityZeroWrapper {
-                try handle.seek(toOffset: 3)
-                return try streamCopy(from: handle, count: length - 4, to: dest)
-            }
-        }
-
-        try handle.seek(toOffset: 0)
-        return try streamBrotliDecode(from: handle, to: dest, fileName: fileName)
-    }
-
-    func streamCopy(from handle: FileHandle, count: UInt64, to dest: URL) throws -> String {
-        let fileManager = FileManager.default
-        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
-        fileManager.createFile(atPath: tempURL.path, contents: nil)
-        let output = try FileHandle(forWritingTo: tempURL)
-        defer {
-            try? output.close()
-            try? fileManager.removeItem(at: tempURL)
-        }
-
-        let hasher = CryptoCipher.RunningChecksum()
-        var remaining = count
-        let chunkSize = CryptoCipher.ioBufferBytes()
-        while remaining > 0 {
-            let readCount: Int = try autoreleasepool {
-                let toRead = Int(min(UInt64(chunkSize), remaining))
-                let chunk = try handle.read(upToCount: toRead) ?? Data()
-                if !chunk.isEmpty {
-                    hasher.update(chunk)
-                    try output.write(contentsOf: chunk)
-                }
-                return chunk.count
-            }
-            if readCount == 0 {
-                break
-            }
-            remaining -= UInt64(readCount)
-        }
-        try output.close()
-        try replaceItemAtomically(at: dest, withItemAt: tempURL)
-        return hasher.hex()
-    }
-
-    private func streamBrotliDecode(from handle: FileHandle, to dest: URL, fileName: String) throws -> String {
-        let fileManager = FileManager.default
-        let tempURL = dest.deletingLastPathComponent().appendingPathComponent("capgo-br-\(UUID().uuidString).tmp")
-        fileManager.createFile(atPath: tempURL.path, contents: nil)
-        let output = try FileHandle(forWritingTo: tempURL)
-        defer {
-            try? output.close()
-            try? fileManager.removeItem(at: tempURL)
-        }
-        let hasher = CryptoCipher.RunningChecksum()
-
-        let chunkSize = max(CryptoCipher.ioBufferBytes(), 65536)
-        var inputBuffer = [UInt8](repeating: 0, count: chunkSize)
-        var outputBuffer = [UInt8](repeating: 0, count: chunkSize)
-
-        let streamPointer = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
-        var status = compression_stream_init(streamPointer, COMPRESSION_STREAM_DECODE, COMPRESSION_BROTLI)
-        guard status != COMPRESSION_STATUS_ERROR else {
-            logger.error("Failed to initialize Brotli stream")
-            logger.debug("File: \(fileName), Status: \(status)")
-            throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize Brotli stream for \(fileName)"])
-        }
-        defer {
-            compression_stream_destroy(streamPointer)
-            streamPointer.deallocate()
-        }
-
-        try inputBuffer.withUnsafeMutableBufferPointer { inBuf in
-            try outputBuffer.withUnsafeMutableBufferPointer { outBuf in
-                guard let inBase = inBuf.baseAddress, let outBase = outBuf.baseAddress else {
-                    throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to get buffer address for \(fileName)"])
-                }
-                streamPointer.pointee.src_size = 0
-                streamPointer.pointee.dst_ptr = outBase
-                streamPointer.pointee.dst_size = chunkSize
-
-                var flags: Int32 = 0
-                var inputExhausted = false
-                while true {
-                    if streamPointer.pointee.src_size == 0 && !inputExhausted {
-                        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
-                        if chunk.isEmpty {
-                            inputExhausted = true
-                            flags = Int32(bitPattern: COMPRESSION_STREAM_FINALIZE.rawValue)
-                        } else {
-                            chunk.copyBytes(to: inBase, count: chunk.count)
-                            streamPointer.pointee.src_ptr = UnsafePointer(inBase)
-                            streamPointer.pointee.src_size = chunk.count
-                        }
-                    }
-
-                    status = compression_stream_process(streamPointer, flags)
-                    let have = chunkSize - streamPointer.pointee.dst_size
-                    if have > 0 {
-                        let decoded = Data(bytes: outBase, count: have)
-                        hasher.update(decoded)
-                        try output.write(contentsOf: decoded)
-                    }
-                    streamPointer.pointee.dst_ptr = outBase
-                    streamPointer.pointee.dst_size = chunkSize
-
-                    if status == COMPRESSION_STATUS_END {
-                        break
-                    }
-                    if status == COMPRESSION_STATUS_ERROR {
-                        logger.error("Brotli process failed")
-                        logger.debug("File: \(fileName), Status: \(status)")
-                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
-                    }
-                    if inputExhausted && streamPointer.pointee.src_size == 0 && have == 0 {
-                        logger.error("Brotli decompression stalled")
-                        logger.debug("File: \(fileName)")
-                        throw NSError(domain: "BrotliDecompressionError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to decompress Brotli data for file \(fileName)"])
-                    }
-                }
-            }
-        }
-
-        try output.close()
-        try replaceItemAtomically(at: dest, withItemAt: tempURL)
-        return hasher.hex()
-    }
-
-    /// Resolves the checksum a zip bundle must match: required, and RSA-decrypted when a public key is set.
-    func resolveExpectedBundleChecksum(_ checksum: String, versionName: String) throws -> String {
-        if checksum.isEmpty {
-            logger.error("No checksum provided")
-            self.sendStats(action: "checksum_required", versionName: versionName)
-            throw NSError(domain: "ChecksumError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum required"])
-        }
-        return try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.publicKey)
-    }
-
-    /// Downloads and extracts a zip bundle without checking its checksum; the caller must verify it.
-    /// Prefer `downloadVerified`, which rejects a bad archive before extracting it.
-    public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: nil)
-    }
-
-    /// Downloads a zip bundle and extracts it only when it matches `expectedChecksum`, the checksum from the
-    /// update response (required, RSA-decrypted when a public key is set). The SHA-256 of the downloaded and
-    /// decrypted archive is compared before anything is extracted: a mismatch deletes the archive, reports
-    /// `checksum_fail` and throws `ObjectSavableError.checksum`.
-    public func downloadVerified(
-        url: URL,
-        version: String,
-        sessionKey: String,
-        expectedChecksum: String,
-        link: String? = nil,
-        comment: String? = nil
-    ) throws -> BundleInfo {
-        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum)
-    }
-
-    private func downloadZip(
-        url: URL,
-        version: String,
-        sessionKey: String,
-        link: String?,
-        comment: String?,
-        expectedChecksum: String?
-    ) throws -> BundleInfo {
-        try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
-        let expectedHash = try expectedChecksum.map { try self.resolveExpectedBundleChecksum($0, versionName: version) }
-        try self.runBeforeDownload()
-        let id: String = self.randomString(length: 10)
-        // Each download uses its own temp files keyed by bundle ID to prevent collisions
-        if version != getLocalUpdateVersion(for: id) {
-            cleanDownloadData(for: id)
-        }
-        ensureResumableFilesExist(for: id)
-        saveDownloadInfo(version, for: id)
-
-        // Check disk space before starting download (matches Android behavior)
-        try checkDiskSpace()
-
-        var checksum = ""
-        var lastSentProgress = 0
-        let totalReceivedBytes: Int64 = loadDownloadProgress(for: id) // Retrieving the amount of already downloaded data if exist, defined at 0 otherwise
-        let tempPath = tempDataPath(for: id)
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
-        self.saveBundleInfo(id: id, bundle: bundleInfo)
-
-        // Send stats for zip download start
-        self.sendStats(action: "download_zip_start", versionName: version)
-
-        // Opening connection for streaming the bytes
-        if totalReceivedBytes == 0 {
-            self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
-        }
-        var mainError: NSError?
-
-        guard var request = createRequest(url: url, method: "GET") else {
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            throw NSError(
-                domain: "DownloadError",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid download request for \(url.absoluteString)"]
-            )
-        }
-
-        if totalReceivedBytes > 0 {
-            request.setValue("bytes=\(totalReceivedBytes)-", forHTTPHeaderField: "Range")
-        }
-
-        let downloadResult = performDownloadRequest(request, label: "download \(version)")
-        // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
-        defer {
-            if let fileURL = downloadResult.fileURL {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
-
-        if downloadResult.timedOut {
-            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
-            mainError = NSError(
-                domain: NSURLErrorDomain,
-                code: NSURLErrorTimedOut,
-                userInfo: [NSLocalizedDescriptionKey: "Timed out downloading bundle from \(url.absoluteString)"]
-            )
-        } else if let error = downloadResult.error {
-            logger.error("Download failed")
-            persistPartialDownload(downloadResult, id: id, tempPath: tempPath, existingBytes: totalReceivedBytes)
-            mainError = error as NSError
-        } else if let statusCode = downloadResult.response?.statusCode, statusCode < 200 || statusCode >= 300 {
-            logger.error("Download failed")
-            mainError = NSError(
-                domain: "DownloadError",
-                code: statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "Download request failed with status code \(statusCode)"]
-            )
-        } else if let downloadedFileURL = downloadResult.fileURL {
-            do {
-                try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
-
-                if lastSentProgress < 70 {
-                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
-                    lastSentProgress = 70
-                }
-                self.logger.info("Download complete")
-            } catch let error as NSError {
-                mainError = error
-            } catch {
-                mainError = error as NSError
-            }
-        } else {
-            mainError = NSError(
-                domain: "DownloadError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Downloaded file is missing at \(tempPath.path)"]
-            )
-        }
-
-        if mainError != nil {
-            logger.error("Failed to download bundle")
-            logger.debug("Error: \(String(describing: mainError))")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            throw mainError!
-        }
-
-        let finalPath = tempPath.deletingLastPathComponent().appendingPathComponent("\(id)")
-        do {
-            try CryptoCipher.decryptFile(filePath: tempPath, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
-            try FileManager.default.moveItem(at: tempPath, to: finalPath)
-        } catch {
-            logger.error("Failed to decrypt file")
-            logger.debug("Error: \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            cleanDownloadData(for: id)
-            throw error
-        }
-
-        checksum = CryptoCipher.calcChecksum(filePath: finalPath)
-        CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
-        if let expectedHash, checksum.isEmpty || checksum != expectedHash {
-            // Never extract an archive that failed verification.
-            logger.error("Checksum mismatch, bundle rejected before extraction")
-            CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: expectedHash)
-            self.sendStats(action: "checksum_fail", versionName: version)
-            try? FileManager.default.removeItem(at: finalPath)
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            cleanDownloadData(for: id)
-            // Drop it like the previous post-extraction check did, so the next update check downloads it again.
-            _ = self.delete(id: id)
-            throw ObjectSavableError.checksum
-        }
-
-        do {
-            logger.info("Downloading: 80% (unzipping)")
-            try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
-            self.populateDeltaCacheAsync(for: id)
-
-        } catch {
-            logger.error("Failed to unzip file")
-            logger.debug("Error: \(error)")
-            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
-            // Best-effort cleanup of the decrypted zip file when unzip fails
-            do {
-                if FileManager.default.fileExists(atPath: finalPath.path) {
-                    try FileManager.default.removeItem(at: finalPath)
-                }
-            } catch {
-                logger.error("Could not delete failed zip")
-                logger.debug("Path: \(finalPath.path), Error: \(error)")
-            }
-            cleanDownloadData(for: id)
-            throw error
-        }
-
-        self.notifyDownload(id: id, percent: 90)
-        logger.info("Downloading: 90% (wrapping up)")
-        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: checksum, link: link, comment: comment)
-        self.saveBundleInfo(id: id, bundle: info)
-        self.cleanDownloadData(for: id)
-
-        // Send stats for zip download complete
-        self.sendStats(action: "download_zip_complete", versionName: version)
-
-        self.notifyDownload(id: id, percent: 100, bundle: info)
-        logger.info("Downloading: 100% (complete)")
-        return info
-    }
-    private func ensureResumableFilesExist(for id: String) {
-        let fileManager = FileManager.default
-        let tempPath = tempDataPath(for: id)
-        let infoPath = updateInfoPath(for: id)
-        if !fileManager.fileExists(atPath: tempPath.path) {
-            if !fileManager.createFile(atPath: tempPath.path, contents: Data()) {
-                logger.error("Cannot ensure temp data file exists")
-                logger.debug("Path: \(tempPath.path)")
-            }
-        }
-
-        if !fileManager.fileExists(atPath: infoPath.path) {
-            if !fileManager.createFile(atPath: infoPath.path, contents: Data()) {
-                logger.error("Cannot ensure update info file exists")
-                logger.debug("Path: \(infoPath.path)")
-            }
-        }
-    }
-
-    private func cleanDownloadData(for id: String) {
-        let fileManager = FileManager.default
-        let tempPath = tempDataPath(for: id)
-        let infoPath = updateInfoPath(for: id)
-        // Deleting package_<id>.tmp
-        if fileManager.fileExists(atPath: tempPath.path) {
-            do {
-                try fileManager.removeItem(at: tempPath)
-            } catch {
-                logger.error("Could not delete temp data file")
-                logger.debug("Path: \(tempPath), Error: \(error)")
-            }
-        }
-        // Deleting update_<id>.dat
-        if fileManager.fileExists(atPath: infoPath.path) {
-            do {
-                try fileManager.removeItem(at: infoPath)
-            } catch {
-                logger.error("Could not delete update info file")
-                logger.debug("Path: \(infoPath), Error: \(error)")
-            }
-        }
-    }
-
-    private func savePartialData(startingAt byteOffset: UInt64, for id: String) {
-        let fileManager = FileManager.default
-        let tempPath = tempDataPath(for: id)
-        do {
-            // Check if package_<id>.tmp exist
-            if !fileManager.fileExists(atPath: tempPath.path) {
-                try self.tempData.write(to: tempPath, options: .atomicWrite)
-            } else {
-                // If yes, it start writing on it
-                let fileHandle = try FileHandle(forWritingTo: tempPath)
-                fileHandle.seek(toFileOffset: byteOffset) // Moving at the specified position to start writing
-                fileHandle.write(self.tempData)
-                fileHandle.closeFile()
-            }
-        } catch {
-            logger.error("Failed to write partial data")
-            logger.debug("Byte offset: \(byteOffset), Error: \(error)")
-        }
-        self.tempData.removeAll() // Clearing tempData to avoid writing the same data multiple times
-    }
-
-    private func saveDownloadInfo(_ version: String, for id: String) {
-        let infoPath = updateInfoPath(for: id)
-        do {
-            try "\(version)".write(to: infoPath, atomically: true, encoding: .utf8)
-        } catch {
-            logger.error("Failed to save download progress")
-            logger.debug("Error: \(error)")
-        }
-    }
-
-    private func getLocalUpdateVersion(for id: String) -> String { // Return the version that was tried to be downloaded on last download attempt
-        let infoPath = updateInfoPath(for: id)
-        if !FileManager.default.fileExists(atPath: infoPath.path) {
-            return "nil"
-        }
-        guard let versionString = try? String(contentsOf: infoPath),
-              let version = Optional(versionString) else {
-            return "nil"
-        }
-        return version
-    }
-
-    private func loadDownloadProgress(for id: String) -> Int64 {
-        let fileManager = FileManager.default
-        let tempPath = tempDataPath(for: id)
-        do {
-            let attributes = try fileManager.attributesOfItem(atPath: tempPath.path)
-            if let fileSize = attributes[.size] as? NSNumber {
-                return fileSize.int64Value
-            }
-        } catch {
-            logger.error("Could not retrieve download progress size")
-            logger.debug("Error: \(error)")
-        }
-        return 0
-    }
-
-    public func list(raw: Bool = false) -> [BundleInfo] {
-        if !raw {
-            // UserDefaults.standard.dictionaryRepresentation().values
-            let dest: URL = libraryDir.appendingPathComponent(bundleDirectory)
-            do {
-                let files: [String] = try FileManager.default.contentsOfDirectory(atPath: dest.path)
-                var res: [BundleInfo] = []
-                logger.info("list File : \(dest.path)")
-                if dest.exist {
-                    for id: String in files {
-                        res.append(self.getBundleInfo(id: id))
-                    }
-                }
-                return res
-            } catch {
-                logger.info("No version available \(dest.path)")
-                return []
-            }
-        } else {
-            guard let regex = try? NSRegularExpression(pattern: "^[0-9A-Za-z]{10}_info$") else {
-                logger.error("Invalid regex ?????")
-                return []
-            }
-            return UserDefaults.standard.dictionaryRepresentation().keys.filter {
-                let range = NSRange($0.startIndex..., in: $0)
-                let matches = regex.matches(in: $0, range: range)
-                return !matches.isEmpty
-            }.map {
-                $0.components(separatedBy: "_")[0]
-            }.map {
-                self.getBundleInfo(id: $0)
-            }
-        }
-
-    }
-
-    public func delete(id: String, removeInfo: Bool) -> Bool {
-        self.deleteLock.lock()
-        defer { self.deleteLock.unlock() }
-
-        let destPersist: URL
-        do {
-            destPersist = try self.getBundleDirectory(id: id)
-        } catch {
-            logger.error("Cannot delete bundle with invalid id")
-            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-            return false
-        }
-
-        let deleted: BundleInfo = self.getBundleInfo(id: id)
-        if deleted.isBuiltin() || self.getCurrentBundleId() == id {
-            logger.info("Cannot delete current or builtin bundle")
-            logger.debug("Bundle ID: \(id)")
-            return false
-        }
-
-        if let previewFallback = self.getPreviewFallbackBundle(),
-           !previewFallback.isDeleted(),
-           !previewFallback.isErrorStatus(),
-           !previewFallback.isDeleting(),
-           previewFallback.getId() == id {
-            logger.info("Cannot delete the preview fallback bundle")
-            logger.debug("Bundle ID: \(id)")
-            return false
-        }
-
-        // Check if this is the next bundle and prevent deletion if it is
-        if let next = self.getNextBundle(),
-           !next.isDeleted() &&
-            !next.isErrorStatus() &&
-            !next.isDeleting() &&
-            next.getId() == id {
-            logger.info("Cannot delete the next bundle")
-            logger.debug("Bundle ID: \(id)")
-            return false
-        }
-
-        let hadRegistry = self.hasStoredBundleInfo(id: id)
-        let hadFolder = FileManager.default.fileExists(atPath: destPersist.path)
-        if !hadRegistry && !hadFolder {
-            logger.error("Cannot delete unknown bundle")
-            logger.debug("Bundle ID: \(id)")
-            self.dequeuePendingDelete(id: id)
-            return false
-        }
-
-        // Persist DELETING before touching disk so kill/OOM can resume on next launch.
-        if !deleted.isDeleting() {
-            if !self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETING.storedValue)) {
-                logger.error("Failed to persist DELETING marker, aborting disk delete")
-                logger.debug("Bundle ID: \(id)")
-                return false
-            }
-            UserDefaults.standard.synchronize()
-        }
-
-        if FileManager.default.fileExists(atPath: destPersist.path) {
-            do {
-                try FileManager.default.removeItem(atPath: destPersist.path)
-            } catch {
-                logger.error("Bundle folder not removed, will retry later")
-                logger.debug("Path: \(destPersist.path), Error: \(error.localizedDescription)")
-                return false
-            }
-        }
-
-        // Only drop registry after the folder is confirmed gone.
-        if FileManager.default.fileExists(atPath: destPersist.path) {
-            logger.error("Bundle folder still present after delete, will retry later")
-            logger.debug("Bundle ID: \(id)")
-            return false
-        }
-
-        let finalized: Bool
-        if removeInfo {
-            finalized = self.saveBundleInfo(id: id, bundle: nil)
-        } else {
-            finalized = self.saveBundleInfo(id: id, bundle: deleted.setStatus(status: BundleStatus.DELETED.storedValue))
-        }
-        guard finalized else {
-            logger.error("Failed to finalize delete registry update, will retry later")
-            logger.debug("Bundle ID: \(id)")
-            return false
-        }
-        UserDefaults.standard.synchronize()
-        self.dequeuePendingDelete(id: id)
-        logger.info("Bundle deleted and confirmed gone")
-        logger.debug("Version: \(deleted.getVersionName())")
-        self.sendStats(action: "delete", versionName: deleted.getVersionName())
-        return true
-    }
-
-    public func delete(id: String) -> Bool {
-        return self.delete(id: id, removeInfo: true)
-    }
-
-    /// Resume incomplete deletes one-by-one. Safe across app kill / OOM because
-    /// delete() marks DELETING before disk work and only clears registry after confirm.
-    public func drainPendingDeletes() {
-        var pendingIds = Set(self.list(raw: true).filter { $0.isDeleting() }.map { $0.getId() }.filter { !$0.isEmpty })
-        pendingIds.formUnion(self.getPendingDeleteIds())
-        for id in pendingIds {
-            if Thread.current.isCancelled {
-                logger.warn("drainPendingDeletes was cancelled")
-                return
-            }
-            logger.info("Resuming pending delete for bundle: \(id)")
-            if self.delete(id: id, removeInfo: true) {
-                self.dequeuePendingDelete(id: id)
-            }
-            Thread.sleep(forTimeInterval: self.deletePaceSeconds)
-        }
-    }
-
-    private func getPendingDeleteIds() -> Set<String> {
-        guard let raw = UserDefaults.standard.string(forKey: self.PENDING_DELETE_IDS), !raw.isEmpty else {
-            return []
-        }
-        return Set(raw.split(separator: ",").map { String($0) }.filter { !$0.isEmpty })
-    }
-
-    private func enqueuePendingDelete(id: String) {
-        guard !id.isEmpty else { return }
-        var ids = self.getPendingDeleteIds()
-        guard ids.insert(id).inserted else { return }
-        UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
-        UserDefaults.standard.synchronize()
-    }
-
-    private func dequeuePendingDelete(id: String) {
-        guard !id.isEmpty else { return }
-        var ids = self.getPendingDeleteIds()
-        guard ids.remove(id) != nil else { return }
-        if ids.isEmpty {
-            UserDefaults.standard.removeObject(forKey: self.PENDING_DELETE_IDS)
-        } else {
-            UserDefaults.standard.set(ids.sorted().joined(separator: ","), forKey: self.PENDING_DELETE_IDS)
-        }
-        UserDefaults.standard.synchronize()
-    }
-
-    public func cleanupDeltaCache() {
-        cleanupDeltaCache(threadToCheck: nil)
-    }
-
-    public func cleanupDeltaCache(threadToCheck: Thread?) {
-        // Check if thread was cancelled
-        if let thread = threadToCheck, thread.isCancelled {
-            logger.warn("cleanupDeltaCache was cancelled before starting")
+        guard let documents = directory ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let contents = try? fileManager.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil) else {
             return
         }
-
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: cacheFolder.path) else {
-            return
-        }
-        do {
-            try fileManager.removeItem(at: cacheFolder)
-            logger.info("Cleaned up delta cache folder")
-        } catch {
-            logger.error("Failed to cleanup delta cache")
-            logger.debug("Error: \(error.localizedDescription)")
-        }
-    }
-
-    public func cleanupDownloadDirectories(allowedIds: Set<String>) {
-        cleanupDownloadDirectories(allowedIds: allowedIds, threadToCheck: nil)
-    }
-
-    public func cleanupDownloadDirectories(allowedIds: Set<String>, threadToCheck: Thread?) {
-        let bundleRoot = libraryDir.appendingPathComponent(bundleDirectory)
-        let fileManager = FileManager.default
-
-        guard fileManager.fileExists(atPath: bundleRoot.path) else {
-            return
-        }
-
-        do {
-            let contents = try fileManager.contentsOfDirectory(at: bundleRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
-
-            for url in contents {
-                // Check if thread was cancelled
-                if let thread = threadToCheck, thread.isCancelled {
-                    logger.warn("cleanupDownloadDirectories was cancelled")
-                    return
-                }
-
-                let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
-                if resourceValues.isDirectory != true {
-                    continue
-                }
-
-                let id = url.lastPathComponent
-
-                if allowedIds.contains(id) {
-                    continue
-                }
-
-                do {
-                    try fileManager.removeItem(at: url)
-                    if fileManager.fileExists(atPath: url.path) {
-                        logger.error("Orphan bundle directory still present after delete")
-                        logger.debug("Bundle ID: \(id)")
-                        continue
-                    }
-                    self.removeBundleInfo(id: id)
-                    logger.info("Deleted orphan bundle directory")
-                    logger.debug("Bundle ID: \(id)")
-                } catch {
-                    logger.error("Failed to delete orphan bundle directory")
-                    logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-                }
+        for url in contents {
+            let name = url.lastPathComponent
+            if (name.hasPrefix("package_") && name.hasSuffix(".tmp")) || (name.hasPrefix("update_") && name.hasSuffix(".dat")) {
+                try? fileManager.removeItem(at: url)
             }
-        } catch {
-            logger.error("Failed to enumerate bundle directory for cleanup")
-            logger.debug("Error: \(error.localizedDescription)")
         }
     }
 
-    public func allowedBundleIdsForCleanup() -> Set<String> {
-        var allowedIds = Set(self.list(raw: true).compactMap { info -> String? in
-            let id = info.getId()
-            // DELETED tombstones must not protect leftover folders.
-            // DELETING stays protected so drainPendingDeletes owns the removal.
-            if id.isEmpty || info.isDeleted() {
+    /// Flushes queued stats before the plugin goes away.
+    public func shutdown() {
+        engineLock.lock()
+        let engine = engineInstance
+        engineLock.unlock()
+        _ = try? engine?.call("statsShutdown")
+    }
+
+    // MARK: CapgoEngineHost
+
+    func engineLog(level: Int32, message: String) {
+        guard let logger else {
+            return
+        }
+        switch level {
+        case 0:
+            logger.debug(message)
+        case 1:
+            logger.info(message)
+        case 2:
+            logger.warn(message)
+        default:
+            logger.error(message)
+        }
+    }
+
+    /// Every stored value as the string the engine expects. Older plugin versions
+    /// stored booleans, numbers, dictionaries and Codable Data in UserDefaults.
+    func engineKvGet(_ key: String) -> String? {
+        guard let value = UserDefaults.standard.object(forKey: key) else {
+            return nil
+        }
+        let stored = Self.storedString(value)
+        if key.hasSuffix("_info") || key == "CapacitorUpdater.lastFailedBundle" {
+            return stored.map(Self.migratedBundleRecord)
+        }
+        return stored
+    }
+
+    /// Old iOS versions encoded the bundle status as a keyed enum (`{"SUCCESS":{}}`);
+    /// the engine reads the plain stored value (`"success"`).
+    static func migratedBundleRecord(_ json: String) -> String {
+        guard var record = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
+              let status = record["status"] as? [String: Any],
+              status.count == 1,
+              let legacy = status.keys.first else {
+            return json
+        }
+        record["status"] = legacy.lowercased()
+        guard let data = try? JSONSerialization.data(withJSONObject: record),
+              let migrated = String(data: data, encoding: .utf8) else {
+            return json
+        }
+        return migrated
+    }
+
+    static func storedString(_ value: Any) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let data as Data:
+            return String(data: data, encoding: .utf8)
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            return number.stringValue
+        case let date as Date:
+            // Int64(Double) traps when out of range (a corrupted far-future date).
+            return Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded(.down)).map { String($0) }
+        default:
+            guard JSONSerialization.isValidJSONObject(value),
+                  let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
                 return nil
             }
-            return id
-        })
-        let currentId = self.getCurrentBundleId()
-        if !currentId.isEmpty {
-            allowedIds.insert(currentId)
+            return String(data: data, encoding: .utf8)
         }
-        let fallback = self.getFallbackBundle()
-        let fallbackId = fallback.getId()
-        if !fallbackId.isEmpty && !fallback.isDeleting() {
-            allowedIds.insert(fallbackId)
-        }
-        if let next = self.getNextBundle() {
-            let nextId = next.getId()
-            if !nextId.isEmpty && !next.isDeleting() {
-                allowedIds.insert(nextId)
-            }
-        }
-        if let previewFallback = self.getPreviewFallbackBundle() {
-            let previewId = previewFallback.getId()
-            if !previewId.isEmpty && !previewFallback.isDeleting() {
-                allowedIds.insert(previewId)
-            }
-        }
-        return allowedIds
     }
 
-    public func cleanupOrphanedTempFolders(threadToCheck: Thread?) {
-        let fileManager = FileManager.default
-
-        do {
-            let contents = try fileManager.contentsOfDirectory(at: libraryDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
-
-            for url in contents {
-                // Check if thread was cancelled
-                if let thread = threadToCheck, thread.isCancelled {
-                    logger.warn("cleanupOrphanedTempFolders was cancelled")
-                    return
-                }
-
-                let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
-                if resourceValues.isDirectory != true {
-                    continue
-                }
-
-                let folderName = url.lastPathComponent
-
-                // Only delete folders with the temp unzip prefix
-                if !folderName.hasPrefix(TEMP_UNZIP_PREFIX) {
-                    continue
-                }
-
-                do {
-                    try fileManager.removeItem(at: url)
-                    logger.info("Deleted orphaned temp unzip folder")
-                    logger.debug("Folder: \(folderName)")
-                } catch {
-                    logger.error("Failed to delete orphaned temp folder")
-                    logger.debug("Folder: \(folderName), Error: \(error.localizedDescription)")
-                }
-            }
-        } catch {
-            logger.error("Failed to enumerate library directory for temp folder cleanup")
-            logger.debug("Error: \(error.localizedDescription)")
-        }
-
-        if let thread = threadToCheck, thread.isCancelled {
-            logger.warn("cleanupOrphanedTempFolders was cancelled")
+    func engineKvSet(_ key: String, _ value: String?) {
+        let defaults = UserDefaults.standard
+        guard let value else {
+            defaults.removeObject(forKey: key)
             return
         }
-
-        // Also cleanup old download temp files (package_*.tmp and update_*.dat)
-        cleanupOldDownloadTempFiles(threadToCheck: threadToCheck)
+        defaults.set(Self.legacyTypedValue(key, value), forKey: key)
     }
 
-    private func cleanupOldDownloadTempFiles(threadToCheck: Thread? = nil) {
-        let fileManager = FileManager.default
-        guard let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+    /// Keys earlier plugin versions stored with another type (Bool, Int64, a dictionary, Codable Data):
+    /// keep that type so a downgrade still reads them. Everything else is a string.
+    private static let boolKeys: Set<String> = [
+        "CapacitorUpdater.previewSession",
+        "CapacitorUpdater.previewSessionAlertPending",
+        "CapacitorUpdater.defaultChannelInstallMarkerCreated",
+        "CapacitorUpdater.previewPreviousShakeMenu",
+        "CapacitorUpdater.previewPreviousShakeChannelSelector",
+        "CapacitorUpdater.previewPreviousDefaultChannelWasSet",
+        "CapacitorUpdater.appSessionForeground"
+    ]
+
+    static func legacyTypedValue(_ key: String, _ value: String) -> Any {
+        // Bundle records (and the last failed bundle) have always been JSON Data (Codable).
+        if key.hasSuffix("_info") || key == "CapacitorUpdater.lastFailedBundle" {
+            return Data(value.utf8)
+        }
+        if boolKeys.contains(key), value == "true" || value == "false" {
+            return value == "true"
+        }
+        if key == "BACKGROUND_TIMESTAMP_KEY_CAPGO", let timestamp = Int64(value) {
+            return NSNumber(value: timestamp)
+        }
+        // UserDefaults raises an uncatchable exception on a non-plist value (a JSON null).
+        if key == "CapacitorUpdater.previewSessions",
+           let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any],
+           PropertyListSerialization.propertyList(object, isValidFor: .binary) {
+            return object
+        }
+        return value
+    }
+
+    func engineKvKeys() -> [String] {
+        Array(UserDefaults.standard.dictionaryRepresentation().keys)
+    }
+
+    func engineEmit(_ event: String, _ payload: [String: Any]) {
+        // `statsSent` acknowledges host stats callbacks; this host registers none.
+        guard event != "statsSent" else {
             return
         }
-
-        do {
-            let contents = try fileManager.contentsOfDirectory(at: documentsDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
-            let oneHourAgo = Date().addingTimeInterval(-3600)
-
-            for url in contents {
-                if let thread = threadToCheck, thread.isCancelled {
-                    logger.warn("cleanupOldDownloadTempFiles was cancelled")
-                    return
-                }
-                let fileName = url.lastPathComponent
-                // Only cleanup package_*.tmp and update_*.dat files
-                let isDownloadTemp = (fileName.hasPrefix("package_") && fileName.hasSuffix(".tmp")) ||
-                    (fileName.hasPrefix("update_") && fileName.hasSuffix(".dat"))
-                if !isDownloadTemp {
-                    continue
-                }
-
-                // Only delete files older than 1 hour
-                if let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-                   modDate < oneHourAgo {
-                    do {
-                        try fileManager.removeItem(at: url)
-                        logger.debug("Deleted old download temp file: \(fileName)")
-                    } catch {
-                        logger.debug("Failed to delete old download temp file: \(fileName), Error: \(error.localizedDescription)")
-                    }
-                }
-            }
-        } catch {
-            logger.debug("Failed to enumerate documents directory for temp file cleanup: \(error.localizedDescription)")
-        }
+        var payload = payload
+        let retain = payload.removeValue(forKey: Self.retainEventKey) as? Bool ?? false
+        onEvent?(event, payload, retain)
     }
 
-    public func getBundleDirectory(id: String) throws -> URL {
-        return try Self.resolveBundleDirectory(libraryDir: libraryDir, bundleId: id)
-    }
-
-    struct ResetState {
-        let currentBundlePath: String
-        let fallbackBundleId: String
-        let nextBundleId: String?
-    }
-
-    func captureResetState() -> ResetState {
-        ResetState(
-            currentBundlePath: UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? self.DEFAULT_FOLDER,
-            fallbackBundleId: UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN,
-            nextBundleId: UserDefaults.standard.string(forKey: self.NEXT_VERSION)
-        )
-    }
-
-    func restoreResetState(_ state: ResetState) {
-        let currentBundlePath = state.currentBundlePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? self.DEFAULT_FOLDER
-            : state.currentBundlePath
-        let fallbackBundleId = state.fallbackBundleId.isEmpty ? BundleInfo.ID_BUILTIN : state.fallbackBundleId
-
-        self.setCurrentBundle(bundle: currentBundlePath)
-        UserDefaults.standard.set(fallbackBundleId, forKey: self.FALLBACK_VERSION)
-        if let nextBundleId = state.nextBundleId, !nextBundleId.isEmpty {
-            UserDefaults.standard.set(nextBundleId, forKey: self.NEXT_VERSION)
-        } else {
-            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
-        }
-        UserDefaults.standard.synchronize()
-    }
-
-    func prepareResetStateForTransition() {
-        self.setCurrentBundle(bundle: "")
-        self.setFallbackBundle(fallback: Optional<BundleInfo>.none)
-        _ = self.setNextBundle(next: Optional<String>.none)
-    }
-
-    func finalizeResetTransition(previousBundleName: String, isInternal: Bool) {
-        if !isInternal {
-            self.sendStats(action: "reset", versionName: self.getCurrentBundle().getVersionName(), oldVersionName: previousBundleName)
-        }
-    }
-
-    func canSet(bundle: BundleInfo) -> Bool {
-        bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
-    }
-
-    public func set(bundle: BundleInfo) -> Bool {
-        return self.set(id: bundle.getId())
-    }
-
-    private func bundleExists(id: String) -> Bool {
-        let destPersist: URL
-        do {
-            destPersist = try self.getBundleDirectory(id: id)
-        } catch {
-            return false
-        }
-        let indexPersist: URL = destPersist.appendingPathComponent("index.html")
-        let bundleIndo: BundleInfo = self.getBundleInfo(id: id)
-        if
-            destPersist.exist &&
-                destPersist.isDirectory &&
-                !indexPersist.isDirectory &&
-                indexPersist.exist &&
-                !bundleIndo.isDeleted() &&
-                !bundleIndo.isDeleting() {
-            return true
-        }
-        return false
-    }
-
-    public func set(id: String) -> Bool {
-        let newBundle: BundleInfo = self.getBundleInfo(id: id)
-        if newBundle.isBuiltin() {
-            self.reset()
-            return true
-        }
-        if bundleExists(id: id) {
-            let currentBundleName = self.getCurrentBundle().getVersionName()
-            guard let bundleDir = try? self.getBundleDirectory(id: id) else {
-                self.setBundleStatus(id: id, status: BundleStatus.ERROR)
-                self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
-                return false
-            }
-            self.setCurrentBundle(bundle: bundleDir.path)
-            self.setBundleStatus(id: id, status: BundleStatus.PENDING)
-            self.sendStats(action: "set", versionName: newBundle.getVersionName(), oldVersionName: currentBundleName)
-            return true
-        }
-        self.setBundleStatus(id: id, status: BundleStatus.ERROR)
-        self.sendStats(action: "set_fail", versionName: newBundle.getVersionName())
-        return false
-    }
-
-    func stagePendingReload(bundle: BundleInfo) -> Bool {
-        guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
-            return false
-        }
-        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
-            return false
-        }
-        self.setCurrentBundle(bundle: bundleDir.path)
-        return true
-    }
-
-    func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
-        guard !bundle.isErrorStatus() else {
-            return false
-        }
-        if bundle.isBuiltin() {
-            self.setCurrentBundle(bundle: self.DEFAULT_FOLDER)
-            return true
-        }
-        guard bundleExists(id: bundle.getId()) else {
-            return false
-        }
-        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
-            return false
-        }
-        self.setCurrentBundle(bundle: bundleDir.path)
-        return true
-    }
-
-    func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
-        guard !bundle.isBuiltin() else {
-            return
-        }
-        self.sendStats(action: "set", versionName: bundle.getVersionName(), oldVersionName: previousBundleName)
-    }
-
-    public func autoReset() {
-        let currentBundle: BundleInfo = self.getCurrentBundle()
-        if !currentBundle.isBuiltin() && !self.bundleExists(id: currentBundle.getId()) {
-            logger.info("Folder at bundle path does not exist. Triggering reset.")
-            self.reset()
-            return
-        }
-        let bundlePath = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH)
-        if Self.shouldResetForForeignBundle(
-            bundlePath: bundlePath,
-            isBuiltin: currentBundle.isBuiltin(),
-            hasStoredBundleInfo: self.hasStoredBundleInfo(id: currentBundle.getId())
-        ) {
-            logger.info("Current bundle id is not one of the bundle ids stored by this plugin. Triggering reset.")
-            self.reset()
-        }
-    }
-
-    public func reset() {
-        self.reset(isInternal: false)
-    }
-
-    public func reset(isInternal: Bool) {
-        logger.info("reset: \(isInternal)")
-        let currentBundleName = self.getCurrentBundle().getVersionName()
-        self.prepareResetStateForTransition()
-        self.finalizeResetTransition(previousBundleName: currentBundleName, isInternal: isInternal)
-    }
-
-    public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
-        self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
-        let fallback: BundleInfo = self.getFallbackBundle()
-        let previewFallback = self.getPreviewFallbackBundle()
-        let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
-        logger.info("Fallback bundle is: \(fallback.toString())")
-        logger.info("Version successfully loaded: \(bundle.toString())")
-        let previousFallbackId = fallback.getId()
-        let nextBundle = self.getNextBundle()
-        let previousIsNext = nextBundle?.getId() == previousFallbackId &&
-            !(nextBundle?.isDeleted() ?? true) &&
-            !(nextBundle?.isErrorStatus() ?? true) &&
-            !(nextBundle?.isDeleting() ?? true)
-        let shouldDeletePrevious = autoDeletePrevious &&
-            !fallback.isBuiltin() &&
-            previousFallbackId != bundle.getId() &&
-            !fallbackIsPreviewFallback &&
-            !previousIsNext
-        if shouldDeletePrevious {
-            // Mark durable intent before fallback switch so a kill mid-flight still retries.
-            if !self.saveBundleInfo(id: previousFallbackId, bundle: fallback.setStatus(status: BundleStatus.DELETING.storedValue)) {
-                self.logger.error("Failed to persist DELETING for previous bundle; queueing durable retry")
-                self.logger.debug("Bundle ID: \(previousFallbackId)")
-                self.enqueuePendingDelete(id: previousFallbackId)
-            }
-            UserDefaults.standard.synchronize()
-        }
-        self.setFallbackBundle(fallback: bundle)
-        if shouldDeletePrevious {
-            DispatchQueue.global(qos: .utility).async {
-                let res = self.delete(id: previousFallbackId)
-                if res {
-                    self.logger.info("Deleted previous bundle")
-                    self.logger.debug("Bundle ID: \(previousFallbackId)")
-                } else {
-                    self.logger.info("Previous bundle delete incomplete, will retry")
-                    self.logger.debug("Bundle ID: \(previousFallbackId)")
-                }
-            }
-        }
-    }
-
-    public func setError(bundle: BundleInfo) {
-        self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
-    }
-
-    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String, allowSetDefaultChannel: Bool) -> SetChannel {
-        let setChannel: SetChannel = SetChannel()
-
-        if !allowSetDefaultChannel {
-            logger.error("unsetChannel is disabled by allowSetDefaultChannel config")
-            setChannel.message = "unsetChannel is disabled by configuration"
-            setChannel.error = "disabled_by_config"
-            return setChannel
-        }
-
-        // Clear persisted defaultChannel and revert to config value
-        UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-        UserDefaults.standard.synchronize()
-        self.defaultChannel = configDefaultChannel
-        self.logger.info("Persisted defaultChannel cleared, reverted to config value: \(configDefaultChannel)")
-
-        setChannel.status = "ok"
-        setChannel.message = "Channel override removed"
-        return setChannel
-    }
-
-    func setChannel(
-        channel: String,
-        defaultChannelKey: String,
-        allowSetDefaultChannel: Bool,
-        configDefaultChannel: String = ""
-    ) -> SetChannel {
-        let setChannel: SetChannel = SetChannel()
-
-        // Check if setting defaultChannel is allowed
-        if !allowSetDefaultChannel {
-            logger.error("setChannel is disabled by allowSetDefaultChannel config")
-            setChannel.message = "setChannel is disabled by configuration"
-            setChannel.error = "disabled_by_config"
-            return setChannel
-        }
-
-        if isRemoteBlocked() {
-            let blocked = remoteBlockedClientError()
-            logger.debug("Skipping setChannel due to remote block (\(blocked.error)).")
-            setChannel.message = blocked.message
-            setChannel.error = blocked.error
-            return setChannel
-        }
-
-        if (self.channelUrl ).isEmpty {
-            logger.error("Channel URL is not set")
-            setChannel.message = "Channel URL is not set"
-            setChannel.error = "missing_config"
-            return setChannel
-        }
-        guard let channelURL = URL(string: self.channelUrl) else {
-            logger.error("Invalid channel URL")
-            setChannel.message = "Channel URL is invalid"
-            setChannel.error = "invalid_config"
-            return setChannel
-        }
-        var parameters: InfoObject = self.createInfoObject()
-        parameters.channel = channel
-        guard let request = createRequest(url: channelURL, method: "POST", parameters: parameters.toParameters()) else {
-            setChannel.error = "Request failed: invalid request"
-            return setChannel
-        }
-
-        let result = performRequest(request, label: "setChannel")
-
-        let rateLimit = self.checkAndHandleRateLimitResponse(
-            statusCode: result.response?.statusCode,
-            data: result.data,
-            response: result.response
-        )
-        if rateLimit.blocked {
-            setChannel.message = rateLimit.message
-            setChannel.error = rateLimit.error
-            return setChannel
-        }
-
-        if result.timedOut {
-            setChannel.error = "Request timed out"
-            return setChannel
-        }
-
-        if let error = result.error {
-            self.logger.error("Error setting channel")
-            self.logger.debug("Error: \(error.localizedDescription)")
-            setChannel.error = "Request failed: \(error.localizedDescription)"
-            return setChannel
-        }
-
-        guard let data = result.data else {
-            setChannel.error = "Request failed: empty response"
-            return setChannel
-        }
-
-        guard let responseValue = try? JSONDecoder().decode(SetChannelDec.self, from: data) else {
-            setChannel.error = "decode_error"
-            return setChannel
-        }
-
-        let statusCode = result.response?.statusCode ?? 0
-        if statusCode < 200 || statusCode >= 300 {
-            setChannel.message = responseValue.message ?? "Server error: \(statusCode)"
-            setChannel.error = responseValue.error ?? "response_error"
-            return setChannel
-        }
-
-        if let error = responseValue.error {
-            setChannel.error = error
-        } else if responseValue.unset == true {
-            UserDefaults.standard.removeObject(forKey: defaultChannelKey)
-            UserDefaults.standard.synchronize()
-            self.defaultChannel = configDefaultChannel
-            self.logger.info("Public channel requested, channel override removed")
-
-            setChannel.status = responseValue.status ?? "ok"
-            setChannel.message = responseValue.message
-                ?? "Public channel requested, channel override removed. Device will use public channel automatically."
-        } else {
-            self.defaultChannel = channel
-            UserDefaults.standard.set(channel, forKey: defaultChannelKey)
-            UserDefaults.standard.synchronize()
-            self.logger.info("defaultChannel persisted locally: \(channel)")
-
-            setChannel.status = responseValue.status ?? ""
-            setChannel.message = responseValue.message ?? ""
-        }
-        return setChannel
-    }
-
-    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
-        let getChannel: GetChannel = GetChannel()
-        // Check if rate limit was exceeded
-        if isRemoteBlocked() {
-            let blocked = remoteBlockedClientError()
-            logger.debug("Skipping getChannel due to remote block (\(blocked.error)).")
-            getChannel.message = blocked.message
-            getChannel.error = blocked.error
-            return getChannel
-        }
-
-        if (self.channelUrl ).isEmpty {
-            logger.error("Channel URL is not set")
-            getChannel.message = "Channel URL is not set"
-            getChannel.error = "missing_config"
-            return getChannel
-        }
-        guard let channelURL = URL(string: self.channelUrl) else {
-            logger.error("Invalid channel URL")
-            getChannel.message = "Channel URL is invalid"
-            getChannel.error = "invalid_config"
-            return getChannel
-        }
-        let parameters: InfoObject = self.createInfoObject()
-        guard let request = createRequest(url: channelURL, method: "PUT", parameters: parameters.toParameters()) else {
-            getChannel.error = "Request failed: invalid request"
-            return getChannel
-        }
-
-        let result = performRequest(request, label: "getChannel")
-
-        let rateLimit = self.checkAndHandleRateLimitResponse(
-            statusCode: result.response?.statusCode,
-            data: result.data,
-            response: result.response
-        )
-        if rateLimit.blocked {
-            getChannel.message = rateLimit.message
-            getChannel.error = rateLimit.error
-            return getChannel
-        }
-
-        if result.timedOut {
-            getChannel.error = "Request timed out"
-            return getChannel
-        }
-
-        if let error = result.error {
-            if let data = result.data, let bodyString = String(data: data, encoding: .utf8) {
-                if bodyString.contains("channel_not_found") && result.response?.statusCode == 400 && !self.defaultChannel.isEmpty {
-                    getChannel.channel = self.defaultChannel
-                    getChannel.status = "default"
-                    return getChannel
-                }
-            }
-
-            self.logger.error("Error getting channel")
-            self.logger.debug("Error: \(error.localizedDescription)")
-            getChannel.error = "Request failed: \(error.localizedDescription)"
-            return getChannel
-        }
-
-        guard let data = result.data else {
-            getChannel.error = "Request failed: empty response"
-            return getChannel
-        }
-
-        guard let responseValue = try? JSONDecoder().decode(GetChannelDec.self, from: data) else {
-            getChannel.error = "decode_error"
-            return getChannel
-        }
-
-        let statusCode = result.response?.statusCode ?? 0
-        if let error = responseValue.error {
-            if error == "channel_not_found", statusCode == 400, !self.defaultChannel.isEmpty {
-                getChannel.channel = self.defaultChannel
-                getChannel.status = "default"
-                return getChannel
-            }
-            getChannel.error = error
-            getChannel.message = responseValue.message ?? ""
-            return getChannel
-        }
-
-        if statusCode < 200 || statusCode >= 300 {
-            getChannel.message = responseValue.message ?? "Server error: \(statusCode)"
-            getChannel.error = "response_error"
-        } else {
-            getChannel.status = responseValue.status ?? ""
-            getChannel.message = responseValue.message ?? ""
-            getChannel.channel = responseValue.channel ?? ""
-            getChannel.allowSet = responseValue.allowSet ?? true
-            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
-        }
-        return getChannel
-    }
-
-    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
-        guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !channelName.isEmpty,
-              channelName != BundleInfo.ID_BUILTIN else {
-            return
-        }
-
-        self.defaultChannel = channelName
-        if let defaultChannelKey, !defaultChannelKey.isEmpty {
-            UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
-            UserDefaults.standard.synchronize()
-        }
-        logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
-    }
-
-    func listChannels() -> ListChannels {
-        let listChannels: ListChannels = ListChannels()
-
-        // Check if rate limit was exceeded
-        if isRemoteBlocked() {
-            let blocked = remoteBlockedClientError()
-            logger.debug("Skipping listChannels due to remote block (\(blocked.error)).")
-            listChannels.error = blocked.error
-            return listChannels
-        }
-
-        if (self.channelUrl).isEmpty {
-            logger.error("Channel URL is not set")
-            listChannels.error = "Channel URL is not set"
-            return listChannels
-        }
-
-        // Create info object and convert to query parameters
-        let infoObject = self.createInfoObject()
-        var urlComponents = URLComponents(string: self.channelUrl)
-        var queryItems: [URLQueryItem] = urlComponents?.queryItems ?? []
-
-        for (key, value) in infoObject.toParameters() {
-            queryItems.append(URLQueryItem(name: key, value: String(describing: value)))
-        }
-
-        urlComponents?.queryItems = queryItems
-
-        guard let url = urlComponents?.url else {
-            logger.error("Invalid channel URL")
-            listChannels.error = "Invalid channel URL"
-            return listChannels
-        }
-
-        guard let request = createRequest(url: url, method: "GET", expectsJSONResponse: true) else {
-            listChannels.error = "Invalid channel URL"
-            return listChannels
-        }
-
-        let result = performRequest(request, label: "listChannels")
-
-        let rateLimit = self.checkAndHandleRateLimitResponse(
-            statusCode: result.response?.statusCode,
-            data: result.data,
-            response: result.response
-        )
-        if rateLimit.blocked {
-            listChannels.error = rateLimit.error
-            return listChannels
-        }
-
-        if result.timedOut {
-            listChannels.error = "Request timed out"
-            return listChannels
-        }
-
-        if let error = result.error {
-            self.logger.error("Error listing channels")
-            self.logger.debug("Error: \(error.localizedDescription)")
-            listChannels.error = "Request failed: \(error.localizedDescription)"
-            return listChannels
-        }
-
-        guard let data = result.data else {
-            listChannels.error = "Request failed: empty response"
-            return listChannels
-        }
-
-        guard let responseValue = try? JSONDecoder().decode(ListChannelsDec.self, from: data) else {
-            listChannels.error = "decode_error"
-            return listChannels
-        }
-
-        let statusCode = result.response?.statusCode ?? 0
-        if let error = responseValue.error {
-            listChannels.error = error
-            return listChannels
-        }
-
-        if statusCode < 200 || statusCode >= 300 {
-            listChannels.error = "response_error"
-            return listChannels
-        }
-
-        if let channels = responseValue.channels {
-            listChannels.channels = channels.map { channel in
-                var channelDict: [String: Any] = [:]
-                channelDict["id"] = channel.id
-                channelDict["name"] = channel.name ?? ""
-                channelDict["public"] = channel.public ?? false
-                channelDict["allow_self_set"] = channel.allow_self_set ?? false
-                return channelDict
-            }
-        }
-
-        return listChannels
-    }
-
-    private let operationQueue = OperationQueue()
-
-    private let manifestDownloadQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.name = "com.capgo.manifestDownload"
-        queue.qualityOfService = .userInitiated
-        queue.maxConcurrentOperationCount = CapgoUpdater.manifestMaxConcurrentFiles
-        return queue
-    }()
-
-    func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: nil, onSent: nil)
-    }
-
-    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: nil)
-    }
-
-    func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String], onSent: @escaping () -> Void) {
-        sendStatsWithMetadata(action: action, versionName: versionName, oldVersionName: oldVersionName, metadata: metadata, onSent: onSent)
-    }
-
-    private func sendStatsWithMetadata(
-        action: String,
-        versionName: String?,
-        oldVersionName: String?,
-        metadata: [String: String]?,
-        onSent: (() -> Void)?
-    ) {
-        if statsStopped {
-            return
-        }
-
-        if previewSession {
-            logger.debug("Skipping sendStats during preview session.")
-            return
-        }
-
-        guard !statsUrl.isEmpty else {
-            return
-        }
-
-        let resolvedVersionName = versionName ?? getCurrentBundle().getVersionName()
-        let info = createInfoObject()
-
-        let event = StatsEvent(
-            platform: info.platform,
-            device_id: info.device_id,
-            app_id: info.app_id,
-            custom_id: info.custom_id,
-            version_build: info.version_build,
-            version_code: info.version_code,
-            version_os: info.version_os,
-            version_name: resolvedVersionName,
-            old_version_name: oldVersionName ?? "",
-            plugin_version: info.plugin_version,
-            is_emulator: info.is_emulator,
-            is_prod: info.is_prod,
-            installSource: info.installSource,
-            action: action,
-            channel: info.channel,
-            defaultChannel: info.defaultChannel,
-            key_id: info.key_id,
-            metadata: metadata,
-            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
-        )
-
-        statsQueueLock.lock()
-        if statsStopped {
-            statsQueueLock.unlock()
-            return
-        }
-        if statsQueue.count >= CapgoUpdater.maxPendingStats {
-            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats + 1)
-        }
-        statsQueue.append(QueuedStatsEvent(event: event, onSent: onSent))
-        statsQueueLock.unlock()
-
-        ensureStatsTimerStarted()
-    }
-
-    func restorePendingStats() {
-        let fileURL = pendingStatsFileURL()
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let events = try? JSONDecoder().decode([StatsEvent].self, from: data) else {
-            return
-        }
-
-        statsQueueLock.lock()
-        for event in events {
-            if statsQueue.count >= CapgoUpdater.maxPendingStats {
-                break
-            }
-            statsQueue.append(QueuedStatsEvent(event: event, onSent: nil))
-        }
-        let restoredCount = statsQueue.count
-        statsQueueLock.unlock()
-
-        if restoredCount > 0 {
-            logger.info("Restored \(restoredCount) pending stats events")
-            ensureStatsTimerStarted()
-        }
-    }
-
-    func persistPendingStats() {
-        persistStatsQueue()
-    }
-
-    private func pendingStatsFileURL() -> URL {
-        libraryDir.appendingPathComponent(pendingStatsFileName)
-    }
-
-    private func persistStatsQueue(force: Bool = false) {
-        statsPersistLock.lock()
-        defer { statsPersistLock.unlock() }
-        if statsStopped && !force {
-            return
-        }
-
-        statsQueueLock.lock()
-        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
-        statsQueueLock.unlock()
-        if events.count > CapgoUpdater.maxPendingStats {
-            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
-        }
-
-        let fileURL = pendingStatsFileURL()
-        if events.isEmpty {
-            try? FileManager.default.removeItem(at: fileURL)
-            return
-        }
-
-        do {
-            let data = try JSONEncoder().encode(events)
-            try data.write(to: fileURL, options: .atomic)
-            var resourceURL = fileURL
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try resourceURL.setResourceValues(values)
-        } catch {
-            logger.error("Failed to persist stats queue")
-            logger.debug("Error: \(error.localizedDescription)")
-        }
-    }
-
-    private func ensureStatsTimerStarted() {
-        if statsStopped {
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.statsStopped else { return }
-            if self.statsFlushTimer == nil || !self.statsFlushTimer!.isValid {
-                // Use closure-based timer to avoid strong reference cycle
-                self.statsFlushTimer = Timer.scheduledTimer(
-                    withTimeInterval: CapgoUpdater.statsFlushInterval,
-                    repeats: true
-                ) { [weak self] _ in
-                    self?.flushStatsQueue()
-                }
-            }
-        }
-    }
-
-    private func flushStatsQueue() {
-        if statsStopped {
-            return
-        }
-        // While Retry-After is active, keep stats queued and skip the network call.
-        if isRemoteBlocked() {
-            logger.debug("Deferring stats flush until Retry-After expires.")
-            return
-        }
-
-        statsQueueLock.lock()
-        guard statsInFlight.isEmpty, !statsQueue.isEmpty else {
-            statsQueueLock.unlock()
-            return
-        }
-        let queuedEvents = statsQueue
-        statsQueue.removeAll()
-        statsInFlight = queuedEvents
-        statsQueueLock.unlock()
-        persistStatsQueue()
-
-        let eventsToSend = queuedEvents.map(\.event)
-
-        operationQueue.maxConcurrentOperationCount = 1
-
-        let operation = BlockOperation {
-            let semaphore = DispatchSemaphore(value: 0)
-            self.sendJSONPost(urlString: self.statsUrl, body: {
-                try JSONEncoder().encode(eventsToSend)
-            }, completion: { responseData, httpResponse, responseError in
-                if self.abandonStoppedStatsFlush() {
-                    semaphore.signal()
-                    return
-                }
-                if self.checkAndHandleRateLimitResponse(statusCode: httpResponse?.statusCode, data: responseData, response: httpResponse).blocked {
-                    self.requeueStatsEvents(queuedEvents)
-                    semaphore.signal()
-                    return
-                }
-
-                if let statusCode = httpResponse?.statusCode, !(200...299).contains(statusCode) {
-                    if CapgoUpdater.isTransientStatsFailure(statusCode) {
-                        self.requeueStatsEvents(queuedEvents)
-                        self.logger.error("Error sending stats batch")
-                        self.logger.debug("Retrying later, response code: \(statusCode)")
-                    } else {
-                        self.clearStatsInFlight()
-                        self.logger.error("Dropping stats batch after permanent error")
-                        self.logger.debug("Response code: \(statusCode)")
-                    }
-                    semaphore.signal()
-                    return
-                }
-
-                if let error = responseError {
-                    self.requeueStatsEvents(queuedEvents)
-                    self.logger.error("Error sending stats batch")
-                    self.logger.debug("Response: nil, Error: \(error.localizedDescription)")
-                } else {
-                    self.clearStatsInFlight()
-                    self.logger.info("Stats batch sent successfully")
-                    self.logger.debug("Sent \(eventsToSend.count) events")
-                    self.runStatsCallbacks(queuedEvents)
-                }
-                semaphore.signal()
-            })
-            semaphore.wait()
-            if !self.statsStopped {
-                self.persistStatsQueue()
-            }
-        }
-        operationQueue.addOperation(operation)
-    }
-
-    private func abandonStoppedStatsFlush() -> Bool {
-        statsStopped
-    }
-
-    /// Only 429, request timeout and 5xx are worth retrying; other 4xx are permanent rejections.
-    private static func isTransientStatsFailure(_ statusCode: Int) -> Bool {
-        return statusCode == 429 || statusCode == 408 || statusCode >= 500
-    }
-
-    private func runStatsCallbacks(_ sentEvents: [QueuedStatsEvent]) {
-        for sentEvent in sentEvents {
-            sentEvent.onSent?()
-        }
-    }
-
-    private func requeueStatsEvents(_ events: [QueuedStatsEvent]) {
-        guard !statsStopped, !events.isEmpty else { return }
-        statsQueueLock.lock()
-        statsInFlight.removeAll()
-        statsQueue.insert(contentsOf: events, at: 0)
-        if statsQueue.count > CapgoUpdater.maxPendingStats {
-            statsQueue.removeFirst(statsQueue.count - CapgoUpdater.maxPendingStats)
-        }
-        statsQueueLock.unlock()
-        persistStatsQueue()
-        ensureStatsTimerStarted()
-    }
-
-    private func clearStatsInFlight() {
-        statsQueueLock.lock()
-        statsInFlight.removeAll()
-        statsQueueLock.unlock()
-    }
-
-    public func getBundleInfo(id: String?) -> BundleInfo {
-        var trueId = BundleInfo.VERSION_UNKNOWN
-        if id != nil {
-            trueId = id!
-        }
-        let result: BundleInfo
-        if BundleInfo.ID_BUILTIN == trueId {
-            result = BundleInfo(id: trueId, version: self.versionBuild, status: BundleStatus.SUCCESS, checksum: "")
-        } else if BundleInfo.VERSION_UNKNOWN == trueId {
-            result = BundleInfo(id: trueId, version: "", status: BundleStatus.ERROR, checksum: "")
-        } else {
-            do {
-                result = try UserDefaults.standard.getObj(forKey: "\(trueId)\(self.INFO_SUFFIX)", castTo: BundleInfo.self)
-            } catch {
-                logger.error("Failed to parse bundle info")
-                logger.debug("Bundle ID: \(trueId), Error: \(error.localizedDescription)")
-                result = BundleInfo(id: trueId, version: "", status: BundleStatus.PENDING, checksum: "")
-            }
-        }
-        return result
-    }
-
-    public func getBundleInfoByVersionName(version: String) -> BundleInfo? {
-        let installed: [BundleInfo] = self.list()
-        for i in installed {
-            if i.getVersionName() == version {
-                return i
-            }
-        }
-        return nil
-    }
-
-    private func removeBundleInfo(id: String) {
-        self.saveBundleInfo(id: id, bundle: nil)
-    }
-
-    @discardableResult
-    public func saveBundleInfo(id: String, bundle: BundleInfo?) -> Bool {
-        if bundle != nil && (bundle!.isBuiltin() || bundle!.isUnknown()) {
-            logger.info("Not saving info for bundle [\(id)] \(bundle?.toString() ?? "")")
-            return false
-        }
-        if bundle == nil {
-            logger.info("Removing info for bundle [\(id)]")
-            UserDefaults.standard.removeObject(forKey: "\(id)\(self.INFO_SUFFIX)")
-            return true
-        }
-        let update = bundle!.setId(id: id)
-        logger.info("Storing info for bundle [\(id)] \(update.toString())")
-        do {
-            try UserDefaults.standard.setObj(update, forKey: "\(id)\(self.INFO_SUFFIX)")
-            return true
-        } catch {
-            logger.error("Failed to save bundle info")
-            logger.debug("Bundle ID: \(id), Error: \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    private func setBundleStatus(id: String, status: BundleStatus) {
-        logger.info("Setting status for bundle [\(id)] to \(status)")
-        let info = self.getBundleInfo(id: id)
-        self.saveBundleInfo(id: id, bundle: info.setStatus(status: status.storedValue))
-    }
-
-    public func getCurrentBundle() -> BundleInfo {
-        return self.getBundleInfo(id: self.getCurrentBundleId())
-    }
-
-    public func getCurrentBundleId() -> String {
-        guard let bundlePath: String = UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) else {
-            return BundleInfo.ID_BUILTIN
-        }
-        if (bundlePath).isEmpty {
-            return BundleInfo.ID_BUILTIN
-        }
-        let bundleID: String = bundlePath.components(separatedBy: "/").last ?? bundlePath
-        return bundleID
-    }
-
-    public func isUsingBuiltin() -> Bool {
-        return (UserDefaults.standard.string(forKey: self.CAP_SERVER_PATH) ?? "") == self.DEFAULT_FOLDER
-    }
-
-    public func getFallbackBundle() -> BundleInfo {
-        let id: String = UserDefaults.standard.string(forKey: self.FALLBACK_VERSION) ?? BundleInfo.ID_BUILTIN
-        return self.getBundleInfo(id: id)
-    }
-
-    private func setFallbackBundle(fallback: BundleInfo?) {
-        UserDefaults.standard.set(fallback == nil ? BundleInfo.ID_BUILTIN : fallback!.getId(), forKey: self.FALLBACK_VERSION)
-        UserDefaults.standard.synchronize()
-    }
-
-    public func getNextBundle() -> BundleInfo? {
-        let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
-        return self.getBundleInfo(id: id)
-    }
-
-    public func getPreviewFallbackBundle() -> BundleInfo? {
-        guard let id = UserDefaults.standard.string(forKey: self.PREVIEW_FALLBACK_VERSION) else {
+    func engineHook(_ name: String, _ payload: [String: Any]) -> [String: Any]? {
+        switch name {
+        case "backgroundTask":
+            updateBackgroundTask(action: payload["action"] as? String ?? "", name: payload["name"] as? String ?? "")
             return nil
-        }
-        let bundle = self.getBundleInfo(id: id)
-        if !bundle.isBuiltin() && !self.bundleExists(id: id) {
-            _ = self.setPreviewFallbackBundle(fallback: nil)
+        case "excludeFromBackup":
+            excludeFromBackup(path: payload["path"] as? String ?? "")
             return nil
+        case "cleartextPermitted":
+            let ats = Bundle.main.infoDictionary?["NSAppTransportSecurity"] as? [String: Any]
+            return ["permitted": Self.atsAllowsCleartext(host: payload["host"] as? String ?? "", ats: ats)]
+        case "releaseMethodLane":
+            EngineMethodLanes.releaseCurrentThread()
+            return nil
+        case "proxyForUrl":
+            let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue()
+            return Self.systemProxy(for: payload["url"] as? String ?? "", settings: settings) { [weak self] message in
+                self?.logger?.info(message)
+            }
+        default:
+            return onHook?(name, payload)
         }
-        return bundle
     }
 
-    public func setPreviewFallbackBundle(fallback: String?) -> Bool {
-        guard let fallbackId = fallback else {
-            UserDefaults.standard.removeObject(forKey: self.PREVIEW_FALLBACK_VERSION)
-            UserDefaults.standard.synchronize()
+    // MARK: - Platform services
+
+    /// System proxy for an engine request, as URLSession used it (Wi-Fi / MDM proxy settings):
+    /// `{"type":"http","host":...,"port":...}` for an HTTP(S) proxy (HTTPS goes through CONNECT),
+    /// else `{"type":"direct"}`. PAC configurations are not evaluated: direct, and logged.
+    static func systemProxy(for url: String, settings: CFDictionary?, log: (String) -> Void = { _ in }) -> [String: Any] {
+        guard let settings, let url = URL(string: url) else {
+            return ["type": "direct"]
+        }
+        let proxies = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as? [[String: Any]] ?? []
+        return proxyReply(proxies, log: log)
+    }
+
+    /// Picks the first usable entry of a `CFNetworkCopyProxiesForURL` list.
+    static func proxyReply(_ proxies: [[String: Any]], log: (String) -> Void = { _ in }) -> [String: Any] {
+        let direct: [String: Any] = ["type": "direct"]
+        let isType = { (type: String?, candidates: [CFString]) in
+            candidates.contains { type == $0 as String }
+        }
+        for proxy in proxies {
+            let type = proxy[kCFProxyTypeKey as String] as? String
+            if isType(type, [kCFProxyTypeNone]) {
+                return direct
+            }
+            if isType(type, [kCFProxyTypeAutoConfigurationURL, kCFProxyTypeAutoConfigurationJavaScript]) {
+                log("Proxy auto-configuration (PAC) is not supported by the updater: connecting directly")
+                return direct
+            }
+            // SOCKS / FTP proxies are not supported: try the next entry. kCFProxyTypeHTTPS is the
+            // proxy for HTTPS URLs ("Secure Web Proxy"), not a TLS proxy: URLSession sends it a
+            // cleartext CONNECT too, so both types are the same `http` proxy for the engine.
+            guard isType(type, [kCFProxyTypeHTTP, kCFProxyTypeHTTPS]) else {
+                continue
+            }
+            let host = (proxy[kCFProxyHostNameKey as String] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let port = (proxy[kCFProxyPortNumberKey as String] as? NSNumber)?.intValue ?? 0
+            if !host.isEmpty, (1...65535).contains(port) {
+                return ["type": "http", "host": host, "port": port]
+            }
+        }
+        return direct
+    }
+
+    /// App Transport Security decision for plain HTTP to `host` (the engine's HTTP client
+    /// is not URLSession, so it applies the app's ATS settings itself), with Apple's precedence:
+    /// - `NSAllowsArbitraryLoads` is ignored when `NSAllowsArbitraryLoadsInWebContent`,
+    ///   `NSAllowsArbitraryLoadsForMedia` or `NSAllowsLocalNetworking` is present (any value).
+    /// - A matching exception domain (the most specific one) overrides the global settings.
+    /// - IP addresses cannot be exception domains: only local networking or arbitrary loads allow them.
+    static func atsAllowsCleartext(host: String, ats: [String: Any]?) -> Bool {
+        let host = host.lowercased()
+        // ATS always allows localhost.
+        if host == "localhost" {
             return true
         }
-        let newBundle: BundleInfo = self.getBundleInfo(id: fallbackId)
-        if !newBundle.isBuiltin() && !self.bundleExists(id: fallbackId) {
-            return false
+        let ats = ats ?? [:]
+        let fineGrainedKeys = ["NSAllowsArbitraryLoadsInWebContent", "NSAllowsArbitraryLoadsForMedia", "NSAllowsLocalNetworking"]
+        let hasFineGrainedKey = fineGrainedKeys.contains { ats[$0] != nil }
+        let allowsArbitraryLoads = !hasFineGrainedKey && ats["NSAllowsArbitraryLoads"] as? Bool == true
+        let allowsLocalNetworking = ats["NSAllowsLocalNetworking"] as? Bool == true
+        let unbracketed = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if IPv4Address(host) != nil || IPv6Address(unbracketed) != nil {
+            return allowsLocalNetworking || allowsArbitraryLoads
         }
-        UserDefaults.standard.set(fallbackId, forKey: self.PREVIEW_FALLBACK_VERSION)
-        UserDefaults.standard.synchronize()
-        return true
+        let exceptions = ats["NSExceptionDomains"] as? [String: [String: Any]] ?? [:]
+        let match = exceptions
+            .map { (domain: $0.key.lowercased(), settings: $0.value) }
+            .filter { entry in
+                host == entry.domain
+                    || (entry.settings["NSIncludesSubdomains"] as? Bool == true && host.hasSuffix("." + entry.domain))
+            }
+            .max { $0.domain.count < $1.domain.count }
+        if let settings = match?.settings {
+            return settings["NSExceptionAllowsInsecureHTTPLoads"] as? Bool == true
+                || settings["NSTemporaryExceptionAllowsInsecureHTTPLoads"] as? Bool == true
+        }
+        if allowsLocalNetworking && (!host.contains(".") || host.hasSuffix(".local")) {
+            return true
+        }
+        return allowsArbitraryLoads
     }
 
-    public func setNextBundle(next: String?) -> Bool {
-        guard let nextId: String = next else {
-            UserDefaults.standard.removeObject(forKey: self.NEXT_VERSION)
-            UserDefaults.standard.synchronize()
-            return false
+    private func excludeFromBackup(path: String) {
+        guard !path.isEmpty else {
+            return
         }
-        let newBundle: BundleInfo = self.getBundleInfo(id: nextId)
-        if !newBundle.isBuiltin() && !self.bundleExists(id: nextId) {
-            return false
+        var url = URL(fileURLWithPath: path)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+            try url.setResourceValues(values)
+        } catch {
+            logger?.warn("Cannot exclude \(url.lastPathComponent) from backup: \(error.localizedDescription)")
         }
-        UserDefaults.standard.set(nextId, forKey: self.NEXT_VERSION)
-        UserDefaults.standard.synchronize()
-        self.setBundleStatus(id: nextId, status: BundleStatus.PENDING)
-        self.sendStats(action: "set_next", versionName: newBundle.getVersionName(), oldVersionName: self.getCurrentBundle().getVersionName())
-        self.notifyListeners("setNext", ["bundle": newBundle.toJSON()])
-        return true
     }
+}
+
+extension Bundle {
+    var versionName: String? {
+        infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+    var versionCode: String? {
+        infoDictionary?["CFBundleVersion"] as? String
+    }
+}
+
+extension CapgoUpdater {
+    func updateBackgroundTask(action: String, name: String) {
+        backgroundTasksLock.lock()
+        let existing = backgroundTasks.removeValue(forKey: name)
+        backgroundTasksLock.unlock()
+        if let existing, existing != .invalid {
+            UIApplication.shared.endBackgroundTask(existing)
+        }
+        guard action == "begin" else {
+            return
+        }
+        // Every task must end, or iOS kills the app in the background. Each expiry handler
+        // ends its own task (not whichever one is stored under the name by then), and a task
+        // that expires before it is stored is not stored at all.
+        let state = BackgroundTaskState()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.expireBackgroundTask(name: name, state: state)
+        }
+        guard identifier != .invalid else {
+            return
+        }
+        backgroundTasksLock.lock()
+        state.identifier = identifier
+        let expired = state.expired
+        if !expired {
+            backgroundTasks[name] = identifier
+        }
+        backgroundTasksLock.unlock()
+        if expired {
+            UIApplication.shared.endBackgroundTask(identifier)
+        }
+    }
+
+    private func expireBackgroundTask(name: String, state: BackgroundTaskState) {
+        backgroundTasksLock.lock()
+        state.expired = true
+        // Not stored yet: the begin path ends it. No longer stored: already ended.
+        var owned: UIBackgroundTaskIdentifier?
+        if let identifier = state.identifier, backgroundTasks[name] == identifier {
+            backgroundTasks.removeValue(forKey: name)
+            owned = identifier
+        }
+        backgroundTasksLock.unlock()
+        if let owned {
+            UIApplication.shared.endBackgroundTask(owned)
+        }
+    }
+}
+
+/// One background task's identifier and expiry, guarded by `backgroundTasksLock`.
+private final class BackgroundTaskState {
+    var identifier: UIBackgroundTaskIdentifier?
+    var expired = false
 }

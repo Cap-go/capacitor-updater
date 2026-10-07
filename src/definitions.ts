@@ -25,9 +25,9 @@ declare module '@capacitor/cli' {
 
       /**
        * Configure the number of seconds the native plugin should wait before considering an HTTP timeout.
-       * Applies to update checks and file downloads. On Android these are idle connect/read/write
-       * timeouts and do not cap total download time; on iOS the request timeout also bounds the
-       * total download duration.
+       * Applies to update checks, channel and statistics requests, and file downloads. On Android and
+       * iOS these are idle connect/read/write timeouts: they do not cap the total download time.
+       * Bundle and preview payload transfers always allow at least 60 seconds per read.
        *
        * Only available for Android and iOS.
        *

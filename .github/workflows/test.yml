@@ -41,6 +41,45 @@ jobs:
             exit 1
           fi
 
+  rust_core:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Rust core (fmt, clippy, contract tests)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Format
+        working-directory: core
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: core
+        run: cargo clippy --locked --all-targets --features jni -- -D warnings
+      - name: Test (shared native contract fixtures)
+        working-directory: core
+        run: cargo test --locked
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
+        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
+        run: bun run generate:cli-crypto && cd core && cargo test --locked --test cli_crypto
+
   build_android:
     permissions:
       contents: read
@@ -68,15 +107,16 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
           cache: gradle
+      - name: Build Rust core (Android)
+        uses: ./.github/actions/build-core
+        with:
+          platform: android
       - name: Build and test Android plugin
         id: build_code
         run: bun run verify:android
       - name: Verify packed package in example app (Android)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
-      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
-        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        run: bun run generate:cli-crypto && bun run native:contract:cli:android
 
   build_ios:
     permissions:
@@ -99,18 +139,46 @@ jobs:
         run: bun run check:wiring
       - name: Check Cap 9 deprecated APIs
         run: bun run check:cap9-deprecated
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build
         id: build_code
         run: bun run verify:ios
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
+
+  # Split from build_ios: the core build, device build, packed-package check and the
+  # simulator test build together came within seconds of the 10 minute cap.
+  test_ios:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    env:
+      # Simulator tests only need the arm64 simulator slice of the core (saves two release builds).
+      CAPGO_CORE_IOS_SIMULATOR_ONLY: '1'
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Run iOS native tests
         id: test_ios
         run: bun run native:test:ios
-      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
-        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        run: bun run generate:cli-crypto && bun run native:contract:cli:ios
 
   maestro_web_assets:
     permissions:
@@ -247,6 +315,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (Android)
+        uses: ./.github/actions/build-core
+        with:
+          platform: android
       - name: Build Android app
         run: bun scripts/maestro/prepare-android-scenario.mjs "${{ matrix.scenario }}"
       - name: Upload Android app (attempt 1)
@@ -331,6 +403,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build iOS app
         run: |
           set -euo pipefail
@@ -487,12 +563,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -512,6 +582,14 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -524,6 +602,12 @@ jobs:
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios/crash-reports/" \; 2>/dev/null || true
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -553,12 +637,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -578,6 +656,14 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -590,6 +676,12 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports/" \; 2>/dev/null || true
       - name: Upload live update Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -625,6 +717,10 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Build Rust core (iOS)
+        uses: ./.github/actions/build-core
+        with:
+          platform: ios
       - name: Build iOS apps
         run: |
           set -euo pipefail
@@ -689,12 +785,6 @@ jobs:
           persist-credentials: false
       # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
       # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -716,6 +806,14 @@ jobs:
           path: maestro-ios-edge-apps
       # A full case takes most of the 10 minute cap on hosted macOS runners, so no case-level retry here.
       # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
+      # Boot after the setup steps: a booting simulator starves them of CPU (Bun and Maestro
+      # setup took 2-4 minutes during the boot and ~20 s without it).
+      - name: Boot iOS simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Run edge case Maestro flows
         run: |
           set -euo pipefail
@@ -728,6 +826,12 @@ jobs:
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Collect iOS crash reports
+        if: failure()
+        timeout-minutes: 1
+        run: |
+          mkdir -p "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f \( -name 'App*.ips' -o -name 'App*.crash' \) -exec cp {} "maestro-results-ios-live-update/${{ matrix.scenario }}/crash-reports/" \; 2>/dev/null || true
       - name: Upload edge case Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v7

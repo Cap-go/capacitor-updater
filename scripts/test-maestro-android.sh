@@ -297,6 +297,16 @@ stabilize_android_after_install() {
   return 0
 }
 
+# Crash / native load errors of the example app, for CI diagnostics.
+dump_android_failure_logs() {
+  echo "---- logcat (errors and Capgo/Capacitor lines) ----" >&2
+  adb logcat -d -v time 2>/dev/null \
+    | grep -E " E/| F/|AndroidRuntime|DEBUG|CapgoUpdater|Capacitor|capgo|UnsatisfiedLink|dlopen" \
+    | tail -n 150 >&2 || true
+  echo "---- end logcat ----" >&2
+  return 0
+}
+
 wait_for_example_app_ui() {
   local attempt=1
   local hierarchy=""
@@ -319,6 +329,7 @@ wait_for_example_app_ui() {
     done
 
     echo "Example app UI did not appear on Android launch attempt ${attempt}; restarting the app." >&2
+    dump_android_failure_logs
     adb shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
     wait_for_android_package_service || true
     sleep 2

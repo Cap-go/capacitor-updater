@@ -118,7 +118,7 @@ function fileResponse(file, init = {}) {
 
 function logRequest(requestUrl, method, details = '') {
   const suffix = details ? ` ${details}` : '';
-  console.log(`[fake-capgo] ${method} ${requestUrl.pathname}${requestUrl.search}${suffix}`);
+  console.log(`${new Date().toISOString()} [fake-capgo] ${method} ${requestUrl.pathname}${requestUrl.search}${suffix}`);
 }
 
 function getScenarioId(requestUrl, fallbackScenarioId = null) {
@@ -325,7 +325,7 @@ function handleControlFault(requestUrl) {
   }
 
   setScenarioFault(scenario.id, target, mode);
-  console.log(`[fake-capgo] scenario=${scenario.id} fault ${target}=${mode}`);
+  console.log(`${new Date().toISOString()} [fake-capgo] scenario=${scenario.id} fault ${target}=${mode}`);
   return jsonResponse(getScenarioStatePayload(scenario));
 }
 
@@ -411,7 +411,7 @@ async function handleUpdate(request, scenarioId) {
     if (debugState) {
       debugState.updateFaults += 1;
     }
-    console.log(`[fake-capgo] scenario=${scenario.id} injecting update fault=${updateFault}`);
+    console.log(`${new Date().toISOString()} [fake-capgo] scenario=${scenario.id} injecting update fault=${updateFault}`);
 
     if (updateFault === 'http-500') {
       return jsonResponse({ error: 'fake_server_error', message: 'Injected update failure' }, { status: 500 });
@@ -429,7 +429,7 @@ async function handleUpdate(request, scenarioId) {
     });
   }
 
-  console.log(`[fake-capgo] scenario=${scenario.id} current=${currentVersion} active=${activeRelease.version}`);
+  console.log(`${new Date().toISOString()} [fake-capgo] scenario=${scenario.id} current=${currentVersion} active=${activeRelease.version}`);
 
   if (scenario.delivery === 'manifest') {
     const manifestEntries = await loadManifestEntries(activeRelease.version);
@@ -576,7 +576,7 @@ async function serveBundle(request, version, zipPath, debugState) {
   const rangeStart = parseRangeStart(request.headers.get('range'), file.size);
 
   if (rangeStart === null) {
-    console.log(`[fake-capgo] bundle=${version} served`);
+    console.log(`${new Date().toISOString()} [fake-capgo] bundle=${version} served`);
     return fileResponse(file, {
       headers: {
         'content-type': 'application/zip',
@@ -587,7 +587,7 @@ async function serveBundle(request, version, zipPath, debugState) {
   if (debugState) {
     debugState.bundleDownloads.ranged += 1;
   }
-  console.log(`[fake-capgo] bundle=${version} served from byte ${rangeStart}`);
+  console.log(`${new Date().toISOString()} [fake-capgo] bundle=${version} served from byte ${rangeStart}`);
   // Slice the bytes directly: Blob.slice responses serve the whole file on older Bun releases.
   const bytes = new Uint8Array(await file.arrayBuffer()).subarray(rangeStart);
   return fileResponse(bytes, {
@@ -600,7 +600,7 @@ async function serveBundle(request, version, zipPath, debugState) {
 }
 
 async function handleBundle(request, method, version) {
-  console.log(`[fake-capgo] ${method} /bundles/${version}.zip`);
+  console.log(`${new Date().toISOString()} [fake-capgo] ${method} /bundles/${version}.zip`);
 
   const zipPath = getBundleZipPath(version);
 
@@ -638,7 +638,7 @@ async function handleBundle(request, method, version) {
   }
 
   debugState.bundleDownloads.faulted += 1;
-  console.log(`[fake-capgo] bundle=${version} injecting fault=${bundleFault}`);
+  console.log(`${new Date().toISOString()} [fake-capgo] bundle=${version} injecting fault=${bundleFault}`);
 
   if (bundleFault === 'http-500') {
     return new Response('injected bundle failure', { status: 500, headers: baseHeaders });
@@ -676,12 +676,12 @@ async function handleBundle(request, method, version) {
     stall: bundleFault === 'stall',
     onDisconnect: () => {
       debugState.bundleDownloads.aborted += 1;
-      console.log(`[fake-capgo] bundle=${version} client disconnected mid-download`);
+      console.log(`${new Date().toISOString()} [fake-capgo] bundle=${version} client disconnected mid-download`);
       settle();
     },
     onDropped: () => {
       debugState.bundleDownloads.dropped += 1;
-      console.log(`[fake-capgo] bundle=${version} connection dropped mid-download`);
+      console.log(`${new Date().toISOString()} [fake-capgo] bundle=${version} connection dropped mid-download`);
       settle();
     },
     onRelease: (release) => {
@@ -995,4 +995,4 @@ const listeningUrl = defaultHostBaseUrl.endsWith(defaultPortSuffix)
   ? `${defaultHostBaseUrl.slice(0, -defaultPortSuffix.length)}:${server.address().port}`
   : defaultHostBaseUrl;
 
-console.log(`[fake-capgo] listening on ${listeningUrl}`);
+console.log(`${new Date().toISOString()} [fake-capgo] listening on ${listeningUrl}`);

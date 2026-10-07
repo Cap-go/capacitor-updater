@@ -10,8 +10,43 @@ on:
       - "*"
 
 jobs:
+  # Prebuilt Rust core shipped in the npm package (Android .so, iOS xcframework).
+  core:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - platform: android
+            runner: ubuntu-latest
+            path: android/src/main/jniLibs
+          - platform: ios
+            runner: macOS-latest
+            path: ios/Frameworks/CapgoUpdaterCore.xcframework
+    runs-on: ${{ matrix.runner }}
+    name: Build Rust core / ${{ matrix.platform }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build Rust core
+        uses: ./.github/actions/build-core
+        with:
+          platform: ${{ matrix.platform }}
+          cache: 'false'
+      - name: Upload Rust core
+        uses: actions/upload-artifact@v7
+        with:
+          name: capgo-core-${{ matrix.platform }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+
   # Tests already passed before tag was created, so just build and deploy
   deploy:
+    needs: core
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -31,9 +66,21 @@ jobs:
         run: bun i
       - name: Check plugin wiring
         run: bun run check:wiring
+      - name: Download Rust core (Android)
+        uses: actions/download-artifact@v8
+        with:
+          name: capgo-core-android
+          path: android/src/main/jniLibs
+      - name: Download Rust core (iOS)
+        uses: actions/download-artifact@v8
+        with:
+          name: capgo-core-ios
+          path: ios/Frameworks/CapgoUpdaterCore.xcframework
       - name: Build
         id: build_code
         run: bun run build
+      - name: Check Rust core artifacts
+        run: bun run core:check-artifacts
       - name: Generate AI changelog
         id: changelog
         continue-on-error: true

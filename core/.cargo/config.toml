@@ -1,0 +1,14 @@
+# The `aes` crate only uses the ARMv8 AES instructions on aarch64 with this cfg;
+# without it bundle decryption falls back to a much slower software AES.
+[target.'cfg(target_arch = "aarch64")']
+rustflags = ["--cfg", "aes_armv8"]
+
+# Android 15+ devices can use 16 KB memory pages: a 64-bit .so with 4 KB-aligned LOAD segments
+# fails to load there. NDK r28+ (and cargo-ndk for older NDKs) already align to 16 KB; this
+# keeps it explicit whatever NDK / cargo-ndk builds the library. cargo-ndk sets no RUSTFLAGS,
+# so these apply (joined with the aarch64 cfg flags above).
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]

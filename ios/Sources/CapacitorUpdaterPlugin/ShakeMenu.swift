@@ -116,6 +116,19 @@ extension UIApplication {
 }
 
 extension CapacitorUpdaterPlugin: UIGestureRecognizerDelegate {
+    func hasActivePreviewSession() -> Bool {
+        (engineOp("previewSessionActive") as? [String: Any])?["active"] as? Bool ?? false
+    }
+
+    func previewMenuPreviews() -> [[String: Any]] {
+        engineOp("previewMenuPreviews") as? [[String: Any]] ?? []
+    }
+
+    /// Preview menu actions reload the WebView: run them off the main thread.
+    func runPreviewMenuAction(_ operation: String, _ input: [String: Any?] = [:]) -> Bool {
+        (engineOp(operation, input) as? [String: Any])?["ok"] as? Bool ?? false
+    }
+
     func syncShakeMenuGestureRecognizer() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -266,7 +279,7 @@ extension UIWindow {
 
         alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
             DispatchQueue.global(qos: .userInitiated).async {
-                if !plugin.reloadPreviewSessionFromShakeMenu() {
+                if !plugin.runPreviewMenuAction("previewMenuReload") {
                     DispatchQueue.main.async {
                         self.showError(message: "Could not reload the test app.", plugin: plugin)
                     }
@@ -304,7 +317,7 @@ extension UIWindow {
 
         alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
             DispatchQueue.global(qos: .userInitiated).async {
-                if !plugin.leavePreviewSessionFromShakeMenu() {
+                if !plugin.runPreviewMenuAction("previewMenuLeave") {
                     DispatchQueue.main.async {
                         self.showError(message: "Could not leave the test app.", plugin: plugin)
                     }
@@ -318,72 +331,6 @@ extension UIWindow {
             topVC.present(alertShake, animated: true)
         }
         return true
-    }
-
-    private func showConfiguredDefaultMenu(plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
-        let appName = Bundle.main.infoDictionary?["CFBundleDisplayName"] as? String ?? "App"
-        let title = "Preview \(appName) Menu"
-        let message = "What would you like to do?"
-        let okButtonTitle = "Go Home"
-        let reloadButtonTitle = "Reload app"
-        let cancelButtonTitle = "Close menu"
-
-        let updater = plugin.implementation
-
-        func resetBuiltin() {
-            updater.reset()
-            bridge.setServerBasePath("")
-            DispatchQueue.main.async {
-                if let viewController = (self.rootViewController as? CAPBridgeViewController) {
-                    viewController.loadView()
-                    viewController.viewDidLoad()
-                }
-                _ = updater.delete(id: updater.getCurrentBundleId())
-                plugin.logger.info("Reset to builtin version")
-            }
-        }
-
-        let bundleId = updater.getCurrentBundleId()
-        if let viewController = (self.rootViewController as? CAPBridgeViewController) {
-            plugin.logger.info("getServerBasePath: \(viewController.getServerBasePath())")
-        }
-        plugin.logger.info("bundleId: \(bundleId)")
-
-        let alertShake = UIAlertController(title: title, message: message, preferredStyle: .alert)
-
-        alertShake.addAction(UIAlertAction(title: okButtonTitle, style: .default) { _ in
-            guard let next = updater.getNextBundle() else {
-                resetBuiltin()
-                return
-            }
-            if !next.isBuiltin() {
-                plugin.logger.info("Resetting to: \(next.toString())")
-                _ = updater.set(bundle: next)
-                guard let destHot = try? updater.getBundleDirectory(id: next.getId()) else {
-                    resetBuiltin()
-                    return
-                }
-                plugin.logger.info("Reloading \(next.toString())")
-                bridge.setServerBasePath(destHot.path)
-            } else {
-                resetBuiltin()
-            }
-            plugin.logger.info("Reload app done")
-        })
-
-        alertShake.addAction(UIAlertAction(title: cancelButtonTitle, style: .default))
-
-        alertShake.addAction(UIAlertAction(title: reloadButtonTitle, style: .default) { _ in
-            DispatchQueue.main.async {
-                bridge.webView?.reload()
-            }
-        })
-
-        DispatchQueue.main.async {
-            if let topVC = self.menuHostViewController {
-                topVC.present(alertShake, animated: true)
-            }
-        }
     }
 
     private func previewLabel(_ preview: [String: Any]) -> String {
@@ -502,7 +449,7 @@ extension UIWindow {
 
     private func selectPreview(id: String, plugin: CapacitorUpdaterPlugin) {
         DispatchQueue.global(qos: .userInitiated).async {
-            if !plugin.setPreviewFromShakeMenu(id: id) {
+            if !plugin.runPreviewMenuAction("previewMenuSet", ["id": id]) {
                 DispatchQueue.main.async {
                     self.showError(message: "Could not switch preview.", plugin: plugin)
                 }
@@ -520,8 +467,6 @@ extension UIWindow {
             plugin.logger.info("UIAlertController is already presented")
             return false
         }
-
-        let updater = plugin.implementation
 
         // Show loading indicator
         let loadingAlert = UIAlertController(title: "Loading Channels...", message: nil, preferredStyle: .alert)
@@ -545,17 +490,24 @@ extension UIWindow {
             topVC.present(loadingAlert, animated: true) {
                 // Fetch channels in background
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let result = updater.listChannels()
+                    var channels: [[String: Any]] = []
+                    var failure: String?
+                    switch plugin.runEngineMethod("listChannels", [:]) {
+                    case .resolved(let value):
+                        channels = (value as? [String: Any])?["channels"] as? [[String: Any]] ?? []
+                    case .rejected(let message, _, _):
+                        failure = message
+                    }
 
                     DispatchQueue.main.async {
                         loadingAlert.dismiss(animated: true) {
                             guard !didCancel else { return }
-                            if !result.error.isEmpty {
-                                self.showError(message: "Failed to load channels: \(result.error)", plugin: plugin)
-                            } else if result.channels.isEmpty {
+                            if let failure {
+                                self.showError(message: "Failed to load channels: \(failure)", plugin: plugin)
+                            } else if channels.isEmpty {
                                 self.showError(message: "No channels available for self-assignment", plugin: plugin)
                             } else {
-                                self.presentChannelPicker(channels: result.channels, plugin: plugin, bridge: bridge)
+                                self.presentChannelPicker(channels: channels, plugin: plugin, bridge: bridge)
                             }
                         }
                     }
@@ -649,8 +601,6 @@ extension UIWindow {
     }
 
     private func selectChannel(name: String, plugin: CapacitorUpdaterPlugin, bridge: CAPBridgeProtocol) {
-        let updater = plugin.implementation
-
         // Show progress indicator
         let progressAlert = UIAlertController(title: "Switching to \(name)", message: "Setting channel...", preferredStyle: .alert)
         let indicator = UIActivityIndicatorView(style: .medium)
@@ -663,155 +613,47 @@ extension UIWindow {
             indicator.bottomAnchor.constraint(equalTo: progressAlert.view.bottomAnchor, constant: -20)
         ])
 
+        func finish(_ present: @escaping () -> Void) {
+            DispatchQueue.main.async {
+                progressAlert.dismiss(animated: true, completion: present)
+            }
+        }
+
         DispatchQueue.main.async {
-            if let topVC = self.menuHostViewController {
-                topVC.present(progressAlert, animated: true) {
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        // Set the channel - respect plugin's allowSetDefaultChannel config
-                        let setResult = updater.setChannel(
-                            channel: name,
-                            defaultChannelKey: "CapacitorUpdater.defaultChannel",
-                            allowSetDefaultChannel: plugin.allowSetDefaultChannel,
-                            configDefaultChannel: plugin.getConfig().getString("defaultChannel", "") ?? ""
-                        )
-
-                        if !setResult.error.isEmpty {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Failed to set channel: \(setResult.error)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-                        guard plugin.persistDefaultChannelStateFromDefaults() else {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name), but local persistence failed.", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Update progress message
+            guard let topVC = self.menuHostViewController else {
+                return
+            }
+            topVC.present(progressAlert, animated: true) {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    // The engine runs setChannel, getLatest, download and next; progress
+                    // arrives through the shakeMenuProgress hook.
+                    plugin.shakeMenuProgress = { message in
                         DispatchQueue.main.async {
-                            progressAlert.message = "Checking for updates..."
+                            progressAlert.message = message
                         }
-
-                        // Check for updates with the new channel
-                        let pluginUpdateUrl = plugin.getUpdateUrl()
-                        let updateUrlStr = pluginUpdateUrl.isEmpty ? CapacitorUpdaterPlugin.updateUrlDefault : pluginUpdateUrl
-                        guard let updateUrl = URL(string: updateUrlStr) else {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(
-                                        message: "Channel set to \(name). Invalid update URL, could not check for updates.",
-                                        plugin: plugin
-                                    )
-                                }
-                            }
-                            return
-                        }
-
-                        let latest = updater.getLatest(url: updateUrl, channel: name)
-                        let latestKind = latest.kind
-
-                        let detail = [latest.message, latest.error, latestKind]
-                            .compactMap { value in
-                                guard let value, !value.isEmpty else { return nil }
-                                return value
-                            }
-                            .first ?? "server did not provide a message"
-
-                        // Handle update errors first (before "no new version" check)
-                        if latestKind == "failed" || (latest.error?.isEmpty == false && latestKind != "up_to_date" && latestKind != "blocked") {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check failed: \(detail)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        if latestKind == "blocked" {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Channel set to \(name). Update check blocked: \(detail)", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Check if there's an actual update available. A manifest-only
-                        // response legitimately has no URL (the files come from the
-                        // manifest, not a zip), so only report "already on latest" when
-                        // the URL is empty AND there is no manifest to download from.
-                        let hasManifest = !(latest.manifest?.isEmpty ?? true)
-                        if latestKind == "up_to_date" || (latest.url.isEmpty && !hasManifest) {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showSuccess(message: "Channel set to \(name). Already on latest version.", plugin: plugin)
-                                }
-                            }
-                            return
-                        }
-
-                        // Update message
-                        DispatchQueue.main.async {
-                            progressAlert.message = "Downloading update \(latest.version)..."
-                        }
-
-                        // Download the update
-                        do {
-                            let bundle: BundleInfo
-                            if let manifest = latest.manifest, !manifest.isEmpty {
-                                bundle = try updater.downloadManifest(
-                                    manifest: manifest,
-                                    version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
-                                )
-                            } else {
-                                // Safe unwrap URL
-                                guard let downloadUrl = URL(string: latest.url) else {
-                                    DispatchQueue.main.async {
-                                        progressAlert.dismiss(animated: true) {
-                                            self.showError(message: "Failed to download update: invalid update URL.", plugin: plugin)
-                                        }
+                    }
+                    let result = plugin.engineOp("shakeMenuSwitchChannel", ["channel": name]) as? [String: Any] ?? [:]
+                    plugin.shakeMenuProgress = nil
+                    let message = result["message"] as? String ?? "Failed to set channel"
+                    let bundleId = result["bundleId"] as? String ?? ""
+                    switch result["status"] as? String {
+                    case "updateReady":
+                        finish {
+                            self.showSuccessWithReload(
+                                message: message,
+                                plugin: plugin,
+                                bridge: bridge,
+                                onReload: {
+                                    DispatchQueue.global(qos: .userInitiated).async {
+                                        _ = plugin.runEngineMethod("set", ["id": bundleId])
                                     }
-                                    return
                                 }
-                                // Same gate as download() and auto-update: the checksum is required and
-                                // verified (decrypted when a public key is set) before extraction.
-                                bundle = try updater.downloadVerified(
-                                    url: downloadUrl,
-                                    version: latest.version,
-                                    sessionKey: latest.sessionKey ?? "",
-                                    expectedChecksum: latest.checksum
-                                )
-                            }
-
-                            // Set as next bundle
-                            _ = updater.setNextBundle(next: bundle.getId())
-
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showSuccessWithReload(
-                                        message: "Update downloaded! Reload to apply version \(latest.version)?",
-                                        plugin: plugin,
-                                        bridge: bridge,
-                                        onReload: {
-                                            _ = updater.set(bundle: bundle)
-                                            _ = plugin._reload()
-                                        }
-                                    )
-                                }
-                            }
-                        } catch {
-                            DispatchQueue.main.async {
-                                progressAlert.dismiss(animated: true) {
-                                    self.showError(message: "Failed to download update: \(error.localizedDescription)", plugin: plugin)
-                                }
-                            }
+                            )
                         }
+                    case "success":
+                        finish { self.showSuccess(message: message, plugin: plugin) }
+                    default:
+                        finish { self.showError(message: message, plugin: plugin) }
                     }
                 }
             }

@@ -1,0 +1,84 @@
+[package]
+name = "capgo-updater-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MPL-2.0"
+description = "Platform-neutral core of the Capgo live updater: update policy, path guards, bundle crypto and checksums."
+repository = "https://github.com/Cap-go/capacitor-updater"
+publish = false
+
+[lib]
+name = "capgo_updater_core"
+# staticlib: iOS xcframework. cdylib: Android .so and host library for JVM unit tests. rlib: Rust tests.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# JNI entry points used by the Android plugin (and by the JVM unit tests on the host).
+jni = ["dep:jni"]
+# Test helpers (MemoryHost, *_for_tests); enabled for this crate's own tests through the dev-dependency below.
+# MemoryHost verifies TLS chains with rustls-platform-verifier; shipped builds always ask the host
+# (Android TrustManager, iOS SecTrust), so they never link Security.framework bindings.
+test-support = ["dep:rustls-platform-verifier"]
+
+[dependencies]
+aes = "0.8"
+base64 = "0.22"
+brotli-decompressor = "4"
+libc = "0.2"
+jni = { version = "0.21", default-features = false, optional = true }
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = "1"
+url = "2"
+# Pinned to the ASCII-only adapter so url/idna skip the ICU normalization tables (~200 KiB):
+# Unicode (IDN) host names are rejected, punycode (xn--) host names still work.
+idna_adapter = "=1.0.0"
+# No "tls" feature: it compiles in the webpki-roots CA table, which this client never uses;
+# TLS goes through our own rustls config (net.rs RustlsConnector) with platform verification.
+ureq = { version = "2.12", default-features = false }
+zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2"] }
+# zlib-rs: fast pure-Rust inflate (miniz_oxide was 3-4x slower than the system zlib on iOS).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+
+rustls-platform-verifier = { version = "0.5", optional = true }
+
+[dev-dependencies]
+capgo-updater-core = { path = ".", features = ["test-support"] }
+brotli = "7"
+rand = "0.8"
+rsa = "0.9"
+tempfile = "3"
+tiny_http = "0.12"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+
+# Hot paths (inflate, CRC, AES, the engine's own loops) are built for speed; the rest stays small.
+[profile.release.package.capgo-updater-core]
+opt-level = 3
+
+[profile.release.package.zlib-rs]
+opt-level = 3
+
+[profile.release.package.crc32fast]
+opt-level = 3
+
+[profile.release.package.aes]
+opt-level = 3
+
+[profile.release.package.zip]
+opt-level = 3
+
+[profile.release.package.flate2]
+opt-level = 3
+# Only applies to linked outputs (Android .so); iOS static libs are stripped by scripts/build-core.sh.
+strip = true
+
+# Test-only: RSA key generation (rsa dev-dependency) is very slow unoptimized.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
