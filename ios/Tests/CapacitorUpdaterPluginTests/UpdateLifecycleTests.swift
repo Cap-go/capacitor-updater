@@ -61,6 +61,18 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         return downloadedBundleValue
     }
 
+    // Auto-update downloads go through the checksum-verified path.
+    override func downloadVerified(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        expectedChecksum: String,
+        link: String? = nil,
+        comment: String? = nil
+    ) throws -> BundleInfo {
+        try download(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment)
+    }
+
     override func setError(bundle: BundleInfo) {
         setErrorCalls += 1
         currentBundleValue = bundle.setStatus(status: BundleStatus.ERROR.storedValue)
