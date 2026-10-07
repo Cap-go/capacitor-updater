@@ -4596,7 +4596,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         updater.markFailedVersion(versionName)
     }
 
-    /// Plain GET on the updater session (no cookies, no cache, redirect policy applied).
+    /// Dedicated session: every redirect hop must stay on the requested origin.
+    /// The shared updater session and its redirect policy are left untouched.
+    private lazy var websiteSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = implementation.timeout
+        return URLSession(configuration: configuration, delegate: SameOriginRedirectDelegate(), delegateQueue: nil)
+    }()
+
+    /// Plain GET (no cookies, no cache, same-origin redirects only).
     private func websiteFetch(_ url: URL) throws -> WebsiteModeUpdater.FetchResponse {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -4607,12 +4618,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var responseData: Data?
         var urlResponse: URLResponse?
         var responseError: Error?
-        let task = implementation.startRawDataTask(request) { data, response, error in
+        let task = websiteSession.dataTask(with: request) { data, response, error in
             responseData = data
             urlResponse = response
             responseError = error
             semaphore.signal()
         }
+        task.resume()
         if semaphore.wait(timeout: .now() + implementation.timeout + 5) == .timedOut {
             task.cancel()
             throw WebsiteModeUpdater.WebsiteModeError.failed("Request timed out")

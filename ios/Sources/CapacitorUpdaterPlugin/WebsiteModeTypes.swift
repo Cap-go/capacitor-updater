@@ -72,3 +72,24 @@ extension WebsiteModeUpdater {
         let required: Bool
     }
 }
+
+/// Website mode saves files under the requested path, so a redirect must never
+/// let another origin supply bundle code. Each hop is checked before it is followed.
+final class SameOriginRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let original = task.originalRequest?.url,
+              let target = request.url,
+              WebsiteModeUpdater.isSameOrigin(original, target) else {
+            completionHandler(nil)
+            task.cancel()
+            return
+        }
+        completionHandler(request)
+    }
+}

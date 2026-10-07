@@ -201,34 +201,48 @@ final class WebsiteModeUpdater {
         };
     }
 
+    static final int MAX_WEBSITE_REDIRECTS = 5;
+
     static Fetcher okHttpFetcher() {
         return (url) -> {
-            final OkHttpClient client = DownloadService.sharedClient;
-            final Request request = new Request.Builder()
-                .url(url)
-                .header("Accept", "*/*")
-                .header("Cache-Control", "no-cache")
-                .get()
-                .build();
-            try (Response response = client.newCall(request).execute()) {
-                // Files are saved under the requested path, so a redirect must not
-                // let another origin supply code for the bundle.
-                if (!isSameOrigin(url, response.request().url().url())) {
-                    throw new IOException("Cross-origin redirect to " + response.request().url().host());
-                }
-                final ResponseBody body = response.body();
-                final String contentType = response.header("Content-Type", "");
-                if (!response.isSuccessful() || body == null) {
-                    return new FetchResponse(response.code(), new byte[0], contentType);
-                }
-                final long declared = body.contentLength();
-                if (declared > MAX_ASSET_BYTES) {
-                    throw new IOException("Asset too large: " + url);
-                }
-                try (InputStream stream = body.byteStream()) {
-                    return new FetchResponse(response.code(), readLimited(stream, url), contentType);
+            // Redirects are followed by hand so every hop can be checked against
+            // the requested origin: files are saved under the requested path, so
+            // another origin must never supply bundle code. The shared client and
+            // its policy for other downloads stay unchanged.
+            final OkHttpClient client = DownloadService.sharedClient.newBuilder().followRedirects(false).followSslRedirects(false).build();
+            HttpUrl target = HttpUrl.get(url.toString());
+            for (int hop = 0; hop <= MAX_WEBSITE_REDIRECTS; hop++) {
+                final Request request = new Request.Builder()
+                    .url(target)
+                    .header("Accept", "*/*")
+                    .header("Cache-Control", "no-cache")
+                    .get()
+                    .build();
+                try (Response response = client.newCall(request).execute()) {
+                    if (response.isRedirect()) {
+                        final String location = response.header("Location");
+                        final HttpUrl next = location == null ? null : response.request().url().resolve(location);
+                        if (next == null || !isSameOrigin(url, next.url())) {
+                            throw new IOException("Cross-origin redirect from " + url + " blocked");
+                        }
+                        target = next;
+                        continue;
+                    }
+                    final ResponseBody body = response.body();
+                    final String contentType = response.header("Content-Type", "");
+                    if (!response.isSuccessful() || body == null) {
+                        return new FetchResponse(response.code(), new byte[0], contentType);
+                    }
+                    final long declared = body.contentLength();
+                    if (declared > MAX_ASSET_BYTES) {
+                        throw new IOException("Asset too large: " + url);
+                    }
+                    try (InputStream stream = body.byteStream()) {
+                        return new FetchResponse(response.code(), readLimited(stream, url), contentType);
+                    }
                 }
             }
+            throw new IOException("Too many redirects: " + url);
         };
     }
 
