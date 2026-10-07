@@ -870,7 +870,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("init for device " + this.implementation.deviceID);
         logger.info("version native " + this.currentVersionNative.getOriginalString());
-        this.reportAppLaunchStart();
         this.autoDeleteFailed = this.getConfig().getBoolean("autoDeleteFailed", true);
         this.autoDeletePrevious = this.getConfig().getBoolean("autoDeletePrevious", true);
         this.updateUrl = this.getConfig().getString("updateUrl", updateUrlDefault);
@@ -923,11 +922,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Check if app was recently installed/updated BEFORE cleanupObsoleteVersions updates LatestVersionNative
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
-        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
-        if (nativeBuildVersionChanged) {
-            this.clearPreviewSessionForNativeBuildChange();
-        }
-        this.leavePreviewSessionForLaunchIntentIfNeeded();
+        this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
         this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
@@ -2343,6 +2338,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.logger = logger;
     }
 
+    void reportAppLaunchStartForTesting() {
+        this.reportAppLaunchStart();
+    }
+
+    void setCurrentBuildVersionForTesting(final String currentBuildVersion) {
+        this.currentBuildVersion = currentBuildVersion;
+    }
+
+    void resetStartupBundleAndReportAppLaunchStartForTesting(final boolean resetWhenUpdate, final boolean nativeBuildVersionChanged) {
+        this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
+    }
+
+    private void resetStartupBundleAndReportAppLaunchStart(final boolean resetWhenUpdate, final boolean nativeBuildVersionChanged) {
+        this.implementation.autoReset(this.currentBuildVersion, resetWhenUpdate);
+        if (nativeBuildVersionChanged) {
+            this.clearPreviewSessionForNativeBuildChange();
+        }
+        this.leavePreviewSessionForLaunchIntentIfNeeded();
+        this.reportAppLaunchStart();
+    }
+
     void completeBackgroundTaskForTesting(final BundleInfo current, final boolean plannedDirectUpdate) {
         this.endBackGroundTaskWithNotif("test", current.getVersionName(), current, false, plannedDirectUpdate);
     }
@@ -3597,7 +3613,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void leavePreviewSessionForLaunchIntentIfNeeded() {
-        final Intent intent = getActivity() == null ? null : getActivity().getIntent();
+        final Bridge bridge = getBridge();
+        final Activity launchActivity = bridge == null ? null : bridge.getActivity();
+        final Intent intent = launchActivity == null ? null : launchActivity.getIntent();
         if (
             intent == null ||
             !Intent.ACTION_VIEW.equals(intent.getAction()) ||

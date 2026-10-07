@@ -411,19 +411,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            state?.exists != true || (!defaultChannelPersistenceDisabled && state?.isReadable != true) {
             _ = self.persistDefaultChannelStateFromDefaults()
         }
-        self.reportAppLaunchStart()
-        self.implementation.autoReset()
-        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
-        self.appHealthTracker = appHealthTracker
-        appHealthTracker.reportPreviousUncleanForegroundExit()
-        appHealthTracker.startSession()
-
-        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
-        self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
-        if nativeBuildVersionChanged {
-            self.clearPreviewSessionForNativeBuildChange()
-        }
-        self.leavePreviewSessionForLaunchURLIfNeeded()
+        let didResetCurrentBundle = self.resetStartupBundleAndReportAppLaunchStart(
+            resetWhenUpdate: resetWhenUpdate,
+            nativeBuildVersionChanged: nativeBuildVersionChanged
+        )
 
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         self.implementation.beforeDownload = { [weak self] in
@@ -431,11 +422,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
-        if !resetWhenUpdate {
-            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
-            UserDefaults.standard.synchronize()
-        }
-        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
         self.cleanupObsoleteVersions(
             resetWhenUpdate: resetWhenUpdate,
             didResetCurrentBundle: didResetCurrentBundle
@@ -1037,6 +1023,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.logger.info("Native build version changed from \(previous) to \(self.currentBuildVersion). Resetting startup bundle to builtin.")
         self.implementation.reset(isInternal: true)
         return true
+    }
+
+    @discardableResult
+    private func resetStartupBundleAndReportAppLaunchStart(
+        resetWhenUpdate: Bool,
+        nativeBuildVersionChanged: Bool
+    ) -> Bool {
+        self.implementation.autoReset()
+        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
+        self.appHealthTracker = appHealthTracker
+        appHealthTracker.reportPreviousUncleanForegroundExit()
+        appHealthTracker.startSession()
+
+        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
+        self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
+        if nativeBuildVersionChanged {
+            self.clearPreviewSessionForNativeBuildChange()
+        }
+        self.leavePreviewSessionForLaunchURLIfNeeded()
+
+        if !resetWhenUpdate {
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
+        }
+        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
+        self.reportAppLaunchStart()
+        return didResetCurrentBundle
     }
 
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
@@ -4276,6 +4289,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func setCurrentBuildVersionForTesting(_ currentBuildVersion: String) {
         self.currentBuildVersion = currentBuildVersion
+    }
+
+    func resetStartupBundleAndReportAppLaunchStartForTesting(
+        resetWhenUpdate: Bool,
+        nativeBuildVersionChanged: Bool
+    ) -> Bool {
+        self.resetStartupBundleAndReportAppLaunchStart(
+            resetWhenUpdate: resetWhenUpdate,
+            nativeBuildVersionChanged: nativeBuildVersionChanged
+        )
+    }
+
+    func reportAppLaunchStartForTesting() {
+        self.reportAppLaunchStart()
     }
 
     func setAppReadyTimeoutForTesting(_ timeout: Int) {
