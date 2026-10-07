@@ -250,6 +250,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
 
         self.semaphoreUp()
+        // A silent push or background fetch launches the app straight into the background:
+        // no didEnterBackground is posted, so read the state once. Otherwise the notifyAppReady
+        // check would roll back a bundle whose page cannot run before the user opens the app.
+        if Thread.isMainThread {
+            self.appInBackground = UIApplication.shared.applicationState == .background
+        } else {
+            DispatchQueue.main.sync {
+                self.appInBackground = UIApplication.shared.applicationState == .background
+            }
+        }
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
