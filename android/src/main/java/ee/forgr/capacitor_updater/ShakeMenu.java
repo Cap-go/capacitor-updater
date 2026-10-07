@@ -37,6 +37,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     private ThreeFingerPinchDetector pinchDetector;
     /** A menu, picker or switch is in progress: gestures are ignored until it ends. */
     private volatile boolean isShowing = false;
+    /** Dialogs shown by this menu (UI thread only), dismissed by {@link #stop()}. */
+    private final List<Dialog> openDialogs = new ArrayList<>();
     private Logger logger;
     private String gesture;
 
@@ -67,6 +69,11 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         if (pinchDetector != null) {
             pinchDetector.stop();
         }
+        // An open dialog would leak its window when the activity goes away.
+        for (final Dialog dialog : new ArrayList<>(openDialogs)) {
+            dismissQuietly(dialog);
+        }
+        openDialogs.clear();
     }
 
     @Override
@@ -198,7 +205,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 isShowing = false;
             }
         });
-        dialog.show();
+        showQuietly(dialog);
     }
 
     private void addPreviewMenuButton(LinearLayout layout, List<Button> buttons, String title, Runnable action) {
@@ -358,7 +365,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 selectPreview(previewId);
             });
 
-            dialog.show();
+            showQuietly(dialog);
         } catch (Exception e) {
             logger.error("Error presenting preview picker: " + e.getMessage());
             isShowing = false;
@@ -421,7 +428,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                         isShowing = false;
                     }
                 });
-                loadingDialog.show();
+                showQuietly(loadingDialog);
 
                 // Fetch channels in background
                 new Thread(() -> {
@@ -564,7 +571,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 selectChannel(selectedChannel);
             });
 
-            dialog.show();
+            showQuietly(dialog);
         } catch (Exception e) {
             logger.error("Error presenting channel picker: " + e.getMessage());
             isShowing = false;
@@ -587,7 +594,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 progressBuilder.setView(progressBar);
 
                 AlertDialog progressDialog = progressBuilder.create();
-                progressDialog.show();
+                showQuietly(progressDialog);
 
                 new Thread(() -> {
                     // The engine runs setChannel, getLatest, download and next; progress arrives
@@ -731,7 +738,9 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
             return;
         }
         try {
+            openDialogs.removeIf((open) -> !open.isShowing());
             dialog.show();
+            openDialogs.add(dialog);
         } catch (RuntimeException e) {
             logger.error("Cannot show shake menu dialog: " + e.getMessage());
             isShowing = false;

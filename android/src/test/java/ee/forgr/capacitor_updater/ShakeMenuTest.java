@@ -81,6 +81,26 @@ public class ShakeMenuTest {
         menu.stop();
     }
 
+    /** An open menu dialog is closed by stop() (activity destroyed): it would leak its window. */
+    @Test
+    public void stopDismissesTheOpenDialog() throws Exception {
+        final BridgeActivity activity = Robolectric.buildActivity(BridgeActivity.class).get();
+        final ShakeMenu menu = new ShakeMenu(
+            mock(CapacitorUpdaterPlugin.class),
+            activity,
+            new Logger("ShakeMenuTest", new Logger.Options(Logger.LogLevel.silent)),
+            "shake"
+        );
+        setShowing(menu, true);
+        final Method present = ShakeMenu.class.getDeclaredMethod("presentChannelPicker", List.class);
+        present.setAccessible(true);
+        present.invoke(menu, List.of("beta"));
+        final Dialog picker = ShadowDialog.getLatestDialog();
+        assertTrue(picker.isShowing());
+        menu.stop();
+        assertFalse(picker.isShowing());
+    }
+
     /** Background work that ends after the activity finished must not show or dismiss dialogs (BadTokenException). */
     @Test
     public void backgroundResultsAfterTheActivityFinishedShowNoDialog() throws Exception {

@@ -8,13 +8,35 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use crate::api;
 use crate::error::CoreError;
 
+/// Clears a pending Java exception (an OutOfMemoryError from a failed JNI call): calling
+/// Java with one pending aborts under CheckJNI and is undefined otherwise.
+fn clear_exception(env: &mut JNIEnv) {
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
 fn read(env: &mut JNIEnv, value: &JString) -> Result<String, CoreError> {
     if value.is_null() {
         return Ok(String::new());
     }
-    env.get_string(value)
-        .map(Into::into)
-        .map_err(|error| CoreError::invalid_input(format!("Invalid Java string: {error}")))
+    env.get_string(value).map(Into::into).map_err(|error| {
+        clear_exception(env);
+        CoreError::invalid_input(format!("Invalid Java string: {error}"))
+    })
+}
+
+/// The result string for Java, or null (Java reports "no result") when it cannot be made.
+fn java_string(env: &mut JNIEnv, output: String) -> jstring {
+    clear_exception(env);
+    match env.new_string(output) {
+        Ok(value) => value.into_raw(),
+        Err(_) => {
+            clear_exception(env);
+            std::ptr::null_mut()
+        }
+    }
 }
 
 /// `static native String call(String operation, String inputJson)`
@@ -36,9 +58,7 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_call<'lo
         }
     }))
     .unwrap_or_else(|_| api::envelope(Err(CoreError::new("internal", "Core operation panicked"))));
-    env.new_string(output)
-        .map(|value| value.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    java_string(&mut env, output)
 }
 
 // ---------------------------------------------------------------------------
@@ -64,17 +84,25 @@ impl JniHost {
         // A local frame frees this callback's local references when it returns. On a Java
         // thread that called into the engine they would otherwise pile up until that call
         // returns, and Android 7 (API 24/25) aborts the process past 512 of them.
-        env.with_local_frame(16, |env| {
-            let result = f(env);
+        let frame = env.with_local_frame(16, |env| {
+            // A panic must not skip the frame pop: it is caught here and resumed after it.
+            let result = catch_unwind(AssertUnwindSafe(|| f(env)));
             if env.exception_check().unwrap_or(false) {
                 let _ = env.exception_describe();
                 let _ = env.exception_clear();
-                return Ok(None);
+                return Ok(result.map(|_| None));
             }
-            Ok::<_, jni::errors::Error>(result.ok())
-        })
-        .ok()
-        .flatten()
+            Ok::<_, jni::errors::Error>(result.map(Result::ok))
+        });
+        match frame {
+            Ok(Ok(value)) => value,
+            Ok(Err(panic)) => std::panic::resume_unwind(panic),
+            // The frame could not be pushed (out of memory): its exception is still pending.
+            Err(_) => {
+                clear_exception(&mut env);
+                None
+            }
+        }
     }
 
     fn string_arg<'a>(env: &mut JNIEnv<'a>, value: &str) -> jni::errors::Result<JObject<'a>> {
@@ -340,9 +368,7 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineCa
         }
     }))
     .unwrap_or_else(|_| api::envelope(Err(CoreError::new("internal", "Engine operation panicked"))));
-    env.new_string(output)
-        .map(|value| value.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    java_string(&mut env, output)
 }
 
 /// `static native void engineDestroy(long engine)`
