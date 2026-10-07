@@ -17,6 +17,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import org.json.JSONArray;
 
 /**
@@ -97,9 +98,24 @@ final class EngineMethodLanes {
 
     /** Queues {@code task}; {@code onRejected} runs instead once the lanes are shut down. */
     void submit(final String name, final Runnable task, final Runnable onRejected) {
+        this.submit(name, task, onRejected, (error) -> {});
+    }
+
+    /**
+     * Queues {@code task}; {@code onRejected} runs instead once the lanes are shut down, {@code onFailure} when the
+     * task throws. A throw on these threads would reach the default handler, which kills the app on Android.
+     */
+    void submit(final String name, final Runnable task, final Runnable onRejected, final Consumer<Throwable> onFailure) {
+        final Runnable guarded = () -> {
+            try {
+                task.run();
+            } catch (final Throwable error) {
+                runQuietly(() -> onFailure.accept(error));
+            }
+        };
         try {
             if (!this.isDetached(name)) {
-                this.lane.execute(task);
+                this.lane.execute(guarded);
                 return;
             }
             this.lane.execute(() -> {
@@ -110,7 +126,7 @@ final class EngineMethodLanes {
                     this.detached.execute(() -> {
                         LANE_HOLD.set(hold);
                         try {
-                            task.run();
+                            guarded.run();
                         } finally {
                             LANE_HOLD.remove();
                             this.outstanding.decrementAndGet();
@@ -119,7 +135,7 @@ final class EngineMethodLanes {
                     });
                 } catch (final RejectedExecutionException e) {
                     this.outstanding.decrementAndGet();
-                    onRejected.run();
+                    runQuietly(onRejected);
                     return;
                 }
                 if (!startsNow) {
@@ -132,7 +148,16 @@ final class EngineMethodLanes {
                 }
             });
         } catch (final RejectedExecutionException e) {
-            onRejected.run();
+            runQuietly(onRejected);
+        }
+    }
+
+    /** Runs a rejection / failure callback; it must not throw on the caller's thread either. */
+    private static void runQuietly(final Runnable callback) {
+        try {
+            callback.run();
+        } catch (final Throwable ignored) {
+            // The call cannot be answered: nothing left to do.
         }
     }
 

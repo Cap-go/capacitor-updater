@@ -20,6 +20,9 @@ final class CapgoEngine {
     private long handle;
 
     CapgoEngine(final JSONObject config, final CapgoEngineHost host) {
+        if (!CapgoCoreNative.isAvailable()) {
+            throw new IllegalStateException("Capgo native core is not available: " + CapgoCoreNative.loadError());
+        }
         this.handle = CapgoCoreNative.engineCreate(config.toString(), host);
         if (this.handle == 0) {
             throw new IllegalStateException("Capgo engine could not be created (see logs)");
@@ -28,8 +31,28 @@ final class CapgoEngine {
 
     /** Returns the operation value: a JSONObject, JSONArray or {@link JSONObject#NULL}. */
     Object callValue(final String operation, final JSONObject input) throws CapgoCore.Failure {
+        return this.callValue(operation, input, true);
+    }
+
+    /**
+     * Like {@link #call} but never queues behind a pending {@link #close()}: the read-write lock makes new readers
+     * wait once close() waits, and close() waits for the running calls. A call that ends a running one (stop a
+     * download) must not wait for that call to end, else both stall until it ends on its own. Fails as closed while
+     * close() frees the engine.
+     */
+    JSONObject callWithoutWaitingForClose(final String operation, final JSONObject input) throws CapgoCore.Failure {
+        final Object value = this.callValue(operation, input, false);
+        return value instanceof JSONObject ? (JSONObject) value : new JSONObject();
+    }
+
+    private Object callValue(final String operation, final JSONObject input, final boolean waitForClose) throws CapgoCore.Failure {
         final String output;
-        this.lock.readLock().lock();
+        if (waitForClose) {
+            this.lock.readLock().lock();
+        } else if (!this.lock.readLock().tryLock()) {
+            // tryLock() barges past a waiting close(); it fails only while close() frees the engine.
+            throw new CapgoCore.Failure("internal", "Capgo engine is closed");
+        }
         try {
             if (this.handle == 0) {
                 throw new CapgoCore.Failure("internal", "Capgo engine is closed");

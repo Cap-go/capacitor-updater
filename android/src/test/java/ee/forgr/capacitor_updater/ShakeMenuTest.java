@@ -81,6 +81,55 @@ public class ShakeMenuTest {
         menu.stop();
     }
 
+    /** Background work that ends after the activity finished must not show or dismiss dialogs (BadTokenException). */
+    @Test
+    public void backgroundResultsAfterTheActivityFinishedShowNoDialog() throws Exception {
+        final BridgeActivity activity = Robolectric.buildActivity(BridgeActivity.class).get();
+        final CapacitorUpdaterPlugin plugin = mock(CapacitorUpdaterPlugin.class);
+        final CountDownLatch switched = new CountDownLatch(1);
+        when(plugin.setPreviewFromShakeMenu(anyString())).thenAnswer((invocation) -> {
+            switched.countDown();
+            return false;
+        });
+        final ShakeMenu menu = new ShakeMenu(
+            plugin,
+            activity,
+            new Logger("ShakeMenuTest", new Logger.Options(Logger.LogLevel.silent)),
+            "shake"
+        );
+        setShowing(menu, true);
+        activity.finish();
+
+        final Method select = ShakeMenu.class.getDeclaredMethod("selectPreview", String.class);
+        select.setAccessible(true);
+        select.invoke(menu, "preview-1");
+        assertTrue(switched.await(5, TimeUnit.SECONDS));
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (isShowing(menu)) {
+            assertTrue("menu ends", System.nanoTime() < deadline);
+            Thread.sleep(10);
+            shadowOf(Looper.getMainLooper()).idle();
+        }
+        shadowOf(Looper.getMainLooper()).idle();
+        assertEquals(null, ShadowDialog.getLatestDialog());
+
+        // Direct UI calls skip too, and a dialog that is not showing is not dismissed.
+        final Method showError = ShakeMenu.class.getDeclaredMethod("showError", String.class);
+        showError.setAccessible(true);
+        showError.invoke(menu, "late error");
+        assertEquals(null, ShadowDialog.getLatestDialog());
+        final Method dismiss = ShakeMenu.class.getDeclaredMethod("dismissQuietly", Dialog.class);
+        dismiss.setAccessible(true);
+        final Dialog neverShown = mock(Dialog.class);
+        dismiss.invoke(menu, neverShown);
+        org.mockito.Mockito.verify(neverShown, org.mockito.Mockito.never()).dismiss();
+        final Dialog detached = mock(Dialog.class);
+        when(detached.isShowing()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("View not attached to window manager")).when(detached).dismiss();
+        dismiss.invoke(menu, detached);
+        menu.stop();
+    }
+
     private static ListView findListView(final View view) {
         if (view instanceof ListView) {
             return (ListView) view;

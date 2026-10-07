@@ -8,6 +8,7 @@ package ee.forgr.capacitor_updater;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.hardware.SensorManager;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -108,7 +109,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     }
 
     private void showDefaultMenu() {
-        activity.runOnUiThread(() -> {
+        runOnUi(() -> {
             try {
                 if (!plugin.hasActivePreviewSession()) {
                     logger.info("Shake preview menu ignored because no preview session is active");
@@ -219,14 +220,14 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
         new Thread(() -> {
             try {
                 if (!action.run()) {
-                    activity.runOnUiThread(() -> showError(failureMessage));
+                    runOnUi(() -> showError(failureMessage));
                 }
             } catch (Exception e) {
                 logger.error(errorPrefix + e.getMessage());
-                activity.runOnUiThread(() -> showError(errorPrefix + e.getMessage()));
+                runOnUi(() -> showError(errorPrefix + e.getMessage()));
             } finally {
-                activity.runOnUiThread(() -> {
-                    dialog.dismiss();
+                runOnUi(() -> {
+                    dismissQuietly(dialog);
                     isShowing = false;
                 });
             }
@@ -243,7 +244,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     }
 
     private void showPreviewSelector() {
-        activity.runOnUiThread(() -> {
+        runOnUi(() -> {
             try {
                 JSONArray previewsRaw = plugin.previewMenuPreviews();
                 List<JSObject> previews = new ArrayList<>();
@@ -379,17 +380,17 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     isShowing = false;
                 } else {
                     // The error dialog ends the menu when dismissed.
-                    activity.runOnUiThread(() -> showError("Could not switch preview."));
+                    runOnUi(() -> showError("Could not switch preview."));
                 }
             } catch (Exception e) {
                 logger.error("Error switching preview: " + e.getMessage());
-                activity.runOnUiThread(() -> showError("Error switching preview: " + e.getMessage()));
+                runOnUi(() -> showError("Error switching preview: " + e.getMessage()));
             }
         }).start();
     }
 
     private void showChannelSelector() {
-        activity.runOnUiThread(() -> {
+        runOnUi(() -> {
             try {
                 // Show loading dialog
                 AlertDialog.Builder loadingBuilder = new AlertDialog.Builder(activity);
@@ -425,8 +426,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 // Fetch channels in background
                 new Thread(() -> {
                     final JSONObject res = plugin.runEngineMethod("listChannels", new JSONObject());
-                    activity.runOnUiThread(() -> {
-                        loadingDialog.dismiss();
+                    runOnUi(() -> {
+                        dismissQuietly(loadingDialog);
 
                         if (didCancel[0]) {
                             return;
@@ -571,7 +572,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
     }
 
     private void selectChannel(String channelName) {
-        activity.runOnUiThread(() -> {
+        runOnUi(() -> {
             try {
                 // Show progress dialog
                 AlertDialog.Builder progressBuilder = new AlertDialog.Builder(activity);
@@ -591,7 +592,7 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                 new Thread(() -> {
                     // The engine runs setChannel, getLatest, download and next; progress arrives
                     // through the shakeMenuProgress hook.
-                    plugin.shakeMenuProgressListener = (message) -> activity.runOnUiThread(() -> progressDialog.setMessage(message));
+                    plugin.shakeMenuProgressListener = (message) -> runOnUi(() -> progressDialog.setMessage(message));
                     JSONObject result;
                     try {
                         result = plugin.switchChannelFromShakeMenu(channelName);
@@ -603,8 +604,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                     final String status = result.optString("status", "error");
                     final String message = result.optString("message", "Failed to set channel");
                     final String bundleId = result.optString("bundleId", "");
-                    activity.runOnUiThread(() -> {
-                        progressDialog.dismiss();
+                    runOnUi(() -> {
+                        dismissQuietly(progressDialog);
                         if ("updateReady".equals(status)) {
                             showSuccessWithReload(message, () ->
                                 new Thread(() -> {
@@ -634,48 +635,121 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
     private void showError(String message) {
         logger.error(message);
-        new AlertDialog.Builder(activity)
-            .setTitle("Error")
-            .setMessage(message)
-            .setPositiveButton("OK", (d, w) -> {
-                d.dismiss();
-                isShowing = false;
-            })
-            .setOnDismissListener((d) -> isShowing = false)
-            .show();
+        showQuietly(
+            new AlertDialog.Builder(activity)
+                .setTitle("Error")
+                .setMessage(message)
+                .setPositiveButton("OK", (d, w) -> {
+                    d.dismiss();
+                    isShowing = false;
+                })
+                .setOnDismissListener((d) -> isShowing = false)
+                .create()
+        );
     }
 
     private void showSuccess(String message) {
         logger.info(message);
-        new AlertDialog.Builder(activity)
-            .setTitle("Success")
-            .setMessage(message)
-            .setPositiveButton("OK", (d, w) -> {
-                d.dismiss();
-                isShowing = false;
-            })
-            .setOnDismissListener((d) -> isShowing = false)
-            .show();
+        showQuietly(
+            new AlertDialog.Builder(activity)
+                .setTitle("Success")
+                .setMessage(message)
+                .setPositiveButton("OK", (d, w) -> {
+                    d.dismiss();
+                    isShowing = false;
+                })
+                .setOnDismissListener((d) -> isShowing = false)
+                .create()
+        );
     }
 
     private void showSuccessWithReload(String message, Runnable onReload) {
         logger.info(message);
-        new AlertDialog.Builder(activity)
-            .setTitle("Update Ready")
-            .setMessage(message)
-            .setPositiveButton("Reload Now", (d, w) -> {
-                d.dismiss();
-                isShowing = false;
-                if (onReload != null) {
-                    onReload.run();
+        showQuietly(
+            new AlertDialog.Builder(activity)
+                .setTitle("Update Ready")
+                .setMessage(message)
+                .setPositiveButton("Reload Now", (d, w) -> {
+                    d.dismiss();
+                    isShowing = false;
+                    if (onReload != null) {
+                        onReload.run();
+                    }
+                })
+                .setNegativeButton("Later", (d, w) -> {
+                    d.dismiss();
+                    isShowing = false;
+                })
+                .setOnDismissListener((d) -> isShowing = false)
+                .create()
+        );
+    }
+
+    /**
+     * The activity can still show or dismiss a dialog. Background threads post dialog work; once the activity
+     * finished, show() throws BadTokenException and dismiss() "not attached to window manager" on the main thread.
+     */
+    private boolean canUseUi() {
+        final Activity current = this.activity;
+        return current != null && !current.isFinishing() && !current.isDestroyed();
+    }
+
+    /** Runs {@code work} on the UI thread while the activity is alive; a failure is logged and ends the menu. */
+    private void runOnUi(Runnable work) {
+        final Activity current = this.activity;
+        if (!canUseUi()) {
+            logger.info("Shake menu UI skipped: the activity is gone");
+            isShowing = false;
+            return;
+        }
+        try {
+            current.runOnUiThread(() -> {
+                // Checked again: the activity can finish before the posted work runs.
+                if (!canUseUi()) {
+                    logger.info("Shake menu UI skipped: the activity is gone");
+                    isShowing = false;
+                    return;
                 }
-            })
-            .setNegativeButton("Later", (d, w) -> {
-                d.dismiss();
-                isShowing = false;
-            })
-            .setOnDismissListener((d) -> isShowing = false)
-            .show();
+                try {
+                    work.run();
+                } catch (Exception e) {
+                    logger.error("Shake menu UI failed: " + e.getMessage());
+                    isShowing = false;
+                }
+            });
+        } catch (RuntimeException e) {
+            logger.error("Shake menu UI failed: " + e.getMessage());
+            isShowing = false;
+        }
+    }
+
+    /** Shows {@code dialog} unless the activity is gone; never throws. */
+    private void showQuietly(Dialog dialog) {
+        if (!canUseUi()) {
+            logger.info("Shake menu dialog skipped: the activity is gone");
+            isShowing = false;
+            return;
+        }
+        try {
+            dialog.show();
+        } catch (RuntimeException e) {
+            logger.error("Cannot show shake menu dialog: " + e.getMessage());
+            isShowing = false;
+        }
+    }
+
+    /** Dismisses {@code dialog} only while it shows; never throws. */
+    private void dismissQuietly(Dialog dialog) {
+        if (dialog == null) {
+            return;
+        }
+        try {
+            if (dialog.isShowing()) {
+                dialog.dismiss();
+            }
+        } catch (RuntimeException e) {
+            logger.warn("Cannot dismiss shake menu dialog: " + e.getMessage());
+        }
     }
 
     private int dpToPx(int dp) {

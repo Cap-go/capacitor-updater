@@ -26,7 +26,11 @@ final class CapgoEngineHolder {
             // Jobs move to the plugin engine; running calls finish first.
             final CapgoEngine worker = workerEngine;
             workerEngine = null;
-            new Thread(worker::close, "capgo-worker-engine-close").start();
+            try {
+                new Thread(worker::close, "capgo-worker-engine-close").start();
+            } catch (final Throwable e) {
+                // No thread (out of memory): never close inline under this lock, the engine is freed when collected.
+            }
         }
     }
 

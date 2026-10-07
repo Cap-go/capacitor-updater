@@ -168,7 +168,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         appId = CapConfig.loadDefault(this.getActivity()).getString("appId", appId);
         appId = this.getConfig().getString("appId", appId);
         if (appId == null || appId.isEmpty()) {
-            // crash the app on purpose it should not happen
+            // Fail loudly, like every previous version: the updater must not run without an app. On Capacitor 8
+            // PluginHandle.load wraps this in a PluginLoadException and the bridge only logs it: the app starts
+            // without this plugin.
             throw new RuntimeException(
                 "appId is missing in capacitor.config.json or plugin config, and cannot be retrieved from the native app, please add it globally or in the plugin config"
             );
@@ -192,9 +194,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
         );
-        final JSONObject result;
+        final JSONObject identity;
+        final JSONObject loadInput;
         try {
-            final JSONObject identity =
+            identity =
                 new JSONObject()
                     .put("appId", appId)
                     .put("pluginVersion", this.pluginVersion)
@@ -203,16 +206,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     .put("versionOs", Build.VERSION.RELEASE)
                     // Persists across reinstalls
                     .put("deviceId", DeviceIdHelper.getOrCreateDeviceId(this.getContext(), prefs));
-            this.engine = updater.createEngine(identity, WebView.CAP_SERVER_PATH);
-            result = this.engine.call(
-                "pluginLoad",
-                new JSONObject().put("config", this.getConfig().getConfigJSON()).put("native", this.nativeInfo(versionName, versionCode))
-            );
-        } catch (final CapgoCore.Failure e) {
-            // Invalid public key or missing appId: fail loudly, like every previous version.
-            throw new RuntimeException(e.getMessage(), e);
+            loadInput = new JSONObject()
+                .put("config", this.getConfig().getConfigJSON())
+                .put("native", this.nativeInfo(versionName, versionCode));
         } catch (final JSONException e) {
-            throw new IllegalStateException("Invalid plugin configuration", e);
+            logger.error("CapacitorUpdater disabled: invalid plugin configuration: " + e.getMessage());
+            return;
+        }
+        final JSONObject result = this.startEngine(updater, identity, loadInput);
+        if (result == null) {
+            // Degraded: no engine, so no update check, observers or listeners; every method rejects.
+            return;
         }
         // Scheduled downloads (WorkManager jobs) of this process now run on this engine.
         CapgoEngineHolder.setPluginEngine(this.engine);
@@ -252,6 +256,49 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
         } else {
             logger.info("Using activity lifecycle callbacks for foreground/background detection (Android <14)");
+        }
+    }
+
+    /** pluginLoad failures that stop the plugin load, like every previous version; any other one disables the updater. */
+    private static final Set<String> FATAL_LOAD_CODES = Set.of("missing_app_id", "invalid_public_key");
+
+    /**
+     * Creates the engine and runs {@code pluginLoad}. Returns its result, or {@code null} (logged) when the updater
+     * cannot run here: the engine stays {@code null} and every method rejects, the app keeps running on its current
+     * bundle. Throws only for {@link #FATAL_LOAD_CODES}: running without the app id or with a public key that does
+     * not parse would run the updater unprotected. On Capacitor 8 PluginHandle.load wraps that throw in a
+     * PluginLoadException and the bridge only logs it, so the app starts without this plugin.
+     */
+    JSONObject startEngine(final CapgoUpdater updater, final JSONObject identity, final JSONObject loadInput) {
+        if (!CapgoCoreNative.isAvailable()) {
+            // An Error here (UnsatisfiedLinkError) would escape Capacitor's plugin load and crash the app at launch.
+            logger.error("CapacitorUpdater disabled: the native core library cannot be loaded: " + CapgoCoreNative.loadError());
+            return null;
+        }
+        final CapgoEngine engine;
+        try {
+            engine = updater.createEngine(identity, WebView.CAP_SERVER_PATH);
+        } catch (final RuntimeException | LinkageError e) {
+            logger.error("CapacitorUpdater disabled: the engine cannot be created: " + e);
+            return null;
+        }
+        // Set before pluginLoad: its hooks can call back into the engine.
+        this.engine = engine;
+        try {
+            return engine.call("pluginLoad", loadInput);
+        } catch (final CapgoCore.Failure e) {
+            this.engine = null;
+            closeEngine(engine);
+            if (FATAL_LOAD_CODES.contains(e.code)) {
+                throw new RuntimeException(e.getMessage(), e);
+            }
+            logger.error("CapacitorUpdater disabled: pluginLoad failed: " + e.getMessage());
+            return null;
+        } catch (final RuntimeException | LinkageError e) {
+            this.engine = null;
+            closeEngine(engine);
+            logger.error("CapacitorUpdater disabled: pluginLoad failed: " + e);
+            return null;
         }
     }
 
@@ -306,7 +353,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         try {
             return engine.call(operation, input);
-        } catch (final CapgoCore.Failure e) {
+        } catch (final CapgoCore.Failure | RuntimeException e) {
             logger.error("Engine " + operation + " failed: " + e.getMessage());
             return new JSONObject();
         }
@@ -329,7 +376,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 throw new CapgoCore.Failure("not_loaded", "CapacitorUpdater failed to load");
             }
             return engine.call("pluginMethod", new JSONObject().put("name", name).put("args", args == null ? new JSONObject() : args));
-        } catch (final CapgoCore.Failure | JSONException e) {
+        } catch (final CapgoCore.Failure | JSONException | RuntimeException e) {
             final JSONObject rejection = new JSONObject();
             try {
                 rejection.put("reject", new JSONObject().put("message", e.getMessage()));
@@ -348,11 +395,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.methodLanes.submit(
             name,
             () -> settle(call, this.runEngineMethod(name, args)),
-            () -> call.reject("CapacitorUpdater was destroyed")
+            () -> rejectQuietly(call, "CapacitorUpdater was destroyed"),
+            (error) -> {
+                logger.error("Method " + name + " failed: " + error);
+                rejectQuietly(call, "CapacitorUpdater method " + name + " failed: " + error.getMessage());
+            }
         );
     }
 
+    /** Rejects {@code call}; a bridge that cannot deliver it (destroyed) must not take the app down. */
+    static void rejectQuietly(final PluginCall call, final String message) {
+        try {
+            call.reject(message);
+        } catch (final RuntimeException ignored) {
+            // Nothing left to answer.
+        }
+    }
+
+    /** Answers {@code call} with an engine method result. Never throws: this runs on the method threads. */
     static void settle(final PluginCall call, final JSONObject result) {
+        if (result == null) {
+            rejectQuietly(call, "Engine returned no result");
+            return;
+        }
         try {
             final JSONObject rejection = result.optJSONObject("reject");
             if (rejection != null) {
@@ -375,8 +440,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 wrapped.put("value", value);
                 call.resolve(wrapped);
             }
-        } catch (final JSONException e) {
-            call.reject("Invalid engine result: " + e.getMessage());
+        } catch (final JSONException | RuntimeException e) {
+            // A payload JSObject cannot copy, or a bridge that fails to deliver the answer.
+            rejectQuietly(call, "Invalid engine result: " + e.getMessage());
         }
     }
 
@@ -1444,15 +1510,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.methodLanes.shutdown();
         if (engine != null) {
             CapgoEngineHolder.clearPluginEngine(engine);
-            new Thread(() -> {
-                // Calls waiting for a scheduled download return; the WorkManager jobs go on and record their bundle.
-                try {
-                    engine.call("detachScheduledDownloads", null);
-                } catch (final CapgoCore.Failure ignored) {
-                    // Already closed.
-                }
-                engine.close();
-            }, "capgo-engine-close").start();
+            closeEngine(engine);
+        }
+    }
+
+    /** Detaches the engine's scheduled downloads, then frees it, on its own thread (see {@link #releaseEngine()}). */
+    private void closeEngine(final CapgoEngine engine) {
+        final Runnable close = () -> {
+            // Calls waiting for a scheduled download return; the WorkManager jobs go on and record their bundle.
+            try {
+                engine.call("detachScheduledDownloads", null);
+            } catch (final CapgoCore.Failure | RuntimeException ignored) {
+                // Already closed.
+            }
+            engine.close();
+        };
+        try {
+            new Thread(close, "capgo-engine-close").start();
+        } catch (final Throwable e) {
+            // No thread (out of memory). Closing inline could wait forever for a call waiting on this (main)
+            // thread: skip it, the Rust engine is freed when the Java handle is collected.
+            if (logger != null) {
+                logger.error("Cannot release the engine: " + e);
+            }
         }
     }
 
@@ -1573,6 +1653,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.error("Failed to open Play Store: " + ex.getMessage());
                 call.reject("Failed to open Play Store: " + ex.getMessage());
             }
+        } catch (Exception e) {
+            // SecurityException (store activity not exported to this app), a missing context: reject, never crash.
+            logger.error("Failed to open Play Store: " + e.getMessage());
+            call.reject("Failed to open Play Store: " + e.getMessage());
         }
     }
 

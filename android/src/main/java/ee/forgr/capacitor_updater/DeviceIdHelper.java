@@ -66,7 +66,7 @@ public class DeviceIdHelper {
             }
 
             // Migration: Check legacy SharedPreferences for existing device ID
-            deviceId = legacyPrefs.getString(LEGACY_PREFS_KEY, null);
+            deviceId = readLegacyDeviceId(legacyPrefs);
 
             if (deviceId == null || deviceId.isEmpty()) {
                 // Generate new device ID if none exists
@@ -210,14 +210,31 @@ public class DeviceIdHelper {
      * @return Device ID string
      */
     private static String getFallbackDeviceId(SharedPreferences legacyPrefs) {
-        String deviceId = legacyPrefs.getString(LEGACY_PREFS_KEY, null);
+        // Last resort, outside any try: it must not throw, the plugin load would fail.
+        try {
+            String deviceId = readLegacyDeviceId(legacyPrefs);
 
-        if (deviceId == null || deviceId.isEmpty()) {
-            deviceId = UUID.randomUUID().toString();
-            saveLegacyDeviceId(legacyPrefs, deviceId);
+            if (deviceId == null || deviceId.isEmpty()) {
+                deviceId = UUID.randomUUID().toString();
+                saveLegacyDeviceId(legacyPrefs, deviceId);
+            }
+
+            return deviceId.toLowerCase();
+        } catch (RuntimeException e) {
+            return UUID.randomUUID().toString();
         }
+    }
 
-        return deviceId.toLowerCase();
+    /**
+     * The legacy ID, {@code null} when absent. A value stored with another type makes getString throw
+     * ClassCastException: it is no device ID (as text, "true" would be shared by many devices), so a new one replaces it.
+     */
+    static String readLegacyDeviceId(SharedPreferences legacyPrefs) {
+        try {
+            return legacyPrefs.getString(LEGACY_PREFS_KEY, null);
+        } catch (ClassCastException e) {
+            return null;
+        }
     }
 
     private static void saveLegacyDeviceId(SharedPreferences legacyPrefs, String deviceId) {

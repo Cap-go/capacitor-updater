@@ -178,8 +178,10 @@ public final class CapgoDownloadWorker extends Worker {
             return;
         }
         try {
-            engine.call("stopScheduledDownload", CapgoCore.input(KEY_ID, id));
-        } catch (final CapgoCore.Failure ignored) {
+            // Must not wait behind a pending close(): close() waits for this very download, which only the stop ends
+            // early, and WorkManager calls onStopped on its own thread.
+            engine.callWithoutWaitingForClose("stopScheduledDownload", CapgoCore.input(KEY_ID, id));
+        } catch (final CapgoCore.Failure | RuntimeException ignored) {
             // Engine released: its run is already over.
         }
     }

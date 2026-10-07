@@ -230,7 +230,8 @@ public class Logger {
         // If the label is ASCII, surround it with []
         String format;
 
-        if (label != null) {
+        // The silent level's label is empty: charAt(0) would throw.
+        if (label != null && !label.isEmpty()) {
             format = label.charAt(0) <= 127 ? "[%s]: %s" : "%s %s";
         } else {
             label = "";

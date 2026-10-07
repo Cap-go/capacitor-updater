@@ -169,7 +169,8 @@ public class CapgoUpdater {
         );
         try {
             return new CapgoEngine(config, updater.host);
-        } catch (IllegalStateException e) {
+        } catch (IllegalStateException | LinkageError e) {
+            // Native core missing or broken: the job fails instead of crashing the WorkManager process.
             logger.error("Cannot create the engine for a background download: " + e.getMessage());
             return null;
         }
@@ -287,10 +288,21 @@ public class CapgoUpdater {
      * longer exists: cancel any left from before the upgrade (the update check downloads again).
      */
     private void cancelLegacyDownloadWork() {
+        // Off the main thread: the plugin loads during Activity.onCreate and WorkManager.getInstance can initialize
+        // WorkManager there. The legacy tag is not the engine's, so nothing depends on the order.
+        final Runnable cancel = () -> {
+            try {
+                WorkManager.getInstance(this.context.getApplicationContext()).cancelAllWorkByTag("capacitor_updater_download");
+            } catch (final Exception e) {
+                logger.debug("No legacy download work to cancel: " + e.getMessage());
+            }
+        };
         try {
-            WorkManager.getInstance(this.context.getApplicationContext()).cancelAllWorkByTag("capacitor_updater_download");
-        } catch (final Exception e) {
-            logger.debug("No legacy download work to cancel: " + e.getMessage());
+            final Thread thread = new Thread(cancel, "capgo-legacy-work-cancel");
+            thread.setDaemon(true);
+            thread.start();
+        } catch (final Throwable e) {
+            logger.debug("Cannot cancel legacy download work: " + e.getMessage());
         }
     }
 

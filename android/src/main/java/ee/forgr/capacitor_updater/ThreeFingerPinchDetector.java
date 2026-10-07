@@ -6,6 +6,7 @@
 
 package ee.forgr.capacitor_updater;
 
+import android.os.Build;
 import android.view.ActionMode;
 import android.view.KeyEvent;
 import android.view.KeyboardShortcutGroup;
@@ -315,7 +316,8 @@ public class ThreeFingerPinchDetector {
 
         @Override
         public void onPointerCaptureChanged(boolean hasCapture) {
-            if (delegate != null) {
+            // API 26 method: a delegate on API 24-25 does not have it (NoSuchMethodError / AbstractMethodError).
+            if (delegate != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 delegate.onPointerCaptureChanged(hasCapture);
             }
         }

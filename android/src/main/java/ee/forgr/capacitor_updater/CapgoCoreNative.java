@@ -19,16 +19,48 @@ final class CapgoCoreNative {
     /** JVM unit tests only: path of the core built for the host (set by android/build.gradle). */
     static final String HOST_LIBRARY_PROPERTY = "capgo.core.hostLibrary";
 
+    /**
+     * Why the library did not load, {@code null} when it did. A throw from this static block would make every later
+     * use of the class fail with NoClassDefFoundError and, as an Error, escape Capacitor's plugin load and crash the
+     * app at launch (missing ABI, 16 KB page device, broken split install): the plugin checks {@link #isAvailable()}
+     * and runs without the updater instead.
+     */
+    private static final Throwable LOAD_ERROR;
+    /** Tests only: a simulated load failure. */
+    private static volatile Throwable simulatedLoadError;
+
     static {
-        final String hostLibrary = System.getProperty(HOST_LIBRARY_PROPERTY);
-        if (hostLibrary == null || hostLibrary.isEmpty()) {
-            System.loadLibrary("capgo_updater_core");
-        } else {
-            loadHostLibrary(new File(hostLibrary));
+        Throwable error = null;
+        try {
+            final String hostLibrary = System.getProperty(HOST_LIBRARY_PROPERTY);
+            if (hostLibrary == null || hostLibrary.isEmpty()) {
+                System.loadLibrary("capgo_updater_core");
+            } else {
+                loadHostLibrary(new File(hostLibrary));
+            }
+        } catch (final Throwable e) {
+            error = e;
         }
+        LOAD_ERROR = error;
     }
 
     private CapgoCoreNative() {}
+
+    /** {@code false} when the native core could not be loaded: no native method may be called. */
+    static boolean isAvailable() {
+        return loadError() == null;
+    }
+
+    /** Why the native core could not be loaded, {@code null} when it is available. */
+    static Throwable loadError() {
+        final Throwable simulated = simulatedLoadError;
+        return simulated != null ? simulated : LOAD_ERROR;
+    }
+
+    /** Tests: simulate a library that failed to load; {@code null} ends the simulation. */
+    static void setLoadErrorForTesting(final Throwable error) {
+        simulatedLoadError = error;
+    }
 
     /** Runs a core operation; returns the JSON envelope {"ok":...}. Never null. */
     static native String call(String operation, String inputJson);
