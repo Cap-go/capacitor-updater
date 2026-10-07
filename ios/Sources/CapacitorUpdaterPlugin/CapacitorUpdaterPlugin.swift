@@ -111,7 +111,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     var shakeMenuPinchGestureRecognizer: ThreeFingerPinchGestureRecognizer?
     var shakeMenuPinchGestureTriggered = false
     /// Progress of the running shake-menu channel switch (`shakeMenuProgress` hook).
-    var shakeMenuProgress: ((String) -> Void)?
+    /// Locked: set from the switch's queue, read on the engine hook thread.
+    var shakeMenuProgress: ((String) -> Void)? {
+        get {
+            shakeMenuProgressLock.lock()
+            defer { shakeMenuProgressLock.unlock() }
+            return shakeMenuProgressValue
+        }
+        set {
+            shakeMenuProgressLock.lock()
+            shakeMenuProgressValue = newValue
+            shakeMenuProgressLock.unlock()
+        }
+    }
+    private var shakeMenuProgressValue: ((String) -> Void)?
+    private let shakeMenuProgressLock = NSLock()
 
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)

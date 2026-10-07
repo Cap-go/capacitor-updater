@@ -70,3 +70,17 @@ class CrashSafetyTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
     }
 }
+
+extension CrashSafetyTests {
+    /// Set from the channel switch's queue while the engine hook thread reads it.
+    func testShakeMenuProgressCanBeSetAndReadConcurrently() {
+        let plugin = CapacitorUpdaterPlugin()
+        DispatchQueue.concurrentPerform(iterations: 2_000) { index in
+            if index % 2 == 0 {
+                plugin.shakeMenuProgress = index % 4 == 0 ? { _ in /* no progress UI in tests */ } : nil
+            } else {
+                plugin.shakeMenuProgress?("x")
+            }
+        }
+    }
+}
