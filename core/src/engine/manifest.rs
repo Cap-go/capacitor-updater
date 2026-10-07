@@ -413,7 +413,10 @@ impl Engine {
         if cancel.is_cancelled() {
             return Err(CoreError::new("download_stopped", "Download cancelled"));
         }
-        if let Some(error) = first_error.into_inner().unwrap() {
+        if let Some(error) = first_error
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
             return Err(error);
         }
         self.send_stats("download_manifest_complete", Some(&request.version), None, None);

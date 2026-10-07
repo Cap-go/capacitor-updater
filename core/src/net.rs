@@ -549,6 +549,9 @@ impl std::fmt::Display for CertificateRejected {
 
 impl std::error::Error for CertificateRejected {}
 
+/// Longest server certificate chain passed to the host verifier.
+const MAX_CERTIFICATE_CHAIN: usize = 32;
+
 fn certificate_rejected(message: String) -> rustls::Error {
     rustls::Error::InvalidCertificate(rustls::CertificateError::Other(rustls::OtherError(Arc::new(
         CertificateRejected(message),
@@ -584,6 +587,13 @@ impl ServerCertVerifier for HostVerifier {
             ServerName::IpAddress(ip) => std::net::IpAddr::from(*ip).to_string(),
             _ => String::new(),
         };
+        // Real chains have a handful of certificates. A server can send thousands before any
+        // trust decision: refused here instead of handing them all to the host.
+        if intermediates.len() >= MAX_CERTIFICATE_CHAIN {
+            return Err(certificate_rejected(format!(
+                "Certificate chain longer than {MAX_CERTIFICATE_CHAIN} certificates"
+            )));
+        }
         let mut chain: Vec<&[u8]> = vec![end_entity.as_ref()];
         chain.extend(intermediates.iter().map(|cert| cert.as_ref()));
         match self.host.verify_server_certificate(&chain, &name) {
@@ -721,6 +731,23 @@ mod tests {
         fn hook(&self, _name: &str, _payload: &Value) -> Option<Value> {
             Some(serde_json::json!({ "type": "http", "host": "127.0.0.1", "port": 3128 }))
         }
+    }
+
+    /// A server can send thousands of certificates before any trust decision: the host
+    /// (JNI on Android 7: 512 local references at most) never sees more than the cap.
+    #[test]
+    fn huge_certificate_chains_are_refused_before_the_host() {
+        let host = Arc::new(crate::host::MemoryHost::default());
+        let verifier = HostVerifier {
+            host: host.clone(),
+            provider: provider(),
+        };
+        let end_entity = CertificateDer::from(vec![1u8]);
+        let intermediates = vec![CertificateDer::from(vec![2u8]); 3000];
+        let server_name = ServerName::try_from("example.com").unwrap();
+        let verdict = verifier.verify_server_cert(&end_entity, &intermediates, &server_name, &[], UnixTime::now());
+        assert!(verdict.is_err());
+        assert!(host.certificate_requests.lock_or_recover().is_empty());
     }
 
     /// `agent_for` reads the timeout under the `proxied` lock, `set_timeout` clears `proxied`:

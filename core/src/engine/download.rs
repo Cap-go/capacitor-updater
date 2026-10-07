@@ -159,8 +159,7 @@ impl Engine {
 
     pub fn is_downloading(&self, version: &str) -> bool {
         self.downloads
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .get(version)
             .is_some_and(|tokens| !tokens.is_empty())
     }
@@ -858,21 +857,26 @@ impl Engine {
     }
 }
 
+/// Every file under `dir`. Walks with a heap work list: recursion per folder level could
+/// overflow a host thread's stack on a deeply nested bundle.
 pub(crate) fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with("__MACOSX") || name.starts_with('.') {
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
             continue;
-        }
-        let path = entry.path();
-        // Never descend through a directory symlink: `assets/loop -> .` would recurse forever.
-        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-            collect_files(&path, out);
-        } else if path.is_file() {
-            out.push(path);
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("__MACOSX") || name.starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            // Never descend through a directory symlink: `assets/loop -> .` would loop forever.
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                pending.push(path);
+            } else if path.is_file() {
+                out.push(path);
+            }
         }
     }
 }

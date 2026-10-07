@@ -395,7 +395,10 @@ pub fn extract_zip(
             let _ = handle.join();
         }
     });
-    match first_error.into_inner().unwrap() {
+    match first_error
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
         Some(error) => Err(error),
         None => Ok(()),
     }

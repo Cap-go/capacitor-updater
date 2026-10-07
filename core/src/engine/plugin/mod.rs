@@ -400,6 +400,17 @@ pub struct Plugin {
     /// Serializes `notifyAppReady` confirming the current bundle with the rollback
     /// check failing it: a confirmation never loses against a concurrent rollback.
     confirmation: Mutex<()>,
+    /// Lifecycle work (foreground / background) waiting to run, in call order.
+    lifecycle: Mutex<LifecycleQueue>,
+}
+
+type LifecycleTask = Box<dyn FnOnce(&Engine) + Send>;
+
+#[derive(Default)]
+struct LifecycleQueue {
+    tasks: std::collections::VecDeque<LifecycleTask>,
+    /// A worker thread is draining `tasks`.
+    draining: bool,
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -591,14 +602,40 @@ impl Engine {
         self.app_terminated();
     }
 
-    /// Runs lifecycle work off the caller's thread (hosts call from the UI thread).
+    /// Runs lifecycle work off the caller's thread (hosts call from the UI thread), one task
+    /// at a time in call order: a quick background then foreground ran on two threads in
+    /// either order, so the background install could land after the foreground check.
     pub(crate) fn spawn_plugin_task(&self, task: impl FnOnce(&Engine) + Send + 'static) {
-        let weak = self.weak_self();
-        self.spawn("task", move || {
-            if let Some(engine) = weak.upgrade() {
-                task(&engine);
+        {
+            let mut queue = self.plugin.lifecycle.lock_or_recover();
+            queue.tasks.push_back(Box::new(task));
+            if queue.draining {
+                return;
             }
+            queue.draining = true;
+        }
+        let weak = self.weak_self();
+        let started = self.spawn("lifecycle", move || loop {
+            let Some(engine) = weak.upgrade() else {
+                return;
+            };
+            let next = {
+                let mut queue = engine.plugin.lifecycle.lock_or_recover();
+                let next = queue.tasks.pop_front();
+                queue.draining = next.is_some();
+                next
+            };
+            let Some(task) = next else {
+                return;
+            };
+            // A panicking task must not stop the queue: later tasks would never run.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task(&engine)));
         });
+        if !started {
+            let mut queue = self.plugin.lifecycle.lock_or_recover();
+            queue.tasks.clear();
+            queue.draining = false;
+        }
     }
 
     pub(crate) fn sleep_unless_dropped(

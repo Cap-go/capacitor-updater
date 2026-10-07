@@ -284,7 +284,9 @@ impl Host for JniHost {
             let certificates = env.new_object_array(chain.len() as i32, byte_array_class, JObject::null())?;
             for (index, der) in chain.iter().enumerate() {
                 let bytes = env.byte_array_from_slice(der)?;
-                env.set_object_array_element(&certificates, index as i32, bytes)?;
+                env.set_object_array_element(&certificates, index as i32, &bytes)?;
+                // One local reference per certificate would overflow Android 7's 512 limit.
+                env.delete_local_ref(bytes)?;
             }
             let server_name = Self::string_arg(env, server_name)?;
             let error = env

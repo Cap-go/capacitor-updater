@@ -62,11 +62,35 @@ pub fn resolve_inside(root: &Path, relative: &str) -> CoreResult<PathBuf> {
 
 pub(crate) fn remove_path(path: &Path) -> std::io::Result<()> {
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path),
+        Ok(metadata) if metadata.is_dir() => remove_dir_iteratively(path),
         Ok(_) => fs::remove_file(path),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+/// `fs::remove_dir_all` recurses once per level (about 2 KiB of stack each on Apple
+/// platforms): deleting a deep bundle tree overflowed host thread stacks (512 KiB on iOS
+/// GCD workers) and aborted the app. Same walk, with the work list on the heap.
+fn remove_dir_iteratively(root: &Path) -> std::io::Result<()> {
+    let mut pending = vec![(root.to_path_buf(), false)];
+    while let Some((dir, emptied)) = pending.pop() {
+        if emptied {
+            fs::remove_dir(&dir)?;
+            continue;
+        }
+        pending.push((dir.clone(), true));
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            // `file_type` does not follow symlinks: a link to a folder is removed, not walked.
+            if entry.file_type()?.is_dir() {
+                pending.push((entry.path(), false));
+            } else {
+                fs::remove_file(entry.path())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl Engine {
