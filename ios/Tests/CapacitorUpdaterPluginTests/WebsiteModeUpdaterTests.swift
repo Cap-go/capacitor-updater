@@ -104,6 +104,12 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertFalse(WebsiteModeUpdater.isRootWebsiteUrl(URL(string: "https://example.com/app/")!))
     }
 
+    func testComparesOrigins() {
+        XCTAssertTrue(WebsiteModeUpdater.isSameOrigin(URL(string: "https://a.example.com/x")!, URL(string: "https://A.example.com:443/y")!))
+        XCTAssertFalse(WebsiteModeUpdater.isSameOrigin(URL(string: "https://a.example.com/x")!, URL(string: "https://evil.example.com/x")!))
+        XCTAssertFalse(WebsiteModeUpdater.isSameOrigin(URL(string: "https://a.example.com/x")!, URL(string: "http://a.example.com/x")!))
+    }
+
     // MARK: - Version id
 
     func testVersionIdIsDeterministicSha256Prefix() {

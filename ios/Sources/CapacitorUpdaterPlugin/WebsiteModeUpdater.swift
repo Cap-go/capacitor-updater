@@ -47,6 +47,17 @@ final class WebsiteModeUpdater {
         host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
     }
 
+    /// Same scheme, host and port: redirects must not change where bundle files come from.
+    static func isSameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+            && lhs.host?.lowercased() == rhs.host?.lowercased()
+            && (lhs.port ?? defaultPort(lhs)) == (rhs.port ?? defaultPort(rhs))
+    }
+
+    private static func defaultPort(_ url: URL) -> Int {
+        url.scheme?.lowercased() == "http" ? 80 : 443
+    }
+
     /// Asset paths are stored relative to the bundle root, so the website must be served from its root.
     static func isRootWebsiteUrl(_ url: URL) -> Bool {
         let path = url.path

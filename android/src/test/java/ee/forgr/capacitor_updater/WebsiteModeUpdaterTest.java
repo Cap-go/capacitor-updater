@@ -160,6 +160,19 @@ public class WebsiteModeUpdaterTest {
         assertFalse(WebsiteModeUpdater.isRootWebsiteUrl(new java.net.URL("https://example.com/app/")));
     }
 
+    @Test
+    public void comparesOrigins() throws Exception {
+        assertTrue(
+            WebsiteModeUpdater.isSameOrigin(new java.net.URL("https://a.example.com/x"), new java.net.URL("https://A.example.com:443/y"))
+        );
+        assertFalse(
+            WebsiteModeUpdater.isSameOrigin(new java.net.URL("https://a.example.com/x"), new java.net.URL("https://evil.example.com/x"))
+        );
+        assertFalse(
+            WebsiteModeUpdater.isSameOrigin(new java.net.URL("https://a.example.com/x"), new java.net.URL("http://a.example.com/x"))
+        );
+    }
+
     // ---- Version id ----
 
     @Test

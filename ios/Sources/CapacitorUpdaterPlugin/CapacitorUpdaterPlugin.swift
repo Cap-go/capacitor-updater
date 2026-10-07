@@ -4623,6 +4623,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let http = urlResponse as? HTTPURLResponse else {
             throw WebsiteModeUpdater.WebsiteModeError.failed("Missing HTTP response")
         }
+        // Files are saved under the requested path, so a redirect must not
+        // let another origin supply code for the bundle.
+        if let finalUrl = http.url, !WebsiteModeUpdater.isSameOrigin(url, finalUrl) {
+            throw WebsiteModeUpdater.WebsiteModeError.failed("Cross-origin redirect to \(finalUrl.host ?? "unknown host")")
+        }
         let data = responseData ?? Data()
         if data.count > WebsiteModeUpdater.maxAssetBytes {
             throw WebsiteModeUpdater.WebsiteModeError.failed("Asset too large")
@@ -4701,9 +4706,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.applyWebsiteModeTelemetry(capgoMode: false)
 
-        guard live.isWebsiteUpdateAllowed,
-              let websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl),
-              WebsiteModeUpdater.isRootWebsiteUrl(websiteUrl) else {
+        if live.isWebsiteUpdateAllowed,
+           let candidate = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl),
+           !WebsiteModeUpdater.isRootWebsiteUrl(candidate) {
+            logger.error("Website mode needs a website served from its root, got: \(candidate.absoluteString)")
+            self.endBackGroundTaskWithNotif(
+                msg: "Website URL must be served from its root",
+                latestVersionName: current.getVersionName(),
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        guard live.isWebsiteUpdateAllowed, let websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl) else {
             logger.info("Website update not allowed: \(live.reason.isEmpty ? "no reason" : live.reason)")
             self.endBackGroundTaskWithNotif(
                 msg: "Website update not allowed",

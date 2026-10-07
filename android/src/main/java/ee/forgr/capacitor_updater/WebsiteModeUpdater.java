@@ -211,6 +211,11 @@ final class WebsiteModeUpdater {
                 .get()
                 .build();
             try (Response response = client.newCall(request).execute()) {
+                // Files are saved under the requested path, so a redirect must not
+                // let another origin supply code for the bundle.
+                if (!isSameOrigin(url, response.request().url().url())) {
+                    throw new IOException("Cross-origin redirect to " + response.request().url().host());
+                }
                 final ResponseBody body = response.body();
                 final String contentType = response.header("Content-Type", "");
                 if (!response.isSuccessful() || body == null) {
@@ -261,6 +266,15 @@ final class WebsiteModeUpdater {
     /** Plain HTTP is only accepted for loopback hosts (local development). */
     static boolean isLoopbackHost(final String host) {
         return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
+    }
+
+    /** Same scheme, host and port: redirects must not change where bundle files come from. */
+    static boolean isSameOrigin(final URL a, final URL b) {
+        return (
+            a.getProtocol().equalsIgnoreCase(b.getProtocol()) &&
+            a.getHost().equalsIgnoreCase(b.getHost()) &&
+            (a.getPort() == -1 ? a.getDefaultPort() : a.getPort()) == (b.getPort() == -1 ? b.getDefaultPort() : b.getPort())
+        );
     }
 
     /** Asset paths are stored relative to the bundle root, so the website must be served from its root. */
