@@ -1582,7 +1582,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let status = previewPlugin.triggerBackgroundUpdateCheck()
 
-        XCTAssertEqual(status, "preview_session")
+        XCTAssertEqual(status, "unavailable")
         XCTAssertFalse(previewImplementation.resetCalled)
         XCTAssertFalse(previewPlugin.notifiedEventNames.contains("updateAvailable"))
         XCTAssertFalse(previewPlugin.notifiedEventNames.contains("downloadFailed"))

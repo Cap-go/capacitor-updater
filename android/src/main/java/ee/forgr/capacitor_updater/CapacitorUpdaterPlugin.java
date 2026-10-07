@@ -222,6 +222,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private volatile Thread backgroundDownloadTask;
     private volatile Thread appReadyCheck;
+    // Between appMovedToBackground and appMovedToForeground. Android freezes backgrounded apps, so the
+    // page cannot call notifyAppReady until the next foreground, which arms a fresh rollback check.
+    private volatile boolean appInBackground = false;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
     // Armed only after a reload. The next document stamps this generation into notifyAppReady.
@@ -247,6 +250,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean defaultChannelCleanupMustRetry = false;
 
     private int lastNotifiedStatPercent = 0;
+    private String lastNotifiedStatBundleId = null;
+    private final Object downloadStatLock = new Object();
 
     private DelayUpdateUtils delayUpdateUtils;
 
@@ -2540,6 +2545,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("Cleanup finished, proceeding with download");
     }
 
+    /**
+     * Returns the {@code download_N} stat to send for this progress, or null. Buckets are tracked per
+     * download: a new download (percent 0 or another bundle id) starts from zero again.
+     */
+    String nextDownloadStatAction(final String id, final int percent) {
+        synchronized (this.downloadStatLock) {
+            if (percent == 0 || !Objects.equals(id, this.lastNotifiedStatBundleId)) {
+                this.lastNotifiedStatBundleId = id;
+                this.lastNotifiedStatPercent = 0;
+            }
+            final int currentStatPercent = (percent / 10) * 10; // Round down to nearest 10
+            if (currentStatPercent <= this.lastNotifiedStatPercent) {
+                return null;
+            }
+            this.lastNotifiedStatPercent = currentStatPercent;
+            return "download_" + currentStatPercent;
+        }
+    }
+
+    private void markDownloadStatPercent(final String id, final int percent) {
+        synchronized (this.downloadStatLock) {
+            this.lastNotifiedStatBundleId = id;
+            this.lastNotifiedStatPercent = percent;
+        }
+    }
+
     public void notifyDownload(final String id, final int percent) {
         try {
             final JSObject ret = new JSObject();
@@ -2552,12 +2583,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 final JSObject retDownloadComplete = new JSObject(ret, new String[] { "bundle" });
                 this.notifyListeners("downloadComplete", retDownloadComplete);
                 this.implementation.sendStats("download_complete", bundleInfo.getVersionName());
-                lastNotifiedStatPercent = 100;
+                this.markDownloadStatPercent(id, 100);
             } else {
-                int currentStatPercent = (percent / 10) * 10; // Round down to nearest 10
-                if (currentStatPercent > lastNotifiedStatPercent) {
-                    this.implementation.sendStats("download_" + currentStatPercent, bundleInfo.getVersionName());
-                    lastNotifiedStatPercent = currentStatPercent;
+                final String statAction = this.nextDownloadStatAction(id, percent);
+                if (statAction != null) {
+                    this.implementation.sendStats(statAction, bundleInfo.getVersionName());
                 }
             }
         } catch (final Exception e) {
@@ -2937,22 +2967,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } catch (final Exception e) {
                     logger.error("Failed to download from: " + url + " " + e.getMessage());
                     call.reject("Failed to download from: " + url, e);
-                    final JSObject ret = new JSObject();
-                    ret.put("version", version);
-                    CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
-                    final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-                    CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail", current.getVersionName());
+                    CapacitorUpdaterPlugin.this.notifyManualDownloadFailed(version, e);
                 }
             });
         } catch (final Exception e) {
             logger.error("Failed to download from: " + url + " " + e.getMessage());
             call.reject("Failed to download from: " + url, e);
-            final JSObject ret = new JSObject();
-            ret.put("version", version);
-            CapacitorUpdaterPlugin.this.notifyListeners("downloadFailed", ret);
-            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-            CapacitorUpdaterPlugin.this.implementation.sendStats("download_fail", current.getVersionName());
+            this.notifyManualDownloadFailed(version, e);
         }
+    }
+
+    /** Emits downloadFailed + download_fail once: the updater already did it for worker failures. */
+    void notifyManualDownloadFailed(final String version, final Exception error) {
+        if (error instanceof CapgoUpdater.ReportedDownloadFailureException) {
+            return;
+        }
+        final JSObject ret = new JSObject();
+        ret.put("version", version);
+        this.notifyListeners("downloadFailed", ret);
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        this.implementation.sendStats("download_fail", current.getVersionName());
     }
 
     private void syncKeepUrlPathFlag(final boolean enabled) {
@@ -3074,6 +3108,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
+        if (this.appInBackground) {
+            return this.reloadInBackground();
+        }
         // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
         this.clearPendingNotifyAppReadyWait();
         final int phase = this.semaphoreUp();
@@ -3085,6 +3122,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Wait for the reload to complete (until notifyAppReady is called)
         return this.semaphoreWait(phase, waitTimeMs);
+    }
+
+    /**
+     * A backgrounded app is frozen by Android: the reloaded page cannot call notifyAppReady before the
+     * next foreground, so waiting here would only time out. Apply the bundle, and let the next appReady
+     * wait for the page instead (the next foreground also arms a fresh rollback check).
+     */
+    private boolean reloadInBackground() {
+        logger.info("App is in background, reload does not wait for notifyAppReady");
+        this.armPendingNotifyAppReadyWait();
+        return this.reloadWithoutWaitingForAppReady();
     }
 
     protected boolean reloadWithoutWaitingForAppReady() {
@@ -4305,8 +4353,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("Error no url or wrong format");
             return "unavailable";
         }
+        // The TS contract only knows queued / already_running / unavailable.
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
-            return "preview_session";
+            return "unavailable";
+        }
+        if (!this._isAutoUpdateEnabled()) {
+            logger.info("Auto update is disabled, update check not triggered");
+            return "unavailable";
         }
         synchronized (this) {
             final Thread previousTask = this.backgroundDownloadTask;
@@ -4481,64 +4534,57 @@ public class CapacitorUpdaterPlugin extends Plugin {
             new TimerTask() {
                 @Override
                 public void run() {
-                    try {
-                        if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
-                            return;
-                        }
-                        CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
-                            if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
-                                return;
-                            }
-                            JSObject jsRes = InternalUtils.mapToJSObject(res);
-                            if (jsRes.has("error") || jsRes.has("kind")) {
-                                final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
-                                String error = jsRes.has("error") ? jsRes.getString("error") : "";
-                                String errorMessage = jsRes.has("message")
-                                    ? jsRes.getString("message")
-                                    : "server did not provide a message";
-                                int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
-                                String kind = CapacitorUpdaterPlugin.this.getUpdateResponseKind(
-                                    jsRes.has("kind") ? jsRes.getString("kind") : null
-                                );
-                                String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
-                                CapacitorUpdaterPlugin.this.notifyUpdateCheckResult(
-                                    kind,
-                                    error,
-                                    errorMessage,
-                                    statusCode,
-                                    latestVersion,
-                                    current
-                                );
-
-                                if ("failed".equals(kind)) {
-                                    logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
-                                } else if ("blocked".equals(kind)) {
-                                    logger.info("Update check blocked with error: " + error);
-                                } else {
-                                    logger.info("No new version available");
-                                }
-                            } else if (jsRes.has("version")) {
-                                String newVersion = jsRes.getString("version");
-                                String currentVersion = String.valueOf(CapacitorUpdaterPlugin.this.implementation.getCurrentBundle());
-                                if (!Objects.equals(newVersion, currentVersion)) {
-                                    logger.info("New version found: " + newVersion);
-                                    // Check if download is already in progress (with timeout protection)
-                                    if (!CapacitorUpdaterPlugin.this.isDownloadStuckOrTimedOut()) {
-                                        CapacitorUpdaterPlugin.this.backgroundDownload();
-                                    } else {
-                                        logger.info("Download already in progress, skipping duplicate download request");
-                                    }
-                                }
-                            }
-                        });
-                    } catch (final Exception e) {
-                        logger.error("Failed to check for update " + e.getMessage());
-                    }
+                    CapacitorUpdaterPlugin.this.runPeriodicUpdateCheck();
                 }
             },
             this.periodCheckDelay,
             this.periodCheckDelay
         );
+    }
+
+    void runPeriodicUpdateCheck() {
+        try {
+            if (this.shouldBlockAutoUpdateForPreviewSession()) {
+                return;
+            }
+            this.implementation.getLatest(this.updateUrl, null, (res) -> {
+                if (this.shouldBlockAutoUpdateForPreviewSession()) {
+                    return;
+                }
+                JSObject jsRes = InternalUtils.mapToJSObject(res);
+                if (jsRes.has("error") || jsRes.has("kind")) {
+                    final BundleInfo current = this.implementation.getCurrentBundle();
+                    String error = jsRes.has("error") ? jsRes.getString("error") : "";
+                    String errorMessage = jsRes.has("message") ? jsRes.getString("message") : "server did not provide a message";
+                    int statusCode = jsRes.has("statusCode") ? jsRes.optInt("statusCode", 0) : 0;
+                    String kind = this.getUpdateResponseKind(jsRes.has("kind") ? jsRes.getString("kind") : null);
+                    String latestVersion = jsRes.has("version") ? jsRes.getString("version") : current.getVersionName();
+                    this.notifyUpdateCheckResult(kind, error, errorMessage, statusCode, latestVersion, current);
+
+                    if ("failed".equals(kind)) {
+                        logger.error("getLatest failed with error: " + error + ", message: " + errorMessage);
+                    } else if ("blocked".equals(kind)) {
+                        logger.info("Update check blocked with error: " + error);
+                    } else {
+                        logger.info("No new version available");
+                    }
+                } else if (jsRes.has("version")) {
+                    String newVersion = jsRes.getString("version");
+                    String currentVersion = this.implementation.getCurrentBundle().getVersionName();
+                    if (!Objects.equals(newVersion, currentVersion)) {
+                        logger.info("New version found: " + newVersion);
+                        // Check if download is already in progress (with timeout protection)
+                        if (!this.isDownloadStuckOrTimedOut()) {
+                            this.backgroundDownload();
+                        } else {
+                            logger.info("Download already in progress, skipping duplicate download request");
+                        }
+                    }
+                }
+            });
+        } catch (final Exception e) {
+            logger.error("Failed to check for update " + e.getMessage());
+        }
     }
 
     static boolean shouldAcceptReadyCall(
@@ -4942,6 +4988,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
+    /**
+     * Security gates of an auto-update download, checked before it starts. Returns the cycle status
+     * when the download must not start (after sending its stat), or null.
+     */
+    private String autoUpdateDownloadBlockedReason(final JSObject latest, final String latestVersionName) {
+        final String sessionKey = latest.getString("sessionKey", "");
+        if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
+            logger.error("Public key present but no valid session key provided");
+            this.implementation.sendStats("session_key_required", latestVersionName);
+            return "Session key required when public key is present";
+        }
+        final String checksum = latest.getString("checksum", "");
+        if (!latest.has("manifest") && (checksum == null || checksum.isEmpty())) {
+            logger.error("No checksum provided");
+            this.implementation.sendStats("checksum_required", latestVersionName);
+            return "Checksum required";
+        }
+        return null;
+    }
+
     private synchronized Thread backgroundDownload() {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             return null;
@@ -5199,6 +5265,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
+                            // The store refuses these downloads without a callback, so end the cycle here
+                            // (appReady, splash hide) like iOS does.
+                            final String downloadBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
+                                jsRes,
+                                latestVersionName
+                            );
+                            if (downloadBlockedReason != null) {
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    downloadBlockedReason,
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate
+                                );
+                                return;
+                            }
                             final boolean retryingInFlightDownload =
                                 latest != null &&
                                 BundleStatus.DOWNLOADING == latest.getStatus() &&
@@ -5384,6 +5466,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    void runDeferredAppReadyCheck() {
+        // A frozen app wakes up with its sleep already expired, before appMovedToForeground re-arms
+        // the check: its page could not run yet, so wait for the fresh check of the next foreground.
+        if (this.appInBackground) {
+            logger.info("App is in background, notifyAppReady check deferred to the next foreground");
+            return;
+        }
+        this.checkRevert();
+    }
+
     private class DeferredNotifyAppReadyCheck implements Runnable {
 
         private final long waitTimeMs;
@@ -5398,7 +5490,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             try {
                 logger.info("Wait for " + this.waitTimeMs + "ms, then check for notifyAppReady");
                 Thread.sleep(this.waitTimeMs);
-                CapacitorUpdaterPlugin.this.checkRevert();
+                CapacitorUpdaterPlugin.this.runDeferredAppReadyCheck();
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
             } catch (final InterruptedException e) {
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
@@ -5408,6 +5500,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public void appMovedToForeground() {
+        this.appInBackground = false;
         // Ensure activity reference is up-to-date before proceeding
         // This is critical for callbacks that may be invoked during background operations
         try {
@@ -5426,8 +5519,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.delayUpdateUtils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
         this.delayUpdateUtils.unsetBackgroundTimestamp();
 
-        if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled() && !this.isDownloadStuckOrTimedOut()) {
-            this.backgroundDownload();
+        if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
+            if (!this.isDownloadStuckOrTimedOut()) {
+                this.backgroundDownload();
+            } else {
+                // The running cycle sends appReady when it ends.
+                logger.info("Download already in progress, skipping duplicate download request");
+            }
         } else {
             final CapConfig config = CapConfig.loadDefault(this.getActivity());
             String serverUrl = config.getServerUrl();
@@ -5441,6 +5539,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public void appMovedToBackground() {
+        this.appInBackground = true;
         // Reset timeout flag at start of each background cycle
         this.autoSplashscreenTimedOut = false;
 

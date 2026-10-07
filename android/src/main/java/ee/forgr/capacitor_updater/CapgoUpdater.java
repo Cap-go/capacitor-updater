@@ -150,6 +150,15 @@ public class CapgoUpdater {
     }
 
     private final Map<String, CompletableFuture<BundleInfo>> downloadFutures = new ConcurrentHashMap<>();
+
+    /** A download failure whose downloadFailed event and stats were already sent by the updater. */
+    static final class ReportedDownloadFailureException extends IOException {
+
+        ReportedDownloadFailureException(final String message) {
+            super(message);
+        }
+    }
+
     // Versions whose WorkManager download is observed by this process. WorkManager persists work across a
     // process kill, but the observer that finishes the download does not survive it.
     private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
@@ -835,11 +844,8 @@ public class CapgoUpdater {
                                     saveBundleInfo(id, resultBundle);
                                     // Cleanup download tracking
                                     DownloadWorkerManager.cancelBundleDownload(activity, id, version);
-                                    Map<String, Object> ret = new HashMap<>();
-                                    ret.put("version", version);
-                                    ret.put("error", "finish_download_fail");
                                     sendStats("finish_download_fail", version);
-                                    notifyListeners("downloadFailed", ret);
+                                    // finishDownload already emitted downloadFailed for this failure.
                                 } else {
                                     // Successful download - cleanup tracking
                                     DownloadWorkerManager.cancelBundleDownload(activity, id, version);
@@ -1629,7 +1635,8 @@ public class CapgoUpdater {
         try {
             BundleInfo result = downloadFuture.get();
             if (result.isErrorStatus()) {
-                throw new IOException("Download failed with status: " + result.getStatus());
+                // The download observer already emitted downloadFailed and its stats.
+                throw new ReportedDownloadFailureException("Download failed with status: " + result.getStatus());
             }
             return result;
         } catch (Exception e) {
@@ -1685,7 +1692,8 @@ public class CapgoUpdater {
         try {
             BundleInfo result = downloadFuture.get();
             if (result.isErrorStatus()) {
-                throw new IOException("Download failed with status: " + result.getStatus());
+                // The download observer already emitted downloadFailed and its stats.
+                throw new ReportedDownloadFailureException("Download failed with status: " + result.getStatus());
             }
             return result;
         } catch (Exception e) {

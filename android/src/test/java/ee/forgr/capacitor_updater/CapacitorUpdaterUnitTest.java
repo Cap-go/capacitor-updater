@@ -272,6 +272,7 @@ public class CapacitorUpdaterUnitTest {
             final Map<String, Object> response = new HashMap<>();
             response.put("version", "2.0.0");
             response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "abc123");
             callback.callback(response);
         }
 
@@ -2194,7 +2195,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             setPrivateField(plugin, "updateUrl", "https://example.com/updates");
 
-            assertEquals("preview_session", plugin.triggerBackgroundUpdateCheck());
+            assertEquals("unavailable", plugin.triggerBackgroundUpdateCheck());
         }
     }
 
