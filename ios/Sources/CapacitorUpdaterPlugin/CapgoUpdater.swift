@@ -227,7 +227,8 @@ import UIKit
             }
             return number.stringValue
         case let date as Date:
-            return String(Int64(date.timeIntervalSince1970 * 1000))
+            // Int64(Double) traps when out of range (a corrupted far-future date).
+            return Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded(.down)).map { String($0) }
         default:
             guard JSONSerialization.isValidJSONObject(value),
                   let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
@@ -269,8 +270,10 @@ import UIKit
         if key == "BACKGROUND_TIMESTAMP_KEY_CAPGO", let timestamp = Int64(value) {
             return NSNumber(value: timestamp)
         }
+        // UserDefaults raises an uncatchable exception on a non-plist value (a JSON null).
         if key == "CapacitorUpdater.previewSessions",
-           let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] {
+           let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any],
+           PropertyListSerialization.propertyList(object, isValidFor: .binary) {
             return object
         }
         return value
@@ -396,25 +399,6 @@ import UIKit
         return allowsArbitraryLoads
     }
 
-    private func updateBackgroundTask(action: String, name: String) {
-        backgroundTasksLock.lock()
-        let existing = backgroundTasks.removeValue(forKey: name)
-        backgroundTasksLock.unlock()
-        if let existing, existing != .invalid {
-            UIApplication.shared.endBackgroundTask(existing)
-        }
-        guard action == "begin" else {
-            return
-        }
-        var identifier = UIBackgroundTaskIdentifier.invalid
-        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            self?.updateBackgroundTask(action: "end", name: name)
-        }
-        backgroundTasksLock.lock()
-        backgroundTasks[name] = identifier
-        backgroundTasksLock.unlock()
-    }
-
     private func excludeFromBackup(path: String) {
         guard !path.isEmpty else {
             return
@@ -437,4 +421,59 @@ extension Bundle {
     var versionCode: String? {
         infoDictionary?["CFBundleVersion"] as? String
     }
+}
+
+extension CapgoUpdater {
+    func updateBackgroundTask(action: String, name: String) {
+        backgroundTasksLock.lock()
+        let existing = backgroundTasks.removeValue(forKey: name)
+        backgroundTasksLock.unlock()
+        if let existing, existing != .invalid {
+            UIApplication.shared.endBackgroundTask(existing)
+        }
+        guard action == "begin" else {
+            return
+        }
+        // Every task must end, or iOS kills the app in the background. Each expiry handler
+        // ends its own task (not whichever one is stored under the name by then), and a task
+        // that expires before it is stored is not stored at all.
+        let state = BackgroundTaskState()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            self?.expireBackgroundTask(name: name, state: state)
+        }
+        guard identifier != .invalid else {
+            return
+        }
+        backgroundTasksLock.lock()
+        state.identifier = identifier
+        let expired = state.expired
+        if !expired {
+            backgroundTasks[name] = identifier
+        }
+        backgroundTasksLock.unlock()
+        if expired {
+            UIApplication.shared.endBackgroundTask(identifier)
+        }
+    }
+
+    private func expireBackgroundTask(name: String, state: BackgroundTaskState) {
+        backgroundTasksLock.lock()
+        state.expired = true
+        // Not stored yet: the begin path ends it. No longer stored: already ended.
+        var owned: UIBackgroundTaskIdentifier?
+        if let identifier = state.identifier, backgroundTasks[name] == identifier {
+            backgroundTasks.removeValue(forKey: name)
+            owned = identifier
+        }
+        backgroundTasksLock.unlock()
+        if let owned {
+            UIApplication.shared.endBackgroundTask(owned)
+        }
+    }
+}
+
+/// One background task's identifier and expiry, guarded by `backgroundTasksLock`.
+private final class BackgroundTaskState {
+    var identifier: UIBackgroundTaskIdentifier?
+    var expired = false
 }

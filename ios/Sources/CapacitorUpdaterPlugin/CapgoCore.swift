@@ -21,12 +21,22 @@ enum CapgoCore {
         }
     }
 
+    /// JSON text for `object`, or nil when it is not valid JSON. JSONSerialization raises an
+    /// Objective-C exception (which Swift cannot catch: the app crashes) on NaN, infinity or a
+    /// non-JSON type, so it is checked first. Inside an engine callback that would abort.
+    static func jsonString(_ object: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object) else {
+            return nil
+        }
+        return String(bytes: data, encoding: .utf8)
+    }
+
     /// Runs a core operation. `nil` input values are sent as JSON `null`.
     static func call(_ operation: String, _ input: [String: Any?] = [:]) throws -> [String: Any] {
         let payload = input.mapValues { $0 ?? NSNull() }
-        let inputData = try JSONSerialization.data(withJSONObject: payload)
-        guard let inputJson = String(bytes: inputData, encoding: .utf8) else {
-            throw Failure(code: "invalid_input", message: "Input is not UTF-8 JSON")
+        guard let inputJson = jsonString(payload) else {
+            throw Failure(code: "invalid_input", message: "Input is not a JSON object")
         }
 
         guard let raw = capgo_core_call(operation, inputJson) else {

@@ -160,16 +160,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let launchUrl = ApplicationDelegateProxy.shared.lastURL?.absoluteString {
             native["launchUrl"] = launchUrl
         }
+        guard let engine = implementation.engine() else {
+            // The app keeps running on the bundle it has; only the updater is off.
+            logger.error("Capgo updater engine could not be created, the updater is disabled")
+            return
+        }
         let loaded: [String: Any]
         do {
-            guard let engine = implementation.engine() else {
-                fatalError("Capgo updater engine could not be created")
-            }
             loaded = try engine.call("pluginLoad", ["config": pluginConfigJSON(), "native": native])
         } catch {
-            // Missing appId or an invalid public key: the updater must not run unprotected.
             logger.error("Capgo updater failed to load: \(error)")
-            fatalError("Capgo updater failed to load: \(error)")
+            // Missing appId or an invalid public key: the updater must not run unprotected,
+            // so stop the app like every previous version. Any other failure (unexpected
+            // stored state) only disables the updater: never a crash loop at launch.
+            if let code = (error as? CapgoCore.Failure)?.code, Self.fatalLoadErrors.contains(code) {
+                fatalError("Capgo updater failed to load: \(error)")
+            }
+            return
         }
         logger.info("appId \(loaded["appId"] as? String ?? "")")
         methodLanes.setDetachedMethods(engineOp("detachedPluginMethods") as? [String] ?? [])
@@ -183,6 +190,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // The launch counts as the first foreground: runs the update check.
         self.engineOp("appForeground")
     }
+
+    static let fatalLoadErrors: Set<String> = ["missing_app_id", "invalid_public_key"]
 
     /// Plugin config for the engine. A value JSON cannot carry is dropped on its own (and logged):
     /// never the whole config, which would silently turn off settings such as publicKey.
@@ -280,8 +289,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
-    /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
+    // CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157). The bridge
+    // runs addListener / removeListener / removeAllListeners on its own queue, so a listener
+    // change racing an event crashed (EXC_BAD_ACCESS in notifyListeners). Both sides now run on
+    // main. keepAlive is set before returning: the bridge saves the call right after this returns.
+    override public func addListener(_ call: CAPPluginCall) {
+        call.keepAlive = true
+        DispatchQueue.main.async { super.addListener(call) }
+    }
+
+    override public func removeListener(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { super.removeListener(call) }
+    }
+
+    override public func removeAllListeners(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { super.removeAllListeners(call) }
+    }
+
+    /// Every event this plugin emits goes through the main thread (see addListener).
+    /// Calls already on main stay synchronous.
     private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
             self.notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)

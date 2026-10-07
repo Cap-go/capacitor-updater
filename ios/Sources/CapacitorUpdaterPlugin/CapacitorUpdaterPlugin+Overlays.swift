@@ -59,9 +59,7 @@ extension CapacitorUpdaterPlugin {
 
     private func splashscreenOptionsJSON(methodName: String) -> String {
         let options = self.splashscreenOptions(methodName: methodName)
-        guard !options.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: options),
-              let json = String(data: data, encoding: .utf8) else {
+        guard !options.isEmpty, let json = CapgoCore.jsonString(options) else {
             return "{}"
         }
         return json

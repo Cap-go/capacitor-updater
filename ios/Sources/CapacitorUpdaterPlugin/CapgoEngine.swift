@@ -33,8 +33,7 @@ final class CapgoEngine {
     }
 
     init?(config: [String: Any], host: CapgoEngineHost) {
-        guard let configData = try? JSONSerialization.data(withJSONObject: config),
-              let configJson = String(bytes: configData, encoding: .utf8) else {
+        guard let configJson = CapgoCore.jsonString(config) else {
             return nil
         }
         let context = Unmanaged.passRetained(HostBox(host)).toOpaque()
@@ -58,8 +57,7 @@ final class CapgoEngine {
             kv_keys: { context in
                 guard let context,
                       let keys = CapgoEngine.box(context).host?.engineKvKeys(),
-                      let data = try? JSONSerialization.data(withJSONObject: keys),
-                      let json = String(bytes: data, encoding: .utf8) else {
+                      let json = CapgoCore.jsonString(keys) else {
                     return nil
                 }
                 return strdup(json)
@@ -79,8 +77,7 @@ final class CapgoEngine {
                     (try? JSONSerialization.jsonObject(with: Data(bytes: raw, count: strlen(raw)))) as? [String: Any]
                 } ?? [:]
                 guard let reply = CapgoEngine.box(context).host?.engineHook(String(cString: name), object),
-                      let data = try? JSONSerialization.data(withJSONObject: reply),
-                      let json = String(bytes: data, encoding: .utf8) else {
+                      let json = CapgoCore.jsonString(reply) else {
                     return nil
                 }
                 return strdup(json)
@@ -289,9 +286,8 @@ final class CapgoEngine {
     /// Runs an engine operation (blocking). Returns the JSON value (object, array or NSNull).
     func callValue(_ operation: String, _ input: [String: Any?] = [:]) throws -> Any {
         let payload = input.mapValues { $0 ?? NSNull() }
-        let inputData = try JSONSerialization.data(withJSONObject: payload)
-        guard let inputJson = String(bytes: inputData, encoding: .utf8) else {
-            throw CapgoCore.Failure(code: "invalid_input", message: "Input is not UTF-8 JSON")
+        guard let inputJson = CapgoCore.jsonString(payload) else {
+            throw CapgoCore.Failure(code: "invalid_input", message: "Input is not a JSON object")
         }
         // Keep this wrapper alive for the whole native call: its deinit frees the engine.
         let result: UnsafeMutablePointer<CChar>? = withExtendedLifetime(self) {
