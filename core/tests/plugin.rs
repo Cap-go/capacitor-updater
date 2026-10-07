@@ -109,8 +109,19 @@ impl Plugin {
     }
 
     fn load_with(config: Value, native: Value) -> Self {
-        let backend = Backend::start();
-        let t = TestEngine::new(json!({ "platform": "ios", "builtinServerPath": "" }));
+        let plugin = Self::launch(Self::engine(), Backend::start(), config, native);
+        // The initial page is ready.
+        plugin.resolve("notifyAppReady", json!({}));
+        plugin
+    }
+
+    fn engine() -> TestEngine {
+        TestEngine::new(json!({ "platform": "ios", "builtinServerPath": "" }))
+    }
+
+    /// `pluginLoad` on an engine whose storage a test prepared; the initial page has not
+    /// called notifyAppReady yet.
+    fn launch(t: TestEngine, backend: Backend, config: Value, native: Value) -> Self {
         t.host.reply_to_hook("applyBundle", json!({ "ok": true }));
         t.host.reply_to_hook("previewNotice", json!({ "shown": true }));
         let mut config = config;
@@ -138,10 +149,7 @@ impl Plugin {
         t.call("pluginLoad", json!({ "config": config, "native": native_info }));
         // The launch cleanup sweeps unknown bundle folders: let it finish before tests add some.
         t.engine.wait_for_cleanup_for_tests();
-        let plugin = Self { t, backend };
-        // The initial page is ready.
-        plugin.resolve("notifyAppReady", json!({}));
-        plugin
+        Self { t, backend }
     }
 
     /// Makes `id` current and confirmed (as if its page called notifyAppReady).
@@ -248,6 +256,39 @@ fn load_reports_launch_and_resolves_basic_methods() {
     assert!(p.stats_actions().contains(&"app_launch_start".to_string()));
     // First run snapshots native versions without an event.
     assert_eq!(p.t.kv("CapacitorUpdater.lastVersionCode").unwrap(), "10");
+}
+
+/// A launch over a confirmed OTA bundle; the previous launch ran native build `stored_build`,
+/// this one runs "10".
+fn launch_over_ota_bundle(stored_build: &str) -> Plugin {
+    let t = Plugin::engine();
+    t.install_bundle("otabundle1", "2.8.35", "success");
+    t.call("bundleSet", json!({ "id": "otabundle1" }));
+    t.host.kv_set("LatestNativeBuildVersion", Some(stored_build));
+    Plugin::launch(t, Backend::start(), json!({ "autoUpdate": false }), json!({}))
+}
+
+/// app_launch_start is sent after the startup reset: after a native build update it names
+/// the builtin bundle this launch loads, not the OTA bundle stored before the reset.
+#[test]
+fn app_launch_start_names_the_bundle_left_by_the_native_build_reset() {
+    let p = launch_over_ota_bundle("9");
+    assert_eq!(p.current()["id"], "builtin");
+    let launches = stat_events(&p, "app_launch_start");
+    assert_eq!(launches.len(), 1, "{launches:?}");
+    // The builtin bundle reports the native version name.
+    assert_eq!(launches[0]["version_name"], "1.0.0");
+    assert_eq!(launches[0]["metadata"]["source"], "plugin_load");
+    assert!(launches[0]["metadata"]["launch_started_at"].is_string());
+}
+
+#[test]
+fn app_launch_start_names_the_ota_bundle_without_a_native_build_change() {
+    let p = launch_over_ota_bundle("10");
+    assert_eq!(p.current()["id"], "otabundle1");
+    let launches = stat_events(&p, "app_launch_start");
+    assert_eq!(launches.len(), 1, "{launches:?}");
+    assert_eq!(launches[0]["version_name"], "2.8.35");
 }
 
 #[test]
@@ -872,6 +913,68 @@ fn trigger_update_check_reports_preview_sessions() {
     assert_eq!(status["queued"], false);
 }
 
+fn update_requests(p: &Plugin, path: &str) -> usize {
+    p.backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with(path))
+        .count()
+}
+
+/// periodCheckDelay ticks: error responses are reported and never download, the current
+/// version is not downloaded again, a new version is.
+#[test]
+fn periodic_check_reports_errors_and_downloads_only_new_versions() {
+    let p = Plugin::load(json!({}));
+    *p.backend.latest.lock().unwrap() = json!({ "error": "server_down", "message": "try later", "version": "9.9.9", "url": format!("{}/b.zip", p.backend.server.url) });
+    p.t.engine.plugin_periodic_tick_for_tests();
+    let results = p.events("updateCheckResult");
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(results[0]["error"], "server_down");
+    *p.backend.latest.lock().unwrap() =
+        json!({ "error": "disabled_auto_update", "kind": "blocked", "message": "blocked" });
+    p.t.engine.plugin_periodic_tick_for_tests();
+    assert_eq!(p.events("updateCheckResult")[1]["kind"], "blocked");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(update_requests(&p, "/b.zip"), 0, "error responses never download");
+
+    p.use_bundle("abcdefghij", "2.0.0");
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.t.engine.plugin_periodic_tick_for_tests();
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        update_requests(&p, "/b.zip"),
+        0,
+        "the current version is not downloaded"
+    );
+
+    p.backend.offer("3.0.0", web_bundle("v3"));
+    p.t.engine.plugin_periodic_tick_for_tests();
+    wait_until("new version downloaded", || {
+        p.events("updateAvailable")
+            .iter()
+            .any(|event| event["bundle"]["version"] == "3.0.0")
+    });
+}
+
+/// Shake-menu channel switch: an update without a checksum stops before any download.
+#[test]
+fn shake_menu_switch_channel_requires_a_checksum_before_downloading() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.backend.offer("2.0.0", web_bundle("two"));
+    p.backend.latest.lock().unwrap()["checksum"] = json!("");
+    let result = switch_channel(&p, "beta");
+    assert_eq!(result["status"], "error");
+    assert!(
+        result["message"].as_str().unwrap().contains("Checksum required"),
+        "{result}"
+    );
+    assert_eq!(update_requests(&p, "/b.zip"), 0);
+    assert!(p.stats_actions().contains(&"checksum_required".to_string()));
+    assert!(p.t.call("bundleNext", json!({})).is_null(), "nothing is queued");
+}
+
 #[test]
 fn server_url_disables_auto_update() {
     let p = Plugin::load_with(json!({}), json!({ "serverUrlConfigured": true }));
@@ -907,6 +1010,24 @@ fn background_delay_blocks_one_install() {
     assert!(p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").is_none());
     p.background();
     assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id);
+}
+
+/// Unreadable stored delay conditions never block an install or break the launch.
+#[test]
+fn malformed_stored_delay_conditions_are_ignored() {
+    for stored in ["{not json", r#"[{"kind":7},"junk",{"value":"1"},{"kind":"nope"}]"#] {
+        let t = Plugin::engine();
+        t.host.kv_set("DELAY_CONDITION_PREFERENCES_CAPGO", Some(stored));
+        // The launch runs the kill-delay check over the stored conditions.
+        let p = Plugin::launch(t, Backend::start(), json!({}), json!({}));
+        p.resolve("notifyAppReady", json!({}));
+        let id = "abcdefghij";
+        p.t.install_bundle(id, "2.0.0", "pending");
+        p.resolve("next", json!({ "id": id }));
+        p.t.engine.plugin_foreground_for_tests();
+        p.background();
+        assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id, "{stored}");
+    }
 }
 
 #[test]
@@ -958,6 +1079,36 @@ fn missing_notify_app_ready_rolls_back() {
     assert_eq!(failed_update["bundle"]["id"], id);
     assert_eq!(p.resolve("getFailedUpdate", json!({})), Value::Null, "one-shot");
     assert!(p.stats_actions().contains(&"update_fail".to_string()));
+}
+
+/// app_launch_timeout is sent once per launch, and never once app_launch_ready was sent.
+#[test]
+fn app_launch_timeout_is_sent_once_per_launch_and_never_after_ready() {
+    // The initial page confirmed the launch: later rollbacks send no launch timeout.
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.install_bundle("abcdefghij", "2.0.0", "pending");
+    p.resolve("set", json!({ "id": "abcdefghij" }));
+    p.wait_for_event("updateFailed", 1);
+    assert_eq!(stat_events(&p, "app_launch_ready").len(), 1);
+    assert!(stat_events(&p, "app_launch_timeout").is_empty());
+
+    // A launch whose page never calls notifyAppReady: one timeout, even after a second rollback.
+    let t = Plugin::engine();
+    t.install_bundle("abcdefghij", "2.0.0", "pending");
+    t.call("bundleSet", json!({ "id": "abcdefghij" }));
+    let p = Plugin::launch(t, Backend::start(), json!({ "autoUpdate": false }), json!({}));
+    // The first foreground arms the launch check.
+    p.foreground();
+    p.wait_for_event("updateFailed", 1);
+    wait_until("rollback to builtin", || p.current()["id"] == "builtin");
+    p.t.install_bundle("klmnopqrst", "3.0.0", "pending");
+    p.resolve("set", json!({ "id": "klmnopqrst" }));
+    p.wait_for_event("updateFailed", 2);
+    let timeouts = stat_events(&p, "app_launch_timeout");
+    assert_eq!(timeouts.len(), 1, "{timeouts:?}");
+    assert_eq!(timeouts[0]["version_name"], "2.0.0");
+    assert_eq!(timeouts[0]["metadata"]["source"], "app_ready_timeout");
+    assert!(stat_events(&p, "app_launch_ready").is_empty());
 }
 
 /// An unconfirmed bundle gets at least 30 s on both platforms (no host override), even with a

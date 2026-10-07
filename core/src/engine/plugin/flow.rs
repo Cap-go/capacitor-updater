@@ -158,7 +158,6 @@ impl Engine {
         }
         self.host.info(format!("init for device {}", self.config().device_id));
         self.host.info(format!("version native {}", config.native_version));
-        self.report_app_launch_start();
 
         self.restore_preview_state_at_load();
         self.plugin_state().was_recently_installed_or_updated = stored_build.is_empty() || stored_build != native_build;
@@ -169,6 +168,9 @@ impl Engine {
         if let Some(url) = native.get("launchUrl").and_then(Value::as_str) {
             self.leave_preview_for_launch_url(url);
         }
+        // After the startup reset: the stat names the bundle this launch really loads
+        // (builtin after a native build reset), not the one stored before it.
+        self.report_app_launch_start();
         self.report_native_version_stats_if_changed();
         if let Some(stats) = native.get("previousExits").and_then(Value::as_array) {
             self.report_previous_exits(stats);

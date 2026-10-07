@@ -575,6 +575,12 @@ impl Engine {
         self.app_moved_to_foreground();
     }
 
+    /// One `periodCheckDelay` tick, synchronously (tests; hosts get it from the periodic thread).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn plugin_periodic_tick_for_tests(&self) {
+        self.periodic_tick();
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn wait_for_cleanup_for_tests(&self) {
         let _ = self.wait_for_cleanup();
