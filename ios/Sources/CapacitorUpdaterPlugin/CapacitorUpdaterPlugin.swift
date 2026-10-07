@@ -1923,7 +1923,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !res {
             logger.info("Bundle successfully set to: \(id) ")
             call.reject("Update failed, id \(id) doesn't exist")
-        } else if self.previewSessionEnabled {
+            return
+        }
+        // The bundle is now active: it must not stay reported as the pending next bundle.
+        self.implementation.clearNextBundleIfCurrent()
+        if self.previewSessionEnabled {
             let bundle = self.implementation.getBundleInfo(id: id)
             _ = self.recordPreviewBundle(bundle)
             if !self.reloadWithoutWaitingForAppReady() {
@@ -5035,6 +5039,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getNextBundle(_ call: CAPPluginCall) {
+        // Heals a next bundle left stored after it was activated (set() did not clear it before).
+        self.implementation.clearNextBundleIfCurrent()
         let bundle = self.implementation.getNextBundle()
         if bundle == nil || bundle?.isUnknown() == true {
             call.resolve()
