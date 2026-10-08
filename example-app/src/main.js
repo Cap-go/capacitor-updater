@@ -3090,7 +3090,15 @@ function renderDemoActionButtons() {
 }
 
 function configureQaToolsPanel() {
-  elements.qaToolsDetails.open = platform !== 'web';
+  const details = elements.qaToolsDetails;
+  const openOnNative = platform !== 'web';
+
+  details.open = openOnNative;
+  if (openOnNative) {
+    details.setAttribute('open', '');
+  } else {
+    details.removeAttribute('open');
+  }
 }
 
 function bindDemoActions() {
