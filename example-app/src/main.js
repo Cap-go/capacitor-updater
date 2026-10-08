@@ -1430,8 +1430,13 @@ async function resetServerRelease() {
   try {
     console.log('[Harness] resetServerRelease', endpoint);
     await fetchJson(endpoint);
-    await refreshServerState();
-    renderState();
+    void refreshServerState()
+      .then(() => {
+        renderState();
+      })
+      .catch((refreshError) => {
+        console.error('[Harness] resetServerRelease refresh failed', refreshError);
+      });
     return state.serverDebug;
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -1471,7 +1476,9 @@ async function purgeDownloadedBundlesAfterServerReset() {
 
   state.lastDownloadedBundleId = null;
   state.lastDownloadedBundleVersion = null;
-  await refreshState();
+  void refreshState().catch((refreshError) => {
+    console.error('[Harness] purgeDownloadedBundlesAfterServerReset refresh failed', refreshError);
+  });
 }
 
 async function advanceServerRelease() {
@@ -1484,8 +1491,13 @@ async function advanceServerRelease() {
   try {
     console.log('[Harness] advanceServerRelease', endpoint);
     await fetchJson(endpoint);
-    await refreshServerState();
-    renderState();
+    void refreshServerState()
+      .then(() => {
+        renderState();
+      })
+      .catch((refreshError) => {
+        console.error('[Harness] advanceServerRelease refresh failed', refreshError);
+      });
     return state.serverDebug;
   } catch (error) {
     const message = error?.message ?? String(error);
