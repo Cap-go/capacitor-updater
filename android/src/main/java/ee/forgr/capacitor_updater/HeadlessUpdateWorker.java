@@ -83,6 +83,10 @@ public class HeadlessUpdateWorker extends Worker {
     }
 
     static String run(final Context context, final Logger logger) throws PackageManager.NameNotFoundException {
+        if (CapacitorUpdaterPlugin.instanceLoaded) {
+            // The running plugin instance owns downloads and installs in this process.
+            return "handed_over";
+        }
         final CapConfig capConfig = CapConfig.loadDefault(context);
         final PluginConfig config = capConfig.getPluginConfiguration("CapacitorUpdater");
         final String serverUrl = capConfig.getServerUrl();
@@ -129,82 +133,80 @@ public class HeadlessUpdateWorker extends Worker {
             }
         };
         configure(updater, context, capConfig, config, prefs, packageInfo, versionCode);
-
-        String updateUrl = config.getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault);
-        if (config.getBoolean("persistModifyUrl", false) && prefs.contains(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY)) {
-            updateUrl = prefs.getString(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY, updateUrl);
-        }
-        if (updateUrl == null || updateUrl.isEmpty()) {
-            return "unavailable";
-        }
-
-        final AtomicReference<Map<String, Object>> latestRef = new AtomicReference<>();
-        final CountDownLatch latestDone = new CountDownLatch(1);
-        updater.getLatest(updateUrl, null, (res) -> {
-            latestRef.set(res);
-            latestDone.countDown();
-        });
         try {
-            if (!latestDone.await(updater.timeout + 5000L, TimeUnit.MILLISECONDS)) {
+            String updateUrl = config.getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault);
+            if (config.getBoolean("persistModifyUrl", false) && prefs.contains(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY)) {
+                updateUrl = prefs.getString(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY, updateUrl);
+            }
+            if (updateUrl == null || updateUrl.isEmpty()) {
+                return "unavailable";
+            }
+
+            final AtomicReference<Map<String, Object>> latestRef = new AtomicReference<>();
+            final CountDownLatch latestDone = new CountDownLatch(1);
+            updater.getLatest(updateUrl, null, (res) -> {
+                latestRef.set(res);
+                latestDone.countDown();
+            });
+            try {
+                if (!latestDone.await(updater.timeout + 5000L, TimeUnit.MILLISECONDS)) {
+                    return "failed";
+                }
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
                 return "failed";
             }
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "failed";
-        }
-        final Map<String, Object> latest = latestRef.get();
-        if (latest == null || latest.containsKey("error") || latest.containsKey("kind")) {
-            return "no_update";
-        }
-        final String version = String.valueOf(latest.get("version"));
-        final Object url = latest.get("url");
-        final BundleInfo current = updater.getCurrentBundle();
-        if ("builtin".equals(version) || version.isEmpty() || version.equals(current.getVersionName()) || !(url instanceof String)) {
-            return "no_update";
-        }
-        final String sessionKey = latest.get("sessionKey") instanceof String ? (String) latest.get("sessionKey") : "";
-        final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
-
-        final BundleInfo existing = updater.getBundleInfoByName(version);
-        if (existing != null && existing.isErrorStatus()) {
-            return "failed";
-        }
-        if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
-            if (setNext && updater.setNextBundle(existing.getId())) {
-                return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
+            final Map<String, Object> latest = latestRef.get();
+            if (latest == null || latest.containsKey("error") || latest.containsKey("kind")) {
+                return "no_update";
             }
-            return "downloaded";
-        }
-
-        updater.downloadBackground((String) url, version, sessionKey, checksum, manifestOf(latest), setNext);
-        // downloadBackground returns without a callback when it refuses the download (blocked
-        // encryption, gate, version already downloading elsewhere): only wait for a download it started.
-        final BundleInfo started = updater.getBundleInfoByName(version);
-        if (
-            started == null ||
-            BundleStatus.DOWNLOADING != started.getStatus() ||
-            (existing != null && existing.getId().equals(started.getId()))
-        ) {
-            return "skipped";
-        }
-        final long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(FINISH_TIMEOUT_MINUTES);
-        try {
-            // Keep the worker (and so the process) alive until the bundle is stored. If the user opens
-            // the app meanwhile, its plugin instance takes over the download (it restarts downloads it
-            // does not observe), so stop waiting.
-            while (!finished.await(1, TimeUnit.SECONDS)) {
-                if (CapacitorUpdaterPlugin.instanceLoaded) {
-                    return "handed_over";
-                }
-                if (System.currentTimeMillis() > deadline) {
-                    return "timeout";
-                }
+            final String version = String.valueOf(latest.get("version"));
+            final Object url = latest.get("url");
+            final BundleInfo current = updater.getCurrentBundle();
+            if ("builtin".equals(version) || version.isEmpty() || version.equals(current.getVersionName()) || !(url instanceof String)) {
+                return "no_update";
             }
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "interrupted";
+            final String sessionKey = latest.get("sessionKey") instanceof String ? (String) latest.get("sessionKey") : "";
+            final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
+
+            final BundleInfo existing = updater.getBundleInfoByName(version);
+            if (existing != null && existing.isErrorStatus()) {
+                return "failed";
+            }
+            if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
+                if (setNext && updater.setNextBundle(existing.getId())) {
+                    return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
+                }
+                return "downloaded";
+            }
+
+            // downloadBackground returns null when it refuses the download (blocked encryption, gate,
+            // version already downloading): only wait for a download it started.
+            final String startedId = updater.downloadBackground((String) url, version, sessionKey, checksum, manifestOf(latest), setNext);
+            if (startedId == null) {
+                return "skipped";
+            }
+            final long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(FINISH_TIMEOUT_MINUTES);
+            try {
+                // Keep the worker (and so the process) alive until the bundle is stored. If the user opens
+                // the app meanwhile, its plugin instance takes over the download (it restarts downloads it
+                // does not observe), so stop waiting.
+                while (!finished.await(1, TimeUnit.SECONDS)) {
+                    if (CapacitorUpdaterPlugin.instanceLoaded) {
+                        return "handed_over";
+                    }
+                    if (System.currentTimeMillis() > deadline) {
+                        return "timeout";
+                    }
+                }
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "interrupted";
+            }
+            return result.get();
+        } finally {
+            updater.shutdown();
         }
-        return result.get();
     }
 
     /**
@@ -274,6 +276,8 @@ public class HeadlessUpdateWorker extends Worker {
         updater.editor = prefs.edit();
         updater.documentsDir = context.getFilesDir();
         updater.noBackupDir = context.getNoBackupFilesDir();
+        // Shares the plugin's pending-stats file: load it first so a flush does not overwrite it.
+        updater.restorePendingStats();
         updater.CAP_SERVER_PATH = WebView.CAP_SERVER_PATH;
         updater.pluginVersion = CapacitorUpdaterPlugin.PLUGIN_VERSION;
         updater.versionBuild = config.getString("version", packageInfo.versionName);
