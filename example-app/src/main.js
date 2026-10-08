@@ -2735,9 +2735,6 @@ async function runAction(action, values, options = {}) {
       return result;
     }
 
-    if (!skipRefresh) {
-      await refreshState();
-    }
     state.lastActionMarker = `${actionMarkerId}:${actionOutcome}`;
     state.lastActionResult = `${action.id}:${actionOutcome}`;
     state.lastPhase = `${action.id}:${actionOutcome}`;
@@ -2752,6 +2749,11 @@ async function runAction(action, values, options = {}) {
           : `Action marker: ${actionMarkerId}:${actionOutcome}`;
     }
     renderState();
+    if (!skipRefresh) {
+      void refreshState().catch((refreshError) => {
+        console.error(`Post-action refresh failed for ${action.id}`, refreshError);
+      });
+    }
     return result;
   } catch (error) {
     const message = error?.message ?? String(error);
