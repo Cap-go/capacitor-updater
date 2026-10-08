@@ -1070,7 +1070,8 @@ setMultiDelay(options: MultiDelayConditions) => Promise<void>
 Configure conditions that must be met before a pending update is applied.
 
 After calling {@link next} to queue an update, use this method to control when it gets applied.
-The update will only be installed after ALL specified conditions are satisfied.
+By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
 
 Available condition types:
 - `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
@@ -2465,9 +2466,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### MultiDelayConditions
 
-| Prop                  | Type                          |
-| --------------------- | ----------------------------- |
-| **`delayConditions`** | <code>DelayCondition[]</code> |
+| Prop                  | Type                                                              | Description                               | Default            | Since  |
+| --------------------- | ----------------------------------------------------------------- | ----------------------------------------- | ------------------ | ------ |
+| **`delayConditions`** | <code>DelayCondition[]</code>                                     |                                           |                    |        |
+| **`conditionMode`**   | <code><a href="#delayconditionmode">DelayConditionMode</a></code> | How to combine multiple delay conditions. | <code>'and'</code> | 8.50.0 |
 
 
 ##### DelayCondition
@@ -2878,6 +2880,16 @@ error: The bundle has failed to download.
 ##### DelayUntilNext
 
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
+
+
+##### DelayConditionMode
+
+How multiple delay conditions are combined when more than one is set.
+
+- `and`: every condition must be satisfied before the pending update is applied (default, backward compatible).
+- `or`: the pending update is applied as soon as any condition is satisfied.
+
+<code>'and' | 'or'</code>
 
 
 ##### UpdateResponseKind

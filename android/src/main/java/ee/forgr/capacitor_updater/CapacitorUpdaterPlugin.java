@@ -4736,11 +4736,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
 
-            if (this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
-                call.resolve();
-            } else {
+            final String conditionMode = call.getData().optString("conditionMode", DelayUpdateUtils.DELAY_CONDITION_MODE_AND);
+            if (!this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
                 call.reject("Failed to delay update");
+                return;
             }
+            if (!this.delayUpdateUtils.setConditionMode(conditionMode)) {
+                call.reject("Failed to delay update");
+                return;
+            }
+            call.resolve();
         } catch (final Exception e) {
             logger.error("Failed to delay update, [Error calling 'setMultiDelay()'] " + e.getMessage());
             call.reject("Failed to delay update", e);

@@ -3448,18 +3448,28 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
             let delayConditions: String = toJson(object: modifiableList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
+            guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
                 call.reject("Failed to delay update")
+                return
             }
+            let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+            guard delayUpdateUtils.setConditionMode(conditionMode) else {
+                call.reject("Failed to delay update")
+                return
+            }
+            call.resolve()
         } else {
             let delayConditions: String = toJson(object: delayConditionList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
+            guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
                 call.reject("Failed to delay update")
+                return
             }
+            let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+            guard delayUpdateUtils.setConditionMode(conditionMode) else {
+                call.reject("Failed to delay update")
+                return
+            }
+            call.resolve()
         }
     }
 

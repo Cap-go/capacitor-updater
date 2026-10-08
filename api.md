@@ -818,7 +818,8 @@ setMultiDelay(options: MultiDelayConditions) => Promise<void>
 Configure conditions that must be met before a pending update is applied.
 
 After calling {@link next} to queue an update, use this method to control when it gets applied.
-The update will only be installed after ALL specified conditions are satisfied.
+By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
 
 Available condition types:
 - `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
@@ -851,6 +852,7 @@ Condition value formats:
 ```ts
 // Update after user kills app OR after 5 minutes in background
 await CapacitorUpdater.setMultiDelay({
+  conditionMode: 'or',
   delayConditions: [
     { kind: 'kill' },
     { kind: 'background', value: '300000' }

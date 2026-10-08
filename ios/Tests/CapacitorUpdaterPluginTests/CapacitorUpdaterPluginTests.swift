@@ -606,8 +606,11 @@ class CapacitorUpdaterTests: XCTestCase {
         return DelayUpdateUtils(currentVersionNative: version, logger: logger)
     }
 
+    private let delayConditionModeKey = DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES
+
     private func clearDelayStorage() {
         UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: delayConditionModeKey)
         UserDefaults.standard.removeObject(forKey: backgroundTimestampKey)
     }
 
@@ -2813,6 +2816,29 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(parsed.count, 1)
         XCTAssertEqual(parsed.first?["kind"], "background")
         XCTAssertEqual(parsed.first?["value"], "5000")
+    }
+
+    func testDelayUpdateUtilsCheckCancelDelayOrModeKilledCancelsImmediately() throws {
+        let utils = try makeDelayUpdateUtils()
+        clearDelayStorage()
+        defer { clearDelayStorage() }
+        let json = try makeDelayConditionsJSON()
+        XCTAssertTrue(utils.setMultiDelay(delayConditions: json))
+        XCTAssertTrue(utils.setConditionMode(DelayUpdateUtils.DELAY_CONDITION_MODE_OR))
+
+        utils.checkCancelDelay(source: .killed)
+
+        XCTAssertNil(UserDefaults.standard.string(forKey: delayPreferencesKey))
+        XCTAssertNil(UserDefaults.standard.string(forKey: delayConditionModeKey))
+    }
+
+    func testDelayUpdateUtilsSetConditionModePersistsValue() throws {
+        let utils = try makeDelayUpdateUtils()
+        clearDelayStorage()
+        defer { clearDelayStorage() }
+
+        XCTAssertTrue(utils.setConditionMode(DelayUpdateUtils.DELAY_CONDITION_MODE_OR))
+        XCTAssertEqual(utils.getConditionMode(), DelayUpdateUtils.DELAY_CONDITION_MODE_OR)
     }
 
     // MARK: - DelayUntilNext Tests

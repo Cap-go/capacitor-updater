@@ -156,6 +156,39 @@ public class DelayUpdateUtilsTest {
     }
 
     @Test
+    public void checkCancelDelay_orMode_killedCancelsWhenAnyConditionMet() throws Exception {
+        JSONArray stored = new JSONArray();
+        stored.put(new JSONObject().put("kind", "kill").put("value", ""));
+        stored.put(new JSONObject().put("kind", "background").put("value", "5000"));
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES), anyString())).thenReturn(
+            DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+        );
+
+        utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.KILLED);
+
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES));
+        verify(editor).commit();
+        verify(editor, never()).putString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString());
+    }
+
+    @Test
+    public void setConditionMode_persistsNormalizedValue() {
+        assertTrue(utils.setConditionMode(DelayUpdateUtils.DELAY_CONDITION_MODE_OR));
+        verify(editor).putString(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES), eq(DelayUpdateUtils.DELAY_CONDITION_MODE_OR));
+        verify(editor).commit();
+    }
+
+    @Test
+    public void cancelDelay_clearsConditionMode() {
+        assertTrue(utils.cancelDelay("test"));
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES));
+        verify(editor).commit();
+    }
+
+    @Test
     public void checkCancelDelay_foregroundKeepsIsoDateWithoutMilliseconds() throws Exception {
         JSONArray stored = new JSONArray();
         stored.put(new JSONObject().put("kind", "date").put("value", "2099-12-31T23:59:59Z"));

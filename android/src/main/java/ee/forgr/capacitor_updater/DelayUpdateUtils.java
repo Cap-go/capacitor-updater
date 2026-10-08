@@ -16,6 +16,9 @@ public class DelayUpdateUtils {
     private final Logger logger;
 
     public static final String DELAY_CONDITION_PREFERENCES = "DELAY_CONDITION_PREFERENCES_CAPGO";
+    public static final String DELAY_CONDITION_MODE_PREFERENCES = "DELAY_CONDITION_MODE_PREFERENCES_CAPGO";
+    public static final String DELAY_CONDITION_MODE_AND = "and";
+    public static final String DELAY_CONDITION_MODE_OR = "or";
     public static final String BACKGROUND_TIMESTAMP_KEY = "BACKGROUND_TIMESTAMP_KEY_CAPGO";
 
     private final SharedPreferences prefs;
@@ -38,128 +41,235 @@ public class DelayUpdateUtils {
     public void checkCancelDelay(CancelDelaySource source) {
         String delayUpdatePreferences = prefs.getString(DELAY_CONDITION_PREFERENCES, "[]");
         ArrayList<DelayCondition> delayConditionList = parseDelayConditions(delayUpdatePreferences);
+        if (delayConditionList.isEmpty()) {
+            return;
+        }
+
+        final boolean useOrMode = isOrConditionMode();
         ArrayList<DelayCondition> delayConditionListToKeep = new ArrayList<>(delayConditionList.size());
         int index = 0;
+        boolean anyConditionMet = false;
 
         for (DelayCondition condition : delayConditionList) {
-            DelayUntilNext kind = condition.getKind();
-            String value = condition.getValue();
-            switch (kind) {
-                case DelayUntilNext.background:
-                    if (source == CancelDelaySource.FOREGROUND) {
-                        long backgroundedAt = getBackgroundTimestamp();
-                        long now = System.currentTimeMillis();
-                        long delta = Math.max(0, now - backgroundedAt);
-                        long longValue = 0L;
-                        try {
-                            longValue = Long.parseLong(value);
-                        } catch (NumberFormatException e) {
-                            logger.error(
-                                "Background condition (value: " +
-                                    value +
-                                    ") had an invalid value at index " +
-                                    index +
-                                    ". We will likely remove it."
-                            );
-                        }
-
-                        if (delta > longValue) {
-                            logger.info(
-                                "Background condition (value: " +
-                                    value +
-                                    ") deleted at index " +
-                                    index +
-                                    ". Delta: " +
-                                    delta +
-                                    ", longValue: " +
-                                    longValue
-                            );
-                        } else {
-                            delayConditionListToKeep.add(condition);
-                            logger.info(
-                                "Background delay (value: " +
-                                    value +
-                                    ") condition kept at index " +
-                                    index +
-                                    " (source: " +
-                                    source.toString() +
-                                    ")"
-                            );
-                        }
+            ConditionCheckResult result = evaluateCondition(condition, source, index);
+            if (result.met) {
+                anyConditionMet = true;
+                if (!useOrMode) {
+                    logger.info(result.logMessage);
+                }
+            } else if (!useOrMode) {
+                if (result.keep) {
+                    delayConditionListToKeep.add(condition);
+                }
+                if (result.logMessage != null) {
+                    if (result.error) {
+                        logger.error(result.logMessage);
                     } else {
-                        delayConditionListToKeep.add(condition);
-                        logger.info(
-                            "Background delay (value: " +
-                                value +
-                                ") condition kept at index " +
-                                index +
-                                " (source: " +
-                                source.toString() +
-                                ")"
-                        );
+                        logger.info(result.logMessage);
                     }
-                    break;
-                case DelayUntilNext.kill:
-                    if (source == CancelDelaySource.KILLED) {
-                        logger.info("Kill delay (value: " + value + ") condition removed at index " + index + " after app kill");
-                    } else {
-                        delayConditionListToKeep.add(condition);
-                        logger.info(
-                            "Kill delay (value: " + value + ") condition kept at index " + index + " (source: " + source.toString() + ")"
-                        );
-                    }
-                    break;
-                case DelayUntilNext.date:
-                    if (!"".equals(value)) {
-                        Date date = parseDateCondition(value);
-                        if (date != null) {
-                            if (new Date().compareTo(date) > 0) {
-                                logger.info("Date delay (value: " + value + ") condition removed due to expired date at index " + index);
-                            } else {
-                                delayConditionListToKeep.add(condition);
-                                logger.info("Date delay (value: " + value + ") condition kept at index " + index);
-                            }
-                        } else {
-                            logger.error("Date delay (value: " + value + ") condition removed due to parsing issue at index " + index);
-                        }
-                    } else {
-                        logger.debug("Date delay (value: " + value + ") condition removed due to empty value at index " + index);
-                    }
-                    break;
-                case DelayUntilNext.nativeVersion:
-                    if (!"".equals(value)) {
-                        try {
-                            final Version versionLimit = new Version(value);
-                            if (this.currentVersionNative.isAtLeast(versionLimit)) {
-                                logger.info(
-                                    "Native version delay (value: " + value + ") condition removed due to above limit at index " + index
-                                );
-                            } else {
-                                delayConditionListToKeep.add(condition);
-                                logger.info("Native version delay (value: " + value + ") condition kept at index " + index);
-                            }
-                        } catch (final Exception e) {
-                            logger.error(
-                                "Native version delay (value: " +
-                                    value +
-                                    ") condition removed due to parsing issue at index " +
-                                    index +
-                                    " " +
-                                    e.getMessage()
-                            );
-                        }
-                    } else {
-                        logger.debug("Native version delay (value: " + value + ") condition removed due to empty value at index " + index);
-                    }
-                    break;
+                }
             }
             index++;
+        }
+
+        if (useOrMode) {
+            if (anyConditionMet) {
+                logger.info("Delay condition met in OR mode (source: " + source + "), canceling delay");
+                this.cancelDelay("checkCancelDelay");
+            }
+            return;
         }
 
         if (delayConditionListToKeep.isEmpty()) {
             this.cancelDelay("checkCancelDelay");
         } else {
             this.setMultiDelay(convertDelayConditionsToJson(delayConditionListToKeep));
+        }
+    }
+
+    private static final class ConditionCheckResult {
+
+        final boolean met;
+        final boolean keep;
+        final boolean error;
+        final String logMessage;
+
+        ConditionCheckResult(boolean met, boolean keep, boolean error, String logMessage) {
+            this.met = met;
+            this.keep = keep;
+            this.error = error;
+            this.logMessage = logMessage;
+        }
+    }
+
+    private ConditionCheckResult evaluateCondition(DelayCondition condition, CancelDelaySource source, int index) {
+        DelayUntilNext kind = condition.getKind();
+        String value = condition.getValue();
+        switch (kind) {
+            case DelayUntilNext.background:
+                if (source == CancelDelaySource.FOREGROUND) {
+                    long backgroundedAt = getBackgroundTimestamp();
+                    long now = System.currentTimeMillis();
+                    long delta = Math.max(0, now - backgroundedAt);
+                    long longValue = 0L;
+                    try {
+                        longValue = Long.parseLong(value);
+                    } catch (NumberFormatException e) {
+                        return new ConditionCheckResult(
+                            false,
+                            false,
+                            true,
+                            "Background condition (value: " +
+                                value +
+                                ") had an invalid value at index " +
+                                index +
+                                ". We will likely remove it."
+                        );
+                    }
+
+                    if (delta > longValue) {
+                        return new ConditionCheckResult(
+                            true,
+                            false,
+                            false,
+                            "Background condition (value: " +
+                                value +
+                                ") deleted at index " +
+                                index +
+                                ". Delta: " +
+                                delta +
+                                ", longValue: " +
+                                longValue
+                        );
+                    }
+                    return new ConditionCheckResult(
+                        false,
+                        true,
+                        false,
+                        "Background delay (value: " + value + ") condition kept at index " + index + " (source: " + source + ")"
+                    );
+                }
+                return new ConditionCheckResult(
+                    false,
+                    true,
+                    false,
+                    "Background delay (value: " + value + ") condition kept at index " + index + " (source: " + source + ")"
+                );
+            case DelayUntilNext.kill:
+                if (source == CancelDelaySource.KILLED) {
+                    return new ConditionCheckResult(
+                        true,
+                        false,
+                        false,
+                        "Kill delay (value: " + value + ") condition removed at index " + index + " after app kill"
+                    );
+                }
+                return new ConditionCheckResult(
+                    false,
+                    true,
+                    false,
+                    "Kill delay (value: " + value + ") condition kept at index " + index + " (source: " + source + ")"
+                );
+            case DelayUntilNext.date:
+                if (!"".equals(value)) {
+                    Date date = parseDateCondition(value);
+                    if (date != null) {
+                        if (new Date().compareTo(date) > 0) {
+                            return new ConditionCheckResult(
+                                true,
+                                false,
+                                false,
+                                "Date delay (value: " + value + ") condition removed due to expired date at index " + index
+                            );
+                        }
+                        return new ConditionCheckResult(
+                            false,
+                            true,
+                            false,
+                            "Date delay (value: " + value + ") condition kept at index " + index
+                        );
+                    }
+                    return new ConditionCheckResult(
+                        false,
+                        false,
+                        true,
+                        "Date delay (value: " + value + ") condition removed due to parsing issue at index " + index
+                    );
+                }
+                return new ConditionCheckResult(
+                    false,
+                    false,
+                    false,
+                    "Date delay (value: " + value + ") condition removed due to empty value at index " + index
+                );
+            case DelayUntilNext.nativeVersion:
+                if (!"".equals(value)) {
+                    try {
+                        final Version versionLimit = new Version(value);
+                        if (this.currentVersionNative.isAtLeast(versionLimit)) {
+                            return new ConditionCheckResult(
+                                true,
+                                false,
+                                false,
+                                "Native version delay (value: " + value + ") condition removed due to above limit at index " + index
+                            );
+                        }
+                        return new ConditionCheckResult(
+                            false,
+                            true,
+                            false,
+                            "Native version delay (value: " + value + ") condition kept at index " + index
+                        );
+                    } catch (final Exception e) {
+                        return new ConditionCheckResult(
+                            false,
+                            false,
+                            true,
+                            "Native version delay (value: " +
+                                value +
+                                ") condition removed due to parsing issue at index " +
+                                index +
+                                " " +
+                                e.getMessage()
+                        );
+                    }
+                }
+                return new ConditionCheckResult(
+                    false,
+                    false,
+                    false,
+                    "Native version delay (value: " + value + ") condition removed due to empty value at index " + index
+                );
+            default:
+                return new ConditionCheckResult(false, false, true, "Unknown delay condition kind at index " + index);
+        }
+    }
+
+    public boolean isOrConditionMode() {
+        return DELAY_CONDITION_MODE_OR.equals(getConditionMode());
+    }
+
+    public String getConditionMode() {
+        String mode = prefs.getString(DELAY_CONDITION_MODE_PREFERENCES, DELAY_CONDITION_MODE_AND);
+        if (DELAY_CONDITION_MODE_OR.equals(mode)) {
+            return DELAY_CONDITION_MODE_OR;
+        }
+        return DELAY_CONDITION_MODE_AND;
+    }
+
+    public Boolean setConditionMode(String conditionMode) {
+        try {
+            String normalized = DELAY_CONDITION_MODE_OR.equals(conditionMode) ? DELAY_CONDITION_MODE_OR : DELAY_CONDITION_MODE_AND;
+            if (!DELAY_CONDITION_MODE_AND.equals(conditionMode) && !DELAY_CONDITION_MODE_OR.equals(conditionMode)) {
+                logger.warn("Unknown delay condition mode '" + conditionMode + "', defaulting to '" + DELAY_CONDITION_MODE_AND + "'");
+            }
+            this.editor.putString(DELAY_CONDITION_MODE_PREFERENCES, normalized);
+            this.editor.commit();
+            logger.info("Delay condition mode saved: " + normalized);
+            return true;
+        } catch (final Exception e) {
+            logger.error("Failed to save delay condition mode: " + e.getMessage());
+            return false;
         }
     }
 
@@ -295,6 +405,7 @@ public class DelayUpdateUtils {
     public boolean cancelDelay(String source) {
         try {
             this.editor.remove(DELAY_CONDITION_PREFERENCES);
+            this.editor.remove(DELAY_CONDITION_MODE_PREFERENCES);
             this.editor.commit();
             logger.info("All delays canceled from " + source);
             return true;

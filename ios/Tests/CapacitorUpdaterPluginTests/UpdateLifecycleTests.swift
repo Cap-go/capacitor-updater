@@ -138,6 +138,7 @@ final class UpdateLifecycleTests: XCTestCase {
     private var plugin = LifecyclePlugin()
     private var updater = LifecycleCapgoUpdater()
     private let delayPreferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+    private let delayConditionModeKey = DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES
     private let updateUrl = URL(string: "https://example.com/updates")!
     private let lastFailedBundleKey = "CapacitorUpdater.lastFailedBundle"
 
@@ -154,10 +155,12 @@ final class UpdateLifecycleTests: XCTestCase {
             DelayUpdateUtils(currentVersionNative: try CapgoSemanticVersion("1.0.0"), logger: Logger(withTag: "UpdateLifecycleTests"))
         )
         UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: delayConditionModeKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: delayConditionModeKey)
         UserDefaults.standard.removeObject(forKey: lastFailedBundleKey)
         super.tearDown()
     }
