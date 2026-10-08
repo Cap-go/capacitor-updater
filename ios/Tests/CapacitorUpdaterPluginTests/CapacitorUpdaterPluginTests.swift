@@ -3222,6 +3222,7 @@ class CapacitorUpdaterTests: XCTestCase {
     func testSendReadyToJsSkipsSemaphoreWaitWhenNotArmed() {
         let testPlugin = RealSendReadyCapacitorUpdaterPlugin()
         testPlugin.setAppReadyTimeoutForTesting(2000)
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
         let bundle = BundleInfo(
             id: BundleInfo.ID_BUILTIN,
             version: "builtin",
@@ -3231,11 +3232,10 @@ class CapacitorUpdaterTests: XCTestCase {
         )
 
         let expectation = expectation(description: "appReady without wait")
-        let start = Date()
         testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
 
         DispatchQueue.global().async {
-            for _ in 0..<40 {
+            for _ in 0..<400 {
                 if testPlugin.notifiedEventNames.contains("appReady") {
                     expectation.fulfill()
                     return
@@ -3244,8 +3244,8 @@ class CapacitorUpdaterTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        wait(for: [expectation], timeout: 5.0)
+        XCTAssertFalse(testPlugin.didEnterSemaphoreWaitForTestingState)
         XCTAssertEqual(testPlugin.notifiedEventPayloads["appReady"]?["status"] as? String, "disabled")
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
@@ -3375,11 +3375,11 @@ class CapacitorUpdaterTests: XCTestCase {
             downloaded: BundleInfo.DOWNLOADED_BUILTIN,
             checksum: ""
         )
+        testPlugin.resetSemaphoreWaitTestingStateForTesting()
         let expectation = expectation(description: "appReady after clear is immediate")
-        let start = Date()
         testPlugin.sendReadyToJs(current: bundle, msg: "disabled")
         DispatchQueue.global().async {
-            for _ in 0..<40 {
+            for _ in 0..<400 {
                 if testPlugin.notifiedEventNames.contains("appReady") {
                     expectation.fulfill()
                     return
@@ -3387,8 +3387,8 @@ class CapacitorUpdaterTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 0.025)
             }
         }
-        wait(for: [expectation], timeout: 1.0)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
+        wait(for: [expectation], timeout: 5.0)
+        XCTAssertFalse(testPlugin.didEnterSemaphoreWaitForTestingState)
     }
 
     func testReadyCallFromPreviousPageIsRejected() {
