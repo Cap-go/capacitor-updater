@@ -89,7 +89,7 @@
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^8.5.0",
+    "@capacitor/ios": "^7.0.0",
     "@capgo/cli": "8.72.0",
     "@ionic/eslint-config": "^0.5.0",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
