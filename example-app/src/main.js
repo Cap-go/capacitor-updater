@@ -79,6 +79,16 @@ const elements = {
   currentBundle: requireElement('current-bundle'),
   currentBundleSource: requireElement('current-bundle-source'),
   debugOutput: requireElement('debug-output'),
+  demoApplyUpdate: requireElement('demo-apply-update'),
+  demoBundleChip: requireElement('demo-bundle-chip'),
+  demoChannelChip: requireElement('demo-channel-chip'),
+  demoCheckUpdate: requireElement('demo-check-update'),
+  demoDownloadUpdate: requireElement('demo-download-update'),
+  demoLastDownload: requireElement('demo-last-download'),
+  demoLatestChip: requireElement('demo-latest-chip'),
+  demoNextBundle: requireElement('demo-next-bundle'),
+  demoNotifyChip: requireElement('demo-notify-chip'),
+  demoReloadApp: requireElement('demo-reload-app'),
   downloadCompleteEventState: requireElement('download-complete-event-state'),
   downloadCompleteEvent: requireElement('download-complete-event'),
   directUpdateMode: requireElement('direct-update-mode'),
@@ -111,6 +121,7 @@ const elements = {
   noNeedUpdateEvent: requireElement('no-need-update-event'),
   notifyStatus: requireElement('notify-status'),
   output: requireElement('plugin-output'),
+  qaToolsDetails: requireElement('qa-tools-details'),
   quickActions: requireElement('quick-actions'),
   quickRunSmokeSequenceButton: requireElement('quick-run-smoke-sequence'),
   refreshButton: requireElement('refresh-state'),
@@ -860,6 +871,22 @@ function renderState() {
   elements.breakingEvent.textContent = `breakingAvailable event: ${state.eventMarkers.breakingAvailable}`;
   elements.majorEvent.textContent = `majorAvailable event: ${state.eventMarkers.majorAvailable}`;
   elements.flexibleUpdateEvent.textContent = `flexible update event: ${state.eventMarkers.flexibleUpdate}`;
+
+  const notifyReady = String(state.notifyStatus ?? '').toLowerCase();
+  const notifyChipClass =
+    notifyReady.includes('yes') || notifyReady.includes('ready') || notifyReady.includes('ok')
+      ? 'status-chip status-chip-ok'
+      : notifyReady.includes('fail') || notifyReady.includes('error')
+        ? 'status-chip status-chip-warn'
+        : 'status-chip status-chip-pending';
+  elements.demoNotifyChip.className = notifyChipClass;
+  elements.demoNotifyChip.textContent = `App ready: ${state.notifyStatus}`;
+  elements.demoChannelChip.textContent = `Channel: ${state.getChannelResult?.channel ?? 'none'}`;
+  elements.demoBundleChip.textContent = `Active bundle: ${getBundleVersion(state.currentBundle)}`;
+  elements.demoLatestChip.textContent = `Server latest: ${state.lastLatest?.version ?? 'none'}`;
+  elements.demoNextBundle.textContent = `Queued next bundle: ${getBundleVersion(state.nextBundle)}`;
+  elements.demoLastDownload.textContent = `Last download: ${state.lastDownload}`;
+
   elements.e2eSummary.textContent =
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
@@ -3026,6 +3053,54 @@ function renderQuickActions() {
   });
 }
 
+function configureQaToolsPanel() {
+  if (platform !== 'web') {
+    elements.qaToolsDetails.setAttribute('open', '');
+  }
+}
+
+function triggerQuickAction(actionId) {
+  const quickButton = document.getElementById(`quick-action-${actionId}`);
+  if (!quickButton) {
+    const action = getActionById(actionId);
+    void runAction(action, {}).catch((error) => {
+      console.error(`Demo action ${actionId} failed`, error);
+    });
+    return;
+  }
+  quickButton.click();
+}
+
+function bindDemoActions() {
+  bindActionButton(elements.demoCheckUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('get-latest');
+  });
+
+  bindActionButton(elements.demoDownloadUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('download-latest-bundle');
+  });
+
+  bindActionButton(elements.demoApplyUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('set-last-downloaded-bundle');
+  });
+
+  bindActionButton(elements.demoReloadApp, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('reload-app');
+  });
+}
+
 async function attachListeners() {
   if (listenersAttached) {
     return;
@@ -3114,8 +3189,10 @@ async function bootstrap() {
     window.history.scrollRestoration = 'manual';
   }
   resetScrollPosition();
+  configureQaToolsPanel();
   renderQuickActions();
   renderActions();
+  bindDemoActions();
   renderState();
   await attachListeners();
 
