@@ -525,6 +525,7 @@ export default config;
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`removeAllListeners()`](#removealllisteners)
+* [`addListener('updaterEvent', ...)`](#addlistenerupdaterevent-)
 * [`addListener('download', ...)`](#addlistenerdownload-)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
 * [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
@@ -1579,6 +1580,7 @@ removeAllListeners() => Promise<void>
 Remove all event listeners registered for this plugin.
 
 This unregisters all listeners added via {@link addListener} for all event types:
+- `updaterEvent`
 - `download`
 - `noNeedUpdate`
 - `updateCheckResult`
@@ -1594,6 +1596,45 @@ Use this during cleanup (e.g., when unmounting components or closing screens)
 to prevent memory leaks from lingering event listeners.
 
 **Since:** 1.0.0
+
+--------------------
+
+
+#### addListener('updaterEvent', ...)
+
+```typescript
+addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for every updater event with a single listener.
+
+Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+Events retained until consumed (`set`, `appReady`, `updateAvailable`) are retained here too.
+
+The per-event listeners below are deprecated and will be removed in v9.
+
+```typescript
+CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
+  switch (event.type) {
+    case 'download':
+      console.log('progress', event.data.percent);
+      break;
+    case 'downloadFailed':
+      console.warn('download failed', event.data.version);
+      break;
+  }
+});
+```
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updaterEvent'</code>                                               |
+| **`listenerFunc`** | <code>(event: <a href="#updaterevent">UpdaterEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.53.0
 
 --------------------
 
@@ -2722,6 +2763,13 @@ Result returned after requesting an immediate native auto-update check.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
+##### DownloadFailedEvent
+
+| Prop          | Type                | Description                | Since |
+| ------------- | ------------------- | -------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
+
+
 ##### MajorAvailableEvent
 
 | Prop          | Type                | Description                               | Since |
@@ -2748,13 +2796,6 @@ Result returned after requesting an immediate native auto-update check.
 | Prop         | Type                                              | Description                                                 | Since  |
 | ------------ | ------------------------------------------------- | ----------------------------------------------------------- | ------ |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle is queued as the next bundle to install. | 6.14.0 |
-
-
-##### DownloadFailedEvent
-
-| Prop          | Type                | Description                | Since |
-| ------------- | ------------------- | -------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
 ##### AppReadyEvent
@@ -2909,11 +2950,29 @@ failed by native clients.
 <code>'up_to_date' | 'blocked' | 'failed'</code>
 
 
+##### UpdaterEvent
+
+Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
+`type` is the legacy event name and `data` is the same payload the legacy listener receives,
+so you can switch on `type` and get a typed `data`.
+
+The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+
+<code>{ type: 'download'; data: <a href="#downloadevent">DownloadEvent</a> } | { type: 'noNeedUpdate'; data: <a href="#noneedevent">NoNeedEvent</a> } | { type: 'updateCheckResult'; data: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> } | { type: 'updateAvailable'; data: <a href="#updateavailableevent">UpdateAvailableEvent</a> } | { type: 'downloadComplete'; data: <a href="#downloadcompleteevent">DownloadCompleteEvent</a> } | { type: 'downloadFailed'; data: <a href="#downloadfailedevent">DownloadFailedEvent</a> } | { type: 'breakingAvailable'; data: <a href="#breakingavailableevent">BreakingAvailableEvent</a> } | { type: 'updateFailed'; data: <a href="#updatefailedevent">UpdateFailedEvent</a> } | { type: 'set'; data: <a href="#setevent">SetEvent</a> } | { type: 'setNext'; data: <a href="#setnextevent">SetNextEvent</a> } | { type: 'appReloaded'; data: <a href="#record">Record</a>&lt;string, never&gt; } | { type: 'appReady'; data: <a href="#appreadyevent">AppReadyEvent</a> } | { type: 'channelPrivate'; data: <a href="#channelprivateevent">ChannelPrivateEvent</a> } | { type: 'onFlexibleUpdateStateChange'; data: <a href="#flexibleupdatestate">FlexibleUpdateState</a> }</code>
+
+
 ##### BreakingAvailableEvent
 
 Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
 
 <code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
+
+
+##### Record
+
+Construct a type with a set of properties K of type T
+
+<code>{ [P in K]: T; }</code>
 
 
 ##### ShakeMenuGesture
