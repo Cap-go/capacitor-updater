@@ -152,8 +152,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var autoUpdateMode = CapacitorUpdaterPlugin.autoUpdateModeOff
     private var launchStartReported = false
     private var launchReadyReported = false
+    private var launchTimeoutReported = false
+    private let launchReportLock = NSLock()
     private var appReadyTimeout = 10000
     private var appReadyCheck: DispatchWorkItem?
+    // Between appMovedToBackground and appMovedToForeground (main thread). A suspended page cannot
+    // call notifyAppReady, so the rollback check waits for the fresh one armed by the next foreground.
+    private var appInBackground = false
     private var resetWhenUpdate = true
     private var directUpdate = false
     private var directUpdateMode: String = "false"
@@ -411,19 +416,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            state?.exists != true || (!defaultChannelPersistenceDisabled && state?.isReadable != true) {
             _ = self.persistDefaultChannelStateFromDefaults()
         }
-        self.reportAppLaunchStart()
-        self.implementation.autoReset()
-        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
-        self.appHealthTracker = appHealthTracker
-        appHealthTracker.reportPreviousUncleanForegroundExit()
-        appHealthTracker.startSession()
-
-        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
-        self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
-        if nativeBuildVersionChanged {
-            self.clearPreviewSessionForNativeBuildChange()
-        }
-        self.leavePreviewSessionForLaunchURLIfNeeded()
+        let didResetCurrentBundle = self.resetStartupBundleAndReportAppLaunchStart(
+            resetWhenUpdate: resetWhenUpdate,
+            nativeBuildVersionChanged: nativeBuildVersionChanged
+        )
 
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         self.implementation.beforeDownload = { [weak self] in
@@ -431,11 +427,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
         // and sweep orphan directories every launch. Must not block app startup.
-        if !resetWhenUpdate {
-            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
-            UserDefaults.standard.synchronize()
-        }
-        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
         self.cleanupObsoleteVersions(
             resetWhenUpdate: resetWhenUpdate,
             didResetCurrentBundle: didResetCurrentBundle
@@ -1039,6 +1030,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    @discardableResult
+    private func resetStartupBundleAndReportAppLaunchStart(
+        resetWhenUpdate: Bool,
+        nativeBuildVersionChanged: Bool
+    ) -> Bool {
+        self.implementation.autoReset()
+        let appHealthTracker = AppHealthTracker(implementation: self.implementation)
+        self.appHealthTracker = appHealthTracker
+        appHealthTracker.reportPreviousUncleanForegroundExit()
+        appHealthTracker.startSession()
+
+        // Check if app was recently installed/updated BEFORE cleanup updates the stored native build version.
+        self.wasRecentlyInstalledOrUpdated = self.checkIfRecentlyInstalledOrUpdated()
+        if nativeBuildVersionChanged {
+            self.clearPreviewSessionForNativeBuildChange()
+        }
+        self.leavePreviewSessionForLaunchURLIfNeeded()
+
+        if !resetWhenUpdate {
+            UserDefaults.standard.set(self.currentBuildVersion, forKey: "LatestNativeBuildVersion")
+            UserDefaults.standard.synchronize()
+        }
+        let didResetCurrentBundle = resetWhenUpdate ? self.resetCurrentBundleForNativeBuildChangeIfNeeded() : false
+        self.reportAppLaunchStart()
+        return didResetCurrentBundle
+    }
+
     private func cleanupObsoleteVersions(resetWhenUpdate: Bool = true, didResetCurrentBundle: Bool = false) {
         // Enter before publishing incomplete state so waiters cannot hit an empty group.
         self.cleanupStateLock.lock()
@@ -1627,7 +1645,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let manifestEntries = manifestEntries {
             next = try self.implementation.downloadManifest(manifest: manifestEntries, version: version, sessionKey: sessionKey)
         } else {
-            next = try self.implementation.download(url: url, version: version, sessionKey: sessionKey)
+            next = try self.implementation.downloadVerified(url: url, version: version, sessionKey: sessionKey, expectedChecksum: rawChecksum)
         }
 
         if manifestEntries == nil {
@@ -3001,8 +3019,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.error("Error no url or wrong format")
             return "unavailable"
         }
+        // The TS contract only knows queued / already_running / unavailable.
         if self.shouldBlockAutoUpdateForPreviewSession() {
-            return "preview_session"
+            return "unavailable"
+        }
+        if !self._isAutoUpdateEnabled() {
+            logger.info("Auto update is disabled, update check not triggered")
+            return "unavailable"
         }
         if self.isDownloadStuckOrTimedOut() {
             logger.info("Download already in progress, skipping duplicate download request")
@@ -3288,11 +3311,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func reportAppLaunchReady(_ bundle: BundleInfo) {
-        guard !self.implementation.statsUrl.isEmpty, !launchReadyReported else {
+        guard !self.implementation.statsUrl.isEmpty, self.claimLaunchReport(timeout: false) else {
             return
         }
 
-        launchReadyReported = true
         let duration = max(0, Int64(Date().timeIntervalSince1970 * 1000) - launchStartedAtMs)
         self.implementation.sendStats(
             action: "app_launch_ready",
@@ -3306,8 +3328,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    /// The launch outcome is reported once: either ready or timeout, never both, never twice.
+    private func claimLaunchReport(timeout: Bool) -> Bool {
+        launchReportLock.lock()
+        defer { launchReportLock.unlock() }
+        if launchReadyReported || launchTimeoutReported {
+            return false
+        }
+        if timeout {
+            launchTimeoutReported = true
+        } else {
+            launchReadyReported = true
+        }
+        return true
+    }
+
     private func reportAppLaunchTimeout(_ bundle: BundleInfo) {
-        guard !self.implementation.statsUrl.isEmpty else {
+        guard !self.implementation.statsUrl.isEmpty, self.claimLaunchReport(timeout: true) else {
             return
         }
 
@@ -3523,8 +3560,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     func DeferredNotifyAppReadyCheck() {
-        self.checkRevert()
         self.appReadyCheck = nil
+        // A suspended app can resume with this timer already expired, before willEnterForeground
+        // re-arms it: its page could not run yet, so wait for the check of the next foreground.
+        if self.appInBackground {
+            logger.info("App is in background, notifyAppReady check deferred to the next foreground")
+            return
+        }
+        self.checkRevert()
     }
 
     func endBackGroundTask() {
@@ -4280,8 +4323,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.currentBuildVersion = currentBuildVersion
     }
 
+    func resetStartupBundleAndReportAppLaunchStartForTesting(
+        resetWhenUpdate: Bool,
+        nativeBuildVersionChanged: Bool
+    ) -> Bool {
+        self.resetStartupBundleAndReportAppLaunchStart(
+            resetWhenUpdate: resetWhenUpdate,
+            nativeBuildVersionChanged: nativeBuildVersionChanged
+        )
+    }
+
+    func reportAppLaunchStartForTesting() {
+        self.reportAppLaunchStart()
+    }
+
     func setAppReadyTimeoutForTesting(_ timeout: Int) {
         self.appReadyTimeout = timeout
+    }
+
+    func setDelayUpdateUtilsForTesting(_ delayUpdateUtils: DelayUpdateUtils) {
+        self.delayUpdateUtils = delayUpdateUtils
     }
 
     func armPendingNotifyAppReadyForTesting() {
@@ -4351,13 +4412,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         Self.normalizedUpdateResponseKind(kind: kind)
     }
 
-    private func endBackgroundDownloadAfterLatestError(
+    /// Emits `updateCheckResult` for an error / kind response and logs it.
+    @discardableResult
+    private func notifyUpdateCheckResult(
         backendError: String,
         res: AppVersion,
-        current: BundleInfo,
-        plannedDirectUpdate: Bool
-    ) {
-        let statusCode = res.statusCode
+        current: BundleInfo
+    ) -> (kind: String, message: String, latestVersionName: String) {
         let responseKind = self.updateResponseKind(kind: res.kind)
         let responseMessage = res.message?.isEmpty == false ? res.message : nil
         let message = responseMessage ?? (backendError.isEmpty ? "server did not provide a message" : backendError)
@@ -4366,11 +4427,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             "kind": responseKind,
             "error": backendError,
             "message": message,
-            "statusCode": statusCode,
+            "statusCode": res.statusCode,
             "version": latestVersionName,
             "bundle": current.toJSON()
         ])
-        self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
 
         if responseKind == "up_to_date" {
             self.logger.info("No new version available")
@@ -4379,6 +4439,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             self.logger.error("getLatest failed with error: \(backendError)")
         }
+        return (responseKind, message, latestVersionName)
+    }
+
+    private func endBackgroundDownloadAfterLatestError(
+        backendError: String,
+        res: AppVersion,
+        current: BundleInfo,
+        plannedDirectUpdate: Bool
+    ) {
+        let (responseKind, message, latestVersionName) = self.notifyUpdateCheckResult(
+            backendError: backendError,
+            res: res,
+            current: current
+        )
+        self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
 
         let isFailure = responseKind == "failed"
         self.endBackGroundTaskWithNotif(
@@ -4643,7 +4718,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 )
                                 return
                             }
-                            nextImpl = try self.implementation.download(url: downloadUrl, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
+                            nextImpl = try self.implementation.downloadVerified(
+                                url: downloadUrl,
+                                version: latestVersionName,
+                                sessionKey: sessionKey,
+                                expectedChecksum: res.checksum,
+                                link: res.link,
+                                comment: res.comment
+                            )
                         }
                     }
                     guard let next = nextImpl else {
@@ -4700,11 +4782,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
                     if directUpdateAllowed {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
-                        let delayConditionList: [DelayCondition] = self.fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
-                            let kind: String = obj.value(forKey: "kind") as! String
-                            let value: String? = obj.value(forKey: "value") as? String
-                            return DelayCondition(kind: kind, value: value)
-                        }
+                        let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
                         if !delayConditionList.isEmpty {
                             self.logger.info("Update delayed until delay conditions met")
                             self.endBackGroundTaskWithNotif(
@@ -4780,7 +4858,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.logger.error("Error downloading file \(error.localizedDescription)")
                     let current: BundleInfo = self.implementation.getCurrentBundle()
                     self.endBackGroundTaskWithNotif(
-                        msg: "Error downloading file",
+                        msg: (error as? ObjectSavableError) == .checksum ? "Error checksum" : "Error downloading file",
                         latestVersionName: latestVersionName,
                         current: current,
                         plannedDirectUpdate: plannedDirectUpdate
@@ -4806,11 +4884,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
-        let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).map { obj -> DelayCondition in
-            let kind: String = obj.value(forKey: "kind") as! String
-            let value: String? = obj.value(forKey: "value") as? String
-            return DelayCondition(kind: kind, value: value)
-        }
+        let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
         if !delayConditionList.isEmpty {
             logger.info("Update delayed until delay conditions met")
             return
@@ -4837,18 +4911,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return String(data: data, encoding: String.Encoding.utf8) ?? ""
     }
 
-    @objc private func fromJsonArr(json: String) -> [NSObject] {
-        guard let jsonData = json.data(using: .utf8) else {
-            return []
-        }
-        let object = try? JSONSerialization.jsonObject(
-            with: jsonData,
-            options: .mutableContainers
-        ) as? [NSObject]
-        return object ?? []
-    }
-
     @objc func appMovedToForeground() {
+        self.appInBackground = false
         appHealthTracker?.markForeground(true)
         let current: BundleInfo = self.implementation.getCurrentBundle()
         self.implementation.sendStats(action: "app_moved_to_foreground", versionName: current.getVersionName())
@@ -4896,30 +4960,43 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             DispatchQueue.global(qos: .utility).async {
-                if self.shouldBlockAutoUpdateForPreviewSession() {
-                    return
-                }
-                let res = self.implementation.getLatest(url: url, channel: nil)
-                let current = self.implementation.getCurrentBundle()
-                if self.shouldBlockAutoUpdateForPreviewSession() {
-                    return
-                }
-
-                if res.version != current.getVersionName() {
-                    self.logger.info("New version found: \(res.version)")
-                    // Check if download is already in progress (with timeout protection)
-                    if !self.isDownloadStuckOrTimedOut() {
-                        self.backgroundDownload()
-                    } else {
-                        self.logger.info("Download already in progress, skipping duplicate download request")
-                    }
-                }
+                self.runPeriodicUpdateCheck(url: url)
             }
         }
         RunLoop.current.add(periodicUpdateTimer!, forMode: .default)
     }
 
+    func runPeriodicUpdateCheck(url: URL) {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
+        let res = self.implementation.getLatest(url: url, channel: nil)
+        let current = self.implementation.getCurrentBundle()
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
+
+        // Error / kind responses carry no downloadable bundle: report them, like Android.
+        let backendError = res.error ?? ""
+        let backendKind = res.kind ?? ""
+        if !backendError.isEmpty || !backendKind.isEmpty {
+            self.notifyUpdateCheckResult(backendError: backendError, res: res, current: current)
+            return
+        }
+
+        if !res.version.isEmpty && res.version != current.getVersionName() {
+            self.logger.info("New version found: \(res.version)")
+            // Check if download is already in progress (with timeout protection)
+            if !self.isDownloadStuckOrTimedOut() {
+                self.backgroundDownload()
+            } else {
+                self.logger.info("Download already in progress, skipping duplicate download request")
+            }
+        }
+    }
+
     @objc func appMovedToBackground() {
+        self.appInBackground = true
         // Reset timeout flag at start of each background cycle
         self.autoSplashscreenTimedOut = false
         appHealthTracker?.markForeground(false)

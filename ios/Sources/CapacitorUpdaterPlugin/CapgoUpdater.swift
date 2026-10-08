@@ -981,6 +981,55 @@ import UIKit
     // Symlink targets are paths; anything bigger than this is not a legitimate link.
     private static let maxZipSymlinkTargetBytes = 64 * 1024
 
+    /// A zip symlink target must be a relative path without `..`, so a link can only point further down.
+    /// A lexical check alone is not enough: with `m -> .`, the target `m/..` normalizes to the link folder but
+    /// physically resolves to its parent.
+    static func isSafeZipSymlinkTarget(_ target: String) -> Bool {
+        if target.isEmpty || target.contains("\0") || target.contains("\\") {
+            return false
+        }
+        if (target as NSString).isAbsolutePath {
+            return false
+        }
+        return !containsPathTraversalSegment(target)
+    }
+
+    private static func realPath(_ path: String) -> String? {
+        guard let resolved = Darwin.realpath(path, nil) else {
+            return nil
+        }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    /// Resolves symlinks on the deepest existing ancestor of `url` and throws when it is outside `root`.
+    /// Run before creating anything, so a symlinked folder can never redirect a write out of the bundle.
+    static func assertPhysicallyInsideDirectory(_ url: URL, root: URL) throws {
+        guard let rootPath = realPath(root.path) else {
+            throw SecurePathError.pathTraversal
+        }
+        let normalizedRoot = rootPath.hasSuffix("/") ? rootPath : "\(rootPath)/"
+        var candidate = url.standardizedFileURL.path
+        while true {
+            if let resolved = realPath(candidate) {
+                if resolved != rootPath && !resolved.hasPrefix(normalizedRoot) {
+                    throw SecurePathError.pathTraversal
+                }
+                return
+            }
+            let parent = (candidate as NSString).deletingLastPathComponent
+            if parent == candidate || parent.isEmpty {
+                throw SecurePathError.pathTraversal
+            }
+            candidate = parent
+        }
+    }
+
+    /// `fileExists` follows symlinks, so a dangling link would be missed; this does not follow the last component.
+    private static func itemExistsWithoutFollowingLink(at url: URL) -> Bool {
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
+    }
+
     private func extractZipEntry(_ archive: ZipArchiveReader, entry: ZipEntry, to destPath: URL, bufferSize: Int = CryptoCipher.ioBufferBytes()) throws {
         let fileManager = FileManager.default
 
@@ -991,7 +1040,7 @@ import UIKit
             let parentDir = destPath.deletingLastPathComponent()
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
 
-            if fileManager.fileExists(atPath: destPath.path) {
+            if Self.itemExistsWithoutFollowingLink(at: destPath) {
                 try fileManager.removeItem(at: destPath)
             }
 
@@ -1012,7 +1061,10 @@ import UIKit
         case .symlink:
             let linkData = try archive.readSmallEntry(entry, maxBytes: Self.maxZipSymlinkTargetBytes, bufferSize: bufferSize)
 
-            guard let linkPath = String(data: linkData, encoding: .utf8) else {
+            guard let linkPath = String(data: linkData, encoding: .utf8), Self.isSafeZipSymlinkTarget(linkPath) else {
+                logger.error("Unzip failed: unsafe symlink target")
+                logger.debug("Entry: \(entry.path)")
+                self.sendStats(action: "canonical_path_fail")
                 throw CustomError.cannotUnzip
             }
 
@@ -1029,7 +1081,7 @@ import UIKit
                 throw CustomError.cannotUnzip
             }
 
-            if fileManager.fileExists(atPath: destPath.path) {
+            if Self.itemExistsWithoutFollowingLink(at: destPath) {
                 try fileManager.removeItem(at: destPath)
             }
 
@@ -1064,6 +1116,15 @@ import UIKit
         do {
             for entry in archive.entries {
                 let destPath = try resolveZipEntry(path: entry.path, destUnZip: destUnZip)
+                do {
+                    // Symlinks extracted earlier must not move this entry out of the bundle folder.
+                    try Self.assertPhysicallyInsideDirectory(destPath.deletingLastPathComponent(), root: destUnZip)
+                } catch {
+                    logger.error("Unzip failed: entry resolves outside the bundle folder")
+                    logger.debug("Entry: \(entry.path)")
+                    self.sendStats(action: "canonical_path_fail")
+                    throw CustomError.cannotUnzip
+                }
 
                 if entry.type == .directory {
                     try FileManager.default.createDirectory(at: destPath, withIntermediateDirectories: true, attributes: nil)
@@ -2252,8 +2313,47 @@ import UIKit
         return hasher.hex()
     }
 
+    /// Resolves the checksum a zip bundle must match: required, and RSA-decrypted when a public key is set.
+    func resolveExpectedBundleChecksum(_ checksum: String, versionName: String) throws -> String {
+        if checksum.isEmpty {
+            logger.error("No checksum provided")
+            self.sendStats(action: "checksum_required", versionName: versionName)
+            throw NSError(domain: "ChecksumError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum required"])
+        }
+        return try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.publicKey)
+    }
+
+    /// Downloads and extracts a zip bundle without checking its checksum; the caller must verify it.
+    /// Prefer `downloadVerified`, which rejects a bad archive before extracting it.
     public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: nil)
+    }
+
+    /// Downloads a zip bundle and extracts it only when it matches `expectedChecksum`, the checksum from the
+    /// update response (required, RSA-decrypted when a public key is set). The SHA-256 of the downloaded and
+    /// decrypted archive is compared before anything is extracted: a mismatch deletes the archive, reports
+    /// `checksum_fail` and throws `ObjectSavableError.checksum`.
+    public func downloadVerified(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        expectedChecksum: String,
+        link: String? = nil,
+        comment: String? = nil
+    ) throws -> BundleInfo {
+        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum)
+    }
+
+    private func downloadZip(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        link: String?,
+        comment: String?,
+        expectedChecksum: String?
+    ) throws -> BundleInfo {
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+        let expectedHash = try expectedChecksum.map { try self.resolveExpectedBundleChecksum($0, versionName: version) }
         try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions
@@ -2362,9 +2462,22 @@ import UIKit
             throw error
         }
 
+        checksum = CryptoCipher.calcChecksum(filePath: finalPath)
+        CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
+        if let expectedHash, checksum.isEmpty || checksum != expectedHash {
+            // Never extract an archive that failed verification.
+            logger.error("Checksum mismatch, bundle rejected before extraction")
+            CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: expectedHash)
+            self.sendStats(action: "checksum_fail", versionName: version)
+            try? FileManager.default.removeItem(at: finalPath)
+            self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
+            cleanDownloadData(for: id)
+            // Drop it like the previous post-extraction check did, so the next update check downloads it again.
+            _ = self.delete(id: id)
+            throw ObjectSavableError.checksum
+        }
+
         do {
-            checksum = CryptoCipher.calcChecksum(filePath: finalPath)
-            CryptoCipher.logChecksumInfo(label: "Calculated bundle checksum", hexChecksum: checksum)
             logger.info("Downloading: 80% (unzipping)")
             try self.saveDownloaded(sourceZip: finalPath, id: id, base: self.libraryDir.appendingPathComponent(self.bundleDirectory), notify: true)
             self.populateDeltaCacheAsync(for: id)

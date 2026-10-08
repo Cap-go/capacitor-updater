@@ -779,10 +779,13 @@ extension UIWindow {
                                     }
                                     return
                                 }
-                                bundle = try updater.download(
+                                // Same gate as download() and auto-update: the checksum is required and
+                                // verified (decrypted when a public key is set) before extraction.
+                                bundle = try updater.downloadVerified(
                                     url: downloadUrl,
                                     version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
+                                    sessionKey: latest.sessionKey ?? "",
+                                    expectedChecksum: latest.checksum
                                 )
                             }
 
