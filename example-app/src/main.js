@@ -888,6 +888,7 @@ function renderState() {
   elements.demoLastDownload.textContent = `Last download: ${state.lastDownload}`;
 
   elements.e2eSummary.textContent =
+    `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
     `Build label: ${buildLabel} | ` +
