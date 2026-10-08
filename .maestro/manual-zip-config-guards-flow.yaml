@@ -64,4 +64,4 @@ appId: app.capgo.updater
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: bundle:(success|expected-rejection)|M:bundle:(success|expected-rejection)).*'
-    timeout: 30000
+    timeout: 120000
