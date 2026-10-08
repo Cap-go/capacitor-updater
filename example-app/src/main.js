@@ -2736,7 +2736,9 @@ async function runAction(action, values, options = {}) {
   actionInProgress = true;
   suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
   // A previous action's background refresh must not land after this action's markers.
-  await waitForPendingRefresh(`pending refreshState before ${action.id}`);
+  if (!skipRefresh) {
+    await waitForPendingRefresh(`pending refreshState before ${action.id}`);
+  }
   state.lastAction = action.label;
   state.lastActionMarker = `${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   state.lastActionResult = `${action.id}:running`;
