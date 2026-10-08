@@ -1440,6 +1440,27 @@ async function resetServerRelease() {
   }
 }
 
+async function purgeDownloadedBundlesAfterServerReset() {
+  if (!scenarioId.includes('manifest')) {
+    return;
+  }
+
+  try {
+    const result = await plugin.list();
+    const bundles = result?.bundles ?? [];
+    for (const bundle of bundles) {
+      if (bundle?.id && bundle.id !== 'builtin') {
+        await plugin.delete({ id: bundle.id });
+      }
+    }
+    state.lastDownloadedBundleId = null;
+    state.lastDownloadedBundleVersion = null;
+    await refreshState();
+  } catch (error) {
+    console.warn('[Harness] purgeDownloadedBundlesAfterServerReset failed', error);
+  }
+}
+
 async function advanceServerRelease() {
   const endpoint = createServerEndpoint('/api/control/advance');
 
@@ -2252,7 +2273,11 @@ const actions = [
     description: 'Reset the fake OTA server back to the first release for this scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'reset',
-    run: async () => resetServerRelease(),
+    run: async () => {
+      const serverDebug = await resetServerRelease();
+      await purgeDownloadedBundlesAfterServerReset();
+      return serverDebug;
+    },
   },
   {
     id: 'advance-server-release',
@@ -2747,6 +2772,7 @@ async function runAction(action, values, options = {}) {
   } finally {
     actionInProgress = false;
     suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
+    renderDemoActionButtons();
   }
 }
 
@@ -2842,6 +2868,7 @@ async function runSmokeSequence() {
       elements.runSmokeSequenceButton.disabled = false;
       elements.quickRunSmokeSequenceButton.disabled = false;
       smokeSequencePromise = null;
+      renderDemoActionButtons();
     }
   })();
 
