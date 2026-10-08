@@ -873,19 +873,19 @@ export interface CapacitorUpdaterPlugin {
    * The update will only be installed after ALL specified conditions are satisfied.
    *
    * Available condition types:
-   * - `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
-   * - `kill`: Wait for the app to be killed and relaunched (**Note:** Current behavior triggers update immediately on kill, not on next background. This will be fixed in v8.)
+   * - `background`: Wait until the app has spent enough time in the background (see value formats below).
+   * - `kill`: Wait until the app process ends. The kill condition clears on the next launch (Android may also clear it in onDestroy). The pending bundle still installs only on the next background, because install runs from appMovedToBackground.
    * - `date`: Wait until a specific date/time (ISO 8601 format)
    * - `nativeVersion`: Wait until the native app is updated to a specific version
    *
    * Condition value formats:
-   * - `background`: Number in milliseconds (e.g., `"300000"` for 5 minutes), or omit for immediate
+   * - `background`: Minimum time in milliseconds in background before the condition can clear on return to foreground (e.g., `"300000"` for 5 minutes). Omit `value` or use `"0"` to clear after one background-and-return cycle; the update installs on the following background.
    * - `kill`: No value needed
    * - `date`: ISO 8601 date string (e.g., `"2025-12-31T23:59:59Z"`)
    * - `nativeVersion`: Version string (e.g., `"2.0.0"`)
    *
    * @example
-   * // Update after user kills app OR after 5 minutes in background
+   * // Update after user kills app AND app has been in background at least 5 minutes
    * await CapacitorUpdater.setMultiDelay({
    *   delayConditions: [
    *     { kind: 'kill' },
@@ -900,7 +900,7 @@ export interface CapacitorUpdaterPlugin {
    * });
    *
    * @example
-   * // Default behavior: update on next background
+   * // One background-and-return clears the condition; update installs on the next background
    * await CapacitorUpdater.setMultiDelay({
    *   delayConditions: [{ kind: 'background' }]
    * });
