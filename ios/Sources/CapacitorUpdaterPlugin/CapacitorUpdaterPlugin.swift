@@ -460,7 +460,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
         self.delayUpdateUtils.checkCancelDelay(source: .killed)
 
-        self.appMovedToForeground()
+        if !self.appInBackground {
+            self.appMovedToForeground()
+        }
         self.checkForUpdateAfterDelay()
         self.showPreviewSessionNoticeIfNeeded()
     }
