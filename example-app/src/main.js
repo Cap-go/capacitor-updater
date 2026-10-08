@@ -2273,6 +2273,7 @@ const actions = [
     description: 'Reset the fake OTA server back to the first release for this scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'reset',
+    skipRefresh: true,
     run: async () => {
       const serverDebug = await resetServerRelease();
       await purgeDownloadedBundlesAfterServerReset();
@@ -2287,6 +2288,7 @@ const actions = [
     description: 'Move the fake OTA server to the next release in the scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'advance',
+    skipRefresh: true,
     run: async () => advanceServerRelease(),
   },
   {
@@ -2713,6 +2715,7 @@ async function runAction(action, values, options = {}) {
   if (actionMarker) {
     actionMarker.textContent = `Action marker: ${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   }
+  renderState();
 
   try {
     const result = await action.run(values ?? {});
@@ -3121,6 +3124,7 @@ function configureQaToolsPanel() {
   const openOnNative = platform !== 'web';
 
   details.open = openOnNative;
+  details.classList.toggle('qa-tools-native-open', openOnNative);
   if (openOnNative) {
     details.setAttribute('open', '');
   } else {
