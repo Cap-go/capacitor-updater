@@ -14,6 +14,14 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
+      id: 'qa-shortcuts-heading'
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
       id: 'quick-action-set-runtime-urls'
     direction: DOWN
     timeout: 30000
