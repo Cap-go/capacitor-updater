@@ -4549,7 +4549,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
-    private func beginDownloadBackgroundTask() {
+    func beginDownloadBackgroundTask() {
         let registerTask = {
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 self.endBackGroundTask()
