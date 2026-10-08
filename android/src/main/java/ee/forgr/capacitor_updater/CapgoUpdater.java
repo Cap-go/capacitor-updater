@@ -52,7 +52,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -168,7 +170,13 @@ public class CapgoUpdater {
     // Versions whose WorkManager download is observed by this process. WorkManager persists work across a
     // process kill, but the observer that finishes the download does not survive it.
     private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService io = createIoExecutor();
+
+    private static ExecutorService createIoExecutor() {
+        final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
     private volatile Handler mainHandler;
 
     public CapgoUpdater(Logger logger) {
