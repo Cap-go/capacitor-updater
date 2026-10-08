@@ -1435,30 +1435,34 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-async function resetServerRelease() {
-  const endpoint = createServerEndpoint('/api/control/reset');
+async function callServerControl(name, path, marker) {
+  const endpoint = createServerEndpoint(path);
 
   if (!endpoint) {
     throw new Error('Server control endpoint is not available.');
   }
 
   try {
-    console.log('[Harness] resetServerRelease', endpoint);
+    console.log(`[Harness] ${name}`, endpoint);
     await fetchJson(endpoint);
-    publishHarnessMarker('reset', 'success');
+    publishHarnessMarker(marker, 'success');
     void refreshServerState()
       .then(() => {
         renderState();
       })
       .catch((refreshError) => {
-        console.error('[Harness] resetServerRelease refresh failed', refreshError);
+        console.error(`[Harness] ${name} refresh failed`, refreshError);
       });
     return state.serverDebug;
   } catch (error) {
     const message = error?.message ?? String(error);
-    addEvent('resetServerRelease() failed', { endpoint, message });
+    addEvent(`${name}() failed`, { endpoint, message });
     throw error;
   }
+}
+
+function resetServerRelease() {
+  return callServerControl('resetServerRelease', '/api/control/reset', 'reset');
 }
 
 async function purgeDownloadedBundlesAfterServerReset() {
@@ -1497,30 +1501,8 @@ async function purgeDownloadedBundlesAfterServerReset() {
   });
 }
 
-async function advanceServerRelease() {
-  const endpoint = createServerEndpoint('/api/control/advance');
-
-  if (!endpoint) {
-    throw new Error('Server control endpoint is not available.');
-  }
-
-  try {
-    console.log('[Harness] advanceServerRelease', endpoint);
-    await fetchJson(endpoint);
-    publishHarnessMarker('advance', 'success');
-    void refreshServerState()
-      .then(() => {
-        renderState();
-      })
-      .catch((refreshError) => {
-        console.error('[Harness] advanceServerRelease refresh failed', refreshError);
-      });
-    return state.serverDebug;
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    addEvent('advanceServerRelease() failed', { endpoint, message });
-    throw error;
-  }
+function advanceServerRelease() {
+  return callServerControl('advanceServerRelease', '/api/control/advance', 'advance');
 }
 
 async function verifyPersistedRuntimeConfig(options = {}) {
