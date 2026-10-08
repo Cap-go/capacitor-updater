@@ -99,22 +99,25 @@
         </div>
       </section>
 
+      <section class="card qa-shortcuts-card" aria-labelledby="qa-shortcuts-heading">
+        <div class="quick-actions-panel">
+          <h2 id="qa-shortcuts-heading">QA shortcuts</h2>
+          <p class="qa-tools-hint">
+            Maestro and manual testers use these one-tap actions. Full harness diagnostics are in the panel below.
+          </p>
+          <button id="quick-run-smoke-sequence" type="button">Quick run smoke test sequence</button>
+          <div id="quick-actions" class="quick-actions-grid"></div>
+        </div>
+        <p id="hero-result-marker" class="status-line">Marker: idle</p>
+        <p id="hero-boot-probe" class="status-line">Probe: idle</p>
+      </section>
+
       <section id="qa-tools-details" class="card qa-tools-card" aria-labelledby="qa-tools-toggle">
-        <h2 id="qa-tools-toggle" class="qa-tools-heading">QA tools (Maestro shortcuts)</h2>
+        <h2 id="qa-tools-toggle" class="qa-tools-heading">QA diagnostics</h2>
         <div class="qa-tools-body">
           <p class="qa-tools-hint">
-            Automation and deep diagnostics live here. Maestro flows scroll to these controls; leave this panel
-            open while running tests.
+            Retained markers, plugin state, fake server output, and debug snapshots for automated verification.
           </p>
-
-          <div class="quick-actions-panel">
-            <h3>Manual flow shortcuts</h3>
-            <button id="quick-run-smoke-sequence" type="button">Quick run smoke test sequence</button>
-            <div id="quick-actions" class="quick-actions-grid"></div>
-          </div>
-
-          <p id="hero-result-marker" class="status-line">Marker: idle</p>
-          <p id="hero-boot-probe" class="status-line">Probe: idle</p>
 
           <section class="result-panel qa-subpanel">
             <div class="panel-heading">

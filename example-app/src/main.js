@@ -3183,6 +3183,7 @@ async function bootstrap() {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  document.body.classList.add(`platform-${platform}`);
   resetScrollPosition();
   renderQuickActions();
   renderActions();

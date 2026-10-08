@@ -423,6 +423,13 @@ button:disabled {
   max-height: 360px;
 }
 
+.platform-android .demo-flow,
+.platform-ios .demo-flow,
+.platform-android .demo-output-wrap,
+.platform-ios .demo-output-wrap {
+  display: none;
+}
+
 @media (max-width: 640px) {
   body {
     padding: 12px 14px 24px;
