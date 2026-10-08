@@ -150,11 +150,12 @@ public class CryptoCipher {
             }
             return;
         }
+        // The bundle is encrypted from here on: an unusable key must fail, never leave it encrypted.
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
             if (logger != null) {
                 logger.error("The public key is not a valid RSA Public key");
             }
-            return;
+            throw new IOException("AES file decryption failed: the public key is not a valid RSA public key");
         }
 
         try {

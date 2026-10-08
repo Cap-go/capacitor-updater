@@ -24,6 +24,11 @@ Regenerate them with:
 bun scripts/generate-rsa-contract-fixtures.mjs
 ```
 
+Bundles encrypted by the real Capgo CLI live in `native-contract-tests/cli/`.
+The CLI is the source of truth; regenerate them with
+`bun run generate:cli-crypto`. They are decrypted by
+`CliCryptoFixtureTest.java` (Android) and `CliCryptoFixtureTests.swift` (iOS).
+
 Run RSA contract tests with:
 
 ```bash

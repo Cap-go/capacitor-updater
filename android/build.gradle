@@ -62,7 +62,7 @@ dependencies {
     // Play Core library for in-app updates
     implementation 'com.google.android.play:app-update:2.1.0'
     testImplementation "junit:junit:$junitVersion"
-    testImplementation 'org.mockito:mockito-core:5.23.0'
+    testImplementation 'org.mockito:mockito-core:5.24.0'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.17'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
