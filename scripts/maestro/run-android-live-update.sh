@@ -847,7 +847,7 @@ run_scenario() {
       ;;
     manual-manifest)
       run_split_manual_scenario manual-manifest run_manual_manifest_split_once
-      assert_server_debug_state manual-manifest '
+      assert_server_debug_state_with_retry manual-manifest '
 const state = JSON.parse(process.argv[1]);
 const scenarioId = process.argv[2];
 const failures = [];
@@ -1066,7 +1066,24 @@ assert_server_debug_state() {
 
   server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
   bun --eval "$assertion_script" "$server_state" "$scenario"
-  return 0
+}
+
+assert_server_debug_state_with_retry() {
+  local scenario="$1"
+  local assertion_script="$2"
+  local attempt=1
+  local max_attempts=5
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if assert_server_debug_state "$scenario" "$assertion_script"; then
+      return 0
+    fi
+    if [ "$attempt" -eq "$max_attempts" ]; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep 3
+  done
 }
 
 run_flow() {
