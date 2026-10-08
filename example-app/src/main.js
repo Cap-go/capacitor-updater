@@ -1447,16 +1447,6 @@ async function purgeDownloadedBundlesAfterServerReset() {
 
   await refreshState();
 
-  const hasQueuedNext =
-    state.nextBundle?.id && state.nextBundle.id !== 'builtin' && state.nextBundle.id !== 'none';
-  const onDownloadedCurrent =
-    state.currentBundle?.id && state.currentBundle.id !== 'builtin';
-
-  if (hasQueuedNext || onDownloadedCurrent) {
-    await plugin.reset();
-    await refreshState();
-  }
-
   let purgePasses = 0;
   while (purgePasses < 20) {
     purgePasses += 1;
@@ -1473,8 +1463,9 @@ async function purgeDownloadedBundlesAfterServerReset() {
     (bundle) => bundle?.id && bundle.id !== 'builtin',
   );
   if (remaining.length > 0) {
+    const blockedIds = remaining.map((bundle) => bundle.id).join(', ');
     throw new Error(
-      `purgeDownloadedBundlesAfterServerReset: could not delete ${remaining.length} bundle(s) still on disk`,
+      `purgeDownloadedBundlesAfterServerReset: ${remaining.length} bundle(s) still on disk (${blockedIds}). Reset to builtin or clear next before server reset.`,
     );
   }
 
