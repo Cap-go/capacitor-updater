@@ -3054,12 +3054,6 @@ function renderQuickActions() {
   });
 }
 
-function configureQaToolsPanel() {
-  if (platform !== 'web') {
-    elements.qaToolsDetails.setAttribute('open', '');
-  }
-}
-
 function triggerQuickAction(actionId) {
   const quickButton = document.getElementById(`quick-action-${actionId}`);
   if (!quickButton) {
@@ -3190,7 +3184,6 @@ async function bootstrap() {
     window.history.scrollRestoration = 'manual';
   }
   resetScrollPosition();
-  configureQaToolsPanel();
   renderQuickActions();
   renderActions();
   bindDemoActions();

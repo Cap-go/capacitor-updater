@@ -358,32 +358,12 @@ button:disabled {
   overflow: hidden;
 }
 
-.qa-tools-toggle {
-  cursor: pointer;
-  list-style: none;
-  padding: 16px 20px;
-  font-weight: 700;
+.qa-tools-heading {
+  margin: 0;
+  padding: 16px 20px 0;
   font-size: 1rem;
-  border-bottom: 1px solid transparent;
-}
-
-.qa-tools-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.qa-tools-toggle::before {
-  content: '▸';
-  display: inline-block;
-  margin-right: 8px;
-  transition: transform 0.15s ease;
-}
-
-.qa-tools-card[open] .qa-tools-toggle::before {
-  transform: rotate(90deg);
-}
-
-.qa-tools-card[open] .qa-tools-toggle {
-  border-bottom-color: var(--border);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
 }
 
 .qa-tools-body {
