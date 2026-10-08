@@ -1586,7 +1586,7 @@ public class CapgoUpdater {
         downloadBackground(url, version, sessionKey, checksum, manifest, true);
     }
 
-    public void downloadBackground(
+    public String downloadBackground(
         final String url,
         final String version,
         final String sessionKey,
@@ -1601,10 +1601,10 @@ public class CapgoUpdater {
             }
         } catch (final IOException e) {
             logger.error("Download blocked: " + e.getMessage());
-            return;
+            return null;
         }
         if (!this.runDownloadGateQuiet()) {
-            return;
+            return null;
         }
         final String id = this.randomString();
 
@@ -1616,19 +1616,19 @@ public class CapgoUpdater {
                 // Cancel the failed download and allow retry
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel previous download before retry");
-                    return;
+                    return null;
                 }
                 logger.info("Retrying failed download for version: " + version);
             } else if (shouldRestartOrphanedDownload(observedDownloadVersions.contains(version))) {
                 // Left over from a killed process: nothing would finish it or release the launch, so start over.
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel orphaned download before restarting it");
-                    return;
+                    return null;
                 }
                 logger.info("Restarting download orphaned by a previous process for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
-                return;
+                return null;
             }
         }
 
@@ -1637,6 +1637,7 @@ public class CapgoUpdater {
         this.notifyDownload(id, 5);
 
         this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest, setNext);
+        return id;
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
@@ -3584,7 +3585,6 @@ public class CapgoUpdater {
         return this.getBundleInfo(id);
     }
 
-    /** Clears the stored next bundle when it is already the running bundle, so nothing stays pending. */
     public boolean clearNextBundleIfCurrent() {
         final BundleInfo next = this.getNextBundle();
         if (next == null || !next.getId().equals(this.getCurrentBundle().getId())) {
