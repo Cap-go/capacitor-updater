@@ -791,6 +791,21 @@ async function refreshState() {
   }
 }
 
+function publishHarnessMarker(markerId, outcome = 'success') {
+  const marker = `${markerId}:${outcome}`;
+  state.lastActionMarker = marker;
+  state.lastActionResult = marker;
+  state.lastPhase = marker;
+  if (outcome === 'success') {
+    state.lastError = null;
+  }
+  window.localStorage.setItem(lastActionMarkerStorageKey, marker);
+  window.localStorage.setItem(lastActionResultStorageKey, marker);
+  elements.heroResultMarker.textContent = `Marker: ${marker}`;
+  elements.resultMarker.textContent = `M:${marker}`;
+  renderState();
+}
+
 function renderState() {
   const serverDebug = state.serverDebug?.debug ?? null;
   const lastUpdatePayload = serverDebug?.lastUpdateRequest?.payload ?? {};
@@ -1430,6 +1445,7 @@ async function resetServerRelease() {
   try {
     console.log('[Harness] resetServerRelease', endpoint);
     await fetchJson(endpoint);
+    publishHarnessMarker('reset', 'success');
     void refreshServerState()
       .then(() => {
         renderState();
@@ -1491,6 +1507,7 @@ async function advanceServerRelease() {
   try {
     console.log('[Harness] advanceServerRelease', endpoint);
     await fetchJson(endpoint);
+    publishHarnessMarker('advance', 'success');
     void refreshServerState()
       .then(() => {
         renderState();
