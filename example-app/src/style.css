@@ -3,8 +3,6 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   touch-action: manipulation;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
 }
 
 :root {
@@ -54,7 +52,8 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  padding: 16px 20px 32px;
+  padding: calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+    calc(32px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
   background: inherit;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
@@ -63,7 +62,7 @@ body {
 .container {
   width: min(880px, 100%);
   margin: 0 auto;
-  padding-top: 56px;
+  padding-top: var(--content-offset-top, 5.5rem);
   display: grid;
   gap: 16px;
 }
@@ -170,9 +169,9 @@ h3 {
 
 .e2e-banner {
   position: fixed;
-  top: 8px;
-  left: 8px;
-  right: 8px;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  right: calc(8px + env(safe-area-inset-right));
   z-index: 100;
   pointer-events: none;
   font-size: 0.72rem;
@@ -358,12 +357,37 @@ button:disabled {
   overflow: hidden;
 }
 
-.qa-tools-heading {
-  margin: 0;
-  padding: 16px 20px 0;
+.qa-shortcuts-card {
+  display: grid;
+  gap: 12px;
+}
+
+.qa-tools-toggle {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 20px;
+  font-weight: 700;
   font-size: 1rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
+  border-bottom: 1px solid transparent;
+}
+
+.qa-tools-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.qa-tools-toggle::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.15s ease;
+}
+
+.qa-tools-card[open] .qa-tools-toggle::before {
+  transform: rotate(90deg);
+}
+
+.qa-tools-card[open] .qa-tools-toggle {
+  border-bottom-color: var(--border);
 }
 
 .qa-tools-body {
@@ -442,7 +466,7 @@ button:disabled {
   }
 
   .container {
-    padding-top: 52px;
+    padding-top: var(--content-offset-top, 6.5rem);
   }
 
   .quick-actions-grid {

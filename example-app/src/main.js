@@ -886,6 +886,7 @@ function renderState() {
   elements.demoLatestChip.textContent = `Server latest: ${state.lastLatest?.version ?? 'none'}`;
   elements.demoNextBundle.textContent = `Queued next bundle: ${getBundleVersion(state.nextBundle)}`;
   elements.demoLastDownload.textContent = `Last download: ${state.lastDownload}`;
+  renderDemoActionButtons();
 
   elements.e2eSummary.textContent =
     `Action marker: ${state.lastActionMarker} | ` +
@@ -931,6 +932,7 @@ function renderState() {
   window.localStorage.setItem(lastPhaseStorageKey, state.lastPhase);
 
   logHarnessState(harnessSnapshot);
+  syncContentOffsetForBanner();
 }
 
 function resetScrollPosition() {
@@ -3055,15 +3057,40 @@ function renderQuickActions() {
 }
 
 function triggerQuickAction(actionId) {
-  const quickButton = document.getElementById(`quick-action-${actionId}`);
-  if (!quickButton) {
-    const action = getActionById(actionId);
-    void runAction(action, {}).catch((error) => {
-      console.error(`Demo action ${actionId} failed`, error);
-    });
+  const action = getActionById(actionId);
+  if (action.showWhen && !action.showWhen()) {
+    elements.output.textContent = `${action.label} is not available in this configuration.`;
     return;
   }
-  quickButton.click();
+  const values = Object.fromEntries(
+    (action.inputs || []).map((input) => [input.name, input.value || '']),
+  );
+  void runAction(action, values).catch((error) => {
+    console.error(`Demo action ${actionId} failed`, error);
+  });
+}
+
+function syncContentOffsetForBanner() {
+  const bannerHeight = elements.e2eSummary.getBoundingClientRect().height;
+  const offset = Math.ceil(bannerHeight + 20);
+  document.documentElement.style.setProperty('--content-offset-top', `${offset}px`);
+}
+
+function renderDemoActionButtons() {
+  const demoBusy = actionInProgress || sequenceInProgress;
+  for (const button of [
+    elements.demoCheckUpdate,
+    elements.demoDownloadUpdate,
+    elements.demoApplyUpdate,
+    elements.demoReloadApp,
+  ]) {
+    button.disabled = demoBusy;
+    button.setAttribute('aria-busy', demoBusy ? 'true' : 'false');
+  }
+}
+
+function configureQaToolsPanel() {
+  elements.qaToolsDetails.open = platform !== 'web';
 }
 
 function bindDemoActions() {
@@ -3185,6 +3212,7 @@ async function bootstrap() {
   }
   document.body.classList.add(`platform-${platform}`);
   resetScrollPosition();
+  configureQaToolsPanel();
   renderQuickActions();
   renderActions();
   bindDemoActions();
