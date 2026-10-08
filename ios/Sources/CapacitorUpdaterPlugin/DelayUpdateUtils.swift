@@ -46,11 +46,7 @@ public class DelayUpdateUtils {
     public func checkCancelDelay(source: CancelDelaySource) {
         let delayUpdatePreferences = UserDefaults.standard.string(
             forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
-        let delayConditionList: [DelayCondition] = fromJsonArr(json: delayUpdatePreferences).compactMap { obj in
-            guard let kind = obj.value(forKey: "kind") as? String else { return nil }
-            let value: String? = obj.value(forKey: "value") as? String
-            return DelayCondition(kind: kind, value: value)
-        }
+        let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
 
         var delayConditionListToKeep: [DelayCondition] = []
         var index = 0
@@ -218,14 +214,17 @@ public class DelayUpdateUtils {
         return String(data: data, encoding: String.Encoding.utf8) ?? ""
     }
 
-    private func fromJsonArr(json: String) -> [NSObject] {
-        guard let jsonData = json.data(using: .utf8) else {
+    /// Parses stored delay conditions. Malformed JSON and entries without a string `kind` are dropped.
+    static func parseDelayConditions(json: String) -> [DelayCondition] {
+        guard let jsonData = json.data(using: .utf8),
+              let entries = (try? JSONSerialization.jsonObject(with: jsonData)) as? [Any] else {
             return []
         }
-        let object = try? JSONSerialization.jsonObject(
-            with: jsonData,
-            options: .mutableContainers
-        ) as? [NSObject]
-        return object ?? []
+        return entries.compactMap { entry in
+            guard let object = entry as? [String: Any], let kind = object["kind"] as? String else {
+                return nil
+            }
+            return DelayCondition(kind: kind, value: object["value"] as? String)
+        }
     }
 }

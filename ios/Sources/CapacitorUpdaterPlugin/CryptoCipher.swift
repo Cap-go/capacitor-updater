@@ -239,9 +239,10 @@ public struct CryptoCipher {
             return
         }
 
+        // The bundle is encrypted from here on: an unusable key must fail, never leave it encrypted.
         if !publicKey.hasPrefix("-----BEGIN RSA PUBLIC KEY-----") {
             logger.error("The public key is not a valid RSA Public key")
-            return
+            throw CustomError.cannotDecode
         }
 
         do {
