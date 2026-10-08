@@ -2706,6 +2706,17 @@ function getActionTriggerCooldown(action) {
   return action.reloadsApp ? reloadActionTriggerCooldownMs : actionTriggerCooldownMs;
 }
 
+async function waitForPendingRefresh(label) {
+  if (!refreshStatePromise) {
+    return;
+  }
+  try {
+    await withTimeout(label, () => refreshStatePromise, 10000);
+  } catch (error) {
+    console.warn(`Continuing after ${label} failed or timed out`, error);
+  }
+}
+
 async function runAction(action, values, options = {}) {
   const skipRefresh = options.skipRefresh ?? action.skipRefresh ?? false;
   const actionMarker = actionMarkers.get(action.id);
@@ -2713,6 +2724,8 @@ async function runAction(action, values, options = {}) {
   const actionTriggerCooldown = getActionTriggerCooldown(action);
   actionInProgress = true;
   suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
+  // A previous action's background refresh must not land after this action's markers.
+  await waitForPendingRefresh(`pending refreshState before ${action.id}`);
   state.lastAction = action.label;
   state.lastActionMarker = `${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   state.lastActionResult = `${action.id}:running`;
@@ -2811,17 +2824,7 @@ async function runSmokeSequence() {
     state.sequenceRuns += 1;
     sequenceInProgress = true;
 
-    if (refreshStatePromise) {
-      try {
-        await withTimeout(
-          'pending refreshState before smoke sequence',
-          () => refreshStatePromise,
-          10000,
-        );
-      } catch (error) {
-        console.warn('Continuing smoke sequence after refresh wait timeout', error);
-      }
-    }
+    await waitForPendingRefresh('pending refreshState before smoke sequence');
 
     state.lastAction = 'Smoke test sequence';
     state.lastActionMarker = 'smoke-sequence:running';
