@@ -79,6 +79,17 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         return downloadedBundleValue
     }
 
+    override func downloadVerified(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        expectedChecksum: String,
+        link: String? = nil,
+        comment: String? = nil
+    ) throws -> BundleInfo {
+        try download(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment)
+    }
+
     override func setError(bundle: BundleInfo) {
         setErrorCalls += 1
         currentBundleValue = bundle.setStatus(status: BundleStatus.ERROR.storedValue)
@@ -180,6 +191,23 @@ final class UpdateLifecycleTests: XCTestCase {
             done.fulfill()
         }
         wait(for: [done], timeout: seconds + 2)
+    }
+
+    // set() activated the pending next bundle but left it stored, so getNextBundle() kept
+    // returning the bundle that was already running.
+    func testClearNextBundleIfCurrentDropsTheRunningBundle() {
+        updater.currentBundleValue = pendingBundle()
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertTrue(updater.clearNextBundleIfCurrent())
+        XCTAssertNil(updater.nextBundleValue)
+    }
+
+    func testClearNextBundleIfCurrentKeepsADifferentNextBundle() {
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertFalse(updater.clearNextBundleIfCurrent())
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
     }
 
     // A suspended app can resume with the rollback timer already expired, before
