@@ -1445,20 +1445,42 @@ async function purgeDownloadedBundlesAfterServerReset() {
     return;
   }
 
-  try {
-    const result = await plugin.list();
-    const bundles = result?.bundles ?? [];
-    for (const bundle of bundles) {
-      if (bundle?.id && bundle.id !== 'builtin') {
-        await plugin.delete({ id: bundle.id });
-      }
-    }
-    state.lastDownloadedBundleId = null;
-    state.lastDownloadedBundleVersion = null;
+  await refreshState();
+
+  const hasQueuedNext =
+    state.nextBundle?.id && state.nextBundle.id !== 'builtin' && state.nextBundle.id !== 'none';
+  const onDownloadedCurrent =
+    state.currentBundle?.id && state.currentBundle.id !== 'builtin';
+
+  if (hasQueuedNext || onDownloadedCurrent) {
+    await plugin.reset();
     await refreshState();
-  } catch (error) {
-    console.warn('[Harness] purgeDownloadedBundlesAfterServerReset failed', error);
   }
+
+  let purgePasses = 0;
+  while (purgePasses < 20) {
+    purgePasses += 1;
+    await refreshState();
+    const inactive = getLatestInactiveBundle(state.bundles ?? []);
+    if (!inactive?.id) {
+      break;
+    }
+    await plugin.delete({ id: inactive.id });
+  }
+
+  const listResult = await plugin.list();
+  const remaining = (listResult?.bundles ?? []).filter(
+    (bundle) => bundle?.id && bundle.id !== 'builtin',
+  );
+  if (remaining.length > 0) {
+    throw new Error(
+      `purgeDownloadedBundlesAfterServerReset: could not delete ${remaining.length} bundle(s) still on disk`,
+    );
+  }
+
+  state.lastDownloadedBundleId = null;
+  state.lastDownloadedBundleVersion = null;
+  await refreshState();
 }
 
 async function advanceServerRelease() {
