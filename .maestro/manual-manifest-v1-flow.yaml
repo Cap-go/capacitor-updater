@@ -25,7 +25,7 @@ appId: app.capgo.updater
     element:
       id: 'quick-action-set-runtime-urls'
     direction: DOWN
-    timeout: 30000
+    timeout: 60000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
