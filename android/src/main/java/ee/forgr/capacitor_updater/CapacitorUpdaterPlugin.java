@@ -95,6 +95,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String AUTO_UPDATE_MODE_ALWAYS = "always";
     private static final String AUTO_UPDATE_MODE_ONLY_DOWNLOAD = "onlyDownload";
 
+    // Stats action for a failed update check (offline, timeout, unreadable response, 429 block).
+    // Nothing was downloaded, so it is reported apart from download_fail.
+    static final String UPDATE_CHECK_ERROR_ACTION = "update_check_error";
+
+    // Single listener that receives every plugin event as { type, data }.
+    static final String UPDATER_EVENT = "updaterEvent";
+    // Deprecated alias emitted next to breakingAvailable; not forwarded to avoid duplicates.
+    private static final String DEPRECATED_MAJOR_AVAILABLE_EVENT = "majorAvailable";
+
     private Logger logger;
 
     private static final String updateUrlDefault = "https://plugin.capgo.app/updates";
@@ -688,6 +697,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     public Thread startNewThread(final Runnable function) {
         return startNewThread(function, 0);
+    }
+
+    static Map<String, String> updateCheckErrorMetadata(final String error, final int statusCode) {
+        final Map<String, String> metadata = new HashMap<>();
+        metadata.put("error", error == null || error.isEmpty() ? "unknown" : error);
+        if (statusCode > 0) {
+            metadata.put("status_code", String.valueOf(statusCode));
+        }
+        return metadata;
+    }
+
+    static JSObject updaterEventPayload(final String eventName, final JSObject data) {
+        final JSObject payload = new JSObject();
+        payload.put("type", eventName);
+        payload.put("data", data != null ? data : new JSObject());
+        return payload;
+    }
+
+    static boolean shouldForwardToUpdaterEvent(final String eventName) {
+        return !UPDATER_EVENT.equals(eventName) && !DEPRECATED_MAJOR_AVAILABLE_EVENT.equals(eventName);
+    }
+
+    @Override
+    protected void notifyListeners(final String eventName, final JSObject data, final boolean retainUntilConsumed) {
+        super.notifyListeners(eventName, data, retainUntilConsumed);
+        if (shouldForwardToUpdaterEvent(eventName)) {
+            super.notifyListeners(UPDATER_EVENT, updaterEventPayload(eventName, data), retainUntilConsumed);
+        }
     }
 
     @Override
@@ -5027,8 +5064,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
-                ? "Update will occur next time app moves to background."
-                : "Update will be downloaded and made available.";
+              ? "Update will occur next time app moves to background."
+              : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                 CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
@@ -5075,6 +5112,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
 
                         boolean isFailure = "failed".equals(kind);
+                        if (isFailure) {
+                            // The check itself failed (offline, timeout, unreadable response, 429 block):
+                            // nothing was downloaded, so report it apart from download_fail.
+                            CapacitorUpdaterPlugin.this.implementation.sendStats(
+                                UPDATE_CHECK_ERROR_ACTION,
+                                currentBeforeCleanup.getVersionName(),
+                                "",
+                                updateCheckErrorMetadata(error, statusCode)
+                            );
+                        }
                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                             errorMessage,
                             latestVersion,
@@ -5083,7 +5130,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             plannedDirectUpdate,
                             "download_fail",
                             "downloadFailed",
-                            isFailure
+                            false
                         );
                         return;
                     }

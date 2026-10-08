@@ -106,6 +106,8 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var deleteCalls = 0
     var lastDeletedId: String?
     var setNextBundleCalls = 0
+    var lastStatsVersionName: String?
+    var lastStatsMetadata: [String: String]?
     var lastSetNextBundleId: String?
     var setNextBundleSucceeds = true
     var sentStatsActions: [String] = []
@@ -165,6 +167,12 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
 
     override func sendStats(action: String, versionName: String? = nil, oldVersionName: String? = "") {
         sentStatsActions.append(action)
+    }
+
+    override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+        sentStatsActions.append(action)
+        lastStatsVersionName = versionName
+        lastStatsMetadata = metadata
     }
 }
 
@@ -2531,7 +2539,35 @@ class CapacitorUpdaterTests: XCTestCase {
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
-        XCTAssertTrue(failedImplementation.sentStatsActions.contains("download_fail"))
+        // A failed check downloaded nothing: report update_check_error, not download_fail.
+        XCTAssertFalse(failedImplementation.sentStatsActions.contains("download_fail"))
+        XCTAssertEqual(failedImplementation.sentStatsActions.filter { $0 == "update_check_error" }.count, 1)
+        XCTAssertEqual(failedImplementation.lastStatsVersionName, "1.0.0")
+        XCTAssertEqual(failedImplementation.lastStatsMetadata?["error"], "response_error")
+        XCTAssertEqual(failedImplementation.lastStatsMetadata?["status_code"], "500")
+    }
+
+    func testEveryEventIsForwardedToUpdaterEvent() {
+        let testPlugin = TestableCapacitorUpdaterPlugin()
+        testPlugin.notifyListenersOnMainForTesting("download", data: ["percent": 10], retainUntilConsumed: false)
+        testPlugin.notifyListenersOnMainForTesting("appReady", data: ["status": "ok"], retainUntilConsumed: true)
+        testPlugin.notifyListenersOnMainForTesting("majorAvailable", data: ["version": "2.0.0"], retainUntilConsumed: false)
+
+        XCTAssertEqual(testPlugin.notifiedEventNames.filter { $0 == "updaterEvent" }.count, 2)
+        let payload = testPlugin.notifiedEventPayloads["updaterEvent"]
+        XCTAssertEqual(payload?["type"] as? String, "appReady")
+        XCTAssertEqual((payload?["data"] as? [String: Any])?["status"] as? String, "ok")
+        XCTAssertEqual(testPlugin.notifiedEventRetainValues["updaterEvent"], true)
+    }
+
+    func testUpdaterEventPayloadHelpers() {
+        let payload = CapacitorUpdaterPlugin.updaterEventPayload(eventName: "appReloaded", data: nil)
+        XCTAssertEqual(payload["type"] as? String, "appReloaded")
+        XCTAssertTrue((payload["data"] as? [String: Any])?.isEmpty ?? false)
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("updaterEvent"))
+        XCTAssertFalse(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("majorAvailable"))
+        XCTAssertTrue(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("breakingAvailable"))
+        XCTAssertEqual(CapacitorUpdaterPlugin.updateCheckErrorMetadata(error: "", statusCode: 0), ["error": "unknown"])
     }
 
     func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {

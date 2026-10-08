@@ -1279,6 +1279,7 @@ export interface CapacitorUpdaterPlugin {
    * Remove all event listeners registered for this plugin.
    *
    * This unregisters all listeners added via {@link addListener} for all event types:
+   * - `updaterEvent`
    * - `download`
    * - `noNeedUpdate`
    * - `updateCheckResult`
@@ -1299,9 +1300,36 @@ export interface CapacitorUpdaterPlugin {
   removeAllListeners(): Promise<void>;
 
   /**
+   * Listen for every updater event with a single listener.
+   *
+   * Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+   * `downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+   * Events retained until consumed (`set`, `appReady`, `updateAvailable`) are retained here too.
+   *
+   * The per-event listeners below are deprecated and will be removed in v9.
+   *
+   * ```typescript
+   * CapacitorUpdater.addListener('updaterEvent', (event) => {
+   *   switch (event.type) {
+   *     case 'download':
+   *       console.log('progress', event.data.percent);
+   *       break;
+   *     case 'downloadFailed':
+   *       console.warn('download failed', event.data.version);
+   *       break;
+   *   }
+   * });
+   * ```
+   *
+   * @since 8.53.0
+   */
+  addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
    * This will return you all download percent during the download
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 2.0.11
    */
   addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void): Promise<PluginListenerHandle>;
@@ -1309,6 +1337,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for no need to update event, useful when you want force check every time the app is launched
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
@@ -1321,6 +1350,7 @@ export interface CapacitorUpdaterPlugin {
    * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
    * `downloadFailed` event and keeps the existing failure stats behavior.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.45.11
    */
   addListener(
@@ -1331,6 +1361,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1341,6 +1372,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for downloadComplete events.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1352,6 +1384,7 @@ export interface CapacitorUpdaterPlugin {
    * Listen for breaking update events when the backend flags an update as incompatible with the current app.
    * Emits the same payload as the legacy `majorAvailable` listener.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 7.22.0
    */
   addListener(
@@ -1373,6 +1406,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for update fail event in the App, let you know when update has fail to install at next app start
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 2.3.0
    */
   addListener(
@@ -1385,6 +1419,7 @@ export interface CapacitorUpdaterPlugin {
    * This event is retained natively until JavaScript consumes it, so if the app reloads before your
    * listener is attached, the last pending `set` event is delivered once the listener subscribes.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.43.12
    */
   addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void): Promise<PluginListenerHandle>;
@@ -1392,6 +1427,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 6.14.0
    */
   addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void): Promise<PluginListenerHandle>;
@@ -1399,6 +1435,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for download fail event in the App, let you know when a bundle download has failed
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1409,6 +1446,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    *  Listen for reload event in the App, let you know when reload has happened
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.3.0
    */
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
@@ -1418,6 +1456,7 @@ export interface CapacitorUpdaterPlugin {
    * This event is retained natively until JavaScript consumes it, so it can still be delivered after
    * a reload even if the listener is attached later in app startup.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 5.1.0
    */
   addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
@@ -1430,6 +1469,7 @@ export interface CapacitorUpdaterPlugin {
    * - Implementing custom error handling for channel restrictions
    * - Logging unauthorized channel access attempts
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 7.34.0
    */
   addListener(
@@ -1457,6 +1497,7 @@ export interface CapacitorUpdaterPlugin {
    * When status is `DOWNLOADED`, you should prompt the user and call
    * {@link completeFlexibleUpdate} to finish the installation.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.0.0
    */
   addListener(
@@ -2005,6 +2046,38 @@ export interface ChannelPrivateEvent {
   channel: string;
   message: string;
 }
+
+/**
+ * Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
+ * `type` is the legacy event name and `data` is the same payload the legacy listener receives,
+ * so you can switch on `type` and get a typed `data`.
+ *
+ * The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+ *
+ * @since 8.53.0
+ */
+export type UpdaterEvent =
+  | { type: 'download'; data: DownloadEvent }
+  | { type: 'noNeedUpdate'; data: NoNeedEvent }
+  | { type: 'updateCheckResult'; data: UpdateCheckResultEvent }
+  | { type: 'updateAvailable'; data: UpdateAvailableEvent }
+  | { type: 'downloadComplete'; data: DownloadCompleteEvent }
+  | { type: 'downloadFailed'; data: DownloadFailedEvent }
+  | { type: 'breakingAvailable'; data: BreakingAvailableEvent }
+  | { type: 'updateFailed'; data: UpdateFailedEvent }
+  | { type: 'set'; data: SetEvent }
+  | { type: 'setNext'; data: SetNextEvent }
+  | { type: 'appReloaded'; data: Record<string, never> }
+  | { type: 'appReady'; data: AppReadyEvent }
+  | { type: 'channelPrivate'; data: ChannelPrivateEvent }
+  | { type: 'onFlexibleUpdateStateChange'; data: FlexibleUpdateState };
+
+/**
+ * Every event name that can appear in {@link UpdaterEvent}.
+ *
+ * @since 8.53.0
+ */
+export type UpdaterEventType = UpdaterEvent['type'];
 
 export interface ManifestEntry {
   file_name: string | null;
