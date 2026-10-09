@@ -3912,6 +3912,17 @@ import UIKit
         return self.getBundleInfo(id: id)
     }
 
+    /// Clears the stored next bundle when it is already the running bundle, so nothing stays pending.
+    @discardableResult
+    public func clearNextBundleIfCurrent() -> Bool {
+        guard let next = self.getNextBundle(), !next.isUnknown(), next.getId() == self.getCurrentBundle().getId() else {
+            return false
+        }
+        logger?.info("Next bundle \(next.getId()) is already the current bundle. Clearing next.")
+        _ = self.setNextBundle(next: Optional<String>.none)
+        return true
+    }
+
     public func getPreviewFallbackBundle() -> BundleInfo? {
         guard let id = UserDefaults.standard.string(forKey: self.PREVIEW_FALLBACK_VERSION) else {
             return nil
