@@ -188,6 +188,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var splashscreenInvocationToken = 0
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
+    // Website mode (Capgo Website Live plan): the deployed website is the source of truth.
+    private var websiteMode = false
+    private var websiteModeUpdater: WebsiteModeUpdater?
+    private var configuredStatsUrl = ""
+    private var configuredChannelUrl = ""
     var allowSetDefaultChannel = true
     var persistDefaultChannelOnReinstall = true
     private var keepUrlPathAfterReload = false
@@ -369,6 +374,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("Loaded persisted channelUrl")
             }
         }
+        self.configureWebsiteMode()
         implementation.restorePendingStats()
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
@@ -3567,6 +3573,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.reportAppLaunchTimeout(current)
             self.implementation.sendStats(action: "update_fail", versionName: current.getVersionName())
             self.implementation.setError(bundle: current)
+            self.markWebsiteVersionFailed(current.getVersionName())
             _ = self.performReset(toLastSuccessful: true, usePendingBundle: false, isInternal: true)
             if self.autoDeleteFailed && !current.isBuiltin() {
                 let failedId = current.getId()
@@ -4598,7 +4605,343 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .background).async(execute: work)
     }
 
+    // MARK: - Website mode
+
+    private func configureWebsiteMode() {
+        self.configuredStatsUrl = implementation.statsUrl
+        self.configuredChannelUrl = implementation.channelUrl
+        self.websiteMode = getConfig().getBoolean("websiteMode", false)
+        guard self.websiteMode else {
+            return
+        }
+        let liveUrl = getConfig().getString("websiteLiveUrl", WebsiteModeUpdater.defaultWebsiteLiveUrl)
+        let updater = WebsiteModeUpdater(websiteLiveUrl: liveUrl, fetcher: { [weak self] url, bypassCache in
+            guard let self else {
+                throw WebsiteModeUpdater.WebsiteModeError.failed("Plugin released")
+            }
+            return try self.websiteFetch(url, bypassCache: bypassCache)
+        })
+        updater.log = { [weak self] message in self?.logger.info(message) }
+        self.websiteModeUpdater = updater
+        logger.info("Website mode enabled, live check via: \(updater.websiteLiveUrl)")
+        self.applyWebsiteModeTelemetry(capgoMode: updater.lastKnownModeIsCapgo)
+    }
+
+    /// Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo.
+    private func applyWebsiteModeTelemetry(capgoMode: Bool) {
+        guard self.websiteMode else {
+            return
+        }
+        implementation.statsUrl = capgoMode ? configuredStatsUrl : ""
+        implementation.channelUrl = capgoMode ? configuredChannelUrl : ""
+    }
+
+    private func markWebsiteVersionFailed(_ versionName: String) {
+        guard let updater = websiteModeUpdater, WebsiteModeUpdater.isWebsiteVersion(versionName) else {
+            return
+        }
+        logger.info("Website version marked as failed and will be skipped for 24 hours: \(versionName)")
+        updater.markFailedVersion(versionName)
+    }
+
+    /// Dedicated session: every redirect hop must stay on the requested origin.
+    /// The shared updater session and its redirect policy are left untouched.
+    /// No URL cache: the live check always reaches the network (the edge may cache it),
+    /// and website files are always fetched fresh. Cache headers are set per request in `websiteFetch`.
+    private lazy var websiteSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .useProtocolCachePolicy
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = implementation.timeout
+        return URLSession(configuration: configuration, delegate: websiteFetchDelegate, delegateQueue: nil)
+    }()
+    private let websiteFetchDelegate = WebsiteFetchDelegate(maxBytes: WebsiteModeUpdater.maxAssetBytes)
+
+    /// Plain GET (no cookies, same-origin redirects only). Website files send no-cache; the live check
+    /// sends no cache header so its device independent answer can be served from the edge cache.
+    private func websiteFetch(_ url: URL, bypassCache: Bool) throws -> WebsiteModeUpdater.FetchResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = implementation.timeout
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        if bypassCache {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        } else {
+            request.cachePolicy = .useProtocolCachePolicy
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        var responseData: Data?
+        var urlResponse: URLResponse?
+        var responseError: Error?
+        let task = websiteSession.dataTask(with: request)
+        websiteFetchDelegate.register(task) { data, response, error in
+            responseData = data
+            urlResponse = response
+            responseError = error
+            semaphore.signal()
+        }
+        task.resume()
+        if semaphore.wait(timeout: .now() + implementation.timeout + 5) == .timedOut {
+            task.cancel()
+            throw WebsiteModeUpdater.WebsiteModeError.failed("Request timed out")
+        }
+        if let responseError {
+            throw responseError
+        }
+        guard let http = urlResponse as? HTTPURLResponse else {
+            throw WebsiteModeUpdater.WebsiteModeError.failed("Missing HTTP response")
+        }
+        // Files are saved under the requested path, so a redirect must not
+        // let another origin supply code for the bundle.
+        if let finalUrl = http.url, !WebsiteModeUpdater.isSameOrigin(url, finalUrl) {
+            throw WebsiteModeUpdater.WebsiteModeError.failed("Cross-origin redirect to \(finalUrl.host ?? "unknown host")")
+        }
+        let data = responseData ?? Data()
+        if data.count > WebsiteModeUpdater.maxAssetBytes {
+            throw WebsiteModeUpdater.WebsiteModeError.failed("Asset too large")
+        }
+        return WebsiteModeUpdater.FetchResponse(
+            statusCode: http.statusCode,
+            data: data,
+            contentType: (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+        )
+    }
+
+    func websiteBackgroundCheck() {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
+        // Check and claim the in-progress flag atomically so concurrent triggers start one check only.
+        downloadLock.lock()
+        let stillRunning = downloadStartTime.map { Date().timeIntervalSince($0) <= downloadTimeout } ?? true
+        if downloadInProgress && stillRunning {
+            downloadLock.unlock()
+            logger.info("Website check already in progress, skipping duplicate request")
+            return
+        }
+        downloadInProgress = true
+        downloadStartTime = Date()
+        downloadLock.unlock()
+        self.runBackgroundDownloadWork {
+            self.beginDownloadBackgroundTask()
+            self.runWebsiteCheck()
+        }
+    }
+
+    private func runWebsiteCheck() {
+        let current = self.implementation.getCurrentBundle()
+        guard let updater = self.websiteModeUpdater, !self.shouldBlockAutoUpdateForPreviewSession() else {
+            self.clearDownloadInProgressState()
+            self.endBackGroundTask()
+            return
+        }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        if updater.isThrottled(nowMs: nowMs) {
+            // Apps moved to full Capgo keep their classic checks between live checks.
+            if updater.lastKnownModeIsCapgo {
+                self.clearDownloadInProgressState()
+                self.endBackGroundTask()
+                self.classicBackgroundDownload()
+                return
+            }
+            logger.info("Website check skipped: check_interval_seconds not elapsed")
+            self.endBackGroundTaskWithNotif(
+                msg: "Website check throttled",
+                latestVersionName: current.getVersionName(),
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+
+        let live: WebsiteModeUpdater.LiveResponse
+        do {
+            live = try updater.fetchLiveResponse(appId: implementation.appId)
+        } catch {
+            logger.error("Website live check failed: \(error.localizedDescription)")
+            self.endBackGroundTaskWithNotif(
+                msg: "Website live check failed",
+                latestVersionName: current.getVersionName(),
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        updater.recordCheck(nowMs: nowMs, response: live)
+
+        if live.isCapgoMode {
+            logger.info("Website live check: app uses full Capgo, running classic update check")
+            self.applyWebsiteModeTelemetry(capgoMode: true)
+            self.clearDownloadInProgressState()
+            self.endBackGroundTask()
+            self.classicBackgroundDownload()
+            return
+        }
+        self.applyWebsiteModeTelemetry(capgoMode: false)
+
+        if live.isWebsiteUpdateAllowed,
+           let candidate = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl),
+           !WebsiteModeUpdater.isRootWebsiteUrl(candidate) {
+            logger.error("Website mode needs a website served from its root, got: \(candidate.absoluteString)")
+            self.endBackGroundTaskWithNotif(
+                msg: "Website URL must be served from its root",
+                latestVersionName: current.getVersionName(),
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        guard live.isWebsiteUpdateAllowed, let websiteUrl = WebsiteModeUpdater.parseHttpsUrl(live.websiteUrl) else {
+            logger.info("Website update not allowed: \(live.reason.isEmpty ? "no reason" : live.reason)")
+            self.endBackGroundTaskWithNotif(
+                msg: "Website update not allowed",
+                latestVersionName: current.getVersionName(),
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        var downloadBase: URL?
+        if !live.downloadBaseUrl.isEmpty {
+            guard let base = WebsiteModeUpdater.parseHttpsUrl(live.downloadBaseUrl) else {
+                logger.error("Website live check returned an invalid download_base_url")
+                self.endBackGroundTaskWithNotif(
+                    msg: "Invalid download_base_url",
+                    latestVersionName: current.getVersionName(),
+                    current: current,
+                    error: false,
+                    plannedDirectUpdate: true
+                )
+                return
+            }
+            downloadBase = base
+        }
+        self.downloadAndApplyWebsite(updater: updater, websiteUrl: websiteUrl, downloadBase: downloadBase, current: current)
+    }
+
+    private func downloadAndApplyWebsite(updater: WebsiteModeUpdater, websiteUrl: URL, downloadBase: URL?, current: BundleInfo) {
+        var version = current.getVersionName()
+        var tempDir: URL?
+        do {
+            let entryHtml = try updater.fetchEntryHtml(websiteUrl: websiteUrl, downloadBase: downloadBase)
+            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml: entryHtml)
+            if version == current.getVersionName() {
+                logger.info("Website is up to date: \(version)")
+                self.endBackGroundTaskWithNotif(
+                    msg: "No need to update",
+                    latestVersionName: version,
+                    current: current,
+                    error: false,
+                    plannedDirectUpdate: true
+                )
+                return
+            }
+            if updater.isFailedVersion(version) {
+                logger.info("Website version previously failed, skipping: \(version)")
+                self.endBackGroundTaskWithNotif(
+                    msg: "Website version previously failed",
+                    latestVersionName: version,
+                    current: current,
+                    error: false,
+                    plannedDirectUpdate: true
+                )
+                return
+            }
+            try self.waitForCleanupIfNeeded()
+
+            var target = self.implementation.getBundleInfoByVersionName(version: version)
+            if target == nil || target!.isErrorStatus() || !self.implementation.canSet(bundle: target!) {
+                logger.info("New website version found: \(version). Downloading from website.")
+                let temp = try self.implementation.createWebsiteTempDir()
+                tempDir = temp
+                let files = try updater.downloadWebsite(entryHtml: entryHtml, websiteUrl: websiteUrl, downloadBase: downloadBase, targetDir: temp)
+                target = try self.implementation.installWebsiteBundle(tempDir: temp, version: version)
+                tempDir = nil
+                logger.info("Website version \(version) downloaded (\(files) files)")
+            } else {
+                logger.info("Website version already downloaded: \(version)")
+            }
+            guard let bundle = target else {
+                throw WebsiteModeUpdater.WebsiteModeError.failed("Website bundle missing after download")
+            }
+            self.notifyListenersOnMain("downloadComplete", data: ["bundle": bundle.toJSON()])
+            self.applyWebsiteBundle(bundle, current: current)
+        } catch {
+            logger.error("Website download failed: \(error.localizedDescription)")
+            if let tempDir {
+                self.implementation.discardWebsiteTempDir(tempDir)
+            }
+            self.endBackGroundTaskWithNotif(
+                msg: "Website download failed",
+                latestVersionName: version,
+                current: current,
+                error: true,
+                plannedDirectUpdate: true
+            )
+        }
+    }
+
+    /// Website mode always applies updates directly, through the regular set/reload path.
+    private func applyWebsiteBundle(_ target: BundleInfo, current: BundleInfo) {
+        let version = target.getVersionName()
+        let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
+        let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
+        if !delayConditionList.isEmpty || self.autoSplashscreenTimedOut {
+            logger.info("Website update cannot be applied now, it will install on next background")
+            if self.queueBundleForNextBackgroundInstall(target) {
+                self.notifyListenersOnMain("updateAvailable", data: ["bundle": target.toJSON()])
+            }
+            self.endBackGroundTaskWithNotif(
+                msg: "Website update will install next background",
+                latestVersionName: version,
+                current: current,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        if self.applyDownloadedBundleForDirectUpdate(target) {
+            self.notifyBundleSet(target)
+            self.endBackGroundTaskWithNotif(
+                msg: "Update installed",
+                latestVersionName: version,
+                current: target,
+                error: false,
+                plannedDirectUpdate: true
+            )
+            return
+        }
+        // Staging or reload failed before the bundle ran: retry it at the next
+        // background instead of blacklisting it. notifyAppReady failures are
+        // handled (and marked failed) by checkRevert.
+        if self.queueBundleForNextBackgroundInstall(target) {
+            self.notifyListenersOnMain("updateAvailable", data: ["bundle": target.toJSON()])
+        }
+        self.endBackGroundTaskWithNotif(
+            msg: "Website update will install next background",
+            latestVersionName: version,
+            current: self.implementation.getCurrentBundle(),
+            error: false,
+            plannedDirectUpdate: true
+        )
+    }
+
     func backgroundDownload() {
+        if self.websiteMode {
+            self.websiteBackgroundCheck()
+            return
+        }
+        self.classicBackgroundDownload()
+    }
+
+    func classicBackgroundDownload() {
         if self.shouldBlockAutoUpdateForPreviewSession() {
             return
         }
@@ -5013,6 +5356,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func runPeriodicUpdateCheck(url: URL) {
         if self.shouldBlockAutoUpdateForPreviewSession() {
+            return
+        }
+        if self.websiteMode {
+            if !self.isDownloadStuckOrTimedOut() {
+                self.backgroundDownload()
+            }
             return
         }
         let res = self.implementation.getLatest(url: url, channel: nil)

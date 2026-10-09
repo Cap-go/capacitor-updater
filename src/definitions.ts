@@ -132,6 +132,44 @@ declare module '@capacitor/cli' {
       statsUrl?: string;
 
       /**
+       * Enable website mode (Capgo Website Live plan).
+       *
+       * Your deployed static website (for example a Vite SPA served at `https://app.example.com`) becomes the
+       * source of truth: at the moments auto update normally checks (app launch and resume), the plugin asks
+       * `websiteLiveUrl` whether the app may update and which website URL to use,
+       * then downloads the entry HTML and the same-origin assets it references (HTML, CSS `url()`, JS asset refs)
+       * directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they
+       * keep loading from the network) and a single download is capped at 300 MB.
+       *
+       * The bundle version is `web-<first 12 hex of sha256(website URL + "\n" + entry HTML)>`. A new version is applied immediately
+       * (like `directUpdate: 'always'`). `notifyAppReady()` is still required: if it is not called within
+       * `appReadyTimeout`, the plugin rolls back to the previous bundle and skips that `web-*` version for 24 hours.
+       *
+       * In website mode there are no channels, no stats, no bundle uploads, no encryption and no checksum
+       * signatures. If the backend answers `mode: "capgo"` (the app was upgraded to full Capgo), the classic
+       * update flow runs instead. Requires `autoUpdate` to stay enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @example true
+       * @since 8.53.0
+       */
+      websiteMode?: boolean;
+
+      /**
+       * Configure the URL / endpoint used by website mode to know whether the app may update from its website.
+       * Only `app_id` is sent as query parameter; the response is device independent and can be edge cached.
+       *
+       * Only available for Android and iOS. Ignored unless `websiteMode` is `true`.
+       *
+       * @default https://plugin.capgo.app/website_live
+       * @example https://example.com/api/website_live
+       * @since 8.53.0
+       */
+      websiteLiveUrl?: string;
+
+      /**
        * Configure the public key for end to end live update encryption Version 2
        *
        * Only available for Android and iOS.
