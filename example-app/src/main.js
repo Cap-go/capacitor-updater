@@ -1084,6 +1084,29 @@ async function getLatestInactiveBundleOrThrow() {
   return latestInactive;
 }
 
+async function getBundleForSetBundleErrorTest() {
+  if (!allowManualBundleError) {
+    const pickDownloadedBundle = () =>
+      [...(state.bundles ?? [])]
+        .filter((bundle) => bundle?.id && bundle.id !== 'builtin')
+        .sort(sortBundlesByDownloadDate)[0] ?? null;
+
+    let bundle = pickDownloadedBundle();
+    if (!bundle) {
+      await refreshState();
+      bundle = pickDownloadedBundle();
+    }
+
+    if (!bundle?.id) {
+      throw new Error('No downloaded bundle is available for setBundleError guard test.');
+    }
+
+    return bundle;
+  }
+
+  return getLatestInactiveBundleOrThrow();
+}
+
 function formatResult(result) {
   if (result === undefined) {
     return 'Action completed.';
@@ -2615,7 +2638,7 @@ const actions = [
         ? 'Action marker: bundle:expected-rejection'
         : 'Action marker: bundle:success',
     run: async () => {
-      const bundle = await getLatestInactiveBundleOrThrow();
+      const bundle = await getBundleForSetBundleErrorTest();
 
       if (!allowManualBundleError) {
         return expectConfiguredRejection(
