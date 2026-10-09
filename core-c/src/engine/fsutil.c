@@ -736,10 +736,18 @@ bool cg_fsutil_modified_before(const char *path, uint64_t age_ms) {
 #endif
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    __int128 elapsed = ((__int128)now.tv_sec - modified.tv_sec) * 1000000000 + (now.tv_nsec - modified.tv_nsec);
+    /* Seconds and nanoseconds compared separately: no 128-bit integers on 32-bit targets. */
+    int64_t seconds = (int64_t)now.tv_sec - (int64_t)modified.tv_sec;
+    int64_t nanos = (int64_t)now.tv_nsec - (int64_t)modified.tv_nsec;
+    if (nanos < 0) {
+        seconds--;
+        nanos += 1000000000;
+    }
     /* SystemTime::elapsed fails when the mtime is in the future. */
-    if (elapsed < 0) return false;
-    return elapsed > (__int128)age_ms * 1000000;
+    if (seconds < 0) return false;
+    int64_t age_seconds = (int64_t)(age_ms / 1000);
+    int64_t age_nanos = (int64_t)(age_ms % 1000) * 1000000;
+    return seconds > age_seconds || (seconds == age_seconds && nanos > age_nanos);
 }
 
 /* ---- block writer */

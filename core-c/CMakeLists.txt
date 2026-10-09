@@ -82,7 +82,7 @@ target_include_directories(capgo_updater_core
           ${capgo_brotli_SOURCE_DIR}/c/include)
 target_compile_definitions(capgo_updater_core PRIVATE
   MBEDTLS_USER_CONFIG_FILE="capgo_mbedtls_config.h"
-  _GNU_SOURCE _DARWIN_C_SOURCE)
+  _GNU_SOURCE _DARWIN_C_SOURCE _FILE_OFFSET_BITS=64)
 if(CAPGO_TEST_SUPPORT)
   target_compile_definitions(capgo_updater_core PRIVATE CAPGO_TEST_SUPPORT=1)
 endif()
