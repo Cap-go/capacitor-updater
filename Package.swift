@@ -24,7 +24,9 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm")
             ],
-            path: "ios/Sources/CapacitorUpdaterPlugin"),
+            path: "ios/Sources/CapacitorUpdaterPlugin",
+            // zlib: used by the C build of the core (the Rust build does not need it).
+            linkerSettings: [.linkedLibrary("z")]),
         .testTarget(
             name: "CapacitorUpdaterPluginTests",
             dependencies: [
