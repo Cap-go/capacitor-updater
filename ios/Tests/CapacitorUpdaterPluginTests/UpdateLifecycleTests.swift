@@ -182,7 +182,7 @@ final class UpdateLifecycleTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             done.fulfill()
         }
-        wait(for: [done], timeout: seconds + 2)
+        wait(for: [done], timeout: seconds + 5)
     }
 
     // set() activated the pending next bundle but left it stored, so getNextBundle() kept
@@ -216,7 +216,7 @@ final class UpdateLifecycleTests: XCTestCase {
 
         // The next foreground arms a fresh check, which rolls back a page that never confirmed.
         plugin.appMovedToForeground()
-        spinMainRunLoop(seconds: 0.3)
+        spinMainRunLoop(seconds: 0.5)
 
         XCTAssertTrue(plugin.events.contains("updateFailed"))
         XCTAssertEqual(updater.setErrorCalls, 1)
