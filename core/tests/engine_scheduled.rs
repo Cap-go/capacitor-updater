@@ -9,11 +9,9 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use capgo_updater_core::engine::Engine;
-use capgo_updater_core::error::CoreResult;
 use capgo_updater_core::host::MemoryHost;
 use serde_json::{json, Value};
-use support::{FakeServer, TestEngine};
+use support::{core, AbiEngine, AbiResult, FakeServer, TestEngine};
 
 fn sha256(bytes: &[u8]) -> String {
     capgo_updater_core::crypto::checksum::sha256_hex(bytes)
@@ -60,12 +58,12 @@ fn scheduled_job(host: &MemoryHost, count: usize) -> String {
     }
 }
 
-fn run_job(engine: &Engine, id: &str) -> Value {
+fn run_job(engine: &AbiEngine, id: &str) -> Value {
     engine.call("runScheduledDownload", &json!({ "id": id })).unwrap()
 }
 
 /// Calls `download` on another thread, like a plugin method lane.
-fn download_async(engine: &Arc<Engine>, input: Value) -> std::thread::JoinHandle<CoreResult<Value>> {
+fn download_async(engine: &Arc<AbiEngine>, input: Value) -> std::thread::JoinHandle<AbiResult<Value>> {
     let engine = engine.clone();
     std::thread::spawn(move || engine.call("download", &input))
 }
@@ -264,7 +262,13 @@ fn local_file_errors_fail_the_job() {
         "file_hash": sha256(&content),
         "download_url": format!("{}/files/index.html", files.url),
     }]);
-    let partial = capgo_updater_core::paths::manifest_partial_name(Some(&sha256(&content)), "index.html");
+    let partial = core().test(
+        "manifestPartialName",
+        json!({ "hash": sha256(&content), "fileName": "index.html" }),
+    )["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     std::fs::create_dir_all(t.root().join("cache/capgo_downloads").join(partial)).unwrap();
     let caller = download_async(&t.engine, json!({ "version": "3.0.0", "manifest": manifest }));
     let id = scheduled_job(&t.host, 2);
@@ -367,13 +371,13 @@ fn launch_cleanup_keeps_partials_of_pending_manifest_jobs() {
     };
     let partial = old_file(&format!("partial_{}_abcdef.tmp", sha256(&content)));
     let leftover = old_file("temp_other.tmp");
-    t.engine.cleanup_download_temp_files();
+    t.call("test.cleanupDownloadTempFiles", json!({}));
     assert!(partial.exists(), "kept for the pending manifest job");
     assert!(!leftover.exists());
 
     t.call("bundleDelete", json!({ "id": id }));
     let _ = caller.join().unwrap();
-    t.engine.cleanup_download_temp_files();
+    t.call("test.cleanupDownloadTempFiles", json!({}));
     assert!(!partial.exists(), "no manifest job pending");
 }
 
@@ -420,7 +424,7 @@ fn a_job_without_its_caller_records_the_bundle() {
     assert!(job_file(t.root(), &id).exists());
 
     // Same storage (preferences and files), fresh engine, as a worker in a new process.
-    let cold = Engine::new(
+    let cold = AbiEngine::new(
         t.host.clone(),
         &json!({
             "platform": "android",

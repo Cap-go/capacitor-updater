@@ -2,7 +2,7 @@ mod support;
 
 use rsa::pkcs1::EncodeRsaPublicKey;
 use serde_json::json;
-use support::TestEngine;
+use support::{core, TestEngine};
 
 #[test]
 fn engine_operations_reject_non_object_input() {
@@ -39,9 +39,14 @@ fn non_2048_bit_keys_load_and_fail_encrypted_checksums() {
     // Loads (the app starts, as on previous Android); a 3072-bit key cannot verify a 256-byte
     // CLI checksum, so encrypted updates fail instead.
     t.call("configure", json!({ "publicKey": pem(3072) }));
-    let error = capgo_updater_core::crypto::decrypt_checksum(&"ab".repeat(256), &pem(3072)).unwrap_err();
+    let error = core()
+        .try_test(
+            "decryptChecksum",
+            json!({ "checksum": "ab".repeat(256), "publicKey": pem(3072) }),
+        )
+        .unwrap_err();
     assert!(
-        ["checksum_not_encrypted", "decrypt_failed"].contains(&error.code),
+        ["checksum_not_encrypted", "decrypt_failed"].contains(&error.code.as_str()),
         "{}",
         error.code
     );

@@ -92,7 +92,10 @@ fn c_string(value: &str) -> CString {
 impl Core {
     fn take(&self, raw: *mut c_char) -> String {
         assert!(!raw.is_null(), "{}: the core returned NULL", self.name);
-        let text = unsafe { CStr::from_ptr(raw) }.to_str().expect("UTF-8 output").to_string();
+        let text = unsafe { CStr::from_ptr(raw) }
+            .to_str()
+            .expect("UTF-8 output")
+            .to_string();
         unsafe { (self.core_free)(raw) };
         text
     }
