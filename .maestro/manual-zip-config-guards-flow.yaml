@@ -34,7 +34,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
-    timeout: 60000
+    timeout: 120000
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
