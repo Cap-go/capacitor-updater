@@ -22,14 +22,14 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - scrollUntilVisible:
     element:
-      text: 'Quick apply runtime URLs'
+      id: 'quick-action-set-runtime-urls'
     direction: DOWN
     timeout: 120000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick apply runtime URLs'
+    id: 'quick-action-set-runtime-urls'
     retryTapIfNoChange: true
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
