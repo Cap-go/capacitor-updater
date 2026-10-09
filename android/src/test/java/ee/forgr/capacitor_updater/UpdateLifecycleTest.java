@@ -11,6 +11,7 @@ import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.SharedPreferences;
@@ -104,6 +105,12 @@ public class UpdateLifecycleTest {
         @Override
         public Boolean set(final BundleInfo bundle) {
             this.current = bundle;
+            return true;
+        }
+
+        @Override
+        public Boolean set(final String id) {
+            this.current = new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "");
             return true;
         }
 
@@ -589,5 +596,43 @@ public class UpdateLifecycleTest {
 
         assertEquals(1, this.plugin.count("downloadFailed"));
         assertEquals(1, this.updater.statCount("download_fail"));
+    }
+
+    private PluginCall idCall(final String id) {
+        final PluginCall call = mock(PluginCall.class);
+        when(call.getString("id")).thenReturn(id);
+        return call;
+    }
+
+    // Bug: set() activated the pending next bundle but left it stored, so getNextBundle() kept
+    // returning the bundle that was already running.
+    @Test
+    public void setClearsTheNextBundleItActivates() {
+        this.updater.next = new BundleInfo("bundle-2", "2.0.0", BundleStatus.PENDING, new Date(), "abc");
+
+        this.plugin.set(idCall("bundle-2"));
+
+        assertEquals("bundle-2", this.updater.current.getId());
+        assertNull(this.updater.next);
+    }
+
+    @Test
+    public void setKeepsADifferentNextBundle() {
+        this.updater.next = new BundleInfo("bundle-3", "3.0.0", BundleStatus.PENDING, new Date(), "abc");
+
+        this.plugin.set(idCall("bundle-2"));
+
+        assertEquals("bundle-3", this.updater.next.getId());
+    }
+
+    @Test
+    public void getNextBundleDropsANextBundleThatIsAlreadyRunning() {
+        this.updater.next = this.updater.current;
+        final PluginCall call = mock(PluginCall.class);
+
+        this.plugin.getNextBundle(call);
+
+        assertNull(this.updater.next);
+        verify(call).resolve(null);
     }
 }

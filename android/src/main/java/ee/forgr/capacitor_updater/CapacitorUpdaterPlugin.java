@@ -3231,7 +3231,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (!this.implementation.set(id)) {
                     logger.info("No such bundle " + id);
                     call.reject("Update failed, id " + id + " does not exist.");
-                } else if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
+                    return;
+                }
+                // The bundle is now active: it must not stay reported as the pending next bundle.
+                this.implementation.clearNextBundleIfCurrent();
+                if (Boolean.TRUE.equals(this.previewSessionEnabled)) {
                     logger.info("Preview session set active bundle " + id + " without waiting for preview app readiness");
                     final BundleInfo bundle = this.implementation.getBundleInfo(id);
                     this.recordPreviewBundle(bundle);
@@ -4492,6 +4496,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @PluginMethod
     public void getNextBundle(final PluginCall call) {
         try {
+            // Heals a next bundle left stored after it was activated (set() did not clear it before).
+            this.implementation.clearNextBundleIfCurrent();
             final BundleInfo bundle = this.implementation.getNextBundle();
             if (bundle == null) {
                 call.resolve(null);

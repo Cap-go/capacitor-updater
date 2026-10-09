@@ -38,9 +38,32 @@ jobs:
       - name: Build example app
         run: bun run example:build
 
+      - name: Compute unique bundle version
+        id: bundle
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          # The example-app package.json version never changes, so derive the bundle
+          # version from the plugin version plus the run number and attempt. Every
+          # release and every manual rerun then uploads a new, semver-valid bundle.
+          plugin_version="$(jq -r '.version // empty' package.json)"
+          if [ -z "$plugin_version" ]; then
+            echo "::error::Root package.json has no version"
+            exit 1
+          fi
+          base="${plugin_version%%+*}"
+          case "$base" in
+            *-*) bundle="${base}.example.${RUN_NUMBER}.${RUN_ATTEMPT}" ;;
+            *) bundle="${base}-example.${RUN_NUMBER}.${RUN_ATTEMPT}" ;;
+          esac
+          echo "Example bundle version: ${bundle}"
+          echo "version=${bundle}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to Capgo
         working-directory: example-app
         # Keep --ignore-checksum-check because release builds can reuse the same example dist checksum.
-        run: bunx @capgo/cli@latest bundle upload app.capgo.updater --path dist --channel production --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
+        run: bunx @capgo/cli@latest bundle upload app.capgo.updater --bundle "$BUNDLE_VERSION" --path dist --channel production --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --apikey "$CAPGO_TOKEN"
         env:
           CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+          BUNDLE_VERSION: ${{ steps.bundle.outputs.version }}
