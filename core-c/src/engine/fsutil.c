@@ -22,6 +22,7 @@
 
 #if defined(__APPLE__)
 #include <copyfile.h>
+#include <sys/clonefile.h>
 #elif !defined(__ANDROID__)
 #include <sys/random.h>
 #endif
@@ -471,6 +472,13 @@ bool cg_fsutil_copy_file(const char *source, const char *destination, cg_error *
         close(in);
         return cg_fsutil_io_error(err, CG_IO_INVALID_INPUT, "the source path is neither a regular file nor a symlink to a regular file");
     }
+#if defined(__APPLE__)
+    /* std::fs::copy clones first on APFS (copy-on-write, content and permissions). */
+    if (fclonefileat(in, AT_FDCWD, destination, 0) == 0) {
+        close(in);
+        return true;
+    }
+#endif
     int out = cg_fsutil_open(destination, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 07777);
     if (out < 0) {
         int failure = errno;
