@@ -9,6 +9,9 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 120000
+- extendedWaitUntil:
+    visible: '.*QA shortcuts.*'
+    timeout: 180000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'

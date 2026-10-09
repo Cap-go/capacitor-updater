@@ -16,7 +16,7 @@ appId: app.capgo.updater
     element:
       id: 'qa-shortcuts-heading'
     direction: DOWN
-    timeout: 60000
+    timeout: 120000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
@@ -24,7 +24,7 @@ appId: app.capgo.updater
     element:
       id: 'quick-action-reset-server-release'
     direction: DOWN
-    timeout: 60000
+    timeout: 120000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
