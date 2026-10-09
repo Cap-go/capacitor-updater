@@ -911,7 +911,7 @@ function renderState() {
   elements.e2eSummary.textContent =
     `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
-    `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
+    `Harness: ${state.harnessReady ? 'ready' : 'pending'}${runtimeUrlsLabel} | ` +
     `Build label: ${buildLabel} | ` +
     `Scenario: ${scenarioId} | ` +
     `Direct update mode: ${directUpdateMode} | ` +
@@ -3181,6 +3181,7 @@ function renderDemoActionButtons() {
 const maestroPinnedActionIdsByScenario = {
   'manual-zip-config-guards': ['reset-server-release', 'download-latest-bundle', 'set-bundle-error'],
   'manual-manifest': [
+    'set-runtime-urls',
     'reset-server-release',
     'download-latest-bundle',
     'queue-last-downloaded-bundle',
@@ -3227,28 +3228,32 @@ function pinMaestroQuickActions() {
 }
 
 async function ensureManualManifestRuntimeUrls() {
-  if (scenarioId !== 'manual-manifest' || !serverUrl.startsWith('http') || !allowModifyUrl) {
+  if (scenarioId !== 'manual-manifest' || !serverUrl.startsWith('http')) {
     return;
   }
 
-  const updateUrl = getRuntimeUpdateUrl();
-  const statsUrl = getRuntimeStatsUrl();
-  const channelUrl = getRuntimeChannelUrl();
+  if (!allowModifyUrl) {
+    state.runtimeUrlsReady = true;
+    renderState();
+    return;
+  }
 
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
+  const runtimeUrlsAction = getActionById('set-runtime-urls');
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
     try {
-      await plugin.setUpdateUrl({ url: updateUrl });
-      await plugin.setStatsUrl({ url: statsUrl });
-      await plugin.setChannelUrl({ url: channelUrl });
+      await runAction(runtimeUrlsAction, {}, { skipRefresh: true });
       state.runtimeUrlsReady = true;
       publishHarnessMarker('set-runtime-urls', 'success');
       renderState();
       return;
     } catch (error) {
       console.error(`Bootstrap set-runtime-urls attempt ${attempt} failed`, error);
-      await pause(1500);
+      await pause(attempt <= 4 ? 500 : 1500);
     }
   }
+
+  publishHarnessMarker('set-runtime-urls', 'error');
+  renderState();
 }
 
 function bindDemoActions() {
