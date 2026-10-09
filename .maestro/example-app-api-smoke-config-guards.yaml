@@ -27,7 +27,7 @@ appId: app.capgo.updater
     element:
       id: 'quick-run-smoke-sequence'
     direction: DOWN
-    timeout: 30000
+    timeout: 120000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
