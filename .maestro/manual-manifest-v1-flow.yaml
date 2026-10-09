@@ -14,8 +14,18 @@ appId: app.capgo.updater
     direction: UP
     timeout: 120000
 - extendedWaitUntil:
+    visible: 'Quick apply runtime URLs'
+    timeout: 120000
+- tapOn:
+    text: 'Quick apply runtime URLs'
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
+    timeout: 120000
+- extendedWaitUntil:
     visible: '.*Runtime URLs: ready.*'
-    timeout: 180000
+    timeout: 60000
 - extendedWaitUntil:
     visible: 'Quick reset release'
     timeout: 120000
