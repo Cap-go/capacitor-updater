@@ -292,8 +292,9 @@ static void cleanup_main(cg_engine_weak *weak, void *ctx) {
     cg_store_cleanup_orphaned_temp_folders(engine, NULL);
     cg_download_cleanup_download_temp_files(engine);
     cg_flow_persist_native_build_version(engine);
-    cg_plugin_mark_cleanup(engine, true);
+    /* Logged before the gate opens: a waiting download logs right after it. */
     cg_info(host, "Cleanup complete");
+    cg_plugin_mark_cleanup(engine, true);
     background_task(engine, "end", "CapgoBundleCleanup");
     cg_engine_release(engine);
 }

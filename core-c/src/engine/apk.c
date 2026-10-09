@@ -210,7 +210,7 @@ cg_apk_index *cg_apk_index_open(const char *path, const char *prefix, cg_error *
         close(fd);
         return NULL;
     }
-    uint64_t offset, size;
+    uint64_t offset = 0, size = 0;
     if (!central_directory(fd, (uint64_t)st.st_size, &offset, &size, err)) {
         close(fd);
         return NULL;

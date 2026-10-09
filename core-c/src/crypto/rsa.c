@@ -72,7 +72,7 @@ static bool read_tlv(bytes input, uint8_t *tag, bytes *content, bytes *rest, cg_
 }
 
 static bool expect_tlv(bytes input, uint8_t tag, bytes *content, bytes *rest, cg_error *err) {
-    uint8_t found;
+    uint8_t found = 0;
     if (!read_tlv(input, &found, content, rest, err)) return false;
     if (found != tag) return invalid_key(err, "Unexpected DER tag");
     return true;

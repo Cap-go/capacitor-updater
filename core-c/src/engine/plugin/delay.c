@@ -393,8 +393,8 @@ static int compare_prerelease(const char *left, const char *right) {
     splitter left_parts = {left, left + strlen(left), false};
     splitter right_parts = {right, right + strlen(right), false};
     for (;;) {
-        const char *a, *b;
-        size_t a_len, b_len;
+        const char *a = NULL, *b = NULL;
+        size_t a_len = 0, b_len = 0;
         bool has_a = split_next(&left_parts, '.', &a, &a_len);
         bool has_b = split_next(&right_parts, '.', &b, &b_len);
         if (!has_a && !has_b) return 0;

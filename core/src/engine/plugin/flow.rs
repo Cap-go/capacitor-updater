@@ -260,8 +260,9 @@ impl Engine {
             engine.cleanup_orphaned_temp_folders(&|| false);
             engine.cleanup_download_temp_files();
             engine.persist_native_build_version();
-            engine.mark_cleanup(true);
+            // Logged before the gate opens: a waiting download logs right after it.
             engine.host.info("Cleanup complete");
+            engine.mark_cleanup(true);
             engine.hook(
                 hooks::BACKGROUND_TASK,
                 json!({ "action": "end", "name": "CapgoBundleCleanup" }),

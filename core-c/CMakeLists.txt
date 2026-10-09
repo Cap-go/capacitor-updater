@@ -28,8 +28,9 @@ set(FETCHCONTENT_QUIET ON)
 # Each archive is downloaded once into core-c/.deps (shared by every build directory and ABI),
 # then verified by SHA-256 before use.
 set(CAPGO_DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.deps" CACHE PATH "Download cache of the dependencies")
-function(capgo_fetch name url sha256)
-  set(archive "${CAPGO_DEPS_DIR}/${name}-${sha256}")
+function(capgo_fetch name url sha256 extension)
+  # The extension tells older CMake (3.20+) how to extract the archive.
+  set(archive "${CAPGO_DEPS_DIR}/${name}-${sha256}.${extension}")
   if(NOT EXISTS "${archive}")
     foreach(attempt RANGE 1 3)
       file(DOWNLOAD "${url}" "${archive}.part" EXPECTED_HASH SHA256=${sha256} STATUS status TLS_VERIFY ON)
@@ -53,10 +54,10 @@ function(capgo_fetch name url sha256)
 endfunction()
 capgo_fetch(capgo_mbedtls
   https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
-  4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8)
+  4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8 tar.bz2)
 capgo_fetch(capgo_brotli
   https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz
-  816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec)
+  816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec tar.gz)
 FetchContent_MakeAvailable(capgo_mbedtls capgo_brotli)
 
 file(GLOB MBEDTLS_SOURCES ${capgo_mbedtls_SOURCE_DIR}/library/*.c)

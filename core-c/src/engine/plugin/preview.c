@@ -858,7 +858,7 @@ bool cg_preview_reload_preview_session(cg_engine *engine) {
     char *stored = cg_plugin_kv_text(engine, CG_KEY_PREVIEW_PAYLOAD_URL);
     char *payload_url = normalized_payload_url(stored);
     free(stored);
-    bool reloaded;
+    bool reloaded = false;
     if (payload_url) {
         cg_error err = CG_ERROR_INIT;
         if (!refresh_preview_from_payload(engine, payload_url, &reloaded, &err)) {
