@@ -75,10 +75,17 @@ static bool entry_empty(const cj *entry, const char *key) {
     return !value || value->v.s.len == 0;
 }
 
-/* The C view of a field ("" when absent). */
-static const char *entry_text(const cj *entry, const char *key) {
+/* A field for messages ("" when absent): NUL bytes are dropped, as the host log does with the
+ * Rust strings (a C view would stop at the NUL). malloc'd. */
+static char *entry_display(const cj *entry, const char *key) {
     const cj *value = entry_value(entry, key);
-    return value ? cj_as_str(value) : "";
+    if (!value) return cg_strdup("");
+    char *text = cg_malloc(value->v.s.len + 1);
+    size_t len = 0;
+    for (size_t i = 0; i < value->v.s.len; i++)
+        if (value->v.s.ptr[i] != '\0') text[len++] = value->v.s.ptr[i];
+    text[len] = '\0';
+    return text;
 }
 
 /* A hash (only compared or decoded): NUL bytes become 0x01 so the C string fails every check the
@@ -498,20 +505,23 @@ static bool plan_tasks(cg_engine *engine, const cg_download_request *request, co
     for (size_t i = 0; i < total; i++) {
         const cj *entry = cj_at(manifest, i);
         const cj *file_name_value = entry_value(entry, "file_name");
-        const char *file_name = entry_text(entry, "file_name");
+        char *file_name = entry_display(entry, "file_name");
         if (entry_empty(entry, "file_name") || entry_empty(entry, "download_url")) {
             first_fail(&first, "invalid_manifest", cg_strdup("Manifest entry is missing file_name or download_url"));
+            free(file_name);
             continue;
         }
         if (entry_empty(entry, "file_hash")) {
             cg_error_log(&engine->host, "Missing file_hash for manifest entry: %s", file_name);
             first_fail(&first, "invalid_manifest", cg_fmt("Manifest entry is missing file_hash for %s", file_name));
+            free(file_name);
             continue;
         }
         char *hash = manifest_hash(config->public_key, entry, request->session_key);
         if (!hash) {
             cg_error_log(&engine->host, "Checksum decryption failed for %s", file_name);
             first_fail(&first, "decrypt_fail", cg_fmt("Cannot decrypt file_hash for %s", file_name));
+            free(file_name);
             continue;
         }
         char *target = resolve_target(destination, file_name_value);
@@ -520,6 +530,7 @@ static bool plan_tasks(cg_engine *engine, const cg_download_request *request, co
             manifest_path_fail(engine, request->version, file_name);
             first_fail(&first, "invalid_manifest", cg_fmt("Invalid manifest file path: %s", file_name));
             free(hash);
+            free(file_name);
             continue;
         }
         if (!path_set_insert(&seen, path_key(target))) {
@@ -528,10 +539,12 @@ static bool plan_tasks(cg_engine *engine, const cg_download_request *request, co
             first_fail(&first, "invalid_manifest", cg_fmt("Duplicate manifest target path for %s", file_name));
             free(hash);
             free(target);
+            free(file_name);
             continue;
         }
+        /* resolve_target refused names holding a NUL: file_name is the exact name here. */
         task *t = &tasks[len++];
-        t->file_name = cg_strdup(file_name);
+        t->file_name = file_name;
         t->download_url = url_text(entry_value(entry, "download_url"));
         t->hash = hash;
         t->brotli = cg_ends_with(file_name, ".br");
