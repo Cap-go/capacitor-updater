@@ -260,7 +260,9 @@ pub fn call(name: &str, input: &Value) -> CoreResult<Value> {
         // Streaming AES-128-CBC with PKCS#7: `chunkSize` bytes per update.
         "aesCbcDecrypt" => {
             let ciphertext = hex(input, "ciphertextHex")?;
-            let chunk = opt_i64(input, "chunkSize")?.unwrap_or(ciphertext.len().max(1) as i64).max(1) as usize;
+            let chunk = opt_i64(input, "chunkSize")?
+                .unwrap_or(ciphertext.len().max(1) as i64)
+                .max(1) as usize;
             let mut decryptor = aes_cbc::CbcDecryptor::new(&block16(input, "keyHex")?, &block16(input, "ivHex")?);
             let mut out = Vec::new();
             for part in ciphertext.chunks(chunk) {
@@ -373,12 +375,8 @@ fn http_request(engine: &Engine, input: &Value) -> CoreResult<Value> {
     let timeout = Duration::from_millis(opt_i64(input, "timeoutMs")?.unwrap_or(10_000).max(1) as u64);
     let client = Http::new(Arc::clone(&engine.host), user_agent, timeout);
     let url = req_str(input, "url")?;
-    let headers_of = |headers: &[(String, String)]| -> Value {
-        headers
-            .iter()
-            .map(|(name, value)| json!([name, value]))
-            .collect()
-    };
+    let headers_of =
+        |headers: &[(String, String)]| -> Value { headers.iter().map(|(name, value)| json!([name, value])).collect() };
     if input["download"].as_bool().unwrap_or(false) {
         let mut body = Vec::new();
         let head = client

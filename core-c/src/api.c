@@ -34,6 +34,11 @@ cj *cg_api_call(const char *operation, const cj *input, cg_error *err) {
         if (!base) return NULL;
         const char *path = req_str(input, "path", err);
         if (!path) return NULL;
+        /* Rust rejects a NUL in the path (paths.rs); the C view would stop at it. */
+        if (cj_str_has_nul(cj_get(input, "path"))) {
+            cg_err_set(err, "invalid_separator", "Invalid path separator");
+            return NULL;
+        }
         char *resolved = cg_paths_resolve_path_inside(base, path, err);
         if (!resolved) return NULL;
         return cj_objv("path", cj_str_own(resolved), NULL);

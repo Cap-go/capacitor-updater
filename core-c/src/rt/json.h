@@ -97,6 +97,8 @@ bool cj_is_obj(const cj *value);
 
 /* ---- serde-style accessors: false / NULL when the type does not match */
 const char *cj_as_str(const cj *value);
+/* True for a string holding a NUL byte (C views of it stop at the NUL: see PORTING.md). */
+bool cj_str_has_nul(const cj *value);
 bool cj_as_bool(const cj *value, bool *out);
 /* Integer in range only (floats refused), like serde as_i64 / as_u64. */
 bool cj_as_i64(const cj *value, int64_t *out);
