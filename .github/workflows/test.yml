@@ -118,9 +118,13 @@ jobs:
           cmake -S core-c -B core-c/build-asan -DCAPGO_TEST_SUPPORT=ON -DCAPGO_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug
           cmake --build core-c/build-asan -j "$(nproc)"
           cd core
+          # Build without the sanitizer runtime, then preload it for the test binaries only
+          # (rustdoc and cargo itself hang with it preloaded).
+          cargo test --locked --tests --no-run
           LD_PRELOAD="$(gcc -print-file-name=libasan.so)" \
             ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
-            CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-asan/libcapgo_updater_core.so" cargo test --locked
+            CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-asan/libcapgo_updater_core.so" \
+            timeout 300 cargo test --locked --tests
 
   c_core_android:
     permissions:
