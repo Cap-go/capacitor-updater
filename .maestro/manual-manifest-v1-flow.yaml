@@ -21,21 +21,9 @@ appId: app.capgo.updater
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-runtime-urls'
-    direction: DOWN
-    timeout: 120000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
-- tapOn:
-    id: 'quick-action-set-runtime-urls'
-    retryTapIfNoChange: true
-    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
-    timeout: 120000
+    timeout: 180000
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-server-release'

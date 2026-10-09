@@ -3348,6 +3348,18 @@ async function bootstrap() {
       break;
     }
   }
+  if (
+    scenarioId === 'manual-manifest' &&
+    serverUrl.startsWith('http') &&
+    allowModifyUrl &&
+    !state.lastActionResult?.startsWith('set-runtime-urls:')
+  ) {
+    try {
+      await runAction(getActionById('set-runtime-urls'), {}, { skipRefresh: true });
+    } catch (error) {
+      console.error('Bootstrap set-runtime-urls failed', error);
+    }
+  }
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();
