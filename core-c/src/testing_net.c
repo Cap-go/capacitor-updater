@@ -14,20 +14,10 @@
 #include "engine/engine.h"
 #include "net.h"
 #include "testing.h"
+#include "text.h"
 
 bool cg_testing_net(struct cg_engine *engine, const char *name, const cj *input, cj **result, cg_error *err);
 bool cg_testing_net_pure(const char *name, const cj *input, cj **result, cg_error *err);
-
-static char *hex_encode(const uint8_t *bytes, size_t len) {
-    static const char digits[] = "0123456789abcdef";
-    char *out = cg_malloc(len * 2 + 1);
-    for (size_t i = 0; i < len; i++) {
-        out[2 * i] = digits[bytes[i] >> 4];
-        out[2 * i + 1] = digits[bytes[i] & 15];
-    }
-    out[len * 2] = 0;
-    return out;
-}
 
 /* testing.rs opt_str: absent / null -> NULL. */
 static bool opt_str(const cj *input, const char *key, const char **out, cg_error *err) {
@@ -121,7 +111,7 @@ static bool http_request(struct cg_engine *engine, const cj *input, cj **result,
             return net_error(&net, err);
         }
         *result = cj_objv("status", cj_u64(head.status), "headers", headers_json(&head.headers), "bodyHex",
-                          cj_str_own(hex_encode((const uint8_t *)body.data, body.len)), NULL);
+                          cj_str_own(cg_text_hex_encode((const uint8_t *)body.data, body.len)), NULL);
         cg_net_stream_head_clear(&head);
         cg_buf_free(&body);
         cg_http_free(client);
@@ -140,7 +130,7 @@ static bool http_request(struct cg_engine *engine, const cj *input, cj **result,
     cg_http_free(client);
     if (!ok) return net_error(&net, err);
     *result = cj_objv("status", cj_u64(response.status), "headers", headers_json(&response.headers), "bodyHex",
-                      cj_str_own(hex_encode(response.body, response.body_len)), NULL);
+                      cj_str_own(cg_text_hex_encode(response.body, response.body_len)), NULL);
     cg_net_response_clear(&response);
     return true;
 }
