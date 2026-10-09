@@ -3467,6 +3467,30 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testRetainedEventReplayIsNotForwardedTwice() {
+        try (
+            MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignoredHandler = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin();
+            plugin.notifyListeners("set", new JSObject(), true);
+
+            PluginCall updaterListener = mock(PluginCall.class);
+            when(updaterListener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(updaterListener);
+
+            PluginCall setListener = mock(PluginCall.class);
+            when(setListener.getString("eventName")).thenReturn("set");
+            plugin.addListener(setListener);
+
+            verify(updaterListener, times(1)).resolve(any(JSObject.class));
+            verify(setListener, times(1)).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
     public void testUpdateCheckErrorMetadataDefaults() {
         Map<String, String> metadata = CapacitorUpdaterPlugin.updateCheckErrorMetadata("", 0);
         assertEquals("unknown", metadata.get("error"));

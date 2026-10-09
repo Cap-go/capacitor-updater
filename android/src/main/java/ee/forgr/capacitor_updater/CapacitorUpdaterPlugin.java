@@ -335,7 +335,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         for (final String eventName : BREAKING_EVENT_NAMES) {
             final JSObject payload = new JSObject();
             payload.put("version", version);
-            CapacitorUpdaterPlugin.this.notifyListeners(eventName, payload);
+            CapacitorUpdaterPlugin.this.notifyListeners(eventName, payload, false);
         }
     }
 
@@ -719,6 +719,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return !UPDATER_EVENT.equals(eventName) && !DEPRECATED_MAJOR_AVAILABLE_EVENT.equals(eventName);
     }
 
+    // Capacitor replays retained events through this overload when a listener attaches. They were
+    // already forwarded to updaterEvent when emitted, so skip forwarding here. Plugin code must emit
+    // through the three-argument overload.
+    @Override
+    protected void notifyListeners(final String eventName, final JSObject data) {
+        super.notifyListeners(eventName, data, false);
+    }
+
     @Override
     protected void notifyListeners(final String eventName, final JSObject data, final boolean retainUntilConsumed) {
         super.notifyListeners(eventName, data, retainUntilConsumed);
@@ -767,7 +775,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 public void notifyListeners(final String id, final Map<String, Object> res) {
                     if (activity != null) {
                         activity.runOnUiThread(() -> {
-                            CapacitorUpdaterPlugin.this.notifyListeners(id, InternalUtils.mapToJSObject(res));
+                            CapacitorUpdaterPlugin.this.notifyListeners(id, InternalUtils.mapToJSObject(res), false);
                         });
                     } else {
                         logger.warn("notifyListeners: Activity is null, skipping notification for event: " + id);
@@ -2464,7 +2472,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.setNextBundle(latest.getId());
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-            this.notifyListeners("updateAvailable", ret);
+            this.notifyListeners("updateAvailable", ret, false);
             sendReadyToJs(
                 this.implementation.getCurrentBundle(),
                 "Direct update reload failed, update will install next background",
@@ -2614,11 +2622,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ret.put("percent", percent);
             final BundleInfo bundleInfo = this.implementation.getBundleInfo(id);
             ret.put("bundle", InternalUtils.mapToJSObject(bundleInfo.toJSONMap()));
-            this.notifyListeners("download", ret);
+            this.notifyListeners("download", ret, false);
 
             if (percent == 100) {
                 final JSObject retDownloadComplete = new JSObject(ret, new String[] { "bundle" });
-                this.notifyListeners("downloadComplete", retDownloadComplete);
+                this.notifyListeners("downloadComplete", retDownloadComplete, false);
                 this.implementation.sendStats("download_complete", bundleInfo.getVersionName());
                 this.markDownloadStatPercent(id, 100);
             } else {
@@ -2844,7 +2852,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 JSObject eventData = new JSObject();
                                 eventData.put("channel", channel);
                                 eventData.put("message", errorMessage);
-                                notifyListeners("channelPrivate", eventData);
+                                notifyListeners("channelPrivate", eventData, false);
                             }
 
                             JSObject errorObj = new JSObject();
@@ -3021,7 +3029,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         final JSObject ret = new JSObject();
         ret.put("version", version);
-        this.notifyListeners("downloadFailed", ret);
+        this.notifyListeners("downloadFailed", ret, false);
         final BundleInfo current = this.implementation.getCurrentBundle();
         this.implementation.sendStats("download_fail", current.getVersionName());
     }
@@ -3155,7 +3163,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
-        this.notifyListeners("appReloaded", new JSObject());
+        this.notifyListeners("appReloaded", new JSObject(), false);
 
         // Wait for the reload to complete (until notifyAppReady is called)
         return this.semaphoreWait(phase, waitTimeMs);
@@ -3177,7 +3185,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
-        this.notifyListeners("appReloaded", new JSObject());
+        this.notifyListeners("appReloaded", new JSObject(), false);
         return true;
     }
 
@@ -4904,7 +4912,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ret.put("statusCode", statusCode);
         ret.put("version", version);
         ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-        this.notifyListeners("updateCheckResult", ret);
+        this.notifyListeners("updateCheckResult", ret, false);
     }
 
     private void ensureBridgeSet() {
@@ -4988,12 +4996,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             final JSObject ret = new JSObject();
             ret.put("version", latestVersionName);
-            this.notifyListeners(failureEvent, ret);
+            this.notifyListeners(failureEvent, ret, false);
         }
         if (shouldNotifyNoNeedUpdate) {
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-            this.notifyListeners("noNeedUpdate", ret);
+            this.notifyListeners("noNeedUpdate", ret, false);
         }
         this.sendReadyToJs(current, msg, plannedDirectUpdate);
         this.backgroundDownloadTask = null;
@@ -5179,7 +5187,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         BundleInfo.ID_BUILTIN
                                     );
                                     ret.put("bundle", InternalUtils.mapToJSObject(builtinBundle.toJSONMap()));
-                                    CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                    CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                 }
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Latest version is builtin, autoUpdate onlyDownload",
@@ -5280,7 +5288,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                 "Direct update skipped because splashscreen timeout occurred. Update will install on next background."
                                             );
                                         }
-                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                         CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
                                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                             "update downloaded, will install next background",
@@ -5291,7 +5299,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                     } else {
                                         logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle");
-                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret);
+                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                             "update downloaded, autoUpdate onlyDownload",
                                             latestVersionName,
@@ -5484,7 +5492,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
             this.persistLastFailedBundle(current);
-            this.notifyListeners("updateFailed", ret);
+            this.notifyListeners("updateFailed", ret, false);
             this.reportAppLaunchTimeout(current);
             this.implementation.sendStats("update_fail", current.getVersionName());
             this.implementation.setError(current);
@@ -6091,7 +6099,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     eventData.put("totalBytesToDownload", state.totalBytesToDownload());
                 }
 
-                notifyListeners("onFlexibleUpdateStateChange", eventData);
+                notifyListeners("onFlexibleUpdateStateChange", eventData, false);
             };
 
             manager.registerListener(installStateUpdatedListener);
