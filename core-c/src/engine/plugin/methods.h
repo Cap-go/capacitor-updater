@@ -21,14 +21,15 @@
 #include "rt/err.h"
 #include "rt/json.h"
 
-/* Methods implemented by the engine (everything but listeners and app store APIs), in the
- * Rust order (the `pluginMethods` operation returns them as a JSON array). */
-extern const char *const CG_ENGINE_METHODS[];
-extern const size_t CG_ENGINE_METHODS_LEN;
-/* Engine methods hosts must not run on their serial method lane (`detachedPluginMethods`). */
-extern const char *const CG_DETACHED_METHODS[];
-extern const size_t CG_DETACHED_METHODS_LEN;
-
+/* ENGINE_METHODS: methods implemented by the engine (everything but listeners and app store
+ * APIs), in the Rust order, as an owned JSON array (`pluginMethods` operation).
+ * Functions, not extern arrays: an undefined data symbol makes the library fail to load
+ * while modules are missing (CAPGO_ALLOW_UNDEFINED), an undefined function does not. */
+cj *cg_methods_engine_methods(void);
+/* DETACHED_METHODS: engine methods hosts must not run on their serial method lane
+ * (`detachedPluginMethods`), as an owned JSON array. */
+cj *cg_methods_detached_methods(void);
+/* DETACHED_METHODS.contains(name). */
 bool cg_methods_is_detached(const char *name);
 
 /* Downloads a bundle for `download()` / previews (session key and checksum rules apply).

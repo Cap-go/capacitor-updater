@@ -43,12 +43,6 @@ static cj *bundle(cg_bundle_info *info) {
     return raw;
 }
 
-static cj *string_array(const char *const *items, size_t len) {
-    cj *array = cj_arr();
-    for (size_t i = 0; i < len; i++) cj_push(array, cj_str(items[i]));
-    return array;
-}
-
 static void task_foreground(cg_engine *engine, void *ctx) { cg_flow_app_moved_to_foreground(engine); }
 static void task_background(cg_engine *engine, void *ctx) { cg_flow_background_work(engine); }
 
@@ -149,8 +143,8 @@ static cj *dispatch(cg_engine *engine, const char *op, const cj *input, bool *ha
         if (!channel) return NULL;
         return cg_channel_shake_menu_switch_channel(engine, channel);
     }
-    if (IS("pluginMethods")) return string_array(CG_ENGINE_METHODS, CG_ENGINE_METHODS_LEN);
-    if (IS("detachedPluginMethods")) return string_array(CG_DETACHED_METHODS, CG_DETACHED_METHODS_LEN);
+    if (IS("pluginMethods")) return cg_methods_engine_methods();
+    if (IS("detachedPluginMethods")) return cg_methods_detached_methods();
 
     /* ---- store */
     if (IS("bundleGet")) {

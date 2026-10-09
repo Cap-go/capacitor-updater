@@ -189,13 +189,13 @@ bool cg_config_apply(cg_engine_config *config, const cj *value, cg_error *err) {
              * verify CLI checksums (one 256-byte block), so encrypted updates fail their
              * checksum, but the app still starts (previous iOS crashed at launch instead). */
             cg_error parse = CG_ERROR_INIT;
-            cg_rsa_public_key *key = cg_rsa_public_key_from_pem(public_key, &parse);
+            cg_rsa_public_key *key = cg_rsa_from_pem(public_key, &parse);
             cg_err_clear(&parse);
             if (!key)
                 return cg_err_set(err, "invalid_public_key",
                                   "Invalid public key in capacitor.config.json: failed to parse RSA key. Remove the "
                                   "key or provide a valid PEM-formatted RSA public key.");
-            cg_rsa_public_key_free(key);
+            cg_rsa_release(key);
             cg_replace(&config->public_key, cg_strdup(public_key));
             cg_replace(&config->key_id, cg_crypto_key_id(public_key));
         }

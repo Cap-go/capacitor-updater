@@ -48,7 +48,7 @@ struct cg_engine {
 
     cg_host host;
     /* The engine's HTTP client (Rust `http: Http`), created with the engine. */
-    cg_net_http *http;
+    cg_http *http;
 
     /* RwLock<Arc<EngineConfig>>: `config` is the published snapshot, swapped under
      * `config_lock` (held only to retain / swap the pointer, never across other work);
