@@ -10,8 +10,8 @@
  * background and at exit) and retried on transient failures.
  *
  * Lock order: queue_lock before in_flight_lock (requeue / persist take both in that order);
- * persist_lock before both. acks_lock is a leaf. None is held across a host callback or the
- * network.
+ * persist_lock before both. acks_lock is a leaf. None is held across the network; only
+ * persist_lock is held across a host callback (the log of a failed write, as Rust).
  */
 #ifndef CG_ENGINE_STATS_H
 #define CG_ENGINE_STATS_H
