@@ -551,14 +551,19 @@ EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_CASE_RECOVERY_CYCLES:-5}"
 EDGE_CASE_RECOVERY_WAIT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_RECOVERY_WAIT_SECONDS:-45}"
 
 wait_for_edge_recovery() {
-  local description="$1"
-  local cycle_mode="$2"
-  shift 2
+  wait_for_edge_recovery_with_wait_seconds "$EDGE_CASE_RECOVERY_WAIT_SECONDS" "$@"
+}
+
+wait_for_edge_recovery_with_wait_seconds() {
+  local recovery_wait_seconds="$1"
+  local description="$2"
+  local cycle_mode="$3"
+  shift 3
   local cycle=1
 
   while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
     if wait_for_ui_state_with_timeout "$description (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
-      "$EDGE_CASE_RECOVERY_WAIT_SECONDS" "$@"; then
+      "$recovery_wait_seconds" "$@"; then
       return 0
     fi
 
@@ -571,7 +576,7 @@ wait_for_edge_recovery() {
     cycle=$((cycle + 1))
   done
 
-  wait_for_ui_state_with_timeout "$description (final)" "$EDGE_CASE_RECOVERY_WAIT_SECONDS" "$@"
+  wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "$@"
 }
 
 # run_edge_case_once runs inside an if, where set -e is off, so every step must fail explicitly.
@@ -609,6 +614,7 @@ run_edge_case_once() {
       wait_for_server_condition "$app_scenario" 'server saw the killed download disconnect' 'downloads.aborted >= 1' 60 || return 1
       set_server_fault "$app_scenario" bundle none || return 1
       relaunch_android_app
+      wait_for_example_app_ui || return 1
       ;;
     edge-network-drop)
       # Bring the network back right away: WorkManager keeps retrying the dropped download in
@@ -648,12 +654,21 @@ run_edge_case_once() {
       ;;
   esac
 
-  wait_for_edge_recovery \
+  local recovery_cycle_mode="$cycle_mode"
+  local recovery_wait_seconds="$EDGE_CASE_RECOVERY_WAIT_SECONDS"
+  if [[ "$edge_case_id" == "edge-kill-download" ]]; then
+    recovery_cycle_mode="cold-launch"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-75}"
+  fi
+
+  wait_for_edge_recovery_with_wait_seconds \
+    "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
-    "$cycle_mode" \
+    "$recovery_cycle_mode" \
     "Build label: $first_release" \
     "Scenario: $app_scenario" \
     "$direct_update_line" \
+    "Notify app ready: ok ($first_release)" \
     'Current bundle source: downloaded' \
     "Current bundle version: $first_release" || return 1
 

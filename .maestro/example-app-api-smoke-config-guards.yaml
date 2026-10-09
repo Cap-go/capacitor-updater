@@ -25,17 +25,13 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 360000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-get-latest'
-    direction: DOWN
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: 'Quick get latest'
+    timeout: 120000
 - tapOn:
-    id: 'quick-action-get-latest'
+    text: 'Quick get latest'
     retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: get-latest:success|M:get-latest:success).*'
     timeout: 120000
