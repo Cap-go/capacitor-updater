@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "engine/archive.h"
+#include "engine/backend.h"
 #include "testing.h"
 
 bool cg_testing_archive(const char *name, const cj *input, cj **result, cg_error *err);
@@ -48,13 +49,6 @@ static const char *extract_code(cg_extract_kind kind) {
     }
 }
 
-/* backend.rs manifest_size_url. */
-static char *manifest_size_url(const char *update_url) {
-    size_t len = strcspn(update_url, "?#");
-    while (len && update_url[len - 1] == '/') len--;
-    return cg_fmt("%.*s/manifest_size", (int)len, update_url);
-}
-
 bool cg_testing_archive(const char *name, const cj *input, cj **result, cg_error *err) {
     if (strcmp(name, "extractZip") == 0) {
         bool cancelled = flag(input, "cancelled");
@@ -91,7 +85,7 @@ bool cg_testing_archive(const char *name, const cj *input, cj **result, cg_error
     }
     if (strcmp(name, "manifestSizeUrl") == 0) {
         const char *url = req_str(input, "updateUrl", err);
-        if (url) *result = cj_objv("url", cj_str_own(manifest_size_url(url)), NULL);
+        if (url) *result = cj_objv("url", cj_str_own(cg_backend_manifest_size_url(url)), NULL);
         return true;
     }
     return false;
