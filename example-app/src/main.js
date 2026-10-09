@@ -3195,6 +3195,12 @@ function configureQaToolsPanel() {
   panel.classList.toggle('qa-tools-native-open', openOnNative);
 }
 
+function clearElementChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
 function pinMaestroQuickActions() {
   if (platform === 'web') {
     return;
@@ -3205,7 +3211,7 @@ function pinMaestroQuickActions() {
     return;
   }
 
-  host.replaceChildren();
+  clearElementChildren(host);
   const smokeWrap = document.createElement('div');
   smokeWrap.className = 'maestro-pinned-smoke';
   smokeWrap.appendChild(elements.quickRunSmokeSequenceButton);
