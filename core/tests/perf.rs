@@ -1,12 +1,13 @@
 //! Throughput smoke test for the bundle hot paths. Run with
 //! `cargo test --release --test perf -- --ignored --nocapture`.
 
+mod support;
+
 use std::io::Write;
 use std::time::Instant;
 
-use capgo_updater_core::crypto::aes_cbc;
-use capgo_updater_core::crypto::checksum::sha256_file;
-use capgo_updater_core::engine::archive::extract_zip;
+use serde_json::json;
+use support::core;
 
 fn noise(len: usize) -> Vec<u8> {
     let mut state: u32 = 7;
@@ -29,16 +30,21 @@ fn hot_path_throughput() {
     let mb = size as f64 / 1_048_576.0;
 
     let start = Instant::now();
-    sha256_file(&path).unwrap();
+    core().test("sha256File", json!({ "path": path.to_string_lossy() }));
     println!("sha256: {:.0} MB/s", mb / start.elapsed().as_secs_f64());
 
-    // AES-CBC decrypt (the ciphertext does not need to be valid for throughput).
-    let key = [1u8; 16];
-    let iv = [2u8; 16];
-    let mut decryptor = aes_cbc::CbcDecryptor::new(&key, &iv);
-    let mut out = Vec::with_capacity(size + 16);
+    // AES-CBC decrypt (the ciphertext does not need to be valid for throughput: the
+    // padding error at the end is ignored).
     let start = Instant::now();
-    decryptor.update(&data, &mut out);
+    let _ = core().try_test(
+        "decryptFileTo",
+        json!({
+            "source": path.to_string_lossy(),
+            "destination": dir.path().join("plain.bin").to_string_lossy(),
+            "keyHex": "01".repeat(16),
+            "ivHex": "02".repeat(16),
+        }),
+    );
     println!("aes-cbc: {:.0} MB/s", mb / start.elapsed().as_secs_f64());
 
     let zip_path = dir.path().join("bundle.zip");
@@ -52,7 +58,10 @@ fn hot_path_throughput() {
         writer.finish().unwrap();
     }
     let start = Instant::now();
-    extract_zip(&zip_path, &dir.path().join("out"), &mut |_, _| {}, &|| false).unwrap();
+    core().test(
+        "extractZip",
+        json!({ "zip": zip_path.to_string_lossy(), "destination": dir.path().join("out").to_string_lossy() }),
+    );
     println!(
         "unzip (inflate + CRC + write): {:.0} MB/s",
         mb / start.elapsed().as_secs_f64()

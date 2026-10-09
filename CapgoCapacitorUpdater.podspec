@@ -13,6 +13,8 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/Sources/**/*.{swift,h,m,c,cc,mm,cpp}'
   # Shared Rust updater core (core/), built by scripts/build-core.sh ios.
   s.vendored_frameworks = 'ios/Frameworks/CapgoUpdaterCore.xcframework'
+  # zlib: used by the C build of the core (the Rust build does not need it).
+  s.libraries = 'z'
   s.ios.deployment_target = '15.0'
   s.dependency 'Capacitor'
   s.swift_version = '5.1'

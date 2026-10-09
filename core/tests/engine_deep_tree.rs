@@ -10,9 +10,8 @@ mod support;
 
 use std::io::Write;
 
-use capgo_updater_core::engine::archive::extract_zip;
 use serde_json::json;
-use support::TestEngine;
+use support::{core, TestEngine};
 
 /// Smaller than any host thread that calls the engine (iOS GCD workers: 512 KiB).
 const HOST_THREAD_STACK: usize = 256 * 1024;
@@ -42,7 +41,12 @@ fn deleting_a_deeply_nested_bundle_does_not_overflow_a_host_thread_stack() {
     writer.finish().unwrap();
 
     // Refusing such an archive is fine too; if it extracts, deleting it must work.
-    let extracted = extract_zip(&zip_path, &destination, &mut |_, _| {}, &|| false).is_ok();
+    let extracted = core()
+        .try_test(
+            "extractZip",
+            json!({ "zip": zip_path.to_string_lossy(), "destination": destination.to_string_lossy() }),
+        )
+        .is_ok();
 
     let engine = t.engine.clone();
     let deleted = std::thread::Builder::new()
