@@ -518,6 +518,7 @@ static const uint16_t CP437[128] = {
 static char *from_cp437(const uint8_t *bytes, size_t len, size_t *out_len) {
     cg_buf out = {0};
     cg_buf_reserve(&out, len + 1);
+    cg_buf_put(&out, "", 0); /* terminated even when empty */
     for (size_t i = 0; i < len; i++) {
         uint32_t c = bytes[i] < 0x80 ? bytes[i] : CP437[bytes[i] - 0x80];
         if (c < 0x80) {
