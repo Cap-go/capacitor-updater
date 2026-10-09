@@ -15,6 +15,8 @@
 extern bool cg_testing_pure(const char *name, const cj *input, cj **result, cg_error *err) __attribute__((weak));
 extern bool cg_testing_archive(const char *name, const cj *input, cj **result, cg_error *err)
     __attribute__((weak));
+extern bool cg_testing_net_pure(const char *name, const cj *input, cj **result, cg_error *err)
+    __attribute__((weak));
 extern bool cg_testing_net(struct cg_engine *engine, const char *name, const cj *input, cj **result, cg_error *err)
     __attribute__((weak));
 extern bool cg_testing_engine(struct cg_engine *engine, const char *name, const cj *input, cj **result,
@@ -24,6 +26,7 @@ cj *cg_testing_call(const char *name, const cj *input, cg_error *err) {
     cj *result = NULL;
     if (cg_testing_pure && cg_testing_pure(name, input, &result, err)) return result;
     if (cg_testing_archive && cg_testing_archive(name, input, &result, err)) return result;
+    if (cg_testing_net_pure && cg_testing_net_pure(name, input, &result, err)) return result;
     cg_err_set(err, "unknown_operation", "Unknown test operation: " CG_TEST_PREFIX "%s", name);
     return NULL;
 }
