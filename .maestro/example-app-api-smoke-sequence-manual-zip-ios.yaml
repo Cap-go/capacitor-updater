@@ -16,20 +16,15 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
-      text: 'Quick run smoke test sequence'
+      id: 'quick-run-smoke-sequence'
     direction: DOWN
     timeout: 60000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
 - tapOn:
-    text: 'Quick run smoke test sequence'
+    id: 'quick-run-smoke-sequence'
     retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
-    timeout: 300000
+    timeout: 240000
