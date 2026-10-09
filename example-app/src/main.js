@@ -3174,16 +3174,10 @@ function renderDemoActionButtons() {
 }
 
 function configureQaToolsPanel() {
-  const details = elements.qaToolsDetails;
+  const panel = elements.qaToolsDetails;
   const openOnNative = platform !== 'web';
 
-  details.open = openOnNative;
-  details.classList.toggle('qa-tools-native-open', openOnNative);
-  if (openOnNative) {
-    details.setAttribute('open', '');
-  } else {
-    details.removeAttribute('open');
-  }
+  panel.classList.toggle('qa-tools-native-open', openOnNative);
 }
 
 function bindDemoActions() {

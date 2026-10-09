@@ -382,10 +382,12 @@ button:disabled {
   transition: transform 0.15s ease;
 }
 
+.qa-tools-card.qa-tools-native-open .qa-tools-toggle::before,
 .qa-tools-card[open] .qa-tools-toggle::before {
   transform: rotate(90deg);
 }
 
+.qa-tools-card.qa-tools-native-open .qa-tools-toggle,
 .qa-tools-card[open] .qa-tools-toggle {
   border-bottom-color: var(--border);
 }
