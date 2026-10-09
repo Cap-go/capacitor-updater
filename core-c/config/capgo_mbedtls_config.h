@@ -9,6 +9,9 @@
 
 #define MBEDTLS_THREADING_C
 #define MBEDTLS_THREADING_PTHREAD
+/* Constant AES tables: the default lazily generated tables are built on first use without
+ * a memory barrier, a data race when two threads decrypt at once (found by ThreadSanitizer). */
+#define MBEDTLS_AES_ROM_TABLES
 /* ARMv8 SHA-256 instructions when the CPU has them (AES uses AESCE by default). */
 #define MBEDTLS_SHA256_USE_ARMV8_A_CRYPTO_IF_PRESENT
 

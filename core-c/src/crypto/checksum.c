@@ -12,6 +12,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "mbedtls/aes.h"
+#include "mbedtls/sha256.h"
 #include "text.h"
 
 void cg_sha256_init(cg_sha256 *hasher) {
@@ -81,4 +83,16 @@ char *cg_checksum_short_path_key_bytes(const uint8_t *bytes, size_t len) {
 char *cg_checksum_short_path_key(const char *value) {
     const char *text = value ? value : "";
     return cg_checksum_short_path_key_bytes((const uint8_t *)text, strlen(text));
+}
+
+/* Mbed TLS caches its CPU feature detection (SHA-256 / AES instructions) in plain statics on
+ * first use; two threads hashing at once race on them. Run it once at load, before any thread. */
+__attribute__((constructor)) static void cg_crypto_warm_up(void) {
+    uint8_t digest[32];
+    mbedtls_sha256((const unsigned char *)"", 0, digest, 0);
+    mbedtls_aes_context aes;
+    const unsigned char key[16] = {0};
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_dec(&aes, key, 128);
+    mbedtls_aes_free(&aes);
 }
