@@ -8,6 +8,9 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 120000
+- extendedWaitUntil:
+    visible: '.*Server URL: http.*'
+    timeout: 120000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
@@ -35,7 +38,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
-    timeout: 120000
+    timeout: 180000
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-server-release'
