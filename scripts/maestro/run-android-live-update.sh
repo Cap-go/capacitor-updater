@@ -322,7 +322,9 @@ wait_for_ui_state_with_timeout() {
   done
 
   echo "Timed out waiting for UI state: ${description}" >&2
-  dump_ui_hierarchy >&2 || true
+  if [[ "${CAPGO_MAESTRO_SKIP_UI_HIERARCHY_DUMP_ON_TIMEOUT:-1}" != "1" ]]; then
+    dump_ui_hierarchy >&2 || true
+  fi
   return 1
 }
 
@@ -629,6 +631,7 @@ run_edge_case_once() {
         "$direct_update_line" \
         'Current bundle source: builtin' \
         "Current bundle version: $builtin_version" || return 1
+      background_and_resume_app
       ;;
     *)
       # The failed update must leave the builtin bundle running and usable.
@@ -658,7 +661,10 @@ run_edge_case_once() {
   local recovery_wait_seconds="$EDGE_CASE_RECOVERY_WAIT_SECONDS"
   if [[ "$edge_case_id" == "edge-kill-download" ]]; then
     recovery_cycle_mode="cold-launch"
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-75}"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
+    background_and_resume_app
+  elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
   fi
 
   local -a recovery_fragments=(
