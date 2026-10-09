@@ -30,6 +30,8 @@ pub fn call(operation: &str, input: &Value) -> CoreResult<Value> {
         "resolvePathInside" => Ok(json!({
             "path": paths::resolve_path_inside(req_str(input, "base")?, req_str(input, "path")?)?
         })),
+        #[cfg(feature = "test-support")]
+        other if other.starts_with(crate::testing::PREFIX) => crate::testing::call(&other[crate::testing::PREFIX.len()..], input),
         other => Err(CoreError::new(
             "unknown_operation",
             format!("Unknown core operation: {other}"),
