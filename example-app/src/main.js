@@ -328,6 +328,7 @@ const state = {
   getChannelResult: null,
   getChannelReadMarker: 'not-run',
   harnessReady: false,
+  runtimeUrlsReady: false,
   lastGetLatestCheck: 'not-run',
   lastListChannelsCheck: 'not-run',
   lastPrivateChannelCheck: 'not-run',
@@ -833,7 +834,11 @@ function renderState() {
   elements.noNeedUpdateEventState.textContent = `No need update event: ${state.eventMarkers.noNeedUpdate}`;
   elements.updateFailedEventState.textContent = `Update failed event: ${state.eventMarkers.updateFailed}`;
   elements.actionStatus.textContent = `Status: ${state.lastPhase}`;
-  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}`;
+  const runtimeUrlsLabel =
+    scenarioId === 'manual-manifest'
+      ? ` | Runtime URLs: ${state.runtimeUrlsReady ? 'ready' : 'pending'}`
+      : '';
+  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}${runtimeUrlsLabel}`;
   elements.scenarioId.textContent = `Scenario: ${scenarioId}`;
   elements.directUpdateMode.textContent = `Direct update mode: ${directUpdateMode}`;
   elements.serverUrl.textContent = `Server URL: ${serverUrl}`;
@@ -3173,11 +3178,71 @@ function renderDemoActionButtons() {
   }
 }
 
+const maestroPinnedActionIdsByScenario = {
+  'manual-zip-config-guards': ['reset-server-release', 'download-latest-bundle', 'set-bundle-error'],
+  'manual-manifest': [
+    'reset-server-release',
+    'download-latest-bundle',
+    'queue-last-downloaded-bundle',
+    'reload-app',
+  ],
+};
+
 function configureQaToolsPanel() {
   const panel = elements.qaToolsDetails;
   const openOnNative = platform !== 'web';
 
   panel.classList.toggle('qa-tools-native-open', openOnNative);
+}
+
+function pinMaestroQuickActions() {
+  if (platform === 'web') {
+    return;
+  }
+
+  const host = document.getElementById('maestro-pinned-actions');
+  if (!host) {
+    return;
+  }
+
+  host.replaceChildren();
+  const smokeWrap = document.createElement('div');
+  smokeWrap.className = 'maestro-pinned-smoke';
+  smokeWrap.appendChild(elements.quickRunSmokeSequenceButton);
+  host.appendChild(smokeWrap);
+
+  const pinIds = maestroPinnedActionIdsByScenario[scenarioId] ?? [];
+  for (const actionId of pinIds) {
+    const button = document.getElementById(`quick-action-${actionId}`);
+    if (button) {
+      host.appendChild(button);
+    }
+  }
+}
+
+async function ensureManualManifestRuntimeUrls() {
+  if (scenarioId !== 'manual-manifest' || !serverUrl.startsWith('http') || !allowModifyUrl) {
+    return;
+  }
+
+  const updateUrl = getRuntimeUpdateUrl();
+  const statsUrl = getRuntimeStatsUrl();
+  const channelUrl = getRuntimeChannelUrl();
+
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    try {
+      await plugin.setUpdateUrl({ url: updateUrl });
+      await plugin.setStatsUrl({ url: statsUrl });
+      await plugin.setChannelUrl({ url: channelUrl });
+      state.runtimeUrlsReady = true;
+      publishHarnessMarker('set-runtime-urls', 'success');
+      renderState();
+      return;
+    } catch (error) {
+      console.error(`Bootstrap set-runtime-urls attempt ${attempt} failed`, error);
+      await pause(1500);
+    }
+  }
 }
 
 function bindDemoActions() {
@@ -3301,6 +3366,7 @@ async function bootstrap() {
   resetScrollPosition();
   configureQaToolsPanel();
   renderQuickActions();
+  pinMaestroQuickActions();
   renderActions();
   bindDemoActions();
   renderState();
@@ -3348,19 +3414,7 @@ async function bootstrap() {
       break;
     }
   }
-  if (scenarioId === 'manual-manifest' && serverUrl.startsWith('http') && allowModifyUrl) {
-    try {
-      const updateUrl = getRuntimeUpdateUrl();
-      const statsUrl = getRuntimeStatsUrl();
-      const channelUrl = getRuntimeChannelUrl();
-      await plugin.setUpdateUrl({ url: updateUrl });
-      await plugin.setStatsUrl({ url: statsUrl });
-      await plugin.setChannelUrl({ url: channelUrl });
-      publishHarnessMarker('set-runtime-urls', 'success');
-    } catch (error) {
-      console.error('Bootstrap set-runtime-urls failed', error);
-    }
-  }
+  await ensureManualManifestRuntimeUrls();
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();

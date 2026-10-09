@@ -82,6 +82,25 @@ body {
   padding: 18px 20px;
 }
 
+.maestro-pinned-actions {
+  display: none;
+  gap: 8px;
+}
+
+.platform-android .maestro-pinned-actions,
+.platform-ios .maestro-pinned-actions {
+  display: grid;
+}
+
+.maestro-pinned-smoke {
+  display: grid;
+}
+
+.maestro-pinned-actions button {
+  width: 100%;
+  text-align: left;
+}
+
 .brand-row {
   display: flex;
   gap: 14px;
