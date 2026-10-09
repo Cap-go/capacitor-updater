@@ -2632,6 +2632,7 @@ const actions = [
     quickButtonLabel: 'Quick mark bundle error',
     description: 'Mark the newest inactive bundle as failed in manual mode.',
     showWhen: () => serverUrl.startsWith('http'),
+    skipRefresh: true,
     markerId: 'bundle',
     successMarker: (result) =>
       result?.outcome === 'expected-rejection'
