@@ -34,17 +34,19 @@ typedef struct {
     cg_extract_kind kind;
     /* WindowsPath / PathEscape: entry name; Directory: path; Failed: message; Cancelled: NULL. */
     char *detail;
+    /* Length of detail (entry names may contain NUL bytes, rejected as PathEscape). */
+    size_t detail_len;
 } cg_extract_error;
 
-#define CG_EXTRACT_ERROR_INIT {CG_EXTRACT_OK, NULL}
+#define CG_EXTRACT_ERROR_INIT {CG_EXTRACT_OK, NULL, 0}
 
 void cg_extract_error_clear(cg_extract_error *error);
 /* ExtractError::stat (static string), NULL for Failed / Cancelled. */
 const char *cg_extract_error_stat(const cg_extract_error *error);
-/* ExtractError::message (malloc'd): "Unzip failed: Windows path not supported: <name>",
- * "Unzip failed: entry escapes bundle: <name>", "Failed to ensure directory: <path>",
- * the Failed message, "download_stopped". */
-char *cg_extract_error_message(const cg_extract_error *error);
+/* ExtractError::message (malloc'd, length in *len when len is not NULL): "Unzip failed: Windows
+ * path not supported: <name>", "Unzip failed: entry escapes bundle: <name>", "Failed to ensure
+ * directory: <path>", the Failed message, "download_stopped". */
+char *cg_extract_error_message(const cg_extract_error *error, size_t *len);
 
 /* progress(ctx, done, total) after each entry; cancelled(ctx) aborts between entries. Both are
  * called on the caller's thread only. Either may be NULL. */
@@ -66,8 +68,9 @@ bool cg_archive_install_extracted(const char *source, const char *destination, c
 /* CRC-32 (IEEE, zlib compatible): ARMv8 CRC instructions when available. */
 uint32_t cg_archive_crc32(uint32_t crc, const uint8_t *bytes, size_t len);
 
-/* Raw deflate decoder over `inner` (owned), like flate2::read::DeflateDecoder: a truncated
- * stream ends silently, corrupt data is CG_IO_INVALID_INPUT "corrupt deflate stream". */
+/* Raw deflate decoder over `inner` (owned), like flate2::read::DeflateDecoder: a truncated stream
+ * is CG_IO_UNEXPECTED_EOF "incomplete deflate stream", corrupt data CG_IO_INVALID_INPUT "corrupt
+ * deflate stream". */
 cg_reader *cg_archive_inflate_reader(cg_reader *inner, size_t buffer_size);
 
 #endif

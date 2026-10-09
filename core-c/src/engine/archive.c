@@ -1021,7 +1021,11 @@ static ptrdiff_t stream_read(entry_stream *s, uint8_t *out, size_t cap, char **m
                 *message = cg_strdup("corrupt deflate stream");
                 return -1;
             }
-            /* A truncated stream ends silently (flate2); the CRC check catches it. */
+            if (s->input_done && !produced && cap) {
+                /* flate2: no output at the end of the input without the final block. */
+                *message = cg_strdup("incomplete deflate stream");
+                return -1;
+            }
             if (s->input_done || produced == cap) break;
             if (produced && !s->z.avail_in) break;
         }
@@ -1079,7 +1083,11 @@ static ptrdiff_t inflate_reader_read(cg_reader *self, uint8_t *buf, size_t len, 
             cg_fsutil_io_error(err, CG_IO_INVALID_INPUT, "corrupt deflate stream");
             return -1;
         }
-        if (produced || r->eof) return (ptrdiff_t)produced;
+        if (!produced && r->eof) {
+            cg_fsutil_io_error(err, CG_IO_UNEXPECTED_EOF, "incomplete deflate stream");
+            return -1;
+        }
+        if (produced) return (ptrdiff_t)produced;
     }
 }
 
@@ -1107,6 +1115,7 @@ void cg_extract_error_clear(cg_extract_error *error) {
     if (!error) return;
     free(error->detail);
     error->detail = NULL;
+    error->detail_len = 0;
     error->kind = CG_EXTRACT_OK;
 }
 
@@ -1119,19 +1128,23 @@ const char *cg_extract_error_stat(const cg_extract_error *error) {
     }
 }
 
-char *cg_extract_error_message(const cg_extract_error *error) {
-    const char *detail = cg_or_empty(error->detail);
+char *cg_extract_error_message(const cg_extract_error *error, size_t *len) {
+    const char *prefix = "";
     switch (error->kind) {
-    case CG_EXTRACT_WINDOWS_PATH: return cg_fmt("Unzip failed: Windows path not supported: %s", detail);
-    case CG_EXTRACT_PATH_ESCAPE: return cg_fmt("Unzip failed: entry escapes bundle: %s", detail);
-    case CG_EXTRACT_DIRECTORY: return cg_fmt("Failed to ensure directory: %s", detail);
-    case CG_EXTRACT_FAILED: return cg_strdup(detail);
-    case CG_EXTRACT_CANCELLED: return cg_strdup("download_stopped");
-    default: return cg_strdup("");
+    case CG_EXTRACT_WINDOWS_PATH: prefix = "Unzip failed: Windows path not supported: "; break;
+    case CG_EXTRACT_PATH_ESCAPE: prefix = "Unzip failed: entry escapes bundle: "; break;
+    case CG_EXTRACT_DIRECTORY: prefix = "Failed to ensure directory: "; break;
+    case CG_EXTRACT_CANCELLED: prefix = "download_stopped"; break;
+    default: break;
     }
+    cg_buf out = {0};
+    cg_buf_puts(&out, prefix);
+    if (error->kind != CG_EXTRACT_CANCELLED && error->detail) cg_buf_put(&out, error->detail, error->detail_len);
+    if (len) *len = out.len;
+    return cg_buf_take(&out);
 }
 
-static bool set_error(cg_extract_error *error, cg_extract_kind kind, char *detail) {
+static bool set_error_len(cg_extract_error *error, cg_extract_kind kind, char *detail, size_t len) {
     if (!error) {
         free(detail);
         return false;
@@ -1139,7 +1152,12 @@ static bool set_error(cg_extract_error *error, cg_extract_kind kind, char *detai
     free(error->detail);
     error->kind = kind;
     error->detail = detail;
+    error->detail_len = len;
     return false;
+}
+
+static bool set_error(cg_extract_error *error, cg_extract_kind kind, char *detail) {
+    return set_error_len(error, kind, detail, detail ? strlen(detail) : 0);
 }
 
 /* ExtractError::Failed("Failed to unzip <zip>: <message>"). */
@@ -1150,19 +1168,23 @@ static bool set_failed(cg_extract_error *error, const char *zip_path, const char
 /* ---- extraction */
 
 static bool resolve_entry(const char *destination, const zip_entry *entry, char **target, cg_extract_error *error) {
-    /* resolve_path_inside only looks at '/', '\\', '.', '~' and emptiness: a NUL byte is
-     * replaced by a byte with the same (lack of) meaning. */
-    char *name = cg_malloc(entry->name_len + 1);
-    for (size_t i = 0; i < entry->name_len; i++) name[i] = entry->name[i] ? entry->name[i] : '\x01';
-    name[entry->name_len] = 0;
+    *target = NULL;
+    bool backslash = memchr(entry->name, '\\', entry->name_len) != NULL;
+    /* paths.rs rejects NUL bytes with the backslash (invalid_separator); a C string cannot
+     * carry them to cg_paths_resolve_path_inside. */
+    if (entry->name_len && memchr(entry->name, 0, entry->name_len)) {
+        char *name = cg_malloc(entry->name_len + 1);
+        memcpy(name, entry->name, entry->name_len + 1);
+        return set_error_len(error, backslash ? CG_EXTRACT_WINDOWS_PATH : CG_EXTRACT_PATH_ESCAPE, name,
+                             entry->name_len);
+    }
     cg_error err = CG_ERROR_INIT;
-    *target = cg_paths_resolve_path_inside(destination, name, &err);
+    *target = cg_paths_resolve_path_inside(destination, entry->name, &err);
     if (!*target) {
-        bool windows = cg_err_is(&err, "invalid_separator") && memchr(entry->name, '\\', entry->name_len);
+        bool windows = cg_err_is(&err, "invalid_separator") && backslash;
         set_error(error, windows ? CG_EXTRACT_WINDOWS_PATH : CG_EXTRACT_PATH_ESCAPE, cg_strdup(entry->name));
     }
     cg_err_clear(&err);
-    free(name);
     return *target != NULL;
 }
 
@@ -1330,6 +1352,7 @@ static void record_error(extract_shared *shared, cg_extract_error *error) {
     if (shared->first_error.kind == CG_EXTRACT_OK) {
         shared->first_error = *error;
         error->detail = NULL;
+        error->detail_len = 0;
     }
     cg_unlock(&shared->mutex);
     cg_extract_error_clear(error);
@@ -1403,16 +1426,6 @@ bool cg_archive_extract_zip(const char *zip_path, const char *destination, cg_ex
             break;
         }
         bool is_dir = entry_is_dir(entry), is_symlink = entry_is_symlink(entry);
-        if (memchr(entry->name, 0, entry->name_len)) {
-            /* Rust fails such names in the file system calls (a path cannot hold NUL). */
-            if (is_dir) set_error(error, CG_EXTRACT_DIRECTORY, target);
-            else {
-                set_failed(error, zip_path, "file name contained an unexpected NUL byte");
-                free(target);
-            }
-            ok = false;
-            break;
-        }
         if (!is_dir && !is_symlink) {
             /* Checked in pass 1b, once every symlink exists. */
             if (file_count == file_cap) {
@@ -1634,7 +1647,8 @@ bool cg_archive_extract_zip(const char *zip_path, const char *destination, cg_ex
         cg_cond_destroy(&shared.cond);
         cg_mutex_destroy(&shared.mutex);
         if (shared.first_error.kind != CG_EXTRACT_OK) {
-            ok = set_error(error, shared.first_error.kind, shared.first_error.detail);
+            ok = set_error_len(error, shared.first_error.kind, shared.first_error.detail,
+                               shared.first_error.detail_len);
         }
     }
     free_files(files, file_count);

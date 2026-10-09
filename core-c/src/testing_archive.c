@@ -69,10 +69,13 @@ bool cg_testing_archive(const char *name, const cj *input, cj **result, cg_error
         const char *code = extract_code(error.kind);
         if (flag(input, "report")) {
             const char *stat = cg_extract_error_stat(&error);
+            size_t message_len;
+            char *text = cg_extract_error_message(&error, &message_len);
+            cj *message = cj_strn(text, message_len);
+            free(text);
             *result = cj_objv("error",
-                              cj_objv("code", cj_str(code), "name", cj_str(cg_or_empty(error.detail)), "stat",
-                                      stat ? cj_str(stat) : cj_null(), "message",
-                                      cj_str_own(cg_extract_error_message(&error)), NULL),
+                              cj_objv("code", cj_str(code), "name", cj_strn(cg_or_empty(error.detail), error.detail_len),
+                                      "stat", stat ? cj_str(stat) : cj_null(), "message", message, NULL),
                               NULL);
         } else {
             cg_err_set(err, code, "%s", cg_or_empty(error.detail));
