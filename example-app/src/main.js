@@ -3348,14 +3348,15 @@ async function bootstrap() {
       break;
     }
   }
-  if (
-    scenarioId === 'manual-manifest' &&
-    serverUrl.startsWith('http') &&
-    allowModifyUrl &&
-    !state.lastActionResult?.startsWith('set-runtime-urls:')
-  ) {
+  if (scenarioId === 'manual-manifest' && serverUrl.startsWith('http') && allowModifyUrl) {
     try {
-      await runAction(getActionById('set-runtime-urls'), {}, { skipRefresh: true });
+      const updateUrl = getRuntimeUpdateUrl();
+      const statsUrl = getRuntimeStatsUrl();
+      const channelUrl = getRuntimeChannelUrl();
+      await plugin.setUpdateUrl({ url: updateUrl });
+      await plugin.setStatsUrl({ url: statsUrl });
+      await plugin.setChannelUrl({ url: channelUrl });
+      publishHarnessMarker('set-runtime-urls', 'success');
     } catch (error) {
       console.error('Bootstrap set-runtime-urls failed', error);
     }
