@@ -27,9 +27,9 @@
 #include <sys/random.h>
 #endif
 
-#include <mbedtls/aes.h>
 #include <mbedtls/sha256.h>
 
+#include "crypto/aes_cbc.h"
 #include "crypto/checksum.h"
 #include "rt/sync.h"
 
@@ -747,63 +747,6 @@ bool cg_fsutil_modified_before(const char *path, uint64_t age_ms) {
 #define BLOCK_BYTES (1024 * 1024)
 #define CHANNEL_DEPTH 4
 
-/* AES-128-CBC with PKCS#7 padding, streaming (same rules as crypto/aes_cbc.rs CbcDecryptor). */
-typedef struct {
-    mbedtls_aes_context aes;
-    uint8_t previous[16];
-    uint8_t pending[16];
-    bool has_pending;
-    uint8_t partial[16];
-    size_t partial_len;
-} cbc_decryptor;
-
-static void cbc_init(cbc_decryptor *d, const uint8_t key[16], const uint8_t iv[16]) {
-    memset(d, 0, sizeof *d);
-    mbedtls_aes_init(&d->aes);
-    mbedtls_aes_setkey_dec(&d->aes, key, 128);
-    memcpy(d->previous, iv, 16);
-}
-
-static void cbc_block(cbc_decryptor *d, const uint8_t *cipher, cg_buf *out) {
-    uint8_t plain[16];
-    mbedtls_aes_crypt_ecb(&d->aes, MBEDTLS_AES_DECRYPT, cipher, plain);
-    for (int i = 0; i < 16; i++) plain[i] ^= d->previous[i];
-    memcpy(d->previous, cipher, 16);
-    if (d->has_pending) cg_buf_put(out, d->pending, 16);
-    memcpy(d->pending, plain, 16);
-    d->has_pending = true;
-}
-
-static void cbc_update(cbc_decryptor *d, const uint8_t *input, size_t len, cg_buf *out) {
-    if (d->partial_len) {
-        size_t take = 16 - d->partial_len < len ? 16 - d->partial_len : len;
-        memcpy(d->partial + d->partial_len, input, take);
-        d->partial_len += take;
-        input += take;
-        len -= take;
-        if (d->partial_len < 16) return;
-        d->partial_len = 0;
-        cbc_block(d, d->partial, out);
-    }
-    size_t whole = len - len % 16;
-    for (size_t at = 0; at < whole; at += 16) cbc_block(d, input + at, out);
-    memcpy(d->partial, input + whole, len - whole);
-    d->partial_len = len - whole;
-}
-
-static bool cbc_finish(cbc_decryptor *d, cg_buf *out) {
-    bool ok = false;
-    if (!d->partial_len && d->has_pending) {
-        size_t pad = d->pending[15];
-        ok = pad != 0 && pad <= 16;
-        for (size_t i = 16 - (ok ? pad : 0); ok && i < 16; i++)
-            if (d->pending[i] != pad) ok = false;
-        if (ok) cg_buf_put(out, d->pending, 16 - pad);
-    }
-    mbedtls_aes_free(&d->aes);
-    return ok;
-}
-
 typedef struct {
     cg_mutex mutex;
     cg_cond cond;
@@ -878,8 +821,8 @@ static bool channel_send(sink_channel *ch, uint8_t *block, size_t len) {
 static char *decrypt_sink(sink_channel *ch) {
     int fd = cg_fsutil_open(ch->plain, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (fd < 0) return NULL;
-    cbc_decryptor decryptor;
-    cbc_init(&decryptor, ch->key, ch->iv);
+    cg_cbc_decryptor decryptor;
+    cg_cbc_init(&decryptor, ch->key, ch->iv);
     mbedtls_sha256_context context;
     mbedtls_sha256_init(&context);
     mbedtls_sha256_starts(&context, 0);
@@ -891,7 +834,7 @@ static char *decrypt_sink(sink_channel *ch) {
     size_t len;
     while ((block = channel_recv(ch, &len))) {
         out.len = 0;
-        cbc_update(&decryptor, block, len, &out);
+        cg_cbc_update_buf(&decryptor, block, len, &out);
         free(block);
         mbedtls_sha256_update(&context, (const uint8_t *)out.data, out.len);
         cg_buf_put(&pending_out, out.data, out.len);
@@ -904,18 +847,17 @@ static char *decrypt_sink(sink_channel *ch) {
     }
     char *result = NULL;
     out.len = 0;
-    if (ok && cbc_finish(&decryptor, &out)) {
+    cg_error padding = CG_ERROR_INIT;
+    if (ok && cg_cbc_finish_buf(&decryptor, &out, &padding)) {
         mbedtls_sha256_update(&context, (const uint8_t *)out.data, out.len);
         cg_buf_put(&pending_out, out.data, out.len);
         produced += out.len;
         if (cg_fsutil_write_all(fd, pending_out.data, pending_out.len) && produced > 0) {
             result = sha256_finish_hex(&context);
         }
-    } else if (ok) {
-        ok = false;
-    } else {
-        mbedtls_aes_free(&decryptor.aes);
     }
+    cg_cbc_free(&decryptor); /* safe after finish */
+    cg_err_clear(&padding);
     if (!result) mbedtls_sha256_free(&context);
     close(fd);
     cg_buf_free(&out);
