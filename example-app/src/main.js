@@ -1500,6 +1500,22 @@ async function purgeDownloadedBundlesAfterServerReset() {
 
   await refreshState();
 
+  const activeBundleId = state.currentBundle?.id;
+  const nextBundleId = state.nextBundle?.id;
+  const hasActiveDownloadedBundle = activeBundleId && activeBundleId !== 'builtin';
+  const hasQueuedBundle = Boolean(nextBundleId);
+
+  if (hasActiveDownloadedBundle || hasQueuedBundle) {
+    try {
+      await plugin.reset();
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: reset to builtin before purge failed: ${error?.message ?? String(error)}`,
+      );
+    }
+    await refreshState();
+  }
+
   let purgePasses = 0;
   while (purgePasses < 20) {
     purgePasses += 1;
@@ -1508,7 +1524,13 @@ async function purgeDownloadedBundlesAfterServerReset() {
     if (!inactive?.id) {
       break;
     }
-    await plugin.delete({ id: inactive.id });
+    try {
+      await plugin.delete({ id: inactive.id });
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: delete ${inactive.id} failed: ${error?.message ?? String(error)}`,
+      );
+    }
   }
 
   const listResult = await plugin.list();
