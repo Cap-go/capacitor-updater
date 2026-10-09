@@ -16,6 +16,14 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
+      text: 'QA shortcuts'
+    direction: DOWN
+    timeout: 120000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
       id: 'quick-run-smoke-sequence'
     direction: DOWN
     timeout: 120000
