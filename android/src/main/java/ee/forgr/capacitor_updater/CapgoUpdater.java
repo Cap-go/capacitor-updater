@@ -3550,6 +3550,17 @@ public class CapgoUpdater {
         return this.getBundleInfo(id);
     }
 
+    /** Clears the stored next bundle when it is already the running bundle, so nothing stays pending. */
+    public boolean clearNextBundleIfCurrent() {
+        final BundleInfo next = this.getNextBundle();
+        if (next == null || !next.getId().equals(this.getCurrentBundle().getId())) {
+            return false;
+        }
+        logger.info("Next bundle " + next.getId() + " is already the current bundle. Clearing next.");
+        this.setNextBundle(null);
+        return true;
+    }
+
     public BundleInfo getPreviewFallbackBundle() {
         final String id = this.prefs.getString(PREVIEW_FALLBACK_VERSION, null);
         if (id == null) return null;

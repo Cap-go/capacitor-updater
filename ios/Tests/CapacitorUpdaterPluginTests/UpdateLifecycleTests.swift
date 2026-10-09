@@ -54,11 +54,40 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
     }
 
     override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        try downloadVerified(
+            url: url,
+            version: version,
+            sessionKey: sessionKey,
+            expectedChecksum: "",
+            link: link,
+            comment: comment
+        )
+    }
+
+    override func downloadVerified(
+        url _: URL,
+        version _: String,
+        sessionKey _: String,
+        expectedChecksum _: String,
+        link _: String? = nil,
+        comment _: String? = nil
+    ) throws -> BundleInfo {
         downloadCalls += 1
         guard let downloadedBundleValue else {
             throw NSError(domain: "UpdateLifecycleTests", code: 1)
         }
         return downloadedBundleValue
+    }
+
+    override func downloadVerified(
+        url: URL,
+        version: String,
+        sessionKey: String,
+        expectedChecksum: String,
+        link: String? = nil,
+        comment: String? = nil
+    ) throws -> BundleInfo {
+        try download(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment)
     }
 
     override func setError(bundle: BundleInfo) {
@@ -125,8 +154,10 @@ final class UpdateLifecycleTests: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        CryptoCipher.setLogger(Logger(withTag: "UpdateLifecycleTests"))
+        let testLogger = Logger(withTag: "UpdateLifecycleTests", options: Logger.Options(level: .silent))
+        CryptoCipher.setLogger(testLogger)
         updater = LifecycleCapgoUpdater()
+        updater.setLogger(testLogger)
         plugin = LifecyclePlugin()
         plugin.implementation = updater
         plugin.setUpdateUrlForTesting(updateUrl.absoluteString)
@@ -160,6 +191,23 @@ final class UpdateLifecycleTests: XCTestCase {
             done.fulfill()
         }
         wait(for: [done], timeout: seconds + 2)
+    }
+
+    // set() activated the pending next bundle but left it stored, so getNextBundle() kept
+    // returning the bundle that was already running.
+    func testClearNextBundleIfCurrentDropsTheRunningBundle() {
+        updater.currentBundleValue = pendingBundle()
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertTrue(updater.clearNextBundleIfCurrent())
+        XCTAssertNil(updater.nextBundleValue)
+    }
+
+    func testClearNextBundleIfCurrentKeepsADifferentNextBundle() {
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertFalse(updater.clearNextBundleIfCurrent())
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
     }
 
     // A suspended app can resume with the rollback timer already expired, before

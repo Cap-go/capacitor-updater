@@ -1,5 +1,30 @@
 # Capacitor updater
-<a href="https://capgo.app/"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to users right away without waiting for store review, with Capgo Cloud or your own server.
+
+<a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+<div align="center">
+  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <h2><a href="https://capgo.app/register/?ref=plugin_updater_v7">➡️ Get started for free</a></h2>
+  <p>14-day unlimited free trial. No credit card required</p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v7">Missing a feature? We'll build the plugin for you 💪</a></p>
+</div>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Cap-go/capacitor-updater/main/assets/github-social-preview.png" alt="@capgo/capacitor-updater for Capacitor apps" width="300" />
+</p>
+
+## Key features
+
+- **Auto update**: downloads and applies the latest bundle from Capgo Cloud or your own update server.
+- **Safe rollouts**: `notifyAppReady()` confirms a bundle works, otherwise the app rolls back to the last working one.
+- **Bundle control**: `download()`, `next()`, `set()`, `list()`, `delete()` and `reset()` for manual flows.
+- **Channels**: `setChannel()`, `getChannel()` and `listChannels()` for environments and per-device QA.
+- **Delta updates and security**: only changed files are downloaded, checksums are verified, and encryption is optional.
+- **Preview sessions**: `startPreviewSession()`, `setPreview()` and `resetPreview()` to test bundles on a device.
+- **Platforms**: iOS and Android. Web is a stub for development.
+
 [![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.com/invite/VnYRvBfgA6)
 <a href="https://discord.com/invite/VnYRvBfgA6"><img src="https://img.shields.io/discord/912707985829163099?color=%237289DA&label=Discord" alt="Discord">
 [![npm](https://img.shields.io/npm/dm/@capgo/capacitor-updater)](https://www.npmjs.com/package/@capgo/capacitor-updater)
@@ -14,11 +39,6 @@
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
 [![Open Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dopen)](https://console.algora.io/org/Capgo/bounties?status=open)
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
-
-<div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin_updater_v7"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin_updater_v7"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
-</div>
 
 Capacitor plugin to update your app remotely in real-time.
 

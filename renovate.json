@@ -1,28 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
-    "schedule:earlyMondays"
+    "github>Cap-go/.github:renovate-config"
   ],
-  "dependencyDashboard": false,
   "swift": {
     "enabled": false
   },
-  "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": true,
-    "automergeType": "branch",
-    "platformAutomerge": true
-  },
   "packageRules": [
-    {
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "matchCurrentVersion": "!/^0/",
-      "automerge": true
-    },
     {
       "matchPackageNames": [
         "eslint"
@@ -33,72 +17,12 @@
       "enabled": false
     },
     {
-      "matchPackagePatterns": [
-        "^com\\.google\\..*"
-      ],
-      "matchCurrentVersion": "/^.*-android$/",
-      "allowedVersions": "/^.*-android$/"
-    },
-    {
       "matchPackageNames": [
         "ZipArchive"
       ],
       "matchManagers": [
         "swift",
         "cocoapods"
-      ],
-      "enabled": false
-    },
-    {
-      "matchPackagePatterns": [
-        "^com\\.android\\.tools\\.build\\:gradle$"
-      ],
-      "matchManagers": [
-        "gradle"
-      ],
-      "enabled": false
-    },
-    {
-      "matchManagers": [
-        "swift"
-      ],
-      "matchPackagePatterns": [
-        "^https://github.com/ionic-team/capacitor-swift-pm\\.git$",
-        "^ionic-team/capacitor-swift-pm$",
-        "^capacitor-swift-pm$"
-      ],
-      "allowedVersions": "8.0.0",
-      "enabled": false
-    },
-    {
-      "matchDepTypes": [
-        "peerDependencies"
-      ],
-      "matchPackageNames": [
-        "@capacitor/core"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "enabled": false
-    },
-    {
-      "matchDepTypes": [
-        "peerDependencies"
-      ],
-      "matchPackageNames": [
-        "@capacitor/core"
-      ],
-      "rangeStrategy": "replace",
-      "allowedVersions": "/^>=\\d+\\.0\\.0$/"
-    },
-    {
-      "matchPackageNames": [
-        "androidx.core:core"
-      ],
-      "matchManagers": [
-        "gradle"
       ],
       "enabled": false
     },

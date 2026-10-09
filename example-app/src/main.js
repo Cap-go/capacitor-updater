@@ -79,6 +79,16 @@ const elements = {
   currentBundle: requireElement('current-bundle'),
   currentBundleSource: requireElement('current-bundle-source'),
   debugOutput: requireElement('debug-output'),
+  demoApplyUpdate: requireElement('demo-apply-update'),
+  demoBundleChip: requireElement('demo-bundle-chip'),
+  demoChannelChip: requireElement('demo-channel-chip'),
+  demoCheckUpdate: requireElement('demo-check-update'),
+  demoDownloadUpdate: requireElement('demo-download-update'),
+  demoLastDownload: requireElement('demo-last-download'),
+  demoLatestChip: requireElement('demo-latest-chip'),
+  demoNextBundle: requireElement('demo-next-bundle'),
+  demoNotifyChip: requireElement('demo-notify-chip'),
+  demoReloadApp: requireElement('demo-reload-app'),
   downloadCompleteEventState: requireElement('download-complete-event-state'),
   downloadCompleteEvent: requireElement('download-complete-event'),
   directUpdateMode: requireElement('direct-update-mode'),
@@ -111,6 +121,7 @@ const elements = {
   noNeedUpdateEvent: requireElement('no-need-update-event'),
   notifyStatus: requireElement('notify-status'),
   output: requireElement('plugin-output'),
+  qaToolsDetails: requireElement('qa-tools-details'),
   quickActions: requireElement('quick-actions'),
   quickRunSmokeSequenceButton: requireElement('quick-run-smoke-sequence'),
   refreshButton: requireElement('refresh-state'),
@@ -860,7 +871,25 @@ function renderState() {
   elements.breakingEvent.textContent = `breakingAvailable event: ${state.eventMarkers.breakingAvailable}`;
   elements.majorEvent.textContent = `majorAvailable event: ${state.eventMarkers.majorAvailable}`;
   elements.flexibleUpdateEvent.textContent = `flexible update event: ${state.eventMarkers.flexibleUpdate}`;
+
+  const notifyReady = String(state.notifyStatus ?? '').toLowerCase();
+  const notifyChipClass =
+    notifyReady.includes('yes') || notifyReady.includes('ready') || notifyReady.includes('ok')
+      ? 'status-chip status-chip-ok'
+      : notifyReady.includes('fail') || notifyReady.includes('error')
+        ? 'status-chip status-chip-warn'
+        : 'status-chip status-chip-pending';
+  elements.demoNotifyChip.className = notifyChipClass;
+  elements.demoNotifyChip.textContent = `App ready: ${state.notifyStatus}`;
+  elements.demoChannelChip.textContent = `Channel: ${state.getChannelResult?.channel ?? 'none'}`;
+  elements.demoBundleChip.textContent = `Active bundle: ${getBundleVersion(state.currentBundle)}`;
+  elements.demoLatestChip.textContent = `Server latest: ${state.lastLatest?.version ?? 'none'}`;
+  elements.demoNextBundle.textContent = `Queued next bundle: ${getBundleVersion(state.nextBundle)}`;
+  elements.demoLastDownload.textContent = `Last download: ${state.lastDownload}`;
+  renderDemoActionButtons();
+
   elements.e2eSummary.textContent =
+    `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
     `Build label: ${buildLabel} | ` +
@@ -903,6 +932,7 @@ function renderState() {
   window.localStorage.setItem(lastPhaseStorageKey, state.lastPhase);
 
   logHarnessState(harnessSnapshot);
+  syncContentOffsetForBanner();
 }
 
 function resetScrollPosition() {
@@ -3026,6 +3056,81 @@ function renderQuickActions() {
   });
 }
 
+function triggerQuickAction(actionId) {
+  const action = getActionById(actionId);
+  if (action.showWhen && !action.showWhen()) {
+    elements.output.textContent = `${action.label} is not available in this configuration.`;
+    return;
+  }
+  const values = Object.fromEntries(
+    (action.inputs || []).map((input) => [input.name, input.value || '']),
+  );
+  void runAction(action, values).catch((error) => {
+    console.error(`Demo action ${actionId} failed`, error);
+  });
+}
+
+function syncContentOffsetForBanner() {
+  const bannerHeight = elements.e2eSummary.getBoundingClientRect().height;
+  const offset = Math.ceil(bannerHeight + 20);
+  document.documentElement.style.setProperty('--content-offset-top', `${offset}px`);
+}
+
+function renderDemoActionButtons() {
+  const demoBusy = actionInProgress || sequenceInProgress;
+  for (const button of [
+    elements.demoCheckUpdate,
+    elements.demoDownloadUpdate,
+    elements.demoApplyUpdate,
+    elements.demoReloadApp,
+  ]) {
+    button.disabled = demoBusy;
+    button.setAttribute('aria-busy', demoBusy ? 'true' : 'false');
+  }
+}
+
+function configureQaToolsPanel() {
+  const details = elements.qaToolsDetails;
+  const openOnNative = platform !== 'web';
+
+  details.open = openOnNative;
+  if (openOnNative) {
+    details.setAttribute('open', '');
+  } else {
+    details.removeAttribute('open');
+  }
+}
+
+function bindDemoActions() {
+  bindActionButton(elements.demoCheckUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('get-latest');
+  });
+
+  bindActionButton(elements.demoDownloadUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('download-latest-bundle');
+  });
+
+  bindActionButton(elements.demoApplyUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('set-last-downloaded-bundle');
+  });
+
+  bindActionButton(elements.demoReloadApp, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('reload-app');
+  });
+}
+
 async function attachListeners() {
   if (listenersAttached) {
     return;
@@ -3113,9 +3218,12 @@ async function bootstrap() {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  document.body.classList.add(`platform-${platform}`);
   resetScrollPosition();
+  configureQaToolsPanel();
   renderQuickActions();
   renderActions();
+  bindDemoActions();
   renderState();
   await attachListeners();
 
