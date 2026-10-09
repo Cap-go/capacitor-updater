@@ -25,16 +25,38 @@ option(CAPGO_ALLOW_UNDEFINED "Allow undefined symbols in the shared library" OFF
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
-FetchContent_Declare(capgo_mbedtls
-  URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
-  URL_HASH SHA256=4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR not-a-cmake-project)
-FetchContent_Declare(capgo_brotli
-  URL https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz
-  URL_HASH SHA256=816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR not-a-cmake-project)
+# Each archive is downloaded once into core-c/.deps (shared by every build directory and ABI),
+# then verified by SHA-256 before use.
+set(CAPGO_DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.deps" CACHE PATH "Download cache of the dependencies")
+function(capgo_fetch name url sha256)
+  set(archive "${CAPGO_DEPS_DIR}/${name}-${sha256}")
+  if(NOT EXISTS "${archive}")
+    foreach(attempt RANGE 1 3)
+      file(DOWNLOAD "${url}" "${archive}.part" EXPECTED_HASH SHA256=${sha256} STATUS status TLS_VERIFY ON)
+      list(GET status 0 code)
+      if(code EQUAL 0)
+        file(RENAME "${archive}.part" "${archive}")
+        break()
+      endif()
+      file(REMOVE "${archive}.part")
+      message(WARNING "Download of ${url} failed (attempt ${attempt}): ${status}")
+    endforeach()
+    if(NOT EXISTS "${archive}")
+      message(FATAL_ERROR "Could not download ${url}")
+    endif()
+  endif()
+  FetchContent_Declare(${name}
+    URL "${archive}"
+    URL_HASH SHA256=${sha256}
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR not-a-cmake-project)
+endfunction()
+capgo_fetch(capgo_mbedtls
+  https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
+  4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8)
+capgo_fetch(capgo_brotli
+  https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz
+  816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec)
 FetchContent_MakeAvailable(capgo_mbedtls capgo_brotli)
 
 file(GLOB MBEDTLS_SOURCES ${capgo_mbedtls_SOURCE_DIR}/library/*.c)
