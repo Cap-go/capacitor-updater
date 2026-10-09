@@ -1466,7 +1466,8 @@ Listen for every updater event with a single listener.
 
 Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
 `downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
-Events retained until consumed (`set`, `appReady`, `updateAvailable`) are retained here too.
+When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+`updaterEvent` gets the same retention.
 
 The per-event listeners below are deprecated and will be removed in v9.
 

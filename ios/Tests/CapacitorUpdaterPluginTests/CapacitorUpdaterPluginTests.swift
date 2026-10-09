@@ -6,9 +6,11 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
     private(set) var notifiedEventRetainValues: [String: Bool] = [:]
+    private(set) var notifiedEvents: [(name: String, data: [String: Any]?, retain: Bool)] = []
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         notifiedEventNames.append(eventName)
+        notifiedEvents.append((name: eventName, data: data, retain: retain))
         notifiedEventRetainValues[eventName] = retain
         if let data {
             notifiedEventPayloads[eventName] = data
@@ -2553,11 +2555,14 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.notifyListenersOnMainForTesting("appReady", data: ["status": "ok"], retainUntilConsumed: true)
         testPlugin.notifyListenersOnMainForTesting("majorAvailable", data: ["version": "2.0.0"], retainUntilConsumed: false)
 
-        XCTAssertEqual(testPlugin.notifiedEventNames.filter { $0 == "updaterEvent" }.count, 2)
-        let payload = testPlugin.notifiedEventPayloads["updaterEvent"]
-        XCTAssertEqual(payload?["type"] as? String, "appReady")
-        XCTAssertEqual((payload?["data"] as? [String: Any])?["status"] as? String, "ok")
-        XCTAssertEqual(testPlugin.notifiedEventRetainValues["updaterEvent"], true)
+        let forwarded = testPlugin.notifiedEvents.filter { $0.name == "updaterEvent" }
+        XCTAssertEqual(forwarded.count, 2)
+        XCTAssertEqual(forwarded[0].data?["type"] as? String, "download")
+        XCTAssertEqual((forwarded[0].data?["data"] as? [String: Any])?["percent"] as? Int, 10)
+        XCTAssertFalse(forwarded[0].retain)
+        XCTAssertEqual(forwarded[1].data?["type"] as? String, "appReady")
+        XCTAssertEqual((forwarded[1].data?["data"] as? [String: Any])?["status"] as? String, "ok")
+        XCTAssertTrue(forwarded[1].retain)
     }
 
     func testUpdaterEventPayloadHelpers() {
