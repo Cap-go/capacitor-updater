@@ -3179,7 +3179,12 @@ function renderDemoActionButtons() {
 }
 
 const maestroPinnedActionIdsByScenario = {
-  'manual-zip-config-guards': ['reset-server-release', 'download-latest-bundle', 'set-bundle-error'],
+  'manual-zip-config-guards': [
+    'get-latest',
+    'reset-server-release',
+    'download-latest-bundle',
+    'set-bundle-error',
+  ],
   'manual-manifest': [
     'set-runtime-urls',
     'reset-server-release',
