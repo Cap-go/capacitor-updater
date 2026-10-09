@@ -713,13 +713,21 @@ static cj *parse_number(parser *p) {
     char *literal = cg_strndup(p->text + start, p->pos - start);
     cj *value = NULL;
     if (!is_float) {
-        errno = 0;
-        if (negative) {
-            long long parsed = strtoll(literal, NULL, 10);
-            if (errno == 0) value = cj_i64(parsed);
-        } else {
-            unsigned long long parsed = strtoull(literal, NULL, 10);
-            if (errno == 0) value = cj_u64(parsed);
+        /* Exact integer range check without errno (u64 for positives, i64 for negatives). */
+        const char *digit = literal + (negative ? 1 : 0);
+        uint64_t magnitude = 0;
+        bool overflow = false;
+        for (; *digit; digit++) {
+            unsigned d = (unsigned)(*digit - '0');
+            if (magnitude > (UINT64_MAX - d) / 10) {
+                overflow = true;
+                break;
+            }
+            magnitude = magnitude * 10 + d;
+        }
+        if (!overflow) {
+            if (!negative) value = cj_u64(magnitude);
+            else if (magnitude <= (uint64_t)INT64_MAX + 1) value = cj_i64(magnitude == (uint64_t)INT64_MAX + 1 ? INT64_MIN : -(int64_t)magnitude);
         }
     }
     if (!value) {
