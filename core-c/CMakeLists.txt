@@ -18,6 +18,8 @@ endif()
 option(CAPGO_TEST_SUPPORT "Build the test.* operations used by core/tests" OFF)
 option(CAPGO_JNI "Build the JNI entry points (Android, JVM unit tests)" OFF)
 option(CAPGO_SHARED "Build a shared library (static otherwise)" ON)
+# address,undefined / thread: sanitizer builds for the test suite (host only).
+set(CAPGO_SANITIZE "" CACHE STRING "Sanitizers for the test build, e.g. address,undefined or thread")
 # Port in progress: link with unresolved symbols (resolved lazily, missing modules crash only if called).
 option(CAPGO_ALLOW_UNDEFINED "Allow undefined symbols in the shared library" OFF)
 
@@ -84,6 +86,11 @@ if(APPLE)
   target_link_options(capgo_updater_core PRIVATE -Wl,-dead_strip)
 else()
   target_link_options(capgo_updater_core PRIVATE -Wl,--gc-sections)
+endif()
+
+if(CAPGO_SANITIZE)
+  target_compile_options(capgo_updater_core PRIVATE -fsanitize=${CAPGO_SANITIZE} -fno-omit-frame-pointer -g)
+  target_link_options(capgo_updater_core PRIVATE -fsanitize=${CAPGO_SANITIZE})
 endif()
 
 find_package(ZLIB REQUIRED)

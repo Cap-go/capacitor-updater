@@ -1,14 +1,44 @@
 #![allow(dead_code)]
 
+pub mod abi;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use capgo_updater_core::engine::Engine;
-use capgo_updater_core::host::MemoryHost;
+use capgo_updater_core::ffi::CapgoHostCallbacks;
+use capgo_updater_core::host::{Host, MemoryHost};
+use capgo_updater_core::text::hex_decode;
 use serde_json::{json, Value};
 
+#[allow(unused_imports)]
+pub use abi::{core, AbiEngine, AbiError, AbiResult};
+
+/// The engine configuration of the tests, storage under `dir`, `extra` keys merged in.
+pub fn engine_config(dir: &Path, extra: Value) -> Value {
+    let mut config = json!({
+        "platform": "android",
+        "appId": "app.capgo.test",
+        "pluginVersion": "8.0.0",
+        "versionBuild": "1.0.0",
+        "versionCode": "10",
+        "versionOs": "14",
+        "deviceId": "device-1",
+        "builtinServerPath": "public",
+        "bundleRoot": dir.join("versions").to_string_lossy(),
+        "storageRoot": dir.to_string_lossy(),
+        "cacheDir": dir.join("cache/capgo_downloads").to_string_lossy(),
+    });
+    if let (Some(config), Some(extra)) = (config.as_object_mut(), extra.as_object()) {
+        for (key, value) in extra {
+            config.insert(key.clone(), value.clone());
+        }
+    }
+    config
+}
+
 pub struct TestEngine {
-    pub engine: Arc<Engine>,
+    pub engine: Arc<AbiEngine>,
     pub host: Arc<MemoryHost>,
     pub dir: tempfile::TempDir,
 }
@@ -17,25 +47,7 @@ impl TestEngine {
     pub fn new(extra: Value) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let host = Arc::new(MemoryHost::default());
-        let mut config = json!({
-            "platform": "android",
-            "appId": "app.capgo.test",
-            "pluginVersion": "8.0.0",
-            "versionBuild": "1.0.0",
-            "versionCode": "10",
-            "versionOs": "14",
-            "deviceId": "device-1",
-            "builtinServerPath": "public",
-            "bundleRoot": dir.path().join("versions").to_string_lossy(),
-            "storageRoot": dir.path().to_string_lossy(),
-            "cacheDir": dir.path().join("cache/capgo_downloads").to_string_lossy(),
-        });
-        if let (Some(config), Some(extra)) = (config.as_object_mut(), extra.as_object()) {
-            for (key, value) in extra {
-                config.insert(key.clone(), value.clone());
-            }
-        }
-        let engine = Engine::new(host.clone(), &config).unwrap();
+        let engine = AbiEngine::new(host.clone(), &engine_config(dir.path(), extra)).expect("engine config refused");
         Self { engine, host, dir }
     }
 
@@ -148,5 +160,100 @@ impl FakeServer {
 
     pub fn requests(&self) -> Vec<RecordedRequest> {
         self.requests.lock().unwrap().clone()
+    }
+}
+
+/// The engine's HTTP client (`test.http`): every request uses a fresh client (no pooled
+/// connection or TLS session) with this user agent and timeout.
+pub struct TestHttp {
+    engine: Arc<AbiEngine>,
+    user_agent: String,
+    timeout: Duration,
+    _dir: tempfile::TempDir,
+}
+
+/// An HTTP answer: `body` is decoded (content coding removed).
+#[derive(Debug)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl HttpResponse {
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+
+    pub fn json(&self) -> serde_json::Result<Value> {
+        serde_json::from_slice(&self.body)
+    }
+
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+impl TestHttp {
+    pub fn new(host: Arc<dyn Host>, user_agent: &str, timeout: Duration) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = AbiEngine::new(host, &engine_config(dir.path(), json!({}))).expect("engine config refused");
+        Self::with_engine(engine, dir, user_agent, timeout)
+    }
+
+    /// A client whose host is the given C callbacks (the engine owns them: `release`).
+    pub fn with_callbacks(callbacks: CapgoHostCallbacks, user_agent: &str, timeout: Duration) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let engine =
+            AbiEngine::with_callbacks(callbacks, &engine_config(dir.path(), json!({}))).expect("engine config refused");
+        Self::with_engine(engine, dir, user_agent, timeout)
+    }
+
+    fn with_engine(engine: Arc<AbiEngine>, dir: tempfile::TempDir, user_agent: &str, timeout: Duration) -> Self {
+        Self {
+            engine,
+            user_agent: user_agent.to_string(),
+            timeout,
+            _dir: dir,
+        }
+    }
+
+    fn request(&self, mut input: Value) -> AbiResult<HttpResponse> {
+        input["userAgent"] = json!(self.user_agent);
+        input["timeoutMs"] = json!(self.timeout.as_millis() as u64);
+        let reply = self.engine.call("test.http", &input)?;
+        Ok(HttpResponse {
+            status: reply["status"].as_u64().expect("status") as u16,
+            headers: reply["headers"]
+                .as_array()
+                .expect("headers")
+                .iter()
+                .map(|pair| {
+                    (
+                        pair[0].as_str().unwrap_or_default().to_string(),
+                        pair[1].as_str().unwrap_or_default().to_string(),
+                    )
+                })
+                .collect(),
+            body: hex_decode(reply["bodyHex"].as_str().expect("bodyHex")).expect("hex body"),
+        })
+    }
+
+    /// An API request (`GET`).
+    pub fn get(&self, url: &str) -> AbiResult<HttpResponse> {
+        self.request(json!({ "url": url }))
+    }
+
+    /// An API request with a JSON body.
+    pub fn send_json(&self, method: &str, url: &str, body: &Value) -> AbiResult<HttpResponse> {
+        self.request(json!({ "url": url, "method": method, "json": body }))
+    }
+
+    /// A bundle download (identity encoding, streamed body).
+    pub fn download(&self, url: &str) -> AbiResult<HttpResponse> {
+        self.request(json!({ "url": url, "download": true }))
     }
 }

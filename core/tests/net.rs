@@ -1,13 +1,15 @@
+mod support;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use capgo_updater_core::host::MemoryHost;
-use capgo_updater_core::net::Http;
+use support::TestHttp;
 
-fn http() -> Http {
-    Http::new(
+fn http() -> TestHttp {
+    TestHttp::new(
         Arc::new(MemoryHost::default()),
-        "CapacitorUpdater/test".into(),
+        "CapacitorUpdater/test",
         Duration::from_secs(10),
     )
 }
@@ -37,7 +39,7 @@ fn plain_http_round_trip_sends_user_agent_and_returns_non_2xx() {
 #[test]
 fn connection_refused_is_a_network_error() {
     let error = http().get("http://127.0.0.1:1/").unwrap_err();
-    assert_eq!(error.kind, capgo_updater_core::net::NetErrorKind::Network);
+    assert_eq!(error.code, "network", "{error:?}");
 }
 
 /// Needs internet; run with `cargo test -- --ignored`.
@@ -52,11 +54,7 @@ fn https_uses_platform_trust_store() {
         "https://expired.badssl.com/",
     ] {
         let error = http().get(untrusted).unwrap_err();
-        assert_eq!(
-            error.kind,
-            capgo_updater_core::net::NetErrorKind::Tls,
-            "{untrusted}: {error:?}"
-        );
+        assert_eq!(error.code, "tls", "{untrusted}: {error:?}");
     }
 }
 
@@ -75,7 +73,7 @@ fn cleartext_without_a_policy_answer_is_refused() {
         }
         fn emit(&self, _: &str, _: &serde_json::Value) {}
     }
-    let http = Http::new(Arc::new(NoPolicy), "test".into(), Duration::from_secs(5));
+    let http = TestHttp::new(Arc::new(NoPolicy), "test", Duration::from_secs(5));
     let error = http.get("http://127.0.0.1:1/").unwrap_err();
     assert!(error.message.contains("Cleartext HTTP traffic"), "{error:?}");
 }
@@ -87,18 +85,10 @@ fn punycode_hosts_parse_and_unicode_hosts_are_rejected() {
     // A proxy from the environment (HTTP_PROXY) may answer instead of DNS failing: either way
     // the URL was accepted.
     if let Err(error) = http().get("http://xn--bcher-kva.invalid/") {
-        assert_ne!(
-            error.kind,
-            capgo_updater_core::net::NetErrorKind::InvalidUrl,
-            "{error:?}"
-        );
+        assert_ne!(error.code, "invalid_url", "{error:?}");
     }
     let error = http().get("http://b\u{fc}cher.invalid/").unwrap_err();
-    assert_eq!(
-        error.kind,
-        capgo_updater_core::net::NetErrorKind::InvalidUrl,
-        "{error:?}"
-    );
+    assert_eq!(error.code, "invalid_url", "{error:?}");
 }
 
 /// API calls ask for gzip and decode it transparently (OkHttp / URLSession did).
@@ -165,15 +155,7 @@ fn downloads_request_identity_encoding() {
             .unwrap();
         accepted
     });
-    let mut body = Vec::new();
-    http()
-        .download(&format!("http://127.0.0.1:{port}/b.zip"), &[], &mut |event| {
-            if let capgo_updater_core::net::Stream::Chunk(chunk) = event {
-                body.extend_from_slice(chunk);
-            }
-            Ok(())
-        })
-        .unwrap();
+    let body = http().download(&format!("http://127.0.0.1:{port}/b.zip")).unwrap().body;
     assert_eq!(body, b"zip bytes");
     assert_eq!(handle.join().unwrap().as_deref(), Some("identity"));
 }

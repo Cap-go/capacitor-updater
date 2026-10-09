@@ -8,9 +8,8 @@ use std::net::TcpListener;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use capgo_updater_core::engine::archive::{extract_zip, install_extracted, ExtractError};
-use serde_json::json;
-use support::TestEngine;
+use serde_json::{json, Value};
+use support::{core, AbiResult, TestEngine};
 
 enum Entry<'a> {
     File(&'a str, &'a [u8]),
@@ -38,11 +37,58 @@ fn zip_of(entries: &[Entry<'_>]) -> Vec<u8> {
     buffer.into_inner()
 }
 
+/// A failed extraction: `code` is the kind (`windows_path`, `path_escape`, `directory`,
+/// `failed`, `cancelled`), `name` its subject, `stat` the stats action a download sends
+/// for it and `message` the download error message.
+#[derive(Debug, PartialEq)]
+struct ExtractError {
+    code: String,
+    name: String,
+    stat: Option<String>,
+    message: String,
+}
+
+impl ExtractError {
+    fn is(&self, code: &str) -> bool {
+        self.code == code
+    }
+}
+
+fn extract_zip(zip: &Path, destination: &Path, cancelled: bool) -> Result<(), ExtractError> {
+    let reply = core().test(
+        "extractZip",
+        json!({
+            "zip": zip.to_string_lossy(),
+            "destination": destination.to_string_lossy(),
+            "cancelled": cancelled,
+            "report": true,
+        }),
+    );
+    let error = &reply["error"];
+    if error.is_null() {
+        return Ok(());
+    }
+    let text = |key: &str| error[key].as_str().unwrap_or_default().to_string();
+    Err(ExtractError {
+        code: text("code"),
+        name: text("name"),
+        stat: error["stat"].as_str().map(str::to_string),
+        message: text("message"),
+    })
+}
+
+fn install_extracted(source: &Path, destination: &Path) -> AbiResult<Value> {
+    core().try_test(
+        "installExtracted",
+        json!({ "source": source.to_string_lossy(), "destination": destination.to_string_lossy() }),
+    )
+}
+
 fn extract(bytes: &[u8], root: &Path) -> Result<std::path::PathBuf, ExtractError> {
     let zip = root.join("bundle.zip");
     std::fs::write(&zip, bytes).unwrap();
     let out = root.join("out");
-    extract_zip(&zip, &out, &mut |_, _| {}, &|| false)?;
+    extract_zip(&zip, &out, false)?;
     Ok(out)
 }
 
@@ -72,7 +118,8 @@ fn rejects_symlinks_escaping_their_directory() {
             Entry::Symlink("assets/link.js", target),
         ]);
         let error = extract(&bytes, dir.path()).unwrap_err();
-        assert_eq!(error, ExtractError::PathEscape("assets/link.js".into()), "{target}");
+        assert!(error.is("path_escape"), "{target}: {error:?}");
+        assert_eq!(error.name, "assets/link.js", "{target}");
         assert!(!dir.path().join("out/assets/link.js").exists());
     }
 }
@@ -86,7 +133,7 @@ fn rejects_symlink_chains_escaping_the_root() {
         Entry::File("l/x", b"pwned"),
     ]);
     let error = extract(&bytes, dir.path()).unwrap_err();
-    assert!(matches!(error, ExtractError::PathEscape(_)), "{error:?}");
+    assert!(error.is("path_escape"), "{error:?}");
     assert!(!dir.path().join("x").exists());
     // A directory entry reached through a symlink to the outside is refused too.
     let dir = tempfile::tempdir().unwrap();
@@ -99,7 +146,7 @@ fn rejects_symlink_chains_escaping_the_root() {
         zip_of(&[Entry::Dir("escape/sub/"), Entry::File("escape/y", b"pwned")]),
     )
     .unwrap();
-    assert!(extract_zip(&zip, &dir.path().join("out"), &mut |_, _| {}, &|| false).is_err());
+    assert!(extract_zip(&zip, &dir.path().join("out"), false).is_err());
     assert!(!outside.path().join("y").exists());
     assert!(!outside.path().join("sub").exists());
 }
@@ -108,17 +155,17 @@ fn rejects_symlink_chains_escaping_the_root() {
 fn rejects_traversal_and_windows_entries() {
     let dir = tempfile::tempdir().unwrap();
     let error = extract(&zip_of(&[Entry::File("../evil.txt", b"x")]), dir.path()).unwrap_err();
-    assert_eq!(error.stat(), Some("canonical_path_fail"));
+    assert_eq!(error.stat.as_deref(), Some("canonical_path_fail"));
     assert!(!dir.path().join("evil.txt").exists());
     let error = extract(&zip_of(&[Entry::File("assets\\app.js", b"x")]), dir.path()).unwrap_err();
-    assert_eq!(error.stat(), Some("windows_path_fail"));
+    assert_eq!(error.stat.as_deref(), Some("windows_path_fail"));
 }
 
 #[test]
 fn rejects_corrupt_archives_and_crc_mismatch() {
     let dir = tempfile::tempdir().unwrap();
     let error = extract(b"PK\x03\x04 definitely not a zip", dir.path()).unwrap_err();
-    assert!(matches!(error, ExtractError::Failed(_)), "{error:?}");
+    assert!(error.is("failed"), "{error:?}");
 
     // Flip one byte of stored (uncompressed) data: the CRC check must fail.
     let mut buffer = std::io::Cursor::new(Vec::new());
@@ -133,10 +180,7 @@ fn rejects_corrupt_archives_and_crc_mismatch() {
     let at = bytes.windows(8).position(|window| window == b"original").unwrap();
     bytes[at] = b'X';
     let dir = tempfile::tempdir().unwrap();
-    assert!(matches!(
-        extract(&bytes, dir.path()).unwrap_err(),
-        ExtractError::Failed(_)
-    ));
+    assert!(extract(&bytes, dir.path()).unwrap_err().is("failed"));
 }
 
 #[test]
@@ -144,8 +188,8 @@ fn cancellation_stops_between_entries() {
     let dir = tempfile::tempdir().unwrap();
     let zip = dir.path().join("bundle.zip");
     std::fs::write(&zip, zip_of(&[Entry::File("a", b"1"), Entry::File("b", b"2")])).unwrap();
-    let error = extract_zip(&zip, &dir.path().join("out"), &mut |_, _| {}, &|| true).unwrap_err();
-    assert_eq!(error, ExtractError::Cancelled);
+    let error = extract_zip(&zip, &dir.path().join("out"), true).unwrap_err();
+    assert!(error.is("cancelled"), "{error:?}");
 }
 
 #[test]
@@ -203,7 +247,7 @@ fn rejects_oversized_symlink_targets() {
     let bytes = zip_of(&[Entry::File("index.html", b"x"), Entry::Symlink("link", &huge)]);
     let error = extract(&bytes, dir.path()).unwrap_err();
     assert!(
-        error.message().contains("Symlink target of link is too long"),
+        error.message.contains("Symlink target of link is too long"),
         "{error:?}"
     );
 }
@@ -433,5 +477,5 @@ fn directory_alias_collisions_resolve_to_the_last_entry() {
 fn file_entries_colliding_with_directories_are_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = zip_of(&[Entry::File("m/y.js", b"y"), Entry::File("m", b"file")]);
-    assert!(matches!(extract(&bytes, dir.path()), Err(ExtractError::Failed(_))));
+    assert!(extract(&bytes, dir.path()).is_err_and(|error| error.is("failed")));
 }
