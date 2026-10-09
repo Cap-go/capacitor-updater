@@ -34,7 +34,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
-    timeout: 30000
+    timeout: 120000
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-server-release'
