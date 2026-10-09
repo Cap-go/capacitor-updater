@@ -49,6 +49,13 @@ One C file per Rust file, same path: `core/src/engine/store.rs` ->
 - Structs get `cg_<type>_free(ptr)` (frees members and the struct) or
   `cg_<type>_clear(&value)` (members only, for stack values).
 
+## Strings with NUL bytes
+
+JSON strings may contain `\u0000`; the `const char *` view (`cj_as_str`) stops at
+it. Wherever Rust validates a string from the input (paths, file names, bundle
+ids, URLs), check `cj_str_has_nul()` first and fail the way Rust does (paths.rs:
+`invalid_separator`). Never let a truncated string pass a security check.
+
 ## Errors
 
 `CoreResult<T>` -> return `bool` (or a pointer, NULL on error) and take a
