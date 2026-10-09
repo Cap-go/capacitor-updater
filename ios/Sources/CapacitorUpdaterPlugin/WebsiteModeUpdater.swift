@@ -365,8 +365,18 @@ final class WebsiteModeUpdater {
                         + "\(relativePath) with different content"
                 )
             }
-            // Same bytes: the file already exists on the case-insensitive iOS file system.
-            return false
+            // Same bytes: nothing new for the exact path. A case variant is still written because
+            // device file systems can be case-sensitive; a case-insensitive one already holds it.
+            if crawl.writtenPaths.contains(relativePath) {
+                return false
+            }
+            do {
+                try Self.save(response.data, relativePath: relativePath, root: root)
+            } catch CocoaError.fileWriteFileExists {
+                return false
+            }
+            crawl.writtenPaths.insert(relativePath)
+            return true
         } else {
             crawl.saved[key] = (relativePath, asset.url, hash)
         }

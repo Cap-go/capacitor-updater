@@ -538,7 +538,7 @@ final class WebsiteModeUpdaterTests: XCTestCase {
             + #"<img src="/assets/Logo.png"><img src="/assets/logo.png">"#
         let dir = try download(site, html, "same")
         XCTAssertTrue(exists(dir, "a.css"))
-        // The case variant with the same bytes is not written again (one file on a case-insensitive file system).
+        // The case variant is written too on a case-sensitive file system; it must not fail either way.
         XCTAssertTrue(exists(dir, "assets/Logo.png"))
     }
 
