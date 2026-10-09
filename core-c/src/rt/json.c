@@ -192,6 +192,10 @@ bool cj_is_obj(const cj *value) { return cj_typeof(value) == CJ_OBJECT; }
 
 const char *cj_as_str(const cj *value) { return cj_is_str(value) ? value->v.s.ptr : NULL; }
 
+bool cj_str_has_nul(const cj *value) {
+    return cj_is_str(value) && memchr(value->v.s.ptr, 0, value->v.s.len) != NULL;
+}
+
 bool cj_as_bool(const cj *value, bool *out) {
     if (!cj_is_bool(value)) return false;
     if (out) *out = value->v.b;
@@ -414,7 +418,7 @@ static void print_string(cg_buf *out, const char *s, size_t len) {
     cg_buf_putc(out, '"');
 }
 
-/* Shortest round-trip formatting with ryu's layout (what serde_json prints). */
+/* Shortest round-trip formatting with serde_json's layout. */
 static void print_float(cg_buf *out, double value) {
     if (value == 0) {
         cg_buf_puts(out, signbit(value) ? "-0.0" : "0.0");
@@ -459,7 +463,8 @@ static void print_float(cg_buf *out, double value) {
             cg_buf_putc(out, '.');
             cg_buf_put(out, digits + 1, n - 1);
         }
-        cg_buf_printf(out, "e%d", kk - 1);
+        /* serde_json 1.0.151: "1e+300", "1.5e-7". */
+        cg_buf_printf(out, kk - 1 >= 0 ? "e+%d" : "e%d", kk - 1);
     }
 }
 
