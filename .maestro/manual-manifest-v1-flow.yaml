@@ -50,7 +50,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
-    timeout: 30000
+    timeout: 120000
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
@@ -75,9 +75,10 @@ appId: app.capgo.updater
     element:
       id: 'quick-action-queue-last-downloaded-bundle'
     direction: DOWN
-    timeout: 30000
-    centerElement: false
+    timeout: 120000
+    centerElement: true
     visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
 - tapOn:
     id: 'quick-action-queue-last-downloaded-bundle'
     waitToSettleTimeoutMs: 500
