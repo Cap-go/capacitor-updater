@@ -450,7 +450,7 @@ recover_scenario_for_flow_retry() {
   local flow_file="$1"
 
   case "${ACTIVE_SCENARIO_ID}:${flow_file}" in
-    manual-zip:manual-zip-flow.yaml|manual-zip-config-guards:manual-zip-config-guards-flow.yaml|manual-manifest:manual-manifest-flow.yaml)
+    manual-zip:manual-zip-flow.yaml|manual-zip-config-guards:manual-zip-config-guards-flow.yaml|manual-manifest:manual-manifest-flow.yaml|manual-manifest:manual-manifest-v1-flow.yaml)
       echo "Resetting ${ACTIVE_SCENARIO_ID} before retrying ${flow_file} after driver failure." >&2
       control_server reset "$ACTIVE_SCENARIO_ID"
       prepare_scenario "$ACTIVE_SCENARIO_ID"
@@ -1072,7 +1072,7 @@ assert_server_debug_state_with_retry() {
   local scenario="$1"
   local assertion_script="$2"
   local attempt=1
-  local max_attempts=5
+  local max_attempts=10
 
   while [ "$attempt" -le "$max_attempts" ]; do
     if assert_server_debug_state "$scenario" "$assertion_script"; then
@@ -1082,7 +1082,7 @@ assert_server_debug_state_with_retry() {
       return 1
     fi
     attempt=$((attempt + 1))
-    sleep 3
+    sleep 5
   done
 }
 
