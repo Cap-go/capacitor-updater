@@ -518,6 +518,7 @@ static const uint16_t CP437[128] = {
 static char *from_cp437(const uint8_t *bytes, size_t len, size_t *out_len) {
     cg_buf out = {0};
     cg_buf_reserve(&out, len + 1);
+    cg_buf_put(&out, "", 0); /* terminated even when empty */
     for (size_t i = 0; i < len; i++) {
         uint32_t c = bytes[i] < 0x80 ? bytes[i] : CP437[bytes[i] - 0x80];
         if (c < 0x80) {
@@ -535,11 +536,19 @@ static char *from_cp437(const uint8_t *bytes, size_t len, size_t *out_len) {
     return cg_buf_take(&out);
 }
 
+/* Copy of len bytes (NUL bytes kept), NUL-terminated. */
+static char *dup_bytes(const void *bytes, size_t len) {
+    char *out = cg_malloc(len + 1);
+    memcpy(out, bytes, len);
+    out[len] = 0;
+    return out;
+}
+
 /* String::from_utf8_lossy (malloc'd; length in *out_len). NUL bytes are kept. */
 static char *utf8_lossy(const uint8_t *bytes, size_t len, size_t *out_len) {
     if (cg_utf8_valid((const char *)bytes, len)) {
         *out_len = len;
-        return cg_strndup((const char *)bytes, len);
+        return dup_bytes(bytes, len);
     }
     cg_buf buf = {0};
     size_t start = 0;
@@ -694,7 +703,7 @@ static bool parse_extra(cursor *c, parse_state *s, zerr *e) {
         s->name_raw = content;
         s->name_raw_len = content_len;
         free(entry->name);
-        entry->name = cg_strndup((const char *)content, content_len);
+        entry->name = dup_bytes(content, content_len);
         entry->name_len = content_len;
         return true;
     }
