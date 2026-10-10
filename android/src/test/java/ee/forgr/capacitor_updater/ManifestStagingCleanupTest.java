@@ -160,7 +160,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupPreservesManifestDestsForCurrentNextAndFallbackDownloads() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-protected-staging");
         tempDir.toFile().deleteOnExit();
-        final String currentDest = stagingDest("curntDl01");
+        final String currentDest = stagingDest("currentD01");
         final String nextDest = stagingDest("nextDown01");
         final String fallbackDest = stagingDest("fallback01");
         for (final String dest : List.of(currentDest, nextDest, fallbackDest)) {
@@ -188,11 +188,7 @@ public class ManifestStagingCleanupTest {
         final Path externalFile = external.resolve("keep.txt");
         Files.write(externalFile, "keep".getBytes(StandardCharsets.UTF_8));
 
-<<<<<<< HEAD
-        final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink001");
-=======
         final Path staging = tempDir.resolve(stagingDest("symLink001"));
->>>>>>> c63bc946 (test: enforce 10-char manifest staging suffixes in unit tests)
         Files.createDirectories(staging);
         Files.createSymbolicLink(staging.resolve("assets"), external);
 
@@ -284,7 +280,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-failed");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workFailed";
-        final String dest = stagingDest("workFail001");
+        final String dest = stagingDest("workFail01");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -340,11 +336,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workCan001";
-<<<<<<< HEAD
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan010";
-=======
-        final String dest = stagingDest("workCancel1");
->>>>>>> c63bc946 (test: enforce 10-char manifest staging suffixes in unit tests)
+        final String dest = stagingDest("workCancel0");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
