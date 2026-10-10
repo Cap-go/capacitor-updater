@@ -33,6 +33,7 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -335,17 +336,33 @@ public class CapgoUpdater {
         return name != null && name.matches(LEGACY_MANIFEST_STAGING_FOLDER_PATTERN);
     }
 
+    private static boolean isSymbolicLinkEntry(final File file) {
+        try {
+            return Files.isSymbolicLink(file.toPath());
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    private static boolean isRegularFileEntry(final File file) {
+        return file.isFile() && !isSymbolicLinkEntry(file);
+    }
+
+    private static boolean isRegularDirectoryEntry(final File file) {
+        return file.isDirectory() && !isSymbolicLinkEntry(file);
+    }
+
     private static boolean looksLikeLeakedManifestStaging(final File dir) {
-        if (dir == null || !dir.isDirectory()) {
+        if (dir == null || !isRegularDirectoryEntry(dir)) {
             return false;
         }
-        if (new File(dir, "index.html").isFile()) {
+        if (isRegularFileEntry(new File(dir, "index.html"))) {
             return true;
         }
-        if (new File(dir, "assets").isDirectory()) {
+        if (isRegularDirectoryEntry(new File(dir, "assets"))) {
             return true;
         }
-        return new File(dir, "www").isDirectory();
+        return isRegularDirectoryEntry(new File(dir, "www"));
     }
 
     void saveManifestStagingDest(final String bundleId, final String dest) {
@@ -388,7 +405,13 @@ public class CapgoUpdater {
         if (this.documentsDir == null || dest == null || dest.isEmpty() || !isManifestStagingFolderName(dest)) {
             return;
         }
-        this.safeDelete(new File(this.documentsDir, dest));
+        final File folder = new File(this.documentsDir, dest);
+        try {
+            this.assertPathInsideDocumentsDir(folder);
+            deleteManifestStagingTree(folder);
+        } catch (IOException e) {
+            logger.warn("Failed to delete manifest staging folder: " + e.getMessage());
+        }
     }
 
     static void deleteManifestStagingFolderAt(final File documentsDir, final String dest, final Logger log) {
@@ -426,6 +449,12 @@ public class CapgoUpdater {
     }
 
     private static void deleteManifestStagingTree(final File file) throws IOException {
+        if (isSymbolicLinkEntry(file)) {
+            if (!file.delete()) {
+                throw new IOException("Failed to delete symlink: " + file);
+            }
+            return;
+        }
         if (file.isDirectory()) {
             final File[] entries = file.listFiles();
             if (entries != null) {
@@ -467,7 +496,7 @@ public class CapgoUpdater {
                 continue;
             }
             try {
-                this.deleteDirectory(entry, threadToCheck);
+                deleteManifestStagingTree(entry);
                 logger.info("Deleted orphaned manifest staging folder");
                 logger.debug("Folder: " + folderName);
             } catch (IOException e) {
@@ -504,7 +533,7 @@ public class CapgoUpdater {
                 continue;
             }
             try {
-                this.deleteDirectory(entry, threadToCheck);
+                deleteManifestStagingTree(entry);
                 logger.info("Deleted legacy bare manifest staging folder");
                 logger.debug("Folder: " + folderName);
             } catch (IOException e) {
