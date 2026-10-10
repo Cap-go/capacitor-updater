@@ -151,7 +151,7 @@ assert_edge_case_recovered() {
       wait_for_server_condition "$app_scenario" 'the checksum mismatch was reported' '(stats.checksum_fail ?? 0) >= 1' 5
       ;;
     edge-offline-check)
-      wait_for_server_condition "$app_scenario" 'the failed update check was reported' '(stats.download_fail ?? 0) >= 1' 5
+      wait_for_server_condition "$app_scenario" 'the failed update check was reported' '(stats.update_check_error ?? 0) >= 1' 5
       ;;
     *)
       return 0
