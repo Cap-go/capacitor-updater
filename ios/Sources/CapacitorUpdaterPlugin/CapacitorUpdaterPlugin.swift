@@ -3471,7 +3471,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Handle background conditions with empty value (set to "0")
+        var conditionsPayload: Any = delayConditionList
         if var modifiableList = delayConditionList as? [[String: Any]] {
             for i in 0..<modifiableList.count {
                 if let kind = modifiableList[i]["kind"] as? String,
@@ -3481,42 +3481,26 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     modifiableList[i]["value"] = "0"
                 }
             }
-            let delayConditions: String = toJson(object: modifiableList)
-            let previousConditions = UserDefaults.standard.string(
-                forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
-            ) ?? "[]"
-            let previousMode = delayUpdateUtils.getConditionMode()
-            guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
-                call.reject("Failed to delay update")
-                return
-            }
-            let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
-            guard delayUpdateUtils.setConditionMode(conditionMode) else {
-                _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
-                _ = delayUpdateUtils.setConditionMode(previousMode)
-                call.reject("Failed to delay update")
-                return
-            }
-            call.resolve()
-        } else {
-            let delayConditions: String = toJson(object: delayConditionList)
-            let previousConditions = UserDefaults.standard.string(
-                forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
-            ) ?? "[]"
-            let previousMode = delayUpdateUtils.getConditionMode()
-            guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
-                call.reject("Failed to delay update")
-                return
-            }
-            let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
-            guard delayUpdateUtils.setConditionMode(conditionMode) else {
-                _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
-                _ = delayUpdateUtils.setConditionMode(previousMode)
-                call.reject("Failed to delay update")
-                return
-            }
-            call.resolve()
+            conditionsPayload = modifiableList
         }
+
+        let delayConditions: String = toJson(object: conditionsPayload)
+        let previousConditions = UserDefaults.standard.string(
+            forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+        ) ?? "[]"
+        let previousMode = delayUpdateUtils.getConditionMode()
+        guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
+            call.reject("Failed to delay update")
+            return
+        }
+        let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+        guard delayUpdateUtils.setConditionMode(conditionMode) else {
+            _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
+            _ = delayUpdateUtils.setConditionMode(previousMode)
+            call.reject("Failed to delay update")
+            return
+        }
+        call.resolve()
     }
 
     // Note: _setMultiDelay and _cancelDelay methods have been moved to DelayUpdateUtils class
