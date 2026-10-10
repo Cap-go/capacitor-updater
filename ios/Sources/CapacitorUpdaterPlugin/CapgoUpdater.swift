@@ -50,6 +50,38 @@ import UIKit
     public var deviceID = ""
     public var previewSession = false
     public var publicKey: String = ""
+    /// When true (default) every URL the updater talks to must be https, including redirect hops.
+    public var httpsOnly: Bool = true {
+        didSet { redirectPolicy.httpsOnly = httpsOnly }
+    }
+    /// When true (default) a bundle whose version is lower than the native app version is refused.
+    public var builtinMinimum: Bool = true
+    /// Error raised when `httpsOnly` is set and a URL is not https.
+    public static func httpsOnlyError(_ url: URL) -> NSError {
+        return NSError(
+            domain: "CapgoUpdater",
+            code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "httpsOnly is enabled and \(url.absoluteString) is not https"]
+        )
+    }
+
+    /// Returns nil when the URL may be requested, or the `httpsOnly` error to fail with.
+    func checkAllowedScheme(_ url: URL?) -> Error? {
+        guard self.httpsOnly, let url else {
+            return nil
+        }
+        if url.scheme?.lowercased() == "https" {
+            return nil
+        }
+        logger.error("httpsOnly is enabled and \(url.absoluteString) is not https")
+        return Self.httpsOnlyError(url)
+    }
+
+    func assertAllowedScheme(_ url: URL) throws {
+        if let error = checkAllowedScheme(url) {
+            throw error
+        }
+    }
 
     // Cached key ID calculated once from publicKey
     private var cachedKeyId: String?
@@ -255,7 +287,7 @@ import UIKit
         configuration.urlCache = nil
         configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
         redirectPolicy.onBlockedRedirect = { [weak self] source, target in
-            self?.logger?.error("Blocked HTTPS to HTTP redirect; set allowHttpsToHttpRedirect to true to allow it")
+            self?.logger?.error("Blocked redirect to a non-https URL (httpsOnly, or allowHttpsToHttpRedirect is false)")
             self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
         }
         let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
@@ -275,6 +307,12 @@ import UIKit
     /// Runs a raw data task on the updater session (no cookies, no cache, redirect policy applied).
     @discardableResult
     func startRawDataTask(_ request: URLRequest, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionDataTask {
+        if let schemeError = checkAllowedScheme(request.url) {
+            // Never resumed: the session will not call back, so the completion runs exactly once.
+            let idle = self.urlSession.dataTask(with: request) { _, _, _ in }
+            completion(nil, nil, schemeError)
+            return idle
+        }
         let task = self.urlSession.dataTask(with: request, completionHandler: completion)
         task.resume()
         return task
@@ -289,6 +327,14 @@ import UIKit
         completionQueue: DispatchQueue,
         completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
     ) -> URLSessionDataTask {
+        if let schemeError = checkAllowedScheme(request.url) {
+            // Never resumed: the session will not call back, so the completion runs exactly once.
+            let idle = self.urlSession.dataTask(with: request) { _, _, _ in }
+            completionQueue.async {
+                completion(nil, nil, schemeError)
+            }
+            return idle
+        }
         let task = self.urlSession.dataTask(with: request) { data, response, error in
             let httpResponse = response as? HTTPURLResponse
             let body = (data?.isEmpty ?? true) ? nil : data
@@ -419,6 +465,9 @@ import UIKit
     }
 
     func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+        if let schemeError = checkAllowedScheme(request.url) {
+            return DownloadRequestResult(fileURL: nil, response: nil, error: schemeError, timedOut: false)
+        }
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         var tempFileURL: URL?
@@ -618,6 +667,97 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
             )
         }
+    }
+
+    /// `builtinMinimum`: refuse any bundle version lower than the native app version (`versionBuild`).
+    /// Versions that do not parse as semver skip the check so odd native version strings never block updates.
+    func requireVersionNotBelowBuiltin(_ version: String) throws {
+        guard self.builtinMinimum else {
+            return
+        }
+        guard let bundleVersion = try? CapgoSemanticVersion(version),
+              let nativeVersion = try? CapgoSemanticVersion(self.versionBuild) else {
+            logger.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
+            return
+        }
+        if bundleVersion < nativeVersion {
+            logger.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
+            self.sendStats(action: "version_below_native", versionName: version)
+            throw NSError(
+                domain: "CapgoUpdater",
+                code: 8,
+                userInfo: [NSLocalizedDescriptionKey: "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"]
+            )
+        }
+    }
+
+    private static let signatureMissingMessage = "Bundle metadata is not signed (upload with Capgo CLI >= 8.53.0); a future major will require it when publicKey is set"
+
+    private func signatureFailure(version: String) -> NSError {
+        self.sendStats(action: "signature_fail", versionName: version)
+        return NSError(
+            domain: "CapgoUpdater",
+            code: 9,
+            userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"]
+        )
+    }
+
+    /// Verifies the CLI `signature` of a zip bundle (version name + plain zip checksum). No-op without a public key
+    /// or when the bundle was uploaded before signing existed (logged).
+    func verifyBundleSignature(version: String, encryptedChecksum: String, signature: String) throws {
+        if self.publicKey.isEmpty {
+            return
+        }
+        if signature.isEmpty {
+            logger.warn(Self.signatureMissingMessage)
+            return
+        }
+        let plainChecksum: String
+        do {
+            plainChecksum = try CryptoCipher.decryptChecksum(checksum: encryptedChecksum, publicKey: self.publicKey)
+        } catch {
+            logger.error("Bundle signature verification failed: cannot recover checksum")
+            throw signatureFailure(version: version)
+        }
+        let payload = CryptoCipher.buildBundleSignaturePayload(version: version, checksumHex: plainChecksum)
+        guard CryptoCipher.verifySignature(signatureHex: signature, payload: payload, publicKey: self.publicKey) else {
+            logger.error("Bundle signature verification failed for version \(version)")
+            throw signatureFailure(version: version)
+        }
+        logger.info("Bundle signature verified for version \(version)")
+    }
+
+    /// Verifies the CLI `manifest_signature` (version name + every file_name and its plain hash). Binds the whole
+    /// file list, so a dropped, renamed or swapped entry fails here before any file is downloaded.
+    func verifyManifestSignature(version: String, manifest: [ManifestEntry], signature: String) throws {
+        if self.publicKey.isEmpty {
+            return
+        }
+        if signature.isEmpty {
+            logger.warn(Self.signatureMissingMessage)
+            return
+        }
+        var entries: [(fileName: String, hashHex: String)] = []
+        for entry in manifest {
+            guard let fileName = entry.file_name, let fileHash = entry.file_hash, !fileHash.isEmpty else {
+                logger.error("Bundle signature verification failed: manifest entry without file_name or file_hash")
+                throw signatureFailure(version: version)
+            }
+            do {
+                let plainHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
+                entries.append((fileName: fileName, hashHex: plainHash))
+            } catch {
+                logger.error("Bundle signature verification failed: cannot recover file hash")
+                logger.debug("File: \(fileName)")
+                throw signatureFailure(version: version)
+            }
+        }
+        let payload = CryptoCipher.buildManifestSignaturePayload(version: version, entries: entries)
+        guard CryptoCipher.verifySignature(signatureHex: signature, payload: payload, publicKey: self.publicKey) else {
+            logger.error("Manifest signature verification failed for version \(version)")
+            throw signatureFailure(version: version)
+        }
+        logger.info("Manifest signature verified for version \(version) (\(entries.count) files)")
     }
 
     public func setPublicKey(_ publicKey: String) {
@@ -1339,6 +1479,12 @@ import UIKit
             if let sessionKey = value?.session_key {
                 latest.sessionKey = sessionKey
             }
+            if let signature = value?.signature {
+                latest.signature = signature
+            }
+            if let manifestSignature = value?.manifest_signature {
+                latest.manifestSignature = manifestSignature
+            }
             if let data = value?.data {
                 latest.data = data
             }
@@ -1640,8 +1786,22 @@ import UIKit
         try beforeDownload?()
     }
 
-    public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+    public func downloadManifest(
+        manifest: [ManifestEntry],
+        version: String,
+        sessionKey: String,
+        link: String? = nil,
+        comment: String? = nil,
+        manifestSignature: String = ""
+    ) throws -> BundleInfo {
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+        try self.requireVersionNotBelowBuiltin(version)
+        try self.verifyManifestSignature(version: version, manifest: manifest, signature: manifestSignature)
+        for entry in manifest {
+            if let downloadUrl = entry.download_url, let url = URL(string: downloadUrl) {
+                try self.assertAllowedScheme(url)
+            }
+        }
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
@@ -2323,10 +2483,11 @@ import UIKit
         return try CryptoCipher.decryptChecksum(checksum: checksum, publicKey: self.publicKey)
     }
 
-    /// Downloads and extracts a zip bundle without checking its checksum; the caller must verify it.
-    /// Prefer `downloadVerified`, which rejects a bad archive before extracting it.
-    public func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: nil)
+    /// Test-only: downloads and extracts a zip bundle without checking its checksum. Not reachable from the
+    /// plugin API: every production entry point goes through `downloadVerified` or `downloadManifest`, which
+    /// refuse a bundle before extraction when the checksum, session key, signature or version gate fails.
+    func downloadUnverifiedForTesting(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: nil, signature: "")
     }
 
     /// Downloads a zip bundle and extracts it only when it matches `expectedChecksum`, the checksum from the
@@ -2339,9 +2500,10 @@ import UIKit
         sessionKey: String,
         expectedChecksum: String,
         link: String? = nil,
-        comment: String? = nil
+        comment: String? = nil,
+        signature: String = ""
     ) throws -> BundleInfo {
-        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum)
+        return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum, signature: signature)
     }
 
     private func downloadZip(
@@ -2350,10 +2512,16 @@ import UIKit
         sessionKey: String,
         link: String?,
         comment: String?,
-        expectedChecksum: String?
+        expectedChecksum: String?,
+        signature: String
     ) throws -> BundleInfo {
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+        try self.requireVersionNotBelowBuiltin(version)
+        try self.assertAllowedScheme(url)
         let expectedHash = try expectedChecksum.map { try self.resolveExpectedBundleChecksum($0, versionName: version) }
+        if let expectedChecksum {
+            try self.verifyBundleSignature(version: version, encryptedChecksum: expectedChecksum, signature: signature)
+        }
         try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
         // Each download uses its own temp files keyed by bundle ID to prevent collisions

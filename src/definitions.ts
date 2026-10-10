@@ -132,7 +132,20 @@ declare module '@capacitor/cli' {
       statsUrl?: string;
 
       /**
-       * Configure the public key for end to end live update encryption Version 2
+       * Configure the public key for end to end live update encryption Version 2.
+       *
+       * What it guarantees: a bundle can only be installed when its checksum, session key and (when present)
+       * signed metadata were produced with the matching private key. Capgo never holds that key, so Capgo
+       * cannot create, modify or decrypt an update for your app. It does NOT make the bundle unreadable to
+       * someone who has your app binary: the public key ships inside the app, and anyone holding the app
+       * can recover the session key and read the bundle. If you also need Capgo to be unable to find your
+       * app (and so its public key), use a Capgo app id that is not your store bundle id (`appId` in this
+       * plugin config) so the app is not identifiable from the dashboard.
+       *
+       * Bundles uploaded with Capgo CLI >= 8.53.0 also carry `signature` / `manifest_signature` (the version
+       * name, the zip checksum and the full manifest file list signed with the private key). The plugin
+       * verifies them when present and rejects a mismatch. Unsigned (older) bundles are still accepted with a
+       * warning; a future major will require the signature whenever `publicKey` is set.
        *
        * Only available for Android and iOS.
        *
@@ -309,6 +322,36 @@ declare module '@capacitor/cli' {
        * @since  8.52.0
        */
       allowHttpsToHttpRedirect?: boolean;
+
+      /**
+       * Require https for every URL the plugin talks to: `updateUrl`, `statsUrl`, `channelUrl` (from config,
+       * persisted values and `setUpdateUrl` / `setStatsUrl` / `setChannelUrl`), bundle zip URLs, every manifest
+       * `download_url`, preview payload URLs and every redirect hop. When enabled it overrides
+       * `allowHttpsToHttpRedirect`. A non-https URL fails the call or download with
+       * `httpsOnly is enabled and <url> is not https`.
+       *
+       * Set to `false` only for local development servers (for example a plain-http `localApi` on loopback).
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since 8.53.0
+       */
+      httpsOnly?: boolean;
+
+      /**
+       * Refuse to download or install a bundle whose version is lower than the native app version
+       * (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device
+       * counterpart of the Capgo channel setting "disable auto update under native" and protects against a
+       * replayed old update response rolling the app back below its store version. Versions that do not
+       * parse as semver skip the check. Rejections are reported as the `version_below_native` stat.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since 8.53.0
+       */
+      builtinMinimum?: boolean;
 
       /**
        * Allow the plugin to modify the appId dynamically from the JavaScript side.
@@ -2241,6 +2284,18 @@ export interface LatestVersion {
   message?: string;
   sessionKey?: string;
   /**
+   * Signed bundle metadata (version name + zip checksum) produced by the Capgo CLI when encryption is on.
+   * Pass it to {@link download} as `signature`; the plugin verifies it with `publicKey`.
+   * @since 8.53.0
+   */
+  signature?: string;
+  /**
+   * Signed manifest metadata (version name + every file name and hash) produced by the Capgo CLI when
+   * encryption is on. Pass it to {@link download} as `manifestSignature`.
+   * @since 8.53.0
+   */
+  manifestSignature?: string;
+  /**
    * Error code from the server, if any. Use `kind` for classification instead of parsing this value.
    */
   error?: string;
@@ -2577,6 +2632,18 @@ export interface DownloadOptions {
    * @default undefined
    */
   manifest?: ManifestEntry[];
+  /**
+   * Signed metadata for the zip (from {@link LatestVersion.signature}). Verified when `publicKey` is set.
+   * @since 8.53.0
+   * @default undefined
+   */
+  signature?: string;
+  /**
+   * Signed metadata for the manifest (from {@link LatestVersion.manifestSignature}). Verified when `publicKey` is set.
+   * @since 8.53.0
+   * @default undefined
+   */
+  manifestSignature?: string;
 }
 
 export interface BundleId {

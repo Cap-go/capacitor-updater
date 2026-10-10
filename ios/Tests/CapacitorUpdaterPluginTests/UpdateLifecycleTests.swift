@@ -53,24 +53,14 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         nil
     }
 
-    override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        try downloadVerified(
-            url: url,
-            version: version,
-            sessionKey: sessionKey,
-            expectedChecksum: "",
-            link: link,
-            comment: comment
-        )
-    }
-
     override func downloadVerified(
         url _: URL,
         version _: String,
         sessionKey _: String,
         expectedChecksum _: String,
         link _: String? = nil,
-        comment _: String? = nil
+        comment _: String? = nil,
+        signature _: String = ""
     ) throws -> BundleInfo {
         downloadCalls += 1
         guard let downloadedBundleValue else {

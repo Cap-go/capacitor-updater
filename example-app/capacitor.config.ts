@@ -34,6 +34,8 @@ const config: CapacitorConfig = {
     CapacitorUpdater: {
       autoUpdate,
       allowModifyUrl: readBooleanEnv('CAPGO_ALLOW_MODIFY_URL', true),
+      // Maestro runs a plain-http fake server on loopback; production keeps the https-only default.
+      httpsOnly: readBooleanEnv('CAPGO_HTTPS_ONLY', !(process.env.CAPGO_UPDATE_URL ?? '').startsWith('http://')),
       allowModifyAppId: readBooleanEnv('CAPGO_ALLOW_MODIFY_APP_ID', true),
       allowManualBundleError: readBooleanEnv('CAPGO_ALLOW_MANUAL_BUNDLE_ERROR', true),
       allowSetDefaultChannel: readBooleanEnv('CAPGO_ALLOW_SET_DEFAULT_CHANNEL', true),

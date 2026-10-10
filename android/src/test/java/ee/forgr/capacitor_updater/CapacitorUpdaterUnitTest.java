@@ -264,7 +264,7 @@ public class CapacitorUpdaterUnitTest {
         private java.util.function.Consumer<String> updateAvailableNotifier = (version) -> {};
 
         FreshDownloadCapgoUpdater() {
-            super(null);
+            super(mock(Logger.class));
         }
 
         @Override
@@ -294,7 +294,7 @@ public class CapacitorUpdaterUnitTest {
             final String checksum,
             final JSONArray manifest
         ) {
-            this.downloadBackground(url, version, sessionKey, checksum, manifest, true);
+            this.downloadBackground(url, version, sessionKey, checksum, manifest, true, "", "");
         }
 
         @Override
@@ -304,7 +304,9 @@ public class CapacitorUpdaterUnitTest {
             final String sessionKey,
             final String checksum,
             final JSONArray manifest,
-            final boolean setNext
+            final boolean setNext,
+            final String signature,
+            final String manifestSignature
         ) {
             this.downloadBackgroundCalled = true;
             this.downloadBackgroundSetNext = setNext;
