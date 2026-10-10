@@ -4803,11 +4803,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
 
-            if (this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
-                call.resolve();
-            } else {
+            final String conditionMode = call.getData().optString("conditionMode", DelayUpdateUtils.DELAY_CONDITION_MODE_AND);
+            final String previousConditions = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+            final String previousMode = this.delayUpdateUtils.getConditionMode();
+            if (!this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
+                if (!this.delayUpdateUtils.setMultiDelay(previousConditions)) {
+                    logger.error("Failed to restore previous delay conditions after setMultiDelay failure");
+                }
                 call.reject("Failed to delay update");
+                return;
             }
+            if (!this.delayUpdateUtils.setConditionMode(conditionMode)) {
+                if (!this.delayUpdateUtils.setMultiDelay(previousConditions)) {
+                    logger.error("Failed to restore previous delay conditions after setConditionMode failure");
+                }
+                if (!this.delayUpdateUtils.setConditionMode(previousMode)) {
+                    logger.error("Failed to restore previous delay condition mode after setConditionMode failure");
+                }
+                call.reject("Failed to delay update");
+                return;
+            }
+            call.resolve();
         } catch (final Exception e) {
             logger.error("Failed to delay update, [Error calling 'setMultiDelay()'] " + e.getMessage());
             call.reject("Failed to delay update", e);
