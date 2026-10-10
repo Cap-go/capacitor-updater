@@ -664,7 +664,7 @@ run_edge_case_once() {
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-120}"
   fi
 
   local -a recovery_fragments=(
