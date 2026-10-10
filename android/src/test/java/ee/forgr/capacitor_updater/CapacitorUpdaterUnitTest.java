@@ -4184,7 +4184,7 @@ public class CapacitorUpdaterUnitTest {
         updater.prefs = prefs;
 
         final String downloadingId = "downldId01";
-        when(prefs.getAll()).thenAnswer(invocation -> {
+        when(prefs.getAll()).thenAnswer((invocation) -> {
             final Map<String, Object> all = new HashMap<>();
             all.put(downloadingId + "_info", "");
             return all;
