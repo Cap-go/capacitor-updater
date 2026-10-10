@@ -675,8 +675,11 @@ import UIKit
         guard self.builtinMinimum else {
             return
         }
-        guard let parsedBundle = try? CapgoSemanticVersion(version),
-              let parsedNative = try? CapgoSemanticVersion(self.versionBuild) else {
+        // Build metadata (+...) never takes part in ordering, and may contain dots the parser rejects.
+        let bundleCore = String(version.split(separator: "+", maxSplits: 1).first ?? "")
+        let nativeCore = String(self.versionBuild.split(separator: "+", maxSplits: 1).first ?? "")
+        guard let parsedBundle = try? CapgoSemanticVersion(bundleCore),
+              let parsedNative = try? CapgoSemanticVersion(nativeCore) else {
             logger?.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
             return
         }

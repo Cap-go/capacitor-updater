@@ -395,6 +395,26 @@ public class CapgoUpdater {
         }
     }
 
+    static String stripBuildMetadata(final String version) {
+        if (version == null) {
+            return null;
+        }
+        final int plus = version.indexOf('+');
+        return plus >= 0 ? version.substring(0, plus) : version;
+    }
+
+    /** Compares major.minor.patch only (missing components count as 0); suffix and extra components are ignored. */
+    static int compareCoreVersion(final Version left, final Version right) {
+        for (int i = 0; i < 3; i++) {
+            final long a = i < left.getSubversionNumbers().size() ? left.getSubversionNumbers().get(i) : 0L;
+            final long b = i < right.getSubversionNumbers().size() ? right.getSubversionNumbers().get(i) : 0L;
+            if (a != b) {
+                return Long.compare(a, b);
+            }
+        }
+        return 0;
+    }
+
     static boolean isParsableVersion(final Version version) {
         return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
     }
@@ -407,16 +427,17 @@ public class CapgoUpdater {
         if (!this.builtinMinimum) {
             return;
         }
-        final Version bundle = new Version(version);
-        final Version nativeVersion = new Version(this.versionBuild);
+        // Build metadata (+...) never takes part in ordering.
+        final Version bundle = new Version(stripBuildMetadata(version));
+        final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
         if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
             logger.debug(
                 "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
             );
             return;
         }
-        // Only the numeric part matters: a prerelease bundle at the native version is not a rollback.
-        if (!bundle.isAtLeast(nativeVersion, true)) {
+        // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.
+        if (compareCoreVersion(bundle, nativeVersion) < 0) {
             final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
             logger.error(message);
             this.sendStats("version_below_native", version);

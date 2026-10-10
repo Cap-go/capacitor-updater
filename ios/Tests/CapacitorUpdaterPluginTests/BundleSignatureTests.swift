@@ -200,6 +200,11 @@ final class BundleSignatureTests: XCTestCase {
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.1"))
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0-beta.1"))
         XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9-rc.1"))
+        // Dotted build metadata must not disable the floor.
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9+build.42"))
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0+build.42"))
+        updater.versionBuild = "2.0.0+ci.7"
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
         // Unparseable versions never block.
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("builtin"))
         updater.versionBuild = "not-a-version"
