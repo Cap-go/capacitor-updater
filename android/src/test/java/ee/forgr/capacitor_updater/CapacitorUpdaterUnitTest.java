@@ -4202,6 +4202,27 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void cleanupLegacyBareManifestStagingFoldersRemovesBundleLikeFolders() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-legacy-staging");
+        tempDir.toFile().deleteOnExit();
+        final Path legacyStaging = tempDir.resolve("legacyStg1");
+        Files.createDirectories(legacyStaging);
+        Files.write(legacyStaging.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        final Path unrelated = tempDir.resolve("unrelated1");
+        Files.createDirectories(unrelated);
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        updater.prefs = mock(SharedPreferences.class);
+        when(updater.prefs.getAll()).thenReturn(Map.of());
+
+        updater.cleanupOrphanedManifestStagingFolders(null);
+
+        assertFalse("Legacy bare staging folder should be deleted", Files.exists(legacyStaging));
+        assertTrue("Unrelated folder without bundle layout should remain", Files.exists(unrelated));
+    }
+
+    @Test
     public void deleteManifestStagingFolderAtRemovesDirectoryUnderDocuments() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-manifest-delete");
         tempDir.toFile().deleteOnExit();
