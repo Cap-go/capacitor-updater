@@ -177,14 +177,21 @@ public class UpdateLifecycleTest {
             final String sessionKey,
             final String checksum,
             final JSONArray manifest,
-            final boolean setNext
+            final boolean setNext,
+            final String signature,
+            final String manifestSignature
         ) {
             this.downloadBackgroundCalls++;
         }
 
         @Override
-        public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum)
-            throws IOException {
+        public BundleInfo download(
+            final String url,
+            final String version,
+            final String sessionKey,
+            final String checksum,
+            final String signature
+        ) throws IOException {
             if (this.manualDownloadError instanceof ReportedDownloadFailureException) {
                 // What the download observer does before failing the waiting download() call.
                 final JSObject ret = new JSObject();

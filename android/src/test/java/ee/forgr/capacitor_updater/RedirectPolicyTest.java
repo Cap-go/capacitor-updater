@@ -15,13 +15,21 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class RedirectPolicyTest {
 
+    @Before
+    public void disableHttpsOnly() {
+        // These tests exercise the legacy allowHttpsToHttpRedirect policy, which only applies when httpsOnly is off.
+        DownloadService.setHttpsOnly(false);
+    }
+
     @After
     public void resetPolicy() {
         DownloadService.setAllowHttpsToHttpRedirect(false);
+        DownloadService.setHttpsOnly(true);
     }
 
     private static Response response(String requestUrl, int code, String location) {

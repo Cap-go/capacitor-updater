@@ -26,6 +26,8 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
+import java.util.List;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -332,6 +334,118 @@ public class CryptoCipher {
             logger.error("Checksum decryption failed");
             logger.debug("Error: " + e.getMessage());
             throw new IOException("Decryption failed: " + e.getMessage());
+        }
+    }
+
+    /** Line 1 of the signed zip metadata payload (spec: capgo-bundle-v1). */
+    static final String BUNDLE_SIGNATURE_HEADER = "capgo-bundle-v1";
+    /** Line 1 of the signed manifest metadata payload (spec: capgo-manifest-v1). */
+    static final String MANIFEST_SIGNATURE_HEADER = "capgo-manifest-v1";
+    /** RSA-2048 PKCS#1 signature length, in bytes. */
+    static final int SIGNATURE_BYTES = 256;
+
+    /** One manifest entry as it enters the signed payload: exact file_name + plain (decrypted) sha256 hex. */
+    public static final class ManifestSignatureEntry {
+
+        public final String fileName;
+        public final String plainHash;
+
+        public ManifestSignatureEntry(final String fileName, final String plainHash) {
+            this.fileName = fileName == null ? "" : fileName;
+            this.plainHash = plainHash == null ? "" : plainHash;
+        }
+    }
+
+    /**
+     * Builds the exact UTF-8 string signed by the Capgo CLI for a zip bundle:
+     * {@code "capgo-bundle-v1\nversion:<version>\nchecksum:<plain sha256 hex, lowercase>\n"}.
+     */
+    public static String buildBundleSignaturePayload(final String version, final String checksumHex) {
+        return (
+            BUNDLE_SIGNATURE_HEADER +
+            "\n" +
+            "version:" +
+            (version == null ? "" : version) +
+            "\n" +
+            "checksum:" +
+            (checksumHex == null ? "" : checksumHex.toLowerCase(java.util.Locale.ROOT)) +
+            "\n"
+        );
+    }
+
+    /** Unsigned lexicographic comparison of the UTF-8 bytes (matches Node Buffer.compare / Swift Array(utf8)). */
+    static int compareUtf8Bytes(final String a, final String b) {
+        final byte[] x = a.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        final byte[] y = b.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        final int n = Math.min(x.length, y.length);
+        for (int i = 0; i < n; i++) {
+            final int cx = x[i] & 0xff;
+            final int cy = y[i] & 0xff;
+            if (cx != cy) {
+                return cx - cy;
+            }
+        }
+        return x.length - y.length;
+    }
+
+    /**
+     * Builds the exact UTF-8 string signed by the Capgo CLI for a manifest:
+     * {@code "capgo-manifest-v1\nversion:<version>\n<file_name>:<plain sha256 hex>\n"...}, entries sorted by
+     * file_name compared as unsigned UTF-8 bytes. Every entry must be present: the signature binds the whole set.
+     */
+    public static String buildManifestSignaturePayload(final String version, final List<ManifestSignatureEntry> entries) {
+        final List<ManifestSignatureEntry> sorted = new ArrayList<>(entries == null ? java.util.Collections.emptyList() : entries);
+        sorted.sort((l, r) -> compareUtf8Bytes(l.fileName, r.fileName));
+        final StringBuilder sb = new StringBuilder();
+        sb.append(MANIFEST_SIGNATURE_HEADER).append("\n");
+        sb.append("version:")
+            .append(version == null ? "" : version)
+            .append("\n");
+        for (final ManifestSignatureEntry entry : sorted) {
+            sb.append(entry.fileName).append(':').append(entry.plainHash.toLowerCase(java.util.Locale.ROOT)).append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** Lowercase hex SHA-256 of the UTF-8 bytes of {@code utf8}. */
+    public static String sha256Hex(final String utf8) {
+        try {
+            final MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update((utf8 == null ? "" : utf8).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return digestToHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    /**
+     * Verifies a Capgo metadata signature: {@code signatureHex} must be 256 bytes of hex (RSA-2048, PKCS#1 v1.5
+     * privateEncrypt of sha256(payload)); it is public-recovered with {@code publicKey} and compared to
+     * {@code sha256Hex(payload)} in constant time. Returns false on any malformed input or mismatch.
+     */
+    public static boolean verifySignature(final String signatureHex, final String payload, final String publicKey) {
+        if (signatureHex == null || publicKey == null || publicKey.isEmpty()) {
+            return false;
+        }
+        final String trimmed = signatureHex.trim();
+        if (trimmed.length() != SIGNATURE_BYTES * 2 || !trimmed.matches("^[0-9a-fA-F]+$")) {
+            if (logger != null) {
+                logger.error("Signature is not " + SIGNATURE_BYTES + " bytes of hex (length: " + trimmed.length() + " chars)");
+            }
+            return false;
+        }
+        try {
+            // Same public-recover path as the encrypted checksum: it yields the hex of the recovered bytes.
+            final String recoveredHex = decryptChecksum(trimmed, publicKey);
+            final byte[] recovered = hexStringToByteArray(recoveredHex);
+            final byte[] expected = hexStringToByteArray(sha256Hex(payload));
+            return MessageDigest.isEqual(recovered, expected);
+        } catch (IOException | RuntimeException e) {
+            if (logger != null) {
+                logger.error("Signature verification failed");
+                logger.debug("Error: " + e.getMessage());
+            }
+            return false;
         }
     }
 

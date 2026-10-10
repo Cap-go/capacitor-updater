@@ -1,12 +1,12 @@
 {
   "version": 1,
   "description": "RSA public-decrypt contract vectors generated with crypto.privateEncrypt (PKCS#1), matching Capgo CLI encryption.",
-  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----",
+  "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA0rr+3nCSqV7bKrd+LGQc0p5Q6p4XfEEBeq5/yHfX3sJoAC+TwoTl\nRoRyzZC4fXmHTyc7DM3qMZnHbHRHwcokaejdek2RPj4tQTzTqCkdSUW38vreinbU\n3UZ7JkaQarZgw/9qCkwo1FgdG1pwE/fHbXyXdx/9rRMhi+Pq5cjm7dIEBHvqmzsQ\nh9/BQleZ0lPFlg57qXQHvmdN1V8ayIyFn5mMGSDd0UgpPVCcmGIcQuw+oA09ZVue\ne1tnguCraxTPTvx2D4p/7juc70cTKV+WnZDK17Xihbvd9tKJtYS5/1hhUPmiTAUf\nH9KA2k3VEZl6tRvv0/ICOT38W1cP4u3wKwIDAQAB\n-----END RSA PUBLIC KEY-----",
   "rsaPublicDecrypt": [
     {
       "id": "session-key-16-bytes",
       "input": {
-        "ciphertextHex": "371cabdcb9827ffbc75fa978701d4bb5751fbdbddc0f46b6670c10f4529a0d212ecebd1460b5aecda16fe3a13f14cfbc48da3768db978b93acc1e707fa7eab54ffc13062601eb2bce6a8f17bd0faa042cc44660f8f7235451c96860977abb57bfe031e01a21787d21fcc2f9bdf9f9fba07a8ab089db417bd0443633accbdad56d4a8ec0a1d3d35c7aafd163bd5f1b96fd94791911b2fe7f4561038dd9350ad703839281da43f07b06c78418e6af3530dc78d1fb9d4467ab2c83d745f01f051431cfbd70c8cad6db2f3153759e5bed6045a7e1b316d18a6aa06a1af38277e1daca559c5f1dc887268c1ff19b51199a51e948fcc9cb9de8be0a05d2fd90c1d1988"
+        "ciphertextHex": "28985177dddcb1715be78462475b7c8baf7face1edf7a9ae05362a0fdc8a9bbafae78d73bfb2b65e4414bbc2d009a7e297ed9b9ffdbc5faa4d064e7d69305ecb74a5d1ff8485b9524df6d1e01d05f49add4e093f894a7375554f47853a9c9bf5f11fc3e3f09684c24beeaf6c423daee80dd55ada28776e7d4cfa75cc8281ff262122c58f24dd76483ee96a2499e29195c747fc608e90560477cfa210a9a40cdb43509ee3e8a356c1ca7df9d47ef54bac5aff32ea23223cc0950f32b34c8dd5c35fd56850cf5af5afb9c22798541f5f3000d4d72ac44104430ceda89f96941ae1d383cfe501f5b5e892fc7182e73fd8a674f611fca077b947efcfdefafc4eb4c9"
       },
       "expect": {
         "plaintextHex": "abababababababababababababababab"
@@ -15,7 +15,7 @@
     {
       "id": "checksum-sha256-32-bytes",
       "input": {
-        "ciphertextHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+        "ciphertextHex": "0b29216177b31fb0c9c00f3e530beca3888a514474d8f0603e1fb7b4a1620f2d251862d4d5987635a6dbcf8e15586aa99b92a46ef0184a87a1ccc6e1a2c75d7ec211f8452015b313737bb4c673493369518939b602200483e721f87b5c7c0f754c78a702cf585bcabfea0dd677ba4bf66a566c10e8b1b259b8bf3a8b8b99c62b0d52b62f658f3b80c070c188e906111de43167e55900f2bd53a31316b623eb5b55ab8052f94cfea34d91b818f01cf20e31d6df7060ded3817aaa3c3d03e74193f3de3da5f4c68706f138ff92d06f2811f8f89e6d3dbcec9a4bbbc7acdbdef9247e9631f3da75fa6482eedde6392006e945d6c1ba2231de22518ee0adf878774e"
       },
       "expect": {
         "plaintextHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -26,7 +26,7 @@
     {
       "id": "hex-encoded-rsa-ciphertext",
       "input": {
-        "checksumHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc8"
+        "checksumHex": "0b29216177b31fb0c9c00f3e530beca3888a514474d8f0603e1fb7b4a1620f2d251862d4d5987635a6dbcf8e15586aa99b92a46ef0184a87a1ccc6e1a2c75d7ec211f8452015b313737bb4c673493369518939b602200483e721f87b5c7c0f754c78a702cf585bcabfea0dd677ba4bf66a566c10e8b1b259b8bf3a8b8b99c62b0d52b62f658f3b80c070c188e906111de43167e55900f2bd53a31316b623eb5b55ab8052f94cfea34d91b818f01cf20e31d6df7060ded3817aaa3c3d03e74193f3de3da5f4c68706f138ff92d06f2811f8f89e6d3dbcec9a4bbbc7acdbdef9247e9631f3da75fa6482eedde6392006e945d6c1ba2231de22518ee0adf878774e"
       },
       "expect": {
         "decryptedHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -37,10 +37,10 @@
     {
       "id": "fixture-public-key",
       "input": {
-        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA0rr+3nCSqV7bKrd+LGQc0p5Q6p4XfEEBeq5/yHfX3sJoAC+TwoTl\nRoRyzZC4fXmHTyc7DM3qMZnHbHRHwcokaejdek2RPj4tQTzTqCkdSUW38vreinbU\n3UZ7JkaQarZgw/9qCkwo1FgdG1pwE/fHbXyXdx/9rRMhi+Pq5cjm7dIEBHvqmzsQ\nh9/BQleZ0lPFlg57qXQHvmdN1V8ayIyFn5mMGSDd0UgpPVCcmGIcQuw+oA09ZVue\ne1tnguCraxTPTvx2D4p/7juc70cTKV+WnZDK17Xihbvd9tKJtYS5/1hhUPmiTAUf\nH9KA2k3VEZl6tRvv0/ICOT38W1cP4u3wKwIDAQAB\n-----END RSA PUBLIC KEY-----"
       },
       "expect": {
-        "keyId": "MIIBCgKCAQEAqJikYizo"
+        "keyId": "MIIBCgKCAQEA0rr+3nCS"
       }
     }
   ],
@@ -48,7 +48,7 @@
     {
       "id": "valid-pkcs1-pem",
       "input": {
-        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEAqJikYizowR4jGct5Uv8NdTjc+oXdnSp+I/P27huEx/eHTP+UQRIR\nv6cYq2d9wOCU5qZpyf4P7u5qibvfWM+Db2L9FS6zjLrFxaKIVk4bnixHEkzFEwJ4\nlIWq2cuwyVpdwriXvKRTen1bxslJHDKSkRAZX/u2rS+lbfs5k//2FBnVXK2aNGIv\nI3Kl9bHl4xhnwe1CAahX+5j4mB50jrGJEYU/Ocp9gGHwwm4+smJhJRw8d6060dRY\nSmoGQ34X4J4jO16Wln26TGNaSA0iBPVJt82MvO1FJJJFMAuIJDQfbysIKYFBWlBA\n2OCmylv7cVls7DdUCiDIWbzNefCZa3RyBwIDAQAB\n-----END RSA PUBLIC KEY-----"
+        "publicKeyPem": "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA0rr+3nCSqV7bKrd+LGQc0p5Q6p4XfEEBeq5/yHfX3sJoAC+TwoTl\nRoRyzZC4fXmHTyc7DM3qMZnHbHRHwcokaejdek2RPj4tQTzTqCkdSUW38vreinbU\n3UZ7JkaQarZgw/9qCkwo1FgdG1pwE/fHbXyXdx/9rRMhi+Pq5cjm7dIEBHvqmzsQ\nh9/BQleZ0lPFlg57qXQHvmdN1V8ayIyFn5mMGSDd0UgpPVCcmGIcQuw+oA09ZVue\ne1tnguCraxTPTvx2D4p/7juc70cTKV+WnZDK17Xihbvd9tKJtYS5/1hhUPmiTAUf\nH9KA2k3VEZl6tRvv0/ICOT38W1cP4u3wKwIDAQAB\n-----END RSA PUBLIC KEY-----"
       },
       "expect": {
         "loads": true
@@ -72,6 +72,182 @@
       },
       "expect": {
         "throws": true
+      }
+    }
+  ],
+  "bundleSignature": [
+    {
+      "id": "valid",
+      "input": {
+        "version": "1.2.3",
+        "checksumHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "encryptedChecksumHex": "0b29216177b31fb0c9c00f3e530beca3888a514474d8f0603e1fb7b4a1620f2d251862d4d5987635a6dbcf8e15586aa99b92a46ef0184a87a1ccc6e1a2c75d7ec211f8452015b313737bb4c673493369518939b602200483e721f87b5c7c0f754c78a702cf585bcabfea0dd677ba4bf66a566c10e8b1b259b8bf3a8b8b99c62b0d52b62f658f3b80c070c188e906111de43167e55900f2bd53a31316b623eb5b55ab8052f94cfea34d91b818f01cf20e31d6df7060ded3817aaa3c3d03e74193f3de3da5f4c68706f138ff92d06f2811f8f89e6d3dbcec9a4bbbc7acdbdef9247e9631f3da75fa6482eedde6392006e945d6c1ba2231de22518ee0adf878774e",
+        "signatureHex": "a51d19daeb63e383e867e0caa7c65d8db4ea316e6718b27eb28fa82437778f0ef3fe8e40788f5098b74bfa5b96a3eb36a5de56f40cfe05df87518b109cde644645e5bd2cf44a5f737396c77b9d49adfd8114d20cdf14b4323407f3d4ff24d6fc3f3993bb58388c499cab5f10231988ff40b813f6d972a7f8ca34e1947f14517d79dcefdc3fbe502c8d36d3e3a7b1ac688504e76c7accbc484af0dc2e4a72716462e8356b9fb5e856962ef7ba49fe8034de8e7c42100dff430a3b4bb92159f8044210490977b8c76014945017247c8406a7c817abf26faf8b6813be00862fa627dbc7ba271649bee67904c9fd7246c6ad173dfa153eaf4c162a859a2c56380594"
+      },
+      "expect": {
+        "payload": "capgo-bundle-v1\nversion:1.2.3\nchecksum:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+        "valid": true
+      }
+    },
+    {
+      "id": "tampered-version",
+      "input": {
+        "version": "1.2.4",
+        "checksumHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "encryptedChecksumHex": "0b29216177b31fb0c9c00f3e530beca3888a514474d8f0603e1fb7b4a1620f2d251862d4d5987635a6dbcf8e15586aa99b92a46ef0184a87a1ccc6e1a2c75d7ec211f8452015b313737bb4c673493369518939b602200483e721f87b5c7c0f754c78a702cf585bcabfea0dd677ba4bf66a566c10e8b1b259b8bf3a8b8b99c62b0d52b62f658f3b80c070c188e906111de43167e55900f2bd53a31316b623eb5b55ab8052f94cfea34d91b818f01cf20e31d6df7060ded3817aaa3c3d03e74193f3de3da5f4c68706f138ff92d06f2811f8f89e6d3dbcec9a4bbbc7acdbdef9247e9631f3da75fa6482eedde6392006e945d6c1ba2231de22518ee0adf878774e",
+        "signatureHex": "a51d19daeb63e383e867e0caa7c65d8db4ea316e6718b27eb28fa82437778f0ef3fe8e40788f5098b74bfa5b96a3eb36a5de56f40cfe05df87518b109cde644645e5bd2cf44a5f737396c77b9d49adfd8114d20cdf14b4323407f3d4ff24d6fc3f3993bb58388c499cab5f10231988ff40b813f6d972a7f8ca34e1947f14517d79dcefdc3fbe502c8d36d3e3a7b1ac688504e76c7accbc484af0dc2e4a72716462e8356b9fb5e856962ef7ba49fe8034de8e7c42100dff430a3b4bb92159f8044210490977b8c76014945017247c8406a7c817abf26faf8b6813be00862fa627dbc7ba271649bee67904c9fd7246c6ad173dfa153eaf4c162a859a2c56380594"
+      },
+      "expect": {
+        "payload": "capgo-bundle-v1\nversion:1.2.4\nchecksum:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+        "valid": false
+      }
+    },
+    {
+      "id": "wrong-length-signature",
+      "input": {
+        "version": "1.2.3",
+        "checksumHex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "encryptedChecksumHex": "0b29216177b31fb0c9c00f3e530beca3888a514474d8f0603e1fb7b4a1620f2d251862d4d5987635a6dbcf8e15586aa99b92a46ef0184a87a1ccc6e1a2c75d7ec211f8452015b313737bb4c673493369518939b602200483e721f87b5c7c0f754c78a702cf585bcabfea0dd677ba4bf66a566c10e8b1b259b8bf3a8b8b99c62b0d52b62f658f3b80c070c188e906111de43167e55900f2bd53a31316b623eb5b55ab8052f94cfea34d91b818f01cf20e31d6df7060ded3817aaa3c3d03e74193f3de3da5f4c68706f138ff92d06f2811f8f89e6d3dbcec9a4bbbc7acdbdef9247e9631f3da75fa6482eedde6392006e945d6c1ba2231de22518ee0adf878774e",
+        "signatureHex": "a51d19daeb63e383e867e0caa7c65d8db4ea316e6718b27eb28fa82437778f0ef3fe8e40788f5098b74bfa5b96a3eb36a5de56f40cfe05df87518b109cde644645e5bd2cf44a5f737396c77b9d49adfd8114d20cdf14b4323407f3d4ff24d6fc3f3993bb58388c499cab5f10231988ff40b813f6d972a7f8ca34e1947f14517d79dcefdc3fbe502c8d36d3e3a7b1ac688504e76c7accbc484af0dc2e4a72716462e8356b9fb5e856962ef7ba49fe8034de8e7c42100dff430a3b4bb92159f8044210490977b8c76014945017247c8406a7c817abf26faf8b6813be00862fa627dbc7ba271649bee67904c9fd7246c6ad173dfa153eaf4c162a859a2c563805"
+      },
+      "expect": {
+        "payload": "capgo-bundle-v1\nversion:1.2.3\nchecksum:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+        "valid": false
+      }
+    }
+  ],
+  "manifestSignature": [
+    {
+      "id": "valid-unsorted-input",
+      "input": {
+        "version": "1.2.3",
+        "entries": [
+          {
+            "file_name": "index.html",
+            "hashHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "file_name": "Assets/logo.png",
+            "hashHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "hashHex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "file_name": "assets/été.js",
+            "hashHex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ],
+        "encryptedEntries": [
+          {
+            "file_name": "index.html",
+            "file_hash": "322e2c3001706269f6505b65d81f82efec3c7b0bf86ef4ed79d3bae662413fa273e41e49c5a97741d7072502a56bc6720dd702b3f1a19e7b1ac68d9ebb46c76535078975ada4c9ea2c92b88745075a43708e3d3239602f1f5e39fd01a4601768194bc588ab3eb036812761a01969c2abb8f7bd1e1a69745f4f4fa0d9fb128117ee2d09da778478b905feab2b6bfb2aa846d2599ad7d731bf1a46c8be6e2569978ac53a5195d9546d82708ada67783494bb060fb3abbeaf47aff7569b688351b5bdc769070eddfba230507dfeaee5969509078ca500b01a5c7abf465de047711b184e4ba99d7099113587970876c71dd7c30d13fed38f6392c798f0e4cad83b34"
+          },
+          {
+            "file_name": "Assets/logo.png",
+            "file_hash": "213953a44aa80ad2d54235986083e7b05d1475f0c30f8b3acf942a9f235720674bfa6ed9610e6571728be55fa5b4de3e232edaf7ccee3530ffaa07d03def2f5d98a85e93dd8a4e477fc81b73db5f01118ad124e36096e3f369798b198fee230bbca8eb84d1a01758c26e4edac7cb586eca255a8f1e5bac3b48df196d6178397b7f2a55db93b2366f9dc1f5857375a72753ddb7c089f70a949d22cdc826428cd8b00c89a8d57df670e954e3797f42a7aaf92921f21d2a687afa40be5ec677142d58e6f796932062545cea4000264edceafd2d3915e5393d09152f49166d3ff9fe5d5ba449e28aa9735c9e410033650aa072a43ed2f82d3e4cdeae9a393d3f0068"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "file_hash": "9c95dd6b034600ea92ec8552a99ff0e98c3d114fb0a53795f899ddca8584eee7adbb9a78f3d64c4108b7c9ec964356c61beca4f1d4a3ecf0b9caf8753fcadcd85ff130922fd7116869e36367426efdcc28d7e4a70ad461322cbd735d64d7113e75b989e4f152eed398097c0abae8644996ace59715f06e2b8740908ec4a03e46f535a3685f9050edd2e42494295430eb30bb3d918d59194ffd6d36367f9074257ab869ef98346ad7eae85108d45c8f341d47640dfb72d8c2992db8e834011b02ce7d954b6d8c46a7332f97570d8e1c8f4448df9e2847c39b1900fa6a3998b8b5e7b70a4d9f31deedf6e01765cad5396b421f875cbd78e9b1781ce4c88787da4b"
+          },
+          {
+            "file_name": "assets/été.js",
+            "file_hash": "8f46c08a35ef64ddbb1b1b5d6fcdcc6e1d6111a1ebab35ef478c2bdb5c9c905a07e5873a4ffe0f45dc0822479dc391b3c0768d513c38ee6ebd25e2bbb2c9cbb5750723a4ecd6916f421a53007df60a9f8520ef88e8dd07debb7185e899e4fd11682a5288a3d284b97cbb3592d2aa8bea797570971ebf0993d66df9e76e12c8dd5875d1b5171f38845472a8efc32c403ada1fb4db46d97ffda5b64029fa2e2fefdcf273ce195ab5213c25415e587c47ec24e5f1a2262f634ba504682754e1ce2ed723d8bd0491c1f68435d30b8181b1e5606719f9d153a044069f75b3fc4872dcec9311d80723d9f45b472e43285ea05d32bebc5dcbf10cf7f6fb2261826e7a44"
+          }
+        ],
+        "signatureHex": "3773dc6cece62c127d36172f492b7a34b0471e6670a8b01f921a4ecf60e5ba142cda6560556bc49fea4a65a138486133df82911f88547979af3ef513876a11eb25b8987690567f050a99e389e90d8b2a758313a2aa607533383523a1836d6aaf66d6fb4366346d0621012f31ea2818d22cf85759ce527c0b7fe56e17a1fbb43f5fdc15279ef602189f79e00167b4bf9198fcf2e77457ed22b728564533fb23ed7a5e4b485ecf8cb2fce797a855045f87294e9de18985091becf36580d181d6de7e79ad768c2767c3335c9d0f36c24a90ce646aea9638c0360bac0b38bfb01d4dafa041ffcee0780f185d339feecef10dbbbed93bccba878f22bafef265c92532"
+      },
+      "expect": {
+        "payload": "capgo-manifest-v1\nversion:1.2.3\nAssets/logo.png:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nassets/app.js.br:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nassets/été.js:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\nindex.html:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "valid": true
+      }
+    },
+    {
+      "id": "dropped-entry",
+      "input": {
+        "version": "1.2.3",
+        "entries": [
+          {
+            "file_name": "Assets/logo.png",
+            "hashHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "hashHex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "file_name": "assets/été.js",
+            "hashHex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ],
+        "encryptedEntries": [
+          {
+            "file_name": "Assets/logo.png",
+            "file_hash": "213953a44aa80ad2d54235986083e7b05d1475f0c30f8b3acf942a9f235720674bfa6ed9610e6571728be55fa5b4de3e232edaf7ccee3530ffaa07d03def2f5d98a85e93dd8a4e477fc81b73db5f01118ad124e36096e3f369798b198fee230bbca8eb84d1a01758c26e4edac7cb586eca255a8f1e5bac3b48df196d6178397b7f2a55db93b2366f9dc1f5857375a72753ddb7c089f70a949d22cdc826428cd8b00c89a8d57df670e954e3797f42a7aaf92921f21d2a687afa40be5ec677142d58e6f796932062545cea4000264edceafd2d3915e5393d09152f49166d3ff9fe5d5ba449e28aa9735c9e410033650aa072a43ed2f82d3e4cdeae9a393d3f0068"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "file_hash": "9c95dd6b034600ea92ec8552a99ff0e98c3d114fb0a53795f899ddca8584eee7adbb9a78f3d64c4108b7c9ec964356c61beca4f1d4a3ecf0b9caf8753fcadcd85ff130922fd7116869e36367426efdcc28d7e4a70ad461322cbd735d64d7113e75b989e4f152eed398097c0abae8644996ace59715f06e2b8740908ec4a03e46f535a3685f9050edd2e42494295430eb30bb3d918d59194ffd6d36367f9074257ab869ef98346ad7eae85108d45c8f341d47640dfb72d8c2992db8e834011b02ce7d954b6d8c46a7332f97570d8e1c8f4448df9e2847c39b1900fa6a3998b8b5e7b70a4d9f31deedf6e01765cad5396b421f875cbd78e9b1781ce4c88787da4b"
+          },
+          {
+            "file_name": "assets/été.js",
+            "file_hash": "8f46c08a35ef64ddbb1b1b5d6fcdcc6e1d6111a1ebab35ef478c2bdb5c9c905a07e5873a4ffe0f45dc0822479dc391b3c0768d513c38ee6ebd25e2bbb2c9cbb5750723a4ecd6916f421a53007df60a9f8520ef88e8dd07debb7185e899e4fd11682a5288a3d284b97cbb3592d2aa8bea797570971ebf0993d66df9e76e12c8dd5875d1b5171f38845472a8efc32c403ada1fb4db46d97ffda5b64029fa2e2fefdcf273ce195ab5213c25415e587c47ec24e5f1a2262f634ba504682754e1ce2ed723d8bd0491c1f68435d30b8181b1e5606719f9d153a044069f75b3fc4872dcec9311d80723d9f45b472e43285ea05d32bebc5dcbf10cf7f6fb2261826e7a44"
+          }
+        ],
+        "signatureHex": "3773dc6cece62c127d36172f492b7a34b0471e6670a8b01f921a4ecf60e5ba142cda6560556bc49fea4a65a138486133df82911f88547979af3ef513876a11eb25b8987690567f050a99e389e90d8b2a758313a2aa607533383523a1836d6aaf66d6fb4366346d0621012f31ea2818d22cf85759ce527c0b7fe56e17a1fbb43f5fdc15279ef602189f79e00167b4bf9198fcf2e77457ed22b728564533fb23ed7a5e4b485ecf8cb2fce797a855045f87294e9de18985091becf36580d181d6de7e79ad768c2767c3335c9d0f36c24a90ce646aea9638c0360bac0b38bfb01d4dafa041ffcee0780f185d339feecef10dbbbed93bccba878f22bafef265c92532"
+      },
+      "expect": {
+        "payload": "capgo-manifest-v1\nversion:1.2.3\nAssets/logo.png:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nassets/app.js.br:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nassets/été.js:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\n",
+        "valid": false
+      }
+    },
+    {
+      "id": "renamed-entry",
+      "input": {
+        "version": "1.2.3",
+        "entries": [
+          {
+            "file_name": "index2.html",
+            "hashHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "file_name": "Assets/logo.png",
+            "hashHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "hashHex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "file_name": "assets/été.js",
+            "hashHex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ],
+        "encryptedEntries": [
+          {
+            "file_name": "index2.html",
+            "file_hash": "322e2c3001706269f6505b65d81f82efec3c7b0bf86ef4ed79d3bae662413fa273e41e49c5a97741d7072502a56bc6720dd702b3f1a19e7b1ac68d9ebb46c76535078975ada4c9ea2c92b88745075a43708e3d3239602f1f5e39fd01a4601768194bc588ab3eb036812761a01969c2abb8f7bd1e1a69745f4f4fa0d9fb128117ee2d09da778478b905feab2b6bfb2aa846d2599ad7d731bf1a46c8be6e2569978ac53a5195d9546d82708ada67783494bb060fb3abbeaf47aff7569b688351b5bdc769070eddfba230507dfeaee5969509078ca500b01a5c7abf465de047711b184e4ba99d7099113587970876c71dd7c30d13fed38f6392c798f0e4cad83b34"
+          },
+          {
+            "file_name": "Assets/logo.png",
+            "file_hash": "213953a44aa80ad2d54235986083e7b05d1475f0c30f8b3acf942a9f235720674bfa6ed9610e6571728be55fa5b4de3e232edaf7ccee3530ffaa07d03def2f5d98a85e93dd8a4e477fc81b73db5f01118ad124e36096e3f369798b198fee230bbca8eb84d1a01758c26e4edac7cb586eca255a8f1e5bac3b48df196d6178397b7f2a55db93b2366f9dc1f5857375a72753ddb7c089f70a949d22cdc826428cd8b00c89a8d57df670e954e3797f42a7aaf92921f21d2a687afa40be5ec677142d58e6f796932062545cea4000264edceafd2d3915e5393d09152f49166d3ff9fe5d5ba449e28aa9735c9e410033650aa072a43ed2f82d3e4cdeae9a393d3f0068"
+          },
+          {
+            "file_name": "assets/app.js.br",
+            "file_hash": "9c95dd6b034600ea92ec8552a99ff0e98c3d114fb0a53795f899ddca8584eee7adbb9a78f3d64c4108b7c9ec964356c61beca4f1d4a3ecf0b9caf8753fcadcd85ff130922fd7116869e36367426efdcc28d7e4a70ad461322cbd735d64d7113e75b989e4f152eed398097c0abae8644996ace59715f06e2b8740908ec4a03e46f535a3685f9050edd2e42494295430eb30bb3d918d59194ffd6d36367f9074257ab869ef98346ad7eae85108d45c8f341d47640dfb72d8c2992db8e834011b02ce7d954b6d8c46a7332f97570d8e1c8f4448df9e2847c39b1900fa6a3998b8b5e7b70a4d9f31deedf6e01765cad5396b421f875cbd78e9b1781ce4c88787da4b"
+          },
+          {
+            "file_name": "assets/été.js",
+            "file_hash": "8f46c08a35ef64ddbb1b1b5d6fcdcc6e1d6111a1ebab35ef478c2bdb5c9c905a07e5873a4ffe0f45dc0822479dc391b3c0768d513c38ee6ebd25e2bbb2c9cbb5750723a4ecd6916f421a53007df60a9f8520ef88e8dd07debb7185e899e4fd11682a5288a3d284b97cbb3592d2aa8bea797570971ebf0993d66df9e76e12c8dd5875d1b5171f38845472a8efc32c403ada1fb4db46d97ffda5b64029fa2e2fefdcf273ce195ab5213c25415e587c47ec24e5f1a2262f634ba504682754e1ce2ed723d8bd0491c1f68435d30b8181b1e5606719f9d153a044069f75b3fc4872dcec9311d80723d9f45b472e43285ea05d32bebc5dcbf10cf7f6fb2261826e7a44"
+          }
+        ],
+        "signatureHex": "3773dc6cece62c127d36172f492b7a34b0471e6670a8b01f921a4ecf60e5ba142cda6560556bc49fea4a65a138486133df82911f88547979af3ef513876a11eb25b8987690567f050a99e389e90d8b2a758313a2aa607533383523a1836d6aaf66d6fb4366346d0621012f31ea2818d22cf85759ce527c0b7fe56e17a1fbb43f5fdc15279ef602189f79e00167b4bf9198fcf2e77457ed22b728564533fb23ed7a5e4b485ecf8cb2fce797a855045f87294e9de18985091becf36580d181d6de7e79ad768c2767c3335c9d0f36c24a90ce646aea9638c0360bac0b38bfb01d4dafa041ffcee0780f185d339feecef10dbbbed93bccba878f22bafef265c92532"
+      },
+      "expect": {
+        "payload": "capgo-manifest-v1\nversion:1.2.3\nAssets/logo.png:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nassets/app.js.br:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nassets/été.js:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\nindex2.html:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "valid": false
       }
     }
   ]

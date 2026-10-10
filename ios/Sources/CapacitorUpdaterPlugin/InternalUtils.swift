@@ -263,6 +263,8 @@ struct AppVersionDec: Decodable {
     let error: String?
     let kind: String?
     let session_key: String?
+    let signature: String?
+    let manifest_signature: String?
     let major: Bool?
     let breaking: Bool?
     let data: [String: String]?
@@ -281,6 +283,8 @@ public class AppVersion: NSObject {
     var error: String?
     var kind: String?
     var sessionKey: String?
+    var signature: String?
+    var manifestSignature: String?
     var major: Bool?
     var breaking: Bool?
     var data: [String: String]?

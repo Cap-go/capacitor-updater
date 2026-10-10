@@ -150,6 +150,8 @@ final class NetworkTransportTests: XCTestCase {
         let updater = CapgoUpdater()
         updater.setLogger(Logger(withTag: "network-transport-tests", options: Logger.Options(level: .silent)))
         updater.timeout = 5
+        // The loopback test server is plain http.
+        updater.httpsOnly = false
         return updater
     }
 

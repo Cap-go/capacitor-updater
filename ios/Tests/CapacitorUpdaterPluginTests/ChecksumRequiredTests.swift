@@ -24,7 +24,8 @@ final class ChecksumRequiredTests: XCTestCase {
             sessionKey _: String,
             expectedChecksum _: String,
             link _: String? = nil,
-            comment _: String? = nil
+            comment _: String? = nil,
+            signature _: String = ""
         ) throws -> BundleInfo {
             downloadedBundle
         }
