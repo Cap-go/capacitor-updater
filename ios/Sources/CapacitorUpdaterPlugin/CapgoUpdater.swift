@@ -506,6 +506,18 @@ import UIKit
         return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
     }
 
+    private func removePartialManifestBundleDirectory(_ destFolder: URL) {
+        guard FileManager.default.fileExists(atPath: destFolder.path) else {
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: destFolder)
+        } catch {
+            logger.error("Failed to remove partial manifest bundle directory")
+            logger.debug("Path: \(destFolder.path), Error: \(error.localizedDescription)")
+        }
+    }
+
     private func cleanupOldManifestPartials() {
         let cutoff = Date().addingTimeInterval(-3600)
         guard let files = try? FileManager.default.contentsOfDirectory(
@@ -1816,6 +1828,7 @@ import UIKit
             )
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
+            removePartialManifestBundleDirectory(destFolder)
             throw resolvedError
         }
 
@@ -1894,6 +1907,7 @@ import UIKit
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
+            removePartialManifestBundleDirectory(destFolder)
             throw resolvedError
         }
 

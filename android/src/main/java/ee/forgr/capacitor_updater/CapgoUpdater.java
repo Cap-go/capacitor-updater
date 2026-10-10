@@ -76,6 +76,8 @@ public class CapgoUpdater {
     private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    static final String MANIFEST_DEST_SUFFIX = "_manifest_dest";
+    private static final String MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
@@ -314,6 +316,139 @@ public class CapgoUpdater {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
+    }
+
+    static boolean isManifestStagingFolderName(final String name) {
+        return name != null && name.matches(MANIFEST_STAGING_FOLDER_PATTERN);
+    }
+
+    void saveManifestStagingDest(final String bundleId, final String dest) {
+        if (this.editor == null || bundleId == null || dest == null || dest.isEmpty()) {
+            return;
+        }
+        this.editor.putString(bundleId + MANIFEST_DEST_SUFFIX, dest);
+        this.editor.commit();
+    }
+
+    void clearManifestStagingDest(final String bundleId) {
+        if (this.editor == null || bundleId == null) {
+            return;
+        }
+        this.editor.remove(bundleId + MANIFEST_DEST_SUFFIX);
+        this.editor.commit();
+    }
+
+    Set<String> activeManifestStagingDests() {
+        final Set<String> activeDests = new HashSet<>();
+        if (this.prefs == null) {
+            return activeDests;
+        }
+        for (final BundleInfo info : this.list(true)) {
+            if (info == null || info.getId() == null || info.getId().isEmpty()) {
+                continue;
+            }
+            if (info.getStatus() != BundleStatus.DOWNLOADING) {
+                continue;
+            }
+            final String dest = this.prefs.getString(info.getId() + MANIFEST_DEST_SUFFIX, null);
+            if (dest != null && !dest.isEmpty()) {
+                activeDests.add(dest);
+            }
+        }
+        return activeDests;
+    }
+
+    public void deleteManifestStagingFolder(final String dest) {
+        if (this.documentsDir == null || dest == null || dest.isEmpty() || !isManifestStagingFolderName(dest)) {
+            return;
+        }
+        this.safeDelete(new File(this.documentsDir, dest));
+    }
+
+    static void deleteManifestStagingFolderAt(final File documentsDir, final String dest, final Logger log) {
+        if (documentsDir == null || dest == null || dest.isEmpty() || !isManifestStagingFolderName(dest)) {
+            return;
+        }
+        final File folder = new File(documentsDir, dest);
+        if (!folder.exists()) {
+            return;
+        }
+        try {
+            final File canonicalBase = documentsDir.getCanonicalFile();
+            final File canonicalTarget = folder.getCanonicalFile();
+            final String basePath = canonicalBase.getPath();
+            final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+            final String targetPath = canonicalTarget.getPath();
+            if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+                if (log != null) {
+                    log.warn("Refusing unsafe manifest staging delete: " + folder.getAbsolutePath());
+                }
+                return;
+            }
+            if (canonicalTarget.isDirectory()) {
+                deleteManifestStagingTree(canonicalTarget);
+            } else if (!canonicalTarget.delete()) {
+                if (log != null) {
+                    log.warn("Failed to delete manifest staging file: " + canonicalTarget.getAbsolutePath());
+                }
+            }
+        } catch (IOException e) {
+            if (log != null) {
+                log.warn("Failed to delete manifest staging folder: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void deleteManifestStagingTree(final File file) throws IOException {
+        if (file.isDirectory()) {
+            final File[] entries = file.listFiles();
+            if (entries != null) {
+                for (final File entry : entries) {
+                    deleteManifestStagingTree(entry);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new IOException("Failed to delete: " + file);
+        }
+    }
+
+    public void cleanupOrphanedManifestStagingFolders(final Thread threadToCheck) {
+        if (this.documentsDir == null) {
+            logger.warn("Documents directory is null, skipping manifest staging cleanup");
+            return;
+        }
+
+        final Set<String> protectedDests = this.activeManifestStagingDests();
+        final File[] entries = this.documentsDir.listFiles();
+        if (entries == null) {
+            return;
+        }
+
+        for (final File entry : entries) {
+            if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                logger.warn("cleanupOrphanedManifestStagingFolders was cancelled");
+                return;
+            }
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            final String folderName = entry.getName();
+            if (!isManifestStagingFolderName(folderName)) {
+                continue;
+            }
+            if (protectedDests.contains(folderName)) {
+                continue;
+            }
+            try {
+                this.deleteDirectory(entry, threadToCheck);
+                logger.info("Deleted orphaned manifest staging folder");
+                logger.debug("Folder: " + folderName);
+            } catch (IOException e) {
+                logger.error("Failed to delete orphaned manifest staging folder");
+                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
+            }
+        }
     }
 
     public void setPublicKey(String publicKey) {
@@ -830,6 +965,7 @@ public class CapgoUpdater {
                                     setNext && Boolean.TRUE.equals(CapgoUpdater.this.directUpdate) && !CapgoUpdater.this.previewSession;
                                 final boolean previewSession = CapgoUpdater.this.previewSession;
                                 boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
+                                CapgoUpdater.this.clearManifestStagingDest(id);
                                 BundleInfo resultBundle;
                                 if (!success) {
                                     logger.error("Finish download failed");
@@ -872,8 +1008,14 @@ public class CapgoUpdater {
                             logger.error("Download failed");
                             logger.debug("Error: " + error + ", State: " + workInfo.getState());
                             String failedVersion = failedData.getString(DownloadService.VERSION);
+                            final String failedDest = failedData.getString(DownloadService.FILEDEST);
+                            final boolean failedManifest = failedData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                             io.execute(() -> {
+                                if (failedManifest) {
+                                    CapgoUpdater.this.deleteManifestStagingFolder(failedDest);
+                                }
+                                CapgoUpdater.this.clearManifestStagingDest(id);
                                 BundleInfo failedBundle = new BundleInfo(
                                     id,
                                     failedVersion,
@@ -910,6 +1052,14 @@ public class CapgoUpdater {
                             if (!terminalHandled.compareAndSet(false, true)) break;
                             observedDownloadVersions.remove(observedVersion);
                             DataManager.getInstance().clearManifest(id);
+                            io.execute(() -> {
+                                final String cancelledDest =
+                                    CapgoUpdater.this.prefs != null
+                                        ? CapgoUpdater.this.prefs.getString(id + MANIFEST_DEST_SUFFIX, null)
+                                        : null;
+                                CapgoUpdater.this.deleteManifestStagingFolder(cancelledDest);
+                                CapgoUpdater.this.clearManifestStagingDest(id);
+                            });
                             CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                             if (cancelledFuture != null) {
                                 cancelledFuture.cancel(true);
@@ -939,6 +1089,7 @@ public class CapgoUpdater {
 
         if (manifest != null) {
             DataManager.getInstance().setManifest(id, manifest);
+            this.saveManifestStagingDest(id, dest);
         }
 
         DownloadWorkerManager.enqueueDownload(
@@ -1005,9 +1156,7 @@ public class CapgoUpdater {
             }
             // Remove the decryption for manifest downloads
         } catch (Exception e) {
-            if (!isManifest) {
-                safeDelete(downloaded);
-            }
+            safeDelete(downloaded);
             final Boolean res = this.delete(id);
             if (!res) {
                 logger.info("Failed to cleanup after error");
@@ -1058,10 +1207,8 @@ public class CapgoUpdater {
                 }
             }
         } catch (IOException e) {
-            if (!isManifest) {
-                safeDelete(extractedDir);
-                safeDelete(downloaded);
-            }
+            safeDelete(extractedDir);
+            safeDelete(downloaded);
             e.printStackTrace();
             final Map<String, Object> ret = new HashMap<>();
             ret.put("version", version);

@@ -4150,6 +4150,59 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void isManifestStagingFolderNameMatchesRandomDestPattern() {
+        assertTrue(CapgoUpdater.isManifestStagingFolderName("aBc123XyZ0"));
+        assertFalse(CapgoUpdater.isManifestStagingFolderName("versions"));
+        assertFalse(CapgoUpdater.isManifestStagingFolderName("capgo_unzip_abc"));
+        assertFalse(CapgoUpdater.isManifestStagingFolderName("short"));
+        assertFalse(CapgoUpdater.isManifestStagingFolderName(null));
+    }
+
+    @Test
+    public void cleanupOrphanedManifestStagingFoldersRemovesLeftoverDest() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-manifest-staging");
+        tempDir.toFile().deleteOnExit();
+        final Path orphanStaging = tempDir.resolve("orphanStg1");
+        Files.createDirectories(orphanStaging.resolve("assets"));
+        Files.write(orphanStaging.resolve("assets").resolve("app.js"), "console.log(1)".getBytes(StandardCharsets.UTF_8));
+        final Path protectedStaging = tempDir.resolve("activeStg1");
+        Files.createDirectories(protectedStaging);
+
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        updater.documentsDir = tempDir.toFile();
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.prefs = prefs;
+        updater.editor = editor;
+
+        final String downloadingId = "downldId01";
+        when(prefs.getAll()).thenReturn(Map.of(downloadingId + "_info", ""));
+        when(prefs.getString(downloadingId + "_info", "")).thenReturn(
+            new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
+        );
+        when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn("activeStg1");
+        when(editor.remove(anyString())).thenReturn(editor);
+
+        updater.cleanupOrphanedManifestStagingFolders(null);
+
+        assertFalse("Orphan manifest staging folder should be deleted", Files.exists(orphanStaging));
+        assertTrue("Active manifest staging folder should remain", Files.exists(protectedStaging));
+    }
+
+    @Test
+    public void deleteManifestStagingFolderAtRemovesDirectoryUnderDocuments() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-manifest-delete");
+        tempDir.toFile().deleteOnExit();
+        final Path staging = tempDir.resolve("deleteMe01");
+        Files.createDirectories(staging);
+        Files.write(staging.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+
+        CapgoUpdater.deleteManifestStagingFolderAt(tempDir.toFile(), "deleteMe01", mock(Logger.class));
+
+        assertFalse(Files.exists(staging));
+    }
+
+    @Test
     public void deleteMarksDeletingThenRemovesRegistryOnlyAfterFolderGone() throws Exception {
         final String id = "delBundle1";
         final Path tempDir = createExistingBundleDirectory("capgo-safe-delete", id);
