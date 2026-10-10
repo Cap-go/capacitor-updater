@@ -1,5 +1,6 @@
 package ee.forgr.capacitor_updater;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -126,6 +127,11 @@ public class ManifestStagingCleanupTest {
         return new PrefsHarness(updater, store);
     }
 
+    private static String stagingDest(final String tenCharSuffix) {
+        assertEquals(10, tenCharSuffix.length());
+        return CapgoUpdater.MANIFEST_STAGING_PREFIX + tenCharSuffix;
+    }
+
     private static void markDownloadingManifestDest(final PrefsHarness harness, final String bundleId, final String dest) {
         harness.store.put(bundleId + "_info", new BundleInfo(bundleId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString());
         harness.store.put(bundleId + CapgoUpdater.MANIFEST_DEST_SUFFIX, dest);
@@ -135,10 +141,10 @@ public class ManifestStagingCleanupTest {
     public void cleanupOrphanedManifestStagingFoldersPreservesInFlightFolder() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-inflight-staging");
         tempDir.toFile().deleteOnExit();
-        final String activeDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "inFlight01";
+        final String activeDest = stagingDest("inFlight01");
         final Path activeStaging = tempDir.resolve(activeDest);
         Files.createDirectories(activeStaging.resolve("assets"));
-        final Path orphanStaging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "orphanFl01");
+        final Path orphanStaging = tempDir.resolve(stagingDest("orphanFl01"));
         Files.createDirectories(orphanStaging);
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -154,9 +160,9 @@ public class ManifestStagingCleanupTest {
     public void cleanupPreservesManifestDestsForCurrentNextAndFallbackDownloads() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-protected-staging");
         tempDir.toFile().deleteOnExit();
-        final String currentDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "curntDl01";
-        final String nextDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "nextDown01";
-        final String fallbackDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "fallback01";
+        final String currentDest = stagingDest("curntDl01");
+        final String nextDest = stagingDest("nextDown01");
+        final String fallbackDest = stagingDest("fallback01");
         for (final String dest : List.of(currentDest, nextDest, fallbackDest)) {
             Files.createDirectories(tempDir.resolve(dest));
         }
@@ -182,7 +188,11 @@ public class ManifestStagingCleanupTest {
         final Path externalFile = external.resolve("keep.txt");
         Files.write(externalFile, "keep".getBytes(StandardCharsets.UTF_8));
 
+<<<<<<< HEAD
         final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink001");
+=======
+        final Path staging = tempDir.resolve(stagingDest("symLink001"));
+>>>>>>> c63bc946 (test: enforce 10-char manifest staging suffixes in unit tests)
         Files.createDirectories(staging);
         Files.createSymbolicLink(staging.resolve("assets"), external);
 
@@ -229,7 +239,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-finish-fail");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "finishFail";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "finishFl01";
+        final String dest = stagingDest("finish0001");
         final Path staging = tempDir.resolve(dest);
         Files.createDirectories(staging);
 
@@ -245,7 +255,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupAfterDownloadFailedRemovesManifestStaging() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-failed-cleanup");
         tempDir.toFile().deleteOnExit();
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "failedSt01";
+        final String dest = stagingDest("failed0001");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -258,7 +268,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupAfterDownloadCancelledRemovesManifestStaging() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-cancel-cleanup");
         tempDir.toFile().deleteOnExit();
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "cancelSt01";
+        final String dest = stagingDest("cancel0001");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -274,7 +284,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-failed");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workFailed";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workFail01";
+        final String dest = stagingDest("workFail001");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -330,7 +340,11 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workCan001";
+<<<<<<< HEAD
         final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan010";
+=======
+        final String dest = stagingDest("workCancel1");
+>>>>>>> c63bc946 (test: enforce 10-char manifest staging suffixes in unit tests)
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
