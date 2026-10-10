@@ -3490,14 +3490,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         ) ?? "[]"
         let previousMode = delayUpdateUtils.getConditionMode()
         guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
-            _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
+            if !delayUpdateUtils.setMultiDelay(delayConditions: previousConditions) {
+                logger.error("Failed to restore previous delay conditions after setMultiDelay failure")
+            }
             call.reject("Failed to delay update")
             return
         }
         let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
         guard delayUpdateUtils.setConditionMode(conditionMode) else {
-            _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
-            _ = delayUpdateUtils.setConditionMode(previousMode)
+            if !delayUpdateUtils.setMultiDelay(delayConditions: previousConditions) {
+                logger.error("Failed to restore previous delay conditions after setConditionMode failure")
+            }
+            if !delayUpdateUtils.setConditionMode(previousMode) {
+                logger.error("Failed to restore previous delay condition mode after setConditionMode failure")
+            }
             call.reject("Failed to delay update")
             return
         }
