@@ -86,7 +86,7 @@ jobs:
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    name: C core (Rust core tests through the C ABI, sanitizers)
+    name: C core (Rust core tests through the C ABI)
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -113,18 +113,55 @@ jobs:
       - name: Test C core (the Rust core's suite, through the C ABI)
         working-directory: core
         run: CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build/libcapgo_updater_core.so" cargo test --locked
-      - name: Test C core with AddressSanitizer and UndefinedBehaviorSanitizer
+
+  c_core_memcheck:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: C core (Valgrind memcheck, UndefinedBehaviorSanitizer)
+    # ASan is not used here: its runtime preloaded into the uninstrumented Rust test process
+    # corrupts its own thread registry on Linux (seen with GCC and Clang, never on macOS),
+    # while Valgrind, which also sees writes from system libraries (zlib), reports nothing.
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain and Valgrind
         run: |
-          cmake -S core-c -B core-c/build-asan -DCAPGO_TEST_SUPPORT=ON -DCAPGO_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug
-          cmake --build core-c/build-asan -j "$(nproc)"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq valgrind
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+          key: c-core-memcheck
+      - name: Cache C core dependencies
+        uses: actions/cache@v4
+        with:
+          path: core-c/.deps
+          key: core-c-deps-${{ hashFiles('core-c/CMakeLists.txt') }}
+      - name: Build test binaries
+        working-directory: core
+        run: cargo test --locked --tests --no-run
+      - name: Test C core with UndefinedBehaviorSanitizer (trap on undefined behavior)
+        run: |
+          CC=clang cmake -S core-c -B core-c/build-ubsan -DCAPGO_TEST_SUPPORT=ON -DCMAKE_BUILD_TYPE=Debug \
+            "-DCMAKE_C_FLAGS=-fsanitize=undefined -fsanitize-trap=undefined"
+          cmake --build core-c/build-ubsan -j "$(nproc)"
           cd core
-          # Build without the sanitizer runtime, then preload it for the test binaries only
-          # (rustdoc and cargo itself hang with it preloaded).
-          cargo test --locked --tests --no-run
-          LD_PRELOAD="$(gcc -print-file-name=libasan.so)" \
-            ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
-            CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-asan/libcapgo_updater_core.so" \
-            timeout 300 cargo test --locked --tests
+          CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-ubsan/libcapgo_updater_core.so" cargo test --locked --tests
+      - name: Test C core under Valgrind memcheck
+        run: |
+          cmake -S core-c -B core-c/build-debug -DCAPGO_TEST_SUPPORT=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build core-c/build-debug -j "$(nproc)"
+          cd core
+          CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-debug/libcapgo_updater_core.so" timeout 360 cargo test --locked --tests \
+            --config 'target."cfg(all())".runner="valgrind -q --error-exitcode=9 --fair-sched=yes --max-threads=5000"'
 
   c_core_android:
     permissions:
