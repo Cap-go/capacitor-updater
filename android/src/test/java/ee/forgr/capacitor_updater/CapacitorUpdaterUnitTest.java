@@ -4165,30 +4165,37 @@ public class CapacitorUpdaterUnitTest {
         final Path orphanStaging = tempDir.resolve("orphanStg1");
         Files.createDirectories(orphanStaging.resolve("assets"));
         Files.write(orphanStaging.resolve("assets").resolve("app.js"), "console.log(1)".getBytes(StandardCharsets.UTF_8));
-        final Path protectedStaging = tempDir.resolve("activeStg1");
-        Files.createDirectories(protectedStaging);
 
         final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
         updater.documentsDir = tempDir.toFile();
         final SharedPreferences prefs = mock(SharedPreferences.class);
-        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         updater.prefs = prefs;
-        updater.editor = editor;
-
-        final String downloadingId = "downldId01";
-        final Map<String, Object> prefsAll = new HashMap<>();
-        prefsAll.put(downloadingId + "_info", "");
-        when(prefs.getAll()).thenReturn(prefsAll);
-        when(prefs.getString(downloadingId + "_info", "")).thenReturn(
-            new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
-        );
-        when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn("activeStg1");
-        when(editor.remove(anyString())).thenReturn(editor);
+        when(prefs.getAll()).thenReturn(Map.of());
 
         updater.cleanupOrphanedManifestStagingFolders(null);
 
         assertFalse("Orphan manifest staging folder should be deleted", Files.exists(orphanStaging));
-        assertTrue("Active manifest staging folder should remain", Files.exists(protectedStaging));
+    }
+
+    @Test
+    public void activeManifestStagingDestsProtectsInFlightDownloadFolder() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        updater.prefs = prefs;
+
+        final String downloadingId = "downldId01";
+        when(prefs.getAll()).thenAnswer(invocation -> {
+            final Map<String, Object> all = new HashMap<>();
+            all.put(downloadingId + "_info", "");
+            return all;
+        });
+        when(prefs.getString(downloadingId + "_info", "")).thenReturn(
+            new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
+        );
+        when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn("activeStg1");
+
+        final Set<String> activeDests = updater.activeManifestStagingDests();
+        assertTrue(activeDests.contains("activeStg1"));
     }
 
     @Test
