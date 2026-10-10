@@ -68,14 +68,18 @@ public class DelayUpdateUtils {
                         logger.info(result.logMessage);
                     }
                 }
+            } else if (result.keep) {
+                delayConditionListToKeep.add(condition);
             }
             index++;
         }
 
         if (useOrMode) {
-            if (anyConditionMet) {
+            if (anyConditionMet || delayConditionListToKeep.isEmpty()) {
                 logger.info("Delay condition met in OR mode (source: " + source + "), canceling delay");
                 this.cancelDelay("checkCancelDelay");
+            } else if (delayConditionListToKeep.size() != delayConditionList.size()) {
+                this.setMultiDelay(convertDelayConditionsToJson(delayConditionListToKeep));
             }
             return;
         }
@@ -264,7 +268,10 @@ public class DelayUpdateUtils {
                 logger.warn("Unknown delay condition mode '" + conditionMode + "', defaulting to '" + DELAY_CONDITION_MODE_AND + "'");
             }
             this.editor.putString(DELAY_CONDITION_MODE_PREFERENCES, normalized);
-            this.editor.commit();
+            if (!this.editor.commit()) {
+                logger.error("Failed to save delay condition mode: commit returned false");
+                return false;
+            }
             logger.info("Delay condition mode saved: " + normalized);
             return true;
         } catch (final Exception e) {
@@ -364,7 +371,10 @@ public class DelayUpdateUtils {
     public Boolean setMultiDelay(String delayConditions) {
         try {
             this.editor.putString(DELAY_CONDITION_PREFERENCES, delayConditions);
-            this.editor.commit();
+            if (!this.editor.commit()) {
+                logger.error("Failed to delay update: commit returned false");
+                return false;
+            }
             logger.info("Delay update saved");
             return true;
         } catch (final Exception e) {

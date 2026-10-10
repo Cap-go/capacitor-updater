@@ -174,6 +174,22 @@ public class DelayUpdateUtilsTest {
     }
 
     @Test
+    public void checkCancelDelay_orMode_foregroundClearsWhenAllConditionsInvalid() throws Exception {
+        JSONArray stored = new JSONArray();
+        stored.put(new JSONObject().put("kind", "background").put("value", "not-a-number"));
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES), anyString())).thenReturn(stored.toString());
+        when(prefs.getString(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES), anyString())).thenReturn(
+            DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+        );
+
+        utils.checkCancelDelay(DelayUpdateUtils.CancelDelaySource.FOREGROUND);
+
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES));
+        verify(editor).remove(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES));
+        verify(editor).commit();
+    }
+
+    @Test
     public void setConditionMode_persistsNormalizedValue() {
         assertTrue(utils.setConditionMode(DelayUpdateUtils.DELAY_CONDITION_MODE_OR));
         verify(editor).putString(eq(DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES), eq(DelayUpdateUtils.DELAY_CONDITION_MODE_OR));

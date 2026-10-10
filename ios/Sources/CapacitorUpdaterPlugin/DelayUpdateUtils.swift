@@ -66,14 +66,14 @@ public class DelayUpdateUtils {
                 if !useOrMode, let logMessage = result.logMessage {
                     logger.info(logMessage)
                 }
-            } else if !useOrMode {
+            } else {
                 if result.keep {
                     delayConditionListToKeep.append(condition)
                 }
-                if let logMessage = result.logMessage {
+                if let logMessage = result.logMessage, !useOrMode || result.error {
                     if result.error {
                         logger.error(logMessage)
-                    } else {
+                    } else if !useOrMode {
                         logger.info(logMessage)
                     }
                 }
@@ -85,6 +85,11 @@ public class DelayUpdateUtils {
             if anyConditionMet {
                 logger.info("Delay condition met in OR mode (source: \(source.description)), canceling delay")
                 _ = cancelDelay(source: "checkCancelDelay")
+            } else if delayConditionListToKeep.isEmpty {
+                _ = cancelDelay(source: "checkCancelDelay")
+            } else if delayConditionListToKeep.count != delayConditionList.count {
+                let json = toJson(object: delayConditionListToKeep.map { $0.toJSON() })
+                _ = setMultiDelay(delayConditions: json)
             }
             return
         }
@@ -239,16 +244,24 @@ public class DelayUpdateUtils {
             logger.warn("Unknown delay condition mode '\(conditionMode)', defaulting to '\(DelayUpdateUtils.DELAY_CONDITION_MODE_AND)'")
         }
         UserDefaults.standard.set(normalized, forKey: DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES)
-        UserDefaults.standard.synchronize()
-        logger.info("Delay condition mode saved: \(normalized)")
-        return true
+        let synchronized = UserDefaults.standard.synchronize()
+        if synchronized {
+            logger.info("Delay condition mode saved: \(normalized)")
+        } else {
+            logger.error("Failed to save delay condition mode: synchronize returned false")
+        }
+        return synchronized
     }
 
     public func setMultiDelay(delayConditions: String) -> Bool {
         UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
-        UserDefaults.standard.synchronize()
-        logger.info("Delay update saved")
-        return true
+        let synchronized = UserDefaults.standard.synchronize()
+        if synchronized {
+            logger.info("Delay update saved")
+        } else {
+            logger.error("Failed to delay update: synchronize returned false")
+        }
+        return synchronized
     }
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {

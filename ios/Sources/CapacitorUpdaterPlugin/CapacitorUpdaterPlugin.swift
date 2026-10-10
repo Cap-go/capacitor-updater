@@ -3482,24 +3482,36 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
             let delayConditions: String = toJson(object: modifiableList)
+            let previousConditions = UserDefaults.standard.string(
+                forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+            ) ?? "[]"
+            let previousMode = delayUpdateUtils.getConditionMode()
             guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
                 call.reject("Failed to delay update")
                 return
             }
             let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
             guard delayUpdateUtils.setConditionMode(conditionMode) else {
+                _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
+                _ = delayUpdateUtils.setConditionMode(previousMode)
                 call.reject("Failed to delay update")
                 return
             }
             call.resolve()
         } else {
             let delayConditions: String = toJson(object: delayConditionList)
+            let previousConditions = UserDefaults.standard.string(
+                forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+            ) ?? "[]"
+            let previousMode = delayUpdateUtils.getConditionMode()
             guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
                 call.reject("Failed to delay update")
                 return
             }
             let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
             guard delayUpdateUtils.setConditionMode(conditionMode) else {
+                _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
+                _ = delayUpdateUtils.setConditionMode(previousMode)
                 call.reject("Failed to delay update")
                 return
             }
