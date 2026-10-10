@@ -3490,6 +3490,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         ) ?? "[]"
         let previousMode = delayUpdateUtils.getConditionMode()
         guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
+            _ = delayUpdateUtils.setMultiDelay(delayConditions: previousConditions)
             call.reject("Failed to delay update")
             return
         }

@@ -4807,6 +4807,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final String previousConditions = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
             final String previousMode = this.delayUpdateUtils.getConditionMode();
             if (!this.delayUpdateUtils.setMultiDelay(delayConditions.toString())) {
+                this.delayUpdateUtils.setMultiDelay(previousConditions);
                 call.reject("Failed to delay update");
                 return;
             }
