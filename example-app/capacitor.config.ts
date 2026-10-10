@@ -28,7 +28,7 @@ function isLocalHttpUrl(value: string | undefined): boolean {
     host === '127.0.0.1' ||
     host === '::1' ||
     host === '[::1]' ||
-    host === '10.0.2.2' ||
+    host === '10.0.2.2' || // NOSONAR Android emulator alias for the host loopback, test-only
     /^10\./.test(host) ||
     /^192\.168\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
