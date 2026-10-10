@@ -4149,6 +4149,7 @@ public class CapacitorUpdaterUnitTest {
         assertFalse("Orphan bundle folder should be deleted", Files.exists(orphanDir));
     }
 
+    /** Manifest staging cleanup tests cover prefixed folders and legacy bare-name migration. */
     @Test
     public void isManifestStagingFolderNameMatchesRandomDestPattern() {
         assertTrue(CapgoUpdater.isManifestStagingFolderName(CapgoUpdater.MANIFEST_STAGING_PREFIX + "aBc123XyZ0"));
