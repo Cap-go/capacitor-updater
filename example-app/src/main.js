@@ -1440,6 +1440,27 @@ async function resetServerRelease() {
   }
 }
 
+async function purgeDownloadedBundlesAfterServerReset() {
+  if (!scenarioId.includes('manifest')) {
+    return;
+  }
+
+  try {
+    const result = await plugin.list();
+    const bundles = result?.bundles ?? [];
+    for (const bundle of bundles) {
+      if (bundle?.id && bundle.id !== 'builtin') {
+        await plugin.delete({ id: bundle.id });
+      }
+    }
+    state.lastDownloadedBundleId = null;
+    state.lastDownloadedBundleVersion = null;
+    await refreshState();
+  } catch (error) {
+    console.warn('[Harness] purgeDownloadedBundlesAfterServerReset failed', error);
+  }
+}
+
 async function advanceServerRelease() {
   const endpoint = createServerEndpoint('/api/control/advance');
 
@@ -2252,7 +2273,12 @@ const actions = [
     description: 'Reset the fake OTA server back to the first release for this scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'reset',
-    run: async () => resetServerRelease(),
+    skipRefresh: true,
+    run: async () => {
+      const serverDebug = await resetServerRelease();
+      await purgeDownloadedBundlesAfterServerReset();
+      return serverDebug;
+    },
   },
   {
     id: 'advance-server-release',
@@ -2262,6 +2288,7 @@ const actions = [
     description: 'Move the fake OTA server to the next release in the scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'advance',
+    skipRefresh: true,
     run: async () => advanceServerRelease(),
   },
   {
@@ -2688,6 +2715,7 @@ async function runAction(action, values, options = {}) {
   if (actionMarker) {
     actionMarker.textContent = `Action marker: ${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   }
+  renderState();
 
   try {
     const result = await action.run(values ?? {});
@@ -2710,9 +2738,6 @@ async function runAction(action, values, options = {}) {
       return result;
     }
 
-    if (!skipRefresh) {
-      await refreshState();
-    }
     state.lastActionMarker = `${actionMarkerId}:${actionOutcome}`;
     state.lastActionResult = `${action.id}:${actionOutcome}`;
     state.lastPhase = `${action.id}:${actionOutcome}`;
@@ -2727,6 +2752,11 @@ async function runAction(action, values, options = {}) {
           : `Action marker: ${actionMarkerId}:${actionOutcome}`;
     }
     renderState();
+    if (!skipRefresh) {
+      void refreshState().catch((refreshError) => {
+        console.error(`Post-action refresh failed for ${action.id}`, refreshError);
+      });
+    }
     return result;
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -2747,6 +2777,7 @@ async function runAction(action, values, options = {}) {
   } finally {
     actionInProgress = false;
     suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
+    renderDemoActionButtons();
   }
 }
 
@@ -2842,6 +2873,7 @@ async function runSmokeSequence() {
       elements.runSmokeSequenceButton.disabled = false;
       elements.quickRunSmokeSequenceButton.disabled = false;
       smokeSequencePromise = null;
+      renderDemoActionButtons();
     }
   })();
 
@@ -3094,6 +3126,7 @@ function configureQaToolsPanel() {
   const openOnNative = platform !== 'web';
 
   details.open = openOnNative;
+  details.classList.toggle('qa-tools-native-open', openOnNative);
   if (openOnNative) {
     details.setAttribute('open', '');
   } else {

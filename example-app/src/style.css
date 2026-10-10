@@ -454,9 +454,15 @@ button:disabled {
   display: none;
 }
 
+.platform-android #qa-tools-details.qa-tools-native-open .qa-tools-body,
+.platform-ios #qa-tools-details.qa-tools-native-open .qa-tools-body {
+  display: grid !important;
+}
+
 @media (max-width: 640px) {
   body {
-    padding: 12px 14px 24px;
+    padding: calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+      calc(24px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
   }
 
   .site-header,

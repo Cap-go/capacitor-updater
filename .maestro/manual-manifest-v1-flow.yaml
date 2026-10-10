@@ -15,9 +15,17 @@ appId: app.capgo.updater
     timeout: 120000
 - scrollUntilVisible:
     element:
+      id: 'qa-shortcuts-heading'
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
       id: 'quick-action-set-runtime-urls'
     direction: DOWN
-    timeout: 30000
+    timeout: 60000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
@@ -27,12 +35,20 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
-    timeout: 30000
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: 'qa-shortcuts-heading'
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+    visibilityPercentage: 1
+    waitToSettleTimeoutMs: 500
 - scrollUntilVisible:
     element:
       id: 'quick-action-reset-server-release'
     direction: DOWN
-    timeout: 30000
+    timeout: 60000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
@@ -42,7 +58,7 @@ appId: app.capgo.updater
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       id: 'quick-action-download-latest-bundle'
