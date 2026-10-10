@@ -154,7 +154,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupPreservesManifestDestsForCurrentNextAndFallbackDownloads() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-protected-staging");
         tempDir.toFile().deleteOnExit();
-        final String currentDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "currentDl01";
+        final String currentDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "curntDl01";
         final String nextDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "nextDown01";
         final String fallbackDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "fallback01";
         for (final String dest : List.of(currentDest, nextDest, fallbackDest)) {
@@ -330,7 +330,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workCan001";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan0001";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan010";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);

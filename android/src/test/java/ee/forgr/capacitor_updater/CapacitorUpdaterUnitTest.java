@@ -4165,7 +4165,7 @@ public class CapacitorUpdaterUnitTest {
     public void cleanupOrphanedManifestStagingFoldersRemovesLeftoverDest() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-manifest-staging");
         tempDir.toFile().deleteOnExit();
-        final Path orphanStaging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "orphanStg01");
+        final Path orphanStaging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "orphanFl01");
         Files.createDirectories(orphanStaging.resolve("assets"));
         Files.write(orphanStaging.resolve("assets").resolve("app.js"), "console.log(1)".getBytes(StandardCharsets.UTF_8));
 
@@ -4196,11 +4196,11 @@ public class CapacitorUpdaterUnitTest {
             new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
         );
         when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn(
-            CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeStg01"
+            CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeDg01"
         );
 
         final Set<String> activeDests = updater.activeManifestStagingDests();
-        assertTrue(activeDests.contains(CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeStg01"));
+        assertTrue(activeDests.contains(CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeDg01"));
     }
 
     @Test
