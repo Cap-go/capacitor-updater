@@ -4176,7 +4176,8 @@ public class CapacitorUpdaterUnitTest {
         updater.editor = editor;
 
         final String downloadingId = "downldId01";
-        final Map<String, ?> prefsAll = Map.of(downloadingId + "_info", "");
+        final Map<String, Object> prefsAll = new HashMap<>();
+        prefsAll.put(downloadingId + "_info", "");
         when(prefs.getAll()).thenReturn(prefsAll);
         when(prefs.getString(downloadingId + "_info", "")).thenReturn(
             new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
