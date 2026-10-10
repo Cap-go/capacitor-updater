@@ -675,13 +675,16 @@ import UIKit
         guard self.builtinMinimum else {
             return
         }
-        guard let bundleVersion = try? CapgoSemanticVersion(version),
-              let nativeVersion = try? CapgoSemanticVersion(self.versionBuild) else {
-            logger.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
+        guard let parsedBundle = try? CapgoSemanticVersion(version),
+              let parsedNative = try? CapgoSemanticVersion(self.versionBuild) else {
+            logger?.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
             return
         }
+        // Only major.minor.patch matter: a prerelease bundle at the native version is not a rollback.
+        let bundleVersion = CapgoSemanticVersion(major: parsedBundle.major, minor: parsedBundle.minor, patch: parsedBundle.patch)
+        let nativeVersion = CapgoSemanticVersion(major: parsedNative.major, minor: parsedNative.minor, patch: parsedNative.patch)
         if bundleVersion < nativeVersion {
-            logger.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
+            logger?.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
             self.sendStats(action: "version_below_native", versionName: version)
             throw NSError(
                 domain: "CapgoUpdater",
@@ -709,22 +712,22 @@ import UIKit
             return
         }
         if signature.isEmpty {
-            logger.warn(Self.signatureMissingMessage)
+            logger?.warn(Self.signatureMissingMessage)
             return
         }
         let plainChecksum: String
         do {
             plainChecksum = try CryptoCipher.decryptChecksum(checksum: encryptedChecksum, publicKey: self.publicKey)
         } catch {
-            logger.error("Bundle signature verification failed: cannot recover checksum")
+            logger?.error("Bundle signature verification failed: cannot recover checksum")
             throw signatureFailure(version: version)
         }
         let payload = CryptoCipher.buildBundleSignaturePayload(version: version, checksumHex: plainChecksum)
         guard CryptoCipher.verifySignature(signatureHex: signature, payload: payload, publicKey: self.publicKey) else {
-            logger.error("Bundle signature verification failed for version \(version)")
+            logger?.error("Bundle signature verification failed for version \(version)")
             throw signatureFailure(version: version)
         }
-        logger.info("Bundle signature verified for version \(version)")
+        logger?.info("Bundle signature verified for version \(version)")
     }
 
     /// Verifies the CLI `manifest_signature` (version name + every file_name and its plain hash). Binds the whole
@@ -734,30 +737,30 @@ import UIKit
             return
         }
         if signature.isEmpty {
-            logger.warn(Self.signatureMissingMessage)
+            logger?.warn(Self.signatureMissingMessage)
             return
         }
         var entries: [(fileName: String, hashHex: String)] = []
         for entry in manifest {
             guard let fileName = entry.file_name, let fileHash = entry.file_hash, !fileHash.isEmpty else {
-                logger.error("Bundle signature verification failed: manifest entry without file_name or file_hash")
+                logger?.error("Bundle signature verification failed: manifest entry without file_name or file_hash")
                 throw signatureFailure(version: version)
             }
             do {
                 let plainHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 entries.append((fileName: fileName, hashHex: plainHash))
             } catch {
-                logger.error("Bundle signature verification failed: cannot recover file hash")
-                logger.debug("File: \(fileName)")
+                logger?.error("Bundle signature verification failed: cannot recover file hash")
+                logger?.debug("File: \(fileName)")
                 throw signatureFailure(version: version)
             }
         }
         let payload = CryptoCipher.buildManifestSignaturePayload(version: version, entries: entries)
         guard CryptoCipher.verifySignature(signatureHex: signature, payload: payload, publicKey: self.publicKey) else {
-            logger.error("Manifest signature verification failed for version \(version)")
+            logger?.error("Manifest signature verification failed for version \(version)")
             throw signatureFailure(version: version)
         }
-        logger.info("Manifest signature verified for version \(version) (\(entries.count) files)")
+        logger?.info("Manifest signature verified for version \(version) (\(entries.count) files)")
     }
 
     public func setPublicKey(_ publicKey: String) {

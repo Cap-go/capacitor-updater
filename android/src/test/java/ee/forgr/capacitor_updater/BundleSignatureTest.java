@@ -285,6 +285,8 @@ public class BundleSignatureTest {
         updater.requireVersionNotBelowBuiltin("1.2.3");
         updater.requireVersionNotBelowBuiltin("1.2.4");
         updater.requireVersionNotBelowBuiltin("2.0.0-beta.1");
+        // Prerelease at the native version is not a rollback: only major.minor.patch are compared.
+        updater.requireVersionNotBelowBuiltin("1.2.3-beta.1");
         assertTrue(updater.stats.isEmpty());
     }
 

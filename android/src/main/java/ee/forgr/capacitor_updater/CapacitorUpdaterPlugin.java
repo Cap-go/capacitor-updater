@@ -5297,6 +5297,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (
                             latestVersionName != null && !latestVersionName.isEmpty() && !current.getVersionName().equals(latestVersionName)
                         ) {
+                            // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                            try {
+                                CapacitorUpdaterPlugin.this.implementation.requireVersionNotBelowBuiltin(latestVersionName);
+                            } catch (final IOException e) {
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    e.getMessage() == null ? "Download blocked" : e.getMessage(),
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate
+                                );
+                                return;
+                            }
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest != null) {
                                 final JSObject ret = new JSObject();

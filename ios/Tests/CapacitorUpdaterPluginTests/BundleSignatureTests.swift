@@ -198,6 +198,8 @@ final class BundleSignatureTests: XCTestCase {
         XCTAssertEqual(updater.sentStatsActions, ["version_below_native"])
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0"))
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.1"))
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0-beta.1"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9-rc.1"))
         // Unparseable versions never block.
         XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("builtin"))
         updater.versionBuild = "not-a-version"

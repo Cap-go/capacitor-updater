@@ -314,7 +314,9 @@ declare module '@capacitor/cli' {
        *
        * Blocked by default so a redirect can never downgrade updater traffic to an unencrypted connection.
        * Only enable this if your self-hosted update server or CDN must redirect to an HTTP URL.
-       * Direct HTTP URLs (for example `localApi` during development) are not affected.
+       * Since 8.53.0 `httpsOnly` (default `true`) rejects every non-https URL and redirect hop regardless of
+       * this setting, so an HTTP redirect also needs `httpsOnly: false`. Direct HTTP URLs (for example
+       * `localApi` during development) are only allowed with `httpsOnly: false` as well.
        *
        * Only available for Android and iOS.
        *
@@ -330,7 +332,10 @@ declare module '@capacitor/cli' {
        * `allowHttpsToHttpRedirect`. A non-https URL fails the call or download with
        * `httpsOnly is enabled and <url> is not https`.
        *
-       * Set to `false` only for local development servers (for example a plain-http `localApi` on loopback).
+       * Set to `false` only for local development servers (for example a plain-http `localApi` on loopback)
+       * or a self-hosted plain-http update server you control. Upgrading from an older 8.x with a plain-http
+       * `updateUrl`, `statsUrl`, `channelUrl` or `allowHttpsToHttpRedirect: true` requires this to be set to
+       * `false` explicitly.
        *
        * Only available for Android and iOS.
        *
@@ -343,8 +348,11 @@ declare module '@capacitor/cli' {
        * Refuse to download or install a bundle whose version is lower than the native app version
        * (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device
        * counterpart of the Capgo channel setting "disable auto update under native" and protects against a
-       * replayed old update response rolling the app back below its store version. Versions that do not
-       * parse as semver skip the check. Rejections are reported as the `version_below_native` stat.
+       * replayed old update response rolling the app back below its store version. Only the numeric
+       * `major.minor.patch` part is compared (a `1.2.3-beta.1` bundle is accepted on native `1.2.3`), and
+       * versions that do not parse as semver skip the check. Rejections are reported as the
+       * `version_below_native` stat. Set to `false` if you version web bundles independently of the native
+       * app (for example native `2.0.0` with bundle `1.4.7`).
        *
        * Only available for Android and iOS.
        *

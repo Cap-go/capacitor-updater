@@ -415,7 +415,8 @@ public class CapgoUpdater {
             );
             return;
         }
-        if (bundle.isLowerThan(nativeVersion)) {
+        // Only the numeric part matters: a prerelease bundle at the native version is not a rollback.
+        if (!bundle.isAtLeast(nativeVersion, true)) {
             final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
             logger.error(message);
             this.sendStats("version_below_native", version);

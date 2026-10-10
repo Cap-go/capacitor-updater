@@ -33,7 +33,7 @@ public struct CryptoCipher {
 
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
-            logger.info("No encryption set (public key) ignored")
+            logger?.info("No encryption set (public key) ignored")
             return checksum
         }
         do {
@@ -338,8 +338,8 @@ public struct CryptoCipher {
             return false
         }
         guard isHexString(signatureHex), signatureHex.count == 512 else {
-            logger.error("Bundle signature has invalid format")
-            logger.debug("Signature length: \(signatureHex.count) chars, expected 512 hex chars")
+            logger?.error("Bundle signature has invalid format")
+            logger?.debug("Signature length: \(signatureHex.count) chars, expected 512 hex chars")
             return false
         }
         guard let recovered = try? decryptChecksum(checksum: signatureHex, publicKey: publicKey) else {

@@ -4795,6 +4795,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
+                    // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                    do {
+                        try self.implementation.requireVersionNotBelowBuiltin(latestVersionName)
+                    } catch {
+                        self.endBackGroundTaskWithNotif(
+                            msg: error.localizedDescription,
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
+                    }
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
                     if needsDownload {
