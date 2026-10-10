@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-BUN_VERSION="${BUN_VERSION:-1.3.12}"
+BUN_VERSION="${BUN_VERSION:-1.4.2}"
 NORMALIZED_VERSION="${BUN_VERSION#bun-v}"
 PLATFORM="$(uname -s)"
 ARCH="$(uname -m)"

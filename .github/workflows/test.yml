@@ -14,7 +14,7 @@ on:
   workflow_call: # Allow this workflow to be called by other workflows
 
 env:
-  BUN_VERSION: 1.3.12
+  BUN_VERSION: 1.4.2
   MAESTRO_VERSION: cli-2.4.0
   CAPGO_MAESTRO_DEVICE_BASE_URL: http://127.0.0.1:3192
 
