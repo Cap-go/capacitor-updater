@@ -161,7 +161,7 @@ jobs:
           cmake --build core-c/build-debug -j "$(nproc)"
           cd core
           CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-debug/libcapgo_updater_core.so" timeout 360 cargo test --locked --tests \
-            --config 'target."cfg(all())".runner="valgrind -q --error-exitcode=9 --fair-sched=yes --max-threads=5000"'
+            --config 'target."cfg(all())".runner="valgrind -q --error-exitcode=9 --fair-sched=yes --max-threads=5000 --suppressions=../core-c/valgrind.supp"'
 
   c_core_android:
     permissions:
