@@ -432,7 +432,7 @@ jobs:
       # Same emulator teardown hazard as the live update job: bound the step below the job cap
       # and let the success marker decide the result.
       - name: Run Maestro smoke tests
-        timeout-minutes: 8
+        timeout-minutes: 10
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:

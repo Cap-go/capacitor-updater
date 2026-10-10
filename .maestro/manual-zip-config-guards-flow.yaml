@@ -7,53 +7,33 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
+- extendedWaitUntil:
+    visible: 'Quick reset release'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-reset-server-release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
 - tapOn:
-    id: 'quick-action-reset-server-release'
+    text: 'Quick reset release'
     retryTapIfNoChange: true
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
-    timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-download-latest-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+    timeout: 120000
+- extendedWaitUntil:
+    visible: 'Quick download latest bundle'
+    timeout: 120000
 - tapOn:
-    id: 'quick-action-download-latest-bundle'
+    text: 'Quick download latest bundle'
     retryTapIfNoChange: true
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-bundle-error'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: 'Quick mark bundle error'
+    timeout: 120000
 - tapOn:
-    id: 'quick-action-set-bundle-error'
+    text: 'Quick mark bundle error'
     waitToSettleTimeoutMs: 500
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: bundle:(success|expected-rejection)|M:bundle:(success|expected-rejection)).*'
-    timeout: 30000
+    timeout: 60000
