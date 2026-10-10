@@ -328,6 +328,7 @@ const state = {
   getChannelResult: null,
   getChannelReadMarker: 'not-run',
   harnessReady: false,
+  runtimeUrlsReady: false,
   lastGetLatestCheck: 'not-run',
   lastListChannelsCheck: 'not-run',
   lastPrivateChannelCheck: 'not-run',
@@ -833,7 +834,11 @@ function renderState() {
   elements.noNeedUpdateEventState.textContent = `No need update event: ${state.eventMarkers.noNeedUpdate}`;
   elements.updateFailedEventState.textContent = `Update failed event: ${state.eventMarkers.updateFailed}`;
   elements.actionStatus.textContent = `Status: ${state.lastPhase}`;
-  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}`;
+  const runtimeUrlsLabel =
+    scenarioId === 'manual-manifest'
+      ? ` | Runtime URLs: ${state.runtimeUrlsReady ? 'ready' : 'pending'}`
+      : '';
+  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}${runtimeUrlsLabel}`;
   elements.scenarioId.textContent = `Scenario: ${scenarioId}`;
   elements.directUpdateMode.textContent = `Direct update mode: ${directUpdateMode}`;
   elements.serverUrl.textContent = `Server URL: ${serverUrl}`;
@@ -906,7 +911,7 @@ function renderState() {
   elements.e2eSummary.textContent =
     `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
-    `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
+    `Harness: ${state.harnessReady ? 'ready' : 'pending'}${runtimeUrlsLabel} | ` +
     `Build label: ${buildLabel} | ` +
     `Scenario: ${scenarioId} | ` +
     `Direct update mode: ${directUpdateMode} | ` +
@@ -1495,6 +1500,22 @@ async function purgeDownloadedBundlesAfterServerReset() {
 
   await refreshState();
 
+  const activeBundleId = state.currentBundle?.id;
+  const nextBundleId = state.nextBundle?.id;
+  const hasActiveDownloadedBundle = activeBundleId && activeBundleId !== 'builtin';
+  const hasQueuedBundle = Boolean(nextBundleId);
+
+  if (hasActiveDownloadedBundle || hasQueuedBundle) {
+    try {
+      await plugin.reset();
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: reset to builtin before purge failed: ${error?.message ?? String(error)}`,
+      );
+    }
+    await refreshState();
+  }
+
   let purgePasses = 0;
   while (purgePasses < 20) {
     purgePasses += 1;
@@ -1503,7 +1524,13 @@ async function purgeDownloadedBundlesAfterServerReset() {
     if (!inactive?.id) {
       break;
     }
-    await plugin.delete({ id: inactive.id });
+    try {
+      await plugin.delete({ id: inactive.id });
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: delete ${inactive.id} failed: ${error?.message ?? String(error)}`,
+      );
+    }
   }
 
   const listResult = await plugin.list();
@@ -3170,17 +3197,87 @@ function renderDemoActionButtons() {
   }
 }
 
+const maestroPinnedActionIdsByScenario = {
+  'manual-zip-config-guards': [
+    'get-latest',
+    'reset-server-release',
+    'download-latest-bundle',
+    'set-bundle-error',
+  ],
+  'manual-manifest': [
+    'set-runtime-urls',
+    'reset-server-release',
+    'download-latest-bundle',
+    'queue-last-downloaded-bundle',
+    'reload-app',
+  ],
+};
+
 function configureQaToolsPanel() {
-  const details = elements.qaToolsDetails;
+  const panel = elements.qaToolsDetails;
   const openOnNative = platform !== 'web';
 
-  details.open = openOnNative;
-  details.classList.toggle('qa-tools-native-open', openOnNative);
-  if (openOnNative) {
-    details.setAttribute('open', '');
-  } else {
-    details.removeAttribute('open');
+  panel.classList.toggle('qa-tools-native-open', openOnNative);
+}
+
+function clearElementChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
   }
+}
+
+function pinMaestroQuickActions() {
+  if (platform === 'web') {
+    return;
+  }
+
+  const host = document.getElementById('maestro-pinned-actions');
+  if (!host) {
+    return;
+  }
+
+  clearElementChildren(host);
+  const smokeWrap = document.createElement('div');
+  smokeWrap.className = 'maestro-pinned-smoke';
+  smokeWrap.appendChild(elements.quickRunSmokeSequenceButton);
+  host.appendChild(smokeWrap);
+
+  const pinIds = maestroPinnedActionIdsByScenario[scenarioId] ?? [];
+  for (const actionId of pinIds) {
+    const button = document.getElementById(`quick-action-${actionId}`);
+    if (button) {
+      host.appendChild(button);
+    }
+  }
+}
+
+async function ensureManualManifestRuntimeUrls() {
+  if (scenarioId !== 'manual-manifest' || !serverUrl.startsWith('http')) {
+    return;
+  }
+
+  if (!allowModifyUrl) {
+    state.runtimeUrlsReady = true;
+    renderState();
+    return;
+  }
+
+  const runtimeUrlsAction = getActionById('set-runtime-urls');
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      await runAction(runtimeUrlsAction, {}, { skipRefresh: true });
+      state.runtimeUrlsReady = true;
+      publishHarnessMarker('set-runtime-urls', 'success');
+      renderState();
+      return;
+    } catch (error) {
+      console.error(`Bootstrap set-runtime-urls attempt ${attempt} failed`, error);
+      await pause(attempt <= 4 ? 500 : 1500);
+    }
+  }
+
+  publishHarnessMarker('set-runtime-urls', 'error');
+  renderState();
 }
 
 function bindDemoActions() {
@@ -3304,6 +3401,7 @@ async function bootstrap() {
   resetScrollPosition();
   configureQaToolsPanel();
   renderQuickActions();
+  pinMaestroQuickActions();
   renderActions();
   bindDemoActions();
   renderState();
@@ -3351,6 +3449,7 @@ async function bootstrap() {
       break;
     }
   }
+  await ensureManualManifestRuntimeUrls();
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();
