@@ -182,7 +182,7 @@ public class ManifestStagingCleanupTest {
         final Path externalFile = external.resolve("keep.txt");
         Files.write(externalFile, "keep".getBytes(StandardCharsets.UTF_8));
 
-        final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink0001");
+        final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink001");
         Files.createDirectories(staging);
         Files.createSymbolicLink(staging.resolve("assets"), external);
 
@@ -330,7 +330,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workCan001";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan001";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan0001";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
