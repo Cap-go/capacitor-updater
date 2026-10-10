@@ -168,7 +168,7 @@ public class ManifestStagingCleanupTest {
         }
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
-        markDownloadingManifestDest(harness, "currentId01", currentDest);
+        markDownloadingManifestDest(harness, "curntId001", currentDest);
         markDownloadingManifestDest(harness, "nextId0001", nextDest);
         markDownloadingManifestDest(harness, "fallback01", fallbackDest);
 
