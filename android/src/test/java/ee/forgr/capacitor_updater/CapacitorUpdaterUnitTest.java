@@ -298,7 +298,7 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void downloadBackground(
+        public String downloadBackground(
             final String url,
             final String version,
             final String sessionKey,
@@ -311,6 +311,7 @@ public class CapacitorUpdaterUnitTest {
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
             this.updateAvailableNotifier.accept(version);
+            return "test-download-id";
         }
 
         @Override
@@ -473,6 +474,9 @@ public class CapacitorUpdaterUnitTest {
 
         private final BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
         private boolean downloadFailStatsCalled = false;
+        private int updateCheckErrorStatsCount = 0;
+        private String updateCheckErrorVersionName;
+        private Map<String, String> updateCheckErrorMetadata;
 
         FailedUpdateCapgoUpdater() {
             super(null);
@@ -496,6 +500,20 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public void sendStats(final String action, final String versionName, final String oldVersionName) {
             this.downloadFailStatsCalled = "download_fail".equals(action);
+        }
+
+        @Override
+        public void sendStats(
+            final String action,
+            final String versionName,
+            final String oldVersionName,
+            final Map<String, String> metadata
+        ) {
+            if ("update_check_error".equals(action)) {
+                this.updateCheckErrorStatsCount++;
+                this.updateCheckErrorVersionName = versionName;
+                this.updateCheckErrorMetadata = metadata;
+            }
         }
     }
 
@@ -3391,8 +3409,93 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(500, payload.getInt("statusCode"));
             assertEquals("1.0.0", payload.getString("version"));
             assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
-            assertTrue(updater.downloadFailStatsCalled);
+            // A failed check downloaded nothing: report update_check_error, not download_fail.
+            assertFalse(updater.downloadFailStatsCalled);
+            assertEquals(1, updater.updateCheckErrorStatsCount);
+            assertEquals("1.0.0", updater.updateCheckErrorVersionName);
+            assertEquals("response_error", updater.updateCheckErrorMetadata.get("error"));
+            assertEquals("500", updater.updateCheckErrorMetadata.get("status_code"));
         }
+    }
+
+    @Test
+    public void testEveryEventIsForwardedToUpdaterEvent() {
+        try (
+            MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignoredHandler = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin();
+            PluginCall listener = mock(PluginCall.class);
+            when(listener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(listener);
+
+            JSObject data = new JSObject();
+            data.put("percent", 10);
+            plugin.notifyListeners("download", data, false);
+            plugin.notifyListeners("majorAvailable", new JSObject(), false);
+
+            ArgumentCaptor<JSObject> captor = ArgumentCaptor.forClass(JSObject.class);
+            verify(listener, times(1)).resolve(captor.capture());
+            assertEquals("download", captor.getValue().getString("type"));
+            assertEquals(10, captor.getValue().getJSObject("data").getInteger("percent").intValue());
+        }
+    }
+
+    @Test
+    public void testRetainedEventsAreRetainedForUpdaterEvent() {
+        try (
+            MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignoredHandler = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin();
+            JSObject data = new JSObject();
+            data.put("status", "ok");
+            plugin.notifyListeners("appReady", data, true);
+
+            PluginCall listener = mock(PluginCall.class);
+            when(listener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(listener);
+
+            ArgumentCaptor<JSObject> captor = ArgumentCaptor.forClass(JSObject.class);
+            verify(listener, times(1)).resolve(captor.capture());
+            assertEquals("appReady", captor.getValue().getString("type"));
+            assertEquals("ok", captor.getValue().getJSObject("data").getString("status"));
+        }
+    }
+
+    @Test
+    public void testRetainedEventReplayIsNotForwardedTwice() {
+        try (
+            MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignoredHandler = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin();
+            plugin.notifyListeners("set", new JSObject(), true);
+
+            PluginCall updaterListener = mock(PluginCall.class);
+            when(updaterListener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(updaterListener);
+
+            PluginCall setListener = mock(PluginCall.class);
+            when(setListener.getString("eventName")).thenReturn("set");
+            plugin.addListener(setListener);
+
+            verify(updaterListener, times(1)).resolve(any(JSObject.class));
+            verify(setListener, times(1)).resolve(any(JSObject.class));
+        }
+    }
+
+    @Test
+    public void testUpdateCheckErrorMetadataDefaults() {
+        Map<String, String> metadata = CapacitorUpdaterPlugin.updateCheckErrorMetadata("", 0);
+        assertEquals("unknown", metadata.get("error"));
+        assertFalse(metadata.containsKey("status_code"));
     }
 
     @Test

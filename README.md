@@ -1,5 +1,30 @@
 # Capacitor updater
-<a href="https://capgo.app/"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to users right away without waiting for store review, with Capgo Cloud or your own server.
+
+<a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+<div align="center">
+  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <h2><a href="https://capgo.app/register/?ref=plugin_updater_v7">➡️ Get started for free</a></h2>
+  <p>14-day unlimited free trial. No credit card required</p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v7">Missing a feature? We'll build the plugin for you 💪</a></p>
+</div>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Cap-go/capacitor-updater/main/assets/github-social-preview.png" alt="@capgo/capacitor-updater for Capacitor apps" width="300" />
+</p>
+
+## Key features
+
+- **Auto update**: downloads and applies the latest bundle from Capgo Cloud or your own update server.
+- **Safe rollouts**: `notifyAppReady()` confirms a bundle works, otherwise the app rolls back to the last working one.
+- **Bundle control**: `download()`, `next()`, `set()`, `list()`, `delete()` and `reset()` for manual flows.
+- **Channels**: `setChannel()`, `getChannel()` and `listChannels()` for environments and per-device QA.
+- **Delta updates and security**: only changed files are downloaded, checksums are verified, and encryption is optional.
+- **Preview sessions**: `startPreviewSession()`, `setPreview()` and `resetPreview()` to test bundles on a device.
+- **Platforms**: iOS and Android. Web is a stub for development.
+
 [![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.com/invite/VnYRvBfgA6)
 <a href="https://discord.com/invite/VnYRvBfgA6"><img src="https://img.shields.io/discord/912707985829163099?color=%237289DA&label=Discord" alt="Discord">
 [![npm](https://img.shields.io/npm/dm/@capgo/capacitor-updater)](https://www.npmjs.com/package/@capgo/capacitor-updater)
@@ -14,11 +39,6 @@
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
 [![Open Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dopen)](https://console.algora.io/org/Capgo/bounties?status=open)
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
-
-<div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin_updater_v7"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin_updater_v7"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
-</div>
 
 Capacitor plugin to update your app remotely in real-time.
 
@@ -505,6 +525,7 @@ export default config;
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`removeAllListeners()`](#removealllisteners)
+* [`addListener('updaterEvent', ...)`](#addlistenerupdaterevent-)
 * [`addListener('download', ...)`](#addlistenerdownload-)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
 * [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
@@ -1559,6 +1580,7 @@ removeAllListeners() => Promise<void>
 Remove all event listeners registered for this plugin.
 
 This unregisters all listeners added via {@link addListener} for all event types:
+- `updaterEvent`
 - `download`
 - `noNeedUpdate`
 - `updateCheckResult`
@@ -1574,6 +1596,46 @@ Use this during cleanup (e.g., when unmounting components or closing screens)
 to prevent memory leaks from lingering event listeners.
 
 **Since:** 1.0.0
+
+--------------------
+
+
+#### addListener('updaterEvent', ...)
+
+```typescript
+addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for every updater event with a single listener.
+
+Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+`updaterEvent` gets the same retention.
+
+The per-event listeners below are deprecated and will be removed in v9.
+
+```typescript
+CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
+  switch (event.type) {
+    case 'download':
+      console.log('progress', event.data.percent);
+      break;
+    case 'downloadFailed':
+      console.warn('download failed', event.data.version);
+      break;
+  }
+});
+```
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updaterEvent'</code>                                               |
+| **`listenerFunc`** | <code>(event: <a href="#updaterevent">UpdaterEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.53.0
 
 --------------------
 
@@ -2702,6 +2764,13 @@ Result returned after requesting an immediate native auto-update check.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
+##### DownloadFailedEvent
+
+| Prop          | Type                | Description                | Since |
+| ------------- | ------------------- | -------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
+
+
 ##### MajorAvailableEvent
 
 | Prop          | Type                | Description                               | Since |
@@ -2728,13 +2797,6 @@ Result returned after requesting an immediate native auto-update check.
 | Prop         | Type                                              | Description                                                 | Since  |
 | ------------ | ------------------------------------------------- | ----------------------------------------------------------- | ------ |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle is queued as the next bundle to install. | 6.14.0 |
-
-
-##### DownloadFailedEvent
-
-| Prop          | Type                | Description                | Since |
-| ------------- | ------------------- | -------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
 ##### AppReadyEvent
@@ -2889,11 +2951,29 @@ failed by native clients.
 <code>'up_to_date' | 'blocked' | 'failed'</code>
 
 
+##### UpdaterEvent
+
+Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
+`type` is the legacy event name and `data` is the same payload the legacy listener receives,
+so you can switch on `type` and get a typed `data`.
+
+The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+
+<code>{ type: 'download'; data: <a href="#downloadevent">DownloadEvent</a> } | { type: 'noNeedUpdate'; data: <a href="#noneedevent">NoNeedEvent</a> } | { type: 'updateCheckResult'; data: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> } | { type: 'updateAvailable'; data: <a href="#updateavailableevent">UpdateAvailableEvent</a> } | { type: 'downloadComplete'; data: <a href="#downloadcompleteevent">DownloadCompleteEvent</a> } | { type: 'downloadFailed'; data: <a href="#downloadfailedevent">DownloadFailedEvent</a> } | { type: 'breakingAvailable'; data: <a href="#breakingavailableevent">BreakingAvailableEvent</a> } | { type: 'updateFailed'; data: <a href="#updatefailedevent">UpdateFailedEvent</a> } | { type: 'set'; data: <a href="#setevent">SetEvent</a> } | { type: 'setNext'; data: <a href="#setnextevent">SetNextEvent</a> } | { type: 'appReloaded'; data: <a href="#record">Record</a>&lt;string, never&gt; } | { type: 'appReady'; data: <a href="#appreadyevent">AppReadyEvent</a> } | { type: 'channelPrivate'; data: <a href="#channelprivateevent">ChannelPrivateEvent</a> } | { type: 'onFlexibleUpdateStateChange'; data: <a href="#flexibleupdatestate">FlexibleUpdateState</a> }</code>
+
+
 ##### BreakingAvailableEvent
 
 Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
 
 <code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
+
+
+##### Record
+
+Construct a type with a set of properties K of type T
+
+<code>{ [P in K]: T; }</code>
 
 
 ##### ShakeMenuGesture

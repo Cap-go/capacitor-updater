@@ -179,7 +179,24 @@ final class UpdateLifecycleTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             done.fulfill()
         }
-        wait(for: [done], timeout: seconds + 2)
+        wait(for: [done], timeout: max(seconds + 5, 10))
+    }
+
+    // set() activated the pending next bundle but left it stored, so getNextBundle() kept
+    // returning the bundle that was already running.
+    func testClearNextBundleIfCurrentDropsTheRunningBundle() {
+        updater.currentBundleValue = pendingBundle()
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertTrue(updater.clearNextBundleIfCurrent())
+        XCTAssertNil(updater.nextBundleValue)
+    }
+
+    func testClearNextBundleIfCurrentKeepsADifferentNextBundle() {
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertFalse(updater.clearNextBundleIfCurrent())
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
     }
 
     // A suspended app can resume with the rollback timer already expired, before

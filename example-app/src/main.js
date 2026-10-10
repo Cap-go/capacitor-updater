@@ -79,6 +79,16 @@ const elements = {
   currentBundle: requireElement('current-bundle'),
   currentBundleSource: requireElement('current-bundle-source'),
   debugOutput: requireElement('debug-output'),
+  demoApplyUpdate: requireElement('demo-apply-update'),
+  demoBundleChip: requireElement('demo-bundle-chip'),
+  demoChannelChip: requireElement('demo-channel-chip'),
+  demoCheckUpdate: requireElement('demo-check-update'),
+  demoDownloadUpdate: requireElement('demo-download-update'),
+  demoLastDownload: requireElement('demo-last-download'),
+  demoLatestChip: requireElement('demo-latest-chip'),
+  demoNextBundle: requireElement('demo-next-bundle'),
+  demoNotifyChip: requireElement('demo-notify-chip'),
+  demoReloadApp: requireElement('demo-reload-app'),
   downloadCompleteEventState: requireElement('download-complete-event-state'),
   downloadCompleteEvent: requireElement('download-complete-event'),
   directUpdateMode: requireElement('direct-update-mode'),
@@ -111,6 +121,7 @@ const elements = {
   noNeedUpdateEvent: requireElement('no-need-update-event'),
   notifyStatus: requireElement('notify-status'),
   output: requireElement('plugin-output'),
+  qaToolsDetails: requireElement('qa-tools-details'),
   quickActions: requireElement('quick-actions'),
   quickRunSmokeSequenceButton: requireElement('quick-run-smoke-sequence'),
   refreshButton: requireElement('refresh-state'),
@@ -317,6 +328,7 @@ const state = {
   getChannelResult: null,
   getChannelReadMarker: 'not-run',
   harnessReady: false,
+  runtimeUrlsReady: false,
   lastGetLatestCheck: 'not-run',
   lastListChannelsCheck: 'not-run',
   lastPrivateChannelCheck: 'not-run',
@@ -780,6 +792,21 @@ async function refreshState() {
   }
 }
 
+function publishHarnessMarker(markerId, outcome = 'success') {
+  const marker = `${markerId}:${outcome}`;
+  state.lastActionMarker = marker;
+  state.lastActionResult = marker;
+  state.lastPhase = marker;
+  if (outcome === 'success') {
+    state.lastError = null;
+  }
+  window.localStorage.setItem(lastActionMarkerStorageKey, marker);
+  window.localStorage.setItem(lastActionResultStorageKey, marker);
+  elements.heroResultMarker.textContent = `Marker: ${marker}`;
+  elements.resultMarker.textContent = `M:${marker}`;
+  renderState();
+}
+
 function renderState() {
   const serverDebug = state.serverDebug?.debug ?? null;
   const lastUpdatePayload = serverDebug?.lastUpdateRequest?.payload ?? {};
@@ -807,7 +834,11 @@ function renderState() {
   elements.noNeedUpdateEventState.textContent = `No need update event: ${state.eventMarkers.noNeedUpdate}`;
   elements.updateFailedEventState.textContent = `Update failed event: ${state.eventMarkers.updateFailed}`;
   elements.actionStatus.textContent = `Status: ${state.lastPhase}`;
-  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}`;
+  const runtimeUrlsLabel =
+    scenarioId === 'manual-manifest'
+      ? ` | Runtime URLs: ${state.runtimeUrlsReady ? 'ready' : 'pending'}`
+      : '';
+  elements.harnessReady.textContent = `Harness ready: ${state.harnessReady ? 'yes' : 'no'}${runtimeUrlsLabel}`;
   elements.scenarioId.textContent = `Scenario: ${scenarioId}`;
   elements.directUpdateMode.textContent = `Direct update mode: ${directUpdateMode}`;
   elements.serverUrl.textContent = `Server URL: ${serverUrl}`;
@@ -860,9 +891,27 @@ function renderState() {
   elements.breakingEvent.textContent = `breakingAvailable event: ${state.eventMarkers.breakingAvailable}`;
   elements.majorEvent.textContent = `majorAvailable event: ${state.eventMarkers.majorAvailable}`;
   elements.flexibleUpdateEvent.textContent = `flexible update event: ${state.eventMarkers.flexibleUpdate}`;
+
+  const notifyReady = String(state.notifyStatus ?? '').toLowerCase();
+  const notifyChipClass =
+    notifyReady.includes('yes') || notifyReady.includes('ready') || notifyReady.includes('ok')
+      ? 'status-chip status-chip-ok'
+      : notifyReady.includes('fail') || notifyReady.includes('error')
+        ? 'status-chip status-chip-warn'
+        : 'status-chip status-chip-pending';
+  elements.demoNotifyChip.className = notifyChipClass;
+  elements.demoNotifyChip.textContent = `App ready: ${state.notifyStatus}`;
+  elements.demoChannelChip.textContent = `Channel: ${state.getChannelResult?.channel ?? 'none'}`;
+  elements.demoBundleChip.textContent = `Active bundle: ${getBundleVersion(state.currentBundle)}`;
+  elements.demoLatestChip.textContent = `Server latest: ${state.lastLatest?.version ?? 'none'}`;
+  elements.demoNextBundle.textContent = `Queued next bundle: ${getBundleVersion(state.nextBundle)}`;
+  elements.demoLastDownload.textContent = `Last download: ${state.lastDownload}`;
+  renderDemoActionButtons();
+
   elements.e2eSummary.textContent =
+    `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
-    `Harness: ${state.harnessReady ? 'ready' : 'pending'} | ` +
+    `Harness: ${state.harnessReady ? 'ready' : 'pending'}${runtimeUrlsLabel} | ` +
     `Build label: ${buildLabel} | ` +
     `Scenario: ${scenarioId} | ` +
     `Direct update mode: ${directUpdateMode} | ` +
@@ -903,6 +952,7 @@ function renderState() {
   window.localStorage.setItem(lastPhaseStorageKey, state.lastPhase);
 
   logHarnessState(harnessSnapshot);
+  syncContentOffsetForBanner();
 }
 
 function resetScrollPosition() {
@@ -1037,6 +1087,29 @@ async function getLatestInactiveBundleOrThrow() {
   }
 
   return latestInactive;
+}
+
+async function getBundleForSetBundleErrorTest() {
+  if (!allowManualBundleError) {
+    const pickDownloadedBundle = () =>
+      [...(state.bundles ?? [])]
+        .filter((bundle) => bundle?.id && bundle.id !== 'builtin')
+        .sort(sortBundlesByDownloadDate)[0] ?? null;
+
+    let bundle = pickDownloadedBundle();
+    if (!bundle) {
+      await refreshState();
+      bundle = pickDownloadedBundle();
+    }
+
+    if (!bundle?.id) {
+      throw new Error('No downloaded bundle is available for setBundleError guard test.');
+    }
+
+    return bundle;
+  }
+
+  return getLatestInactiveBundleOrThrow();
 }
 
 function formatResult(result) {
@@ -1390,44 +1463,96 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-async function resetServerRelease() {
-  const endpoint = createServerEndpoint('/api/control/reset');
+async function callServerControl(name, path, marker) {
+  const endpoint = createServerEndpoint(path);
 
   if (!endpoint) {
     throw new Error('Server control endpoint is not available.');
   }
 
   try {
-    console.log('[Harness] resetServerRelease', endpoint);
+    console.log(`[Harness] ${name}`, endpoint);
     await fetchJson(endpoint);
-    await refreshServerState();
-    renderState();
+    publishHarnessMarker(marker, 'success');
+    void refreshServerState()
+      .then(() => {
+        renderState();
+      })
+      .catch((refreshError) => {
+        console.error(`[Harness] ${name} refresh failed`, refreshError);
+      });
     return state.serverDebug;
   } catch (error) {
     const message = error?.message ?? String(error);
-    addEvent('resetServerRelease() failed', { endpoint, message });
+    addEvent(`${name}() failed`, { endpoint, message });
     throw error;
   }
 }
 
-async function advanceServerRelease() {
-  const endpoint = createServerEndpoint('/api/control/advance');
+function resetServerRelease() {
+  return callServerControl('resetServerRelease', '/api/control/reset', 'reset');
+}
 
-  if (!endpoint) {
-    throw new Error('Server control endpoint is not available.');
+async function purgeDownloadedBundlesAfterServerReset() {
+  if (!scenarioId.includes('manifest')) {
+    return;
   }
 
-  try {
-    console.log('[Harness] advanceServerRelease', endpoint);
-    await fetchJson(endpoint);
-    await refreshServerState();
-    renderState();
-    return state.serverDebug;
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    addEvent('advanceServerRelease() failed', { endpoint, message });
-    throw error;
+  await refreshState();
+
+  const activeBundleId = state.currentBundle?.id;
+  const nextBundleId = state.nextBundle?.id;
+  const hasActiveDownloadedBundle = activeBundleId && activeBundleId !== 'builtin';
+  const hasQueuedBundle = Boolean(nextBundleId);
+
+  if (hasActiveDownloadedBundle || hasQueuedBundle) {
+    try {
+      await plugin.reset();
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: reset to builtin before purge failed: ${error?.message ?? String(error)}`,
+      );
+    }
+    await refreshState();
   }
+
+  let purgePasses = 0;
+  while (purgePasses < 20) {
+    purgePasses += 1;
+    await refreshState();
+    const inactive = getLatestInactiveBundle(state.bundles ?? []);
+    if (!inactive?.id) {
+      break;
+    }
+    try {
+      await plugin.delete({ id: inactive.id });
+    } catch (error) {
+      throw new Error(
+        `purgeDownloadedBundlesAfterServerReset: delete ${inactive.id} failed: ${error?.message ?? String(error)}`,
+      );
+    }
+  }
+
+  const listResult = await plugin.list();
+  const remaining = (listResult?.bundles ?? []).filter(
+    (bundle) => bundle?.id && bundle.id !== 'builtin',
+  );
+  if (remaining.length > 0) {
+    const blockedIds = remaining.map((bundle) => bundle.id).join(', ');
+    throw new Error(
+      `purgeDownloadedBundlesAfterServerReset: ${remaining.length} bundle(s) still on disk (${blockedIds}). Reset to builtin or clear next before server reset.`,
+    );
+  }
+
+  state.lastDownloadedBundleId = null;
+  state.lastDownloadedBundleVersion = null;
+  void refreshState().catch((refreshError) => {
+    console.error('[Harness] purgeDownloadedBundlesAfterServerReset refresh failed', refreshError);
+  });
+}
+
+function advanceServerRelease() {
+  return callServerControl('advanceServerRelease', '/api/control/advance', 'advance');
 }
 
 async function verifyPersistedRuntimeConfig(options = {}) {
@@ -2222,7 +2347,12 @@ const actions = [
     description: 'Reset the fake OTA server back to the first release for this scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'reset',
-    run: async () => resetServerRelease(),
+    skipRefresh: true,
+    run: async () => {
+      const serverDebug = await resetServerRelease();
+      await purgeDownloadedBundlesAfterServerReset();
+      return serverDebug;
+    },
   },
   {
     id: 'advance-server-release',
@@ -2232,6 +2362,7 @@ const actions = [
     description: 'Move the fake OTA server to the next release in the scenario.',
     showWhen: () => serverUrl.startsWith('http'),
     markerId: 'advance',
+    skipRefresh: true,
     run: async () => advanceServerRelease(),
   },
   {
@@ -2534,7 +2665,7 @@ const actions = [
         ? 'Action marker: bundle:expected-rejection'
         : 'Action marker: bundle:success',
     run: async () => {
-      const bundle = await getLatestInactiveBundleOrThrow();
+      const bundle = await getBundleForSetBundleErrorTest();
 
       if (!allowManualBundleError) {
         return expectConfiguredRejection(
@@ -2636,6 +2767,17 @@ function getActionTriggerCooldown(action) {
   return action.reloadsApp ? reloadActionTriggerCooldownMs : actionTriggerCooldownMs;
 }
 
+async function waitForPendingRefresh(label) {
+  if (!refreshStatePromise) {
+    return;
+  }
+  try {
+    await withTimeout(label, () => refreshStatePromise, 10000);
+  } catch (error) {
+    console.warn(`Continuing after ${label} failed or timed out`, error);
+  }
+}
+
 async function runAction(action, values, options = {}) {
   const skipRefresh = options.skipRefresh ?? action.skipRefresh ?? false;
   const actionMarker = actionMarkers.get(action.id);
@@ -2643,6 +2785,10 @@ async function runAction(action, values, options = {}) {
   const actionTriggerCooldown = getActionTriggerCooldown(action);
   actionInProgress = true;
   suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
+  // A previous action's background refresh must not land after this action's markers.
+  if (!skipRefresh) {
+    await waitForPendingRefresh(`pending refreshState before ${action.id}`);
+  }
   state.lastAction = action.label;
   state.lastActionMarker = `${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   state.lastActionResult = `${action.id}:running`;
@@ -2658,6 +2804,7 @@ async function runAction(action, values, options = {}) {
   if (actionMarker) {
     actionMarker.textContent = `Action marker: ${actionMarkerId}:${action.reloadsApp ? 'reloading' : 'running'}`;
   }
+  renderState();
 
   try {
     const result = await action.run(values ?? {});
@@ -2680,9 +2827,6 @@ async function runAction(action, values, options = {}) {
       return result;
     }
 
-    if (!skipRefresh) {
-      await refreshState();
-    }
     state.lastActionMarker = `${actionMarkerId}:${actionOutcome}`;
     state.lastActionResult = `${action.id}:${actionOutcome}`;
     state.lastPhase = `${action.id}:${actionOutcome}`;
@@ -2697,6 +2841,11 @@ async function runAction(action, values, options = {}) {
           : `Action marker: ${actionMarkerId}:${actionOutcome}`;
     }
     renderState();
+    if (!skipRefresh) {
+      void refreshState().catch((refreshError) => {
+        console.error(`Post-action refresh failed for ${action.id}`, refreshError);
+      });
+    }
     return result;
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -2717,6 +2866,7 @@ async function runAction(action, values, options = {}) {
   } finally {
     actionInProgress = false;
     suppressActionTriggersUntil = Date.now() + actionTriggerCooldown;
+    renderDemoActionButtons();
   }
 }
 
@@ -2737,17 +2887,7 @@ async function runSmokeSequence() {
     state.sequenceRuns += 1;
     sequenceInProgress = true;
 
-    if (refreshStatePromise) {
-      try {
-        await withTimeout(
-          'pending refreshState before smoke sequence',
-          () => refreshStatePromise,
-          10000,
-        );
-      } catch (error) {
-        console.warn('Continuing smoke sequence after refresh wait timeout', error);
-      }
-    }
+    await waitForPendingRefresh('pending refreshState before smoke sequence');
 
     state.lastAction = 'Smoke test sequence';
     state.lastActionMarker = 'smoke-sequence:running';
@@ -2812,6 +2952,7 @@ async function runSmokeSequence() {
       elements.runSmokeSequenceButton.disabled = false;
       elements.quickRunSmokeSequenceButton.disabled = false;
       smokeSequencePromise = null;
+      renderDemoActionButtons();
     }
   })();
 
@@ -3026,6 +3167,152 @@ function renderQuickActions() {
   });
 }
 
+function triggerQuickAction(actionId) {
+  const action = getActionById(actionId);
+  if (action.showWhen && !action.showWhen()) {
+    elements.output.textContent = `${action.label} is not available in this configuration.`;
+    return;
+  }
+  const values = Object.fromEntries(
+    (action.inputs || []).map((input) => [input.name, input.value || '']),
+  );
+  void runAction(action, values).catch((error) => {
+    console.error(`Demo action ${actionId} failed`, error);
+  });
+}
+
+function syncContentOffsetForBanner() {
+  const bannerHeight = elements.e2eSummary.getBoundingClientRect().height;
+  const offset = Math.ceil(bannerHeight + 20);
+  document.documentElement.style.setProperty('--content-offset-top', `${offset}px`);
+}
+
+function renderDemoActionButtons() {
+  const demoBusy = actionInProgress || sequenceInProgress;
+  for (const button of [
+    elements.demoCheckUpdate,
+    elements.demoDownloadUpdate,
+    elements.demoApplyUpdate,
+    elements.demoReloadApp,
+  ]) {
+    button.disabled = demoBusy;
+    button.setAttribute('aria-busy', demoBusy ? 'true' : 'false');
+  }
+}
+
+const maestroPinnedActionIdsByScenario = {
+  'manual-zip-config-guards': [
+    'get-latest',
+    'reset-server-release',
+    'download-latest-bundle',
+    'set-bundle-error',
+  ],
+  'manual-manifest': [
+    'set-runtime-urls',
+    'reset-server-release',
+    'download-latest-bundle',
+    'queue-last-downloaded-bundle',
+    'reload-app',
+  ],
+};
+
+function configureQaToolsPanel() {
+  const panel = elements.qaToolsDetails;
+  const openOnNative = platform !== 'web';
+
+  panel.classList.toggle('qa-tools-native-open', openOnNative);
+}
+
+function clearElementChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
+function pinMaestroQuickActions() {
+  if (platform === 'web') {
+    return;
+  }
+
+  const host = document.getElementById('maestro-pinned-actions');
+  if (!host) {
+    return;
+  }
+
+  clearElementChildren(host);
+  const smokeWrap = document.createElement('div');
+  smokeWrap.className = 'maestro-pinned-smoke';
+  smokeWrap.appendChild(elements.quickRunSmokeSequenceButton);
+  host.appendChild(smokeWrap);
+
+  const pinIds = maestroPinnedActionIdsByScenario[scenarioId] ?? [];
+  for (const actionId of pinIds) {
+    const button = document.getElementById(`quick-action-${actionId}`);
+    if (button) {
+      host.appendChild(button);
+    }
+  }
+}
+
+async function ensureManualManifestRuntimeUrls() {
+  if (scenarioId !== 'manual-manifest' || !serverUrl.startsWith('http')) {
+    return;
+  }
+
+  if (!allowModifyUrl) {
+    state.runtimeUrlsReady = true;
+    renderState();
+    return;
+  }
+
+  const runtimeUrlsAction = getActionById('set-runtime-urls');
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      await runAction(runtimeUrlsAction, {}, { skipRefresh: true });
+      state.runtimeUrlsReady = true;
+      publishHarnessMarker('set-runtime-urls', 'success');
+      renderState();
+      return;
+    } catch (error) {
+      console.error(`Bootstrap set-runtime-urls attempt ${attempt} failed`, error);
+      await pause(attempt <= 4 ? 500 : 1500);
+    }
+  }
+
+  publishHarnessMarker('set-runtime-urls', 'error');
+  renderState();
+}
+
+function bindDemoActions() {
+  bindActionButton(elements.demoCheckUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('get-latest');
+  });
+
+  bindActionButton(elements.demoDownloadUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('download-latest-bundle');
+  });
+
+  bindActionButton(elements.demoApplyUpdate, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('set-last-downloaded-bundle');
+  });
+
+  bindActionButton(elements.demoReloadApp, () => {
+    if (shouldIgnoreActionTrigger() || shouldIgnoreNonSequenceActionTrigger()) {
+      return;
+    }
+    triggerQuickAction('reload-app');
+  });
+}
+
 async function attachListeners() {
   if (listenersAttached) {
     return;
@@ -3113,9 +3400,13 @@ async function bootstrap() {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  document.body.classList.add(`platform-${platform}`);
   resetScrollPosition();
+  configureQaToolsPanel();
   renderQuickActions();
+  pinMaestroQuickActions();
   renderActions();
+  bindDemoActions();
   renderState();
   await attachListeners();
 
@@ -3161,6 +3452,7 @@ async function bootstrap() {
       break;
     }
   }
+  await ensureManualManifestRuntimeUrls();
   if (!state.harnessReady) {
     state.harnessReady = true;
     renderState();
