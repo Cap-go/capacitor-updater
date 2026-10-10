@@ -2659,6 +2659,7 @@ const actions = [
     quickButtonLabel: 'Quick mark bundle error',
     description: 'Mark the newest inactive bundle as failed in manual mode.',
     showWhen: () => serverUrl.startsWith('http'),
+    skipRefresh: true,
     markerId: 'bundle',
     successMarker: (result) =>
       result?.outcome === 'expected-rejection'
@@ -2771,11 +2772,7 @@ async function waitForPendingRefresh(label) {
   if (!refreshStatePromise) {
     return;
   }
-  try {
-    await withTimeout(label, () => refreshStatePromise, 10000);
-  } catch (error) {
-    console.warn(`Continuing after ${label} failed or timed out`, error);
-  }
+  await withTimeout(label, () => refreshStatePromise, 20000);
 }
 
 async function runAction(action, values, options = {}) {
