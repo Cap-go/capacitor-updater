@@ -1,7 +1,7 @@
 mod support;
 
 use serde_json::json;
-use support::{FakeServer, TestEngine};
+use support::{core, FakeServer, TestEngine};
 
 fn engine_with(server: &FakeServer) -> TestEngine {
     TestEngine::new(json!({
@@ -231,7 +231,7 @@ fn bundle_size_falls_back_on_error() {
     assert_eq!(result["unknownFiles"], 1);
     assert_eq!(result["files"][0]["error"], "response_error");
     assert_eq!(
-        capgo_updater_core::engine::backend::manifest_size_url("https://x/updates?y=1"),
+        core().test("manifestSizeUrl", json!({ "updateUrl": "https://x/updates?y=1" }))["url"],
         "https://x/updates/manifest_size"
     );
 }

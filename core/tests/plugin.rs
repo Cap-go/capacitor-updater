@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use capgo_updater_core::host::Host;
 use serde_json::{json, Value};
-use support::{FakeServer, TestEngine};
+use support::{AbiEngine, FakeServer, TestEngine};
 
 fn sha256(bytes: &[u8]) -> String {
     capgo_updater_core::crypto::checksum::sha256_hex(bytes)
@@ -493,9 +493,9 @@ impl Plugin {
     }
 
     /// A new process: same preferences and files, new engine and plugin load.
-    fn relaunch(&self) -> Arc<capgo_updater_core::engine::Engine> {
+    fn relaunch(&self) -> Arc<AbiEngine> {
         let root = self.t.root();
-        let engine = capgo_updater_core::engine::Engine::new(
+        let engine = AbiEngine::new(
             self.t.host.clone(),
             &json!({
                 "platform": "ios",
@@ -923,20 +923,20 @@ fn update_requests(p: &Plugin, path: &str) -> usize {
 fn periodic_check_reports_errors_and_downloads_only_new_versions() {
     let p = Plugin::load(json!({}));
     *p.backend.latest.lock().unwrap() = json!({ "error": "server_down", "message": "try later", "version": "9.9.9", "url": format!("{}/b.zip", p.backend.server.url) });
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     let results = p.events("updateCheckResult");
     assert_eq!(results.len(), 1, "{results:?}");
     assert_eq!(results[0]["error"], "server_down");
     *p.backend.latest.lock().unwrap() =
         json!({ "error": "disabled_auto_update", "kind": "blocked", "message": "blocked" });
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     assert_eq!(p.events("updateCheckResult")[1]["kind"], "blocked");
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(update_requests(&p, "/b.zip"), 0, "error responses never download");
 
     p.use_bundle("abcdefghij", "2.0.0");
     p.backend.offer("2.0.0", web_bundle("v2"));
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(
         update_requests(&p, "/b.zip"),
@@ -945,7 +945,7 @@ fn periodic_check_reports_errors_and_downloads_only_new_versions() {
     );
 
     p.backend.offer("3.0.0", web_bundle("v3"));
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     wait_until("new version downloaded", || {
         p.events("updateAvailable")
             .iter()
@@ -1001,7 +1001,7 @@ fn background_delay_blocks_one_install() {
     assert!(p.events("set").is_empty(), "delayed");
     // Foreground clears the elapsed background condition, next background installs.
     std::thread::sleep(Duration::from_millis(5));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     assert!(p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").is_none());
     p.background();
     assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id);
@@ -1019,7 +1019,7 @@ fn malformed_stored_delay_conditions_are_ignored() {
         let id = "abcdefghij";
         p.t.install_bundle(id, "2.0.0", "pending");
         p.resolve("next", json!({ "id": id }));
-        p.t.engine.plugin_foreground_for_tests();
+        p.t.call("test.pluginForeground", json!({}));
         p.background();
         assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id, "{stored}");
     }
@@ -1032,7 +1032,7 @@ fn kill_and_date_delays() {
         "setMultiDelay",
         json!({ "delayConditions": [{ "kind": "kill" }, { "kind": "date", "value": "2000-01-01T00:00:00Z" }, { "kind": "date", "value": "2999-01-01T00:00:00Z" }, { "kind": "nativeVersion", "value": "0.9.0" }] }),
     );
-    p.t.engine.plugin_terminate_for_tests();
+    p.t.call("appTerminate", json!({}));
     let stored = p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap();
     assert!(!stored.contains("kill"));
     assert!(!stored.contains("2000-01-01"));
@@ -1052,7 +1052,7 @@ fn native_version_delay_orders_prerelease_numbers_numerically() {
         "setMultiDelay",
         json!({ "delayConditions": [{ "kind": "nativeVersion", "value": "1.0.0-beta.2" }, { "kind": "nativeVersion", "value": "1.0.0-beta.11" }] }),
     );
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     let stored = p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap();
     assert!(!stored.contains("beta.2\""), "beta.10 reached beta.2: {stored}");
     assert!(stored.contains("beta.11"), "beta.10 has not reached beta.11: {stored}");
@@ -1539,12 +1539,12 @@ fn default_channel_is_cleared_on_native_update_when_not_persisted() {
         json!({ "autoUpdate": false, "persistDefaultChannelOnReinstall": false, "defaultChannel": "prod" });
     let p = Plugin::load(backend_config.clone());
     p.resolve("setChannel", json!({ "channel": "beta" }));
-    assert_eq!(p.t.engine.config().default_channel, "beta");
+    assert_eq!(p.t.call("config", json!({}))["defaultChannel"], "beta");
     // Same storage, new native build.
     let native = json!({ "versionName": "1.1.0", "versionCode": "11", "noBackupDir": p.t.root().join("nobackup").to_string_lossy() });
     p.t.call("pluginLoad", json!({ "config": backend_config, "native": native }));
     assert!(p.t.kv("CapacitorUpdater.defaultChannel").is_none());
-    assert_eq!(p.t.engine.config().default_channel, "prod");
+    assert_eq!(p.t.call("config", json!({}))["defaultChannel"], "prod");
 }
 
 // ---- previews -----------------------------------------------------------------------------------
@@ -1910,7 +1910,7 @@ fn unexpired_background_delay_and_kill_delay() {
     );
     p.background();
     std::thread::sleep(Duration::from_millis(100));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     assert!(
         p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap().contains("600000"),
         "kept"
@@ -2005,7 +2005,7 @@ fn background_resets_the_rollback_deadline() {
     std::thread::sleep(Duration::from_millis(300));
     p.background();
     std::thread::sleep(Duration::from_millis(200));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     let resumed_at = Instant::now();
     // The first deadline (set + 1 s) passes without a rollback.
     std::thread::sleep(Duration::from_millis(1100).saturating_sub(set_at.elapsed()));

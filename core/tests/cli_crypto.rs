@@ -7,9 +7,10 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use capgo_updater_core::crypto::{self, aes_cbc, checksum};
+use capgo_updater_core::crypto::checksum::sha256_hex;
+use capgo_updater_core::text::{hex_decode, hex_encode};
 use serde_json::{json, Value};
-use support::{FakeServer, TestEngine};
+use support::{core, FakeServer, TestEngine};
 
 struct CliBundle {
     id: String,
@@ -74,40 +75,54 @@ fn every_cli_bundle_decrypts_to_its_zip() {
     let dir = tempfile::tempdir().unwrap();
     for bundle in &fixture.bundles {
         let id = &bundle.id;
-        let session = crypto::bundle_session_key(&fixture.public_key, &bundle.iv_session_key)
-            .unwrap_or_else(|error| panic!("{id}: session key: {error}"))
-            .unwrap_or_else(|| panic!("{id}: bundle must be treated as encrypted"));
+        let session = core()
+            .try_test(
+                "sessionKey",
+                json!({ "publicKey": fixture.public_key, "sessionKey": bundle.iv_session_key }),
+            )
+            .unwrap_or_else(|error| panic!("{id}: session key: {error}"))["session"]
+            .clone();
+        assert!(!session.is_null(), "{id}: bundle must be treated as encrypted");
+        let (key, iv) = (&session["keyHex"], &session["ivHex"]);
 
         // File path used for downloaded zips.
         let file = dir.path().join(format!("{id}.zip"));
         std::fs::write(&file, &bundle.encrypted).unwrap();
-        let hash = aes_cbc::decrypt_file_in_place_hashed(&file, &session.key, &session.iv)
-            .unwrap_or_else(|error| panic!("{id}: decrypt file: {error}"));
+        let hash = core()
+            .try_test(
+                "decryptFileInPlace",
+                json!({ "path": file.to_string_lossy(), "keyHex": key, "ivHex": iv }),
+            )
+            .unwrap_or_else(|error| panic!("{id}: decrypt file: {error}"))["hash"]
+            .clone();
         assert!(
             std::fs::read(&file).unwrap() == bundle.zip,
             "{id}: decrypted bytes differ from the CLI zip"
         );
-        assert_eq!(hash, bundle.sha256, "{id}: plaintext hash");
+        assert_eq!(hash, bundle.sha256.as_str(), "{id}: plaintext hash");
         assert_eq!(
-            checksum::sha256_file(&file).unwrap(),
-            bundle.sha256,
+            core().test("sha256File", json!({ "path": file.to_string_lossy() }))["checksum"],
+            bundle.sha256.as_str(),
             "{id}: file checksum"
         );
 
         // Streaming decryptor, fed in uneven chunks.
-        let mut decryptor = aes_cbc::CbcDecryptor::new(&session.key, &session.iv);
-        let mut plain = Vec::new();
-        for chunk in bundle.encrypted.chunks(4099) {
-            decryptor.update(chunk, &mut plain);
-        }
-        decryptor
-            .finish(&mut plain)
+        let plain = core()
+            .try_test(
+                "aesCbcDecrypt",
+                json!({ "ciphertextHex": hex_encode(&bundle.encrypted), "keyHex": key, "ivHex": iv, "chunkSize": 4099 }),
+            )
             .unwrap_or_else(|error| panic!("{id}: finish: {error}"));
+        let plain = hex_decode(plain["plaintextHex"].as_str().unwrap()).unwrap();
         assert!(plain == bundle.zip, "{id}: streamed plaintext differs from the CLI zip");
 
-        let expected = crypto::decrypt_checksum(&bundle.checksum, &fixture.public_key)
+        let expected = core()
+            .try_test(
+                "decryptChecksum",
+                json!({ "checksum": bundle.checksum, "publicKey": fixture.public_key }),
+            )
             .unwrap_or_else(|error| panic!("{id}: decrypt checksum: {error}"));
-        assert_eq!(expected, bundle.sha256, "{id}: decrypted checksum");
+        assert_eq!(expected["checksum"], bundle.sha256.as_str(), "{id}: decrypted checksum");
     }
 }
 
@@ -148,7 +163,7 @@ fn engine_download_installs_every_cli_bundle() {
         assert!(!bundle.files.is_empty(), "{id}: bundle has files");
         for (path, sha256) in &bundle.files {
             let content = std::fs::read(bundle_dir.join(path)).unwrap_or_else(|error| panic!("{id}: {path}: {error}"));
-            assert_eq!(&checksum::sha256_hex(&content), sha256, "{id}: {path}");
+            assert_eq!(&sha256_hex(&content), sha256, "{id}: {path}");
         }
     }
 }

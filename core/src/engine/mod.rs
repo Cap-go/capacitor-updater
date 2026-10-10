@@ -150,6 +150,13 @@ impl Engine {
         if !input.is_object() {
             return Err(CoreError::invalid_input("input must be a JSON object"));
         }
+        #[cfg(feature = "test-support")]
+        if let Some(result) = operation
+            .strip_prefix(crate::testing::PREFIX)
+            .and_then(|name| crate::testing::engine_call(self, name, input))
+        {
+            return result;
+        }
         match self.call_engine(operation, input) {
             Some(result) => result,
             None => crate::api::call(operation, input).map_err(|error| {
