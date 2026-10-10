@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import androidx.lifecycle.MutableLiveData;
 import androidx.work.Data;
 import androidx.work.WorkInfo;
@@ -29,6 +30,7 @@ import java.util.Map;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.MockedStatic;
@@ -39,6 +41,9 @@ import org.robolectric.shadows.ShadowLooper;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
 public class ManifestStagingCleanupTest {
+
+    @Rule
+    public final InstantTaskExecutorRule instantTaskExecutorRule = new InstantTaskExecutorRule();
 
     private static ExecutorService directExecutor() {
         return new AbstractExecutorService() {
@@ -149,9 +154,9 @@ public class ManifestStagingCleanupTest {
     public void cleanupPreservesManifestDestsForCurrentNextAndFallbackDownloads() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-protected-staging");
         tempDir.toFile().deleteOnExit();
-        final String currentDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "currentDl1";
-        final String nextDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "nextDown1";
-        final String fallbackDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "fallback1";
+        final String currentDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "currentDl01";
+        final String nextDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "nextDown01";
+        final String fallbackDest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "fallback01";
         for (final String dest : List.of(currentDest, nextDest, fallbackDest)) {
             Files.createDirectories(tempDir.resolve(dest));
         }
@@ -177,7 +182,7 @@ public class ManifestStagingCleanupTest {
         final Path externalFile = external.resolve("keep.txt");
         Files.write(externalFile, "keep".getBytes(StandardCharsets.UTF_8));
 
-        final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink01");
+        final Path staging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "symLink0001");
         Files.createDirectories(staging);
         Files.createSymbolicLink(staging.resolve("assets"), external);
 
@@ -224,7 +229,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-finish-fail");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "finishFail";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "finishFl1";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "finishFl01";
         final Path staging = tempDir.resolve(dest);
         Files.createDirectories(staging);
 
@@ -240,7 +245,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupAfterDownloadFailedRemovesManifestStaging() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-failed-cleanup");
         tempDir.toFile().deleteOnExit();
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "failedSt1";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "failedSt01";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -253,7 +258,7 @@ public class ManifestStagingCleanupTest {
     public void cleanupAfterDownloadCancelledRemovesManifestStaging() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-cancel-cleanup");
         tempDir.toFile().deleteOnExit();
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "cancelSt1";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "cancelSt01";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -269,7 +274,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-failed");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workFailed";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workFail1";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workFail01";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -289,8 +294,15 @@ public class ManifestStagingCleanupTest {
             .build();
         when(workInfo.getState()).thenReturn(WorkInfo.State.FAILED);
         when(workInfo.getOutputData()).thenReturn(failedData);
+        when(workInfo.getProgress()).thenReturn(Data.EMPTY);
 
-        try (MockedStatic<WorkManager> workManagerStatic = mockStatic(WorkManager.class)) {
+        try (
+            MockedStatic<WorkManager> workManagerStatic = mockStatic(WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloadWorkerStatic = mockStatic(DownloadWorkerManager.class)
+        ) {
+            downloadWorkerStatic
+                .when(() -> DownloadWorkerManager.cancelBundleDownload(any(Context.class), any(String.class), any(String.class)))
+                .thenAnswer((invocation) -> null);
             final WorkManager workManager = mock(WorkManager.class);
             workManagerStatic.when(() -> WorkManager.getInstance(any(Context.class))).thenReturn(workManager);
             when(workManager.getWorkInfosByTagLiveData(bundleId)).thenReturn(liveData);
@@ -317,8 +329,8 @@ public class ManifestStagingCleanupTest {
     public void observeWorkProgressCancelledManifestRemovesStagingFolder() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
-        final String bundleId = "workCancel";
-        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan1";
+        final String bundleId = "workCan001";
+        final String dest = CapgoUpdater.MANIFEST_STAGING_PREFIX + "workCan001";
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
@@ -332,6 +344,7 @@ public class ManifestStagingCleanupTest {
         final MutableLiveData<List<WorkInfo>> liveData = new MutableLiveData<>();
         final WorkInfo workInfo = mock(WorkInfo.class);
         when(workInfo.getState()).thenReturn(WorkInfo.State.CANCELLED);
+        when(workInfo.getProgress()).thenReturn(Data.EMPTY);
 
         try (MockedStatic<WorkManager> workManagerStatic = mockStatic(WorkManager.class)) {
             final WorkManager workManager = mock(WorkManager.class);
