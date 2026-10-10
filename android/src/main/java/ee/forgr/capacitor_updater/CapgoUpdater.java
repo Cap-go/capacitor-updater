@@ -337,11 +337,7 @@ public class CapgoUpdater {
     }
 
     private static boolean isSymbolicLinkEntry(final File file) {
-        try {
-            return Files.isSymbolicLink(file.toPath());
-        } catch (IOException e) {
-            return true;
-        }
+        return Files.isSymbolicLink(file.toPath());
     }
 
     private static boolean isRegularFileEntry(final File file) {
