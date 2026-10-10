@@ -1835,11 +1835,19 @@ import UIKit
         var operations: [Operation] = []
 
         for task in tasks {
-            try FileManager.default.createDirectory(
-                at: task.destFilePath.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: task.destFilePath.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+            } catch {
+                let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+                self.saveBundleInfo(id: id, bundle: errorBundle)
+                removePartialManifestBundleDirectory(destFolder)
+                self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
+                throw error
+            }
 
             let operation = BlockOperation { [weak self] in
                 guard let self = self else { return }

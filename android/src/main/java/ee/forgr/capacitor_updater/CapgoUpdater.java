@@ -378,6 +378,8 @@ public class CapgoUpdater {
         return file.isDirectory() && !isSymbolicLinkEntry(file);
     }
 
+    private static final long LEGACY_MANIFEST_STAGING_MIN_AGE_MS = 24L * 60L * 60L * 1000L;
+
     private static boolean looksLikeLeakedManifestStaging(final File dir) {
         if (dir == null || !isRegularDirectoryEntry(dir)) {
             return false;
@@ -389,6 +391,30 @@ public class CapgoUpdater {
             return true;
         }
         return isRegularDirectoryEntry(new File(dir, "www"));
+    }
+
+    private static boolean isOldEnoughForLegacyManifestCleanup(final File dir) {
+        final long ageMs = System.currentTimeMillis() - dir.lastModified();
+        return ageMs >= LEGACY_MANIFEST_STAGING_MIN_AGE_MS;
+    }
+
+    private boolean isProtectedManifestStagingDest(final String folderName) {
+        if (this.prefs == null || folderName == null || folderName.isEmpty()) {
+            return false;
+        }
+        for (final BundleInfo info : this.list(true)) {
+            if (info == null || info.getId() == null || info.getId().isEmpty()) {
+                continue;
+            }
+            if (info.getStatus() != BundleStatus.DOWNLOADING) {
+                continue;
+            }
+            final String dest = this.prefs.getString(info.getId() + MANIFEST_DEST_SUFFIX, null);
+            if (folderName.equals(dest)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void saveManifestStagingDest(final String bundleId, final String dest) {
@@ -405,6 +431,19 @@ public class CapgoUpdater {
         }
         this.editor.remove(bundleId + MANIFEST_DEST_SUFFIX);
         this.editor.commit();
+    }
+
+    void cleanupManifestStagingAfterDownloadFailed(final String bundleId, final String failedDest, final boolean failedManifest) {
+        if (failedManifest) {
+            this.deleteManifestStagingFolder(failedDest);
+        }
+        this.clearManifestStagingDest(bundleId);
+    }
+
+    void cleanupManifestStagingAfterDownloadCancelled(final String bundleId) {
+        final String cancelledDest = this.prefs != null ? this.prefs.getString(bundleId + MANIFEST_DEST_SUFFIX, null) : null;
+        this.deleteManifestStagingFolder(cancelledDest);
+        this.clearManifestStagingDest(bundleId);
     }
 
     Set<String> activeManifestStagingDests() {
@@ -500,7 +539,6 @@ public class CapgoUpdater {
             return;
         }
 
-        final Set<String> protectedDests = this.activeManifestStagingDests();
         final File[] entries = this.documentsDir.listFiles();
         if (entries == null) {
             return;
@@ -518,7 +556,7 @@ public class CapgoUpdater {
             if (!isManifestStagingFolderName(folderName)) {
                 continue;
             }
-            if (protectedDests.contains(folderName)) {
+            if (this.isProtectedManifestStagingDest(folderName)) {
                 continue;
             }
             try {
@@ -531,10 +569,10 @@ public class CapgoUpdater {
             }
         }
 
-        this.cleanupLegacyBareManifestStagingFolders(protectedDests, threadToCheck);
+        this.cleanupLegacyBareManifestStagingFolders(threadToCheck);
     }
 
-    private void cleanupLegacyBareManifestStagingFolders(final Set<String> protectedDests, final Thread threadToCheck) {
+    private void cleanupLegacyBareManifestStagingFolders(final Thread threadToCheck) {
         final File[] entries = this.documentsDir.listFiles();
         if (entries == null) {
             return;
@@ -552,10 +590,13 @@ public class CapgoUpdater {
             if (!isLegacyBareManifestStagingFolderName(folderName)) {
                 continue;
             }
-            if (protectedDests.contains(folderName)) {
+            if (this.isProtectedManifestStagingDest(folderName)) {
                 continue;
             }
             if (!looksLikeLeakedManifestStaging(entry)) {
+                continue;
+            }
+            if (!isOldEnoughForLegacyManifestCleanup(entry)) {
                 continue;
             }
             try {
@@ -1139,10 +1180,7 @@ public class CapgoUpdater {
                         final boolean failedManifest = failedData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                         io.execute(() -> {
-                            if (failedManifest) {
-                                CapgoUpdater.this.deleteManifestStagingFolder(failedDest);
-                            }
-                            CapgoUpdater.this.clearManifestStagingDest(id);
+                            CapgoUpdater.this.cleanupManifestStagingAfterDownloadFailed(id, failedDest, failedManifest);
                             BundleInfo failedBundle = new BundleInfo(
                                 id,
                                 failedVersion,
@@ -1180,12 +1218,7 @@ public class CapgoUpdater {
                         removeObserver.run();
                         observedDownloadVersions.remove(observedVersion);
                         DataManager.getInstance().clearManifest(id);
-                        io.execute(() -> {
-                            final String cancelledDest =
-                                CapgoUpdater.this.prefs != null ? CapgoUpdater.this.prefs.getString(id + MANIFEST_DEST_SUFFIX, null) : null;
-                            CapgoUpdater.this.deleteManifestStagingFolder(cancelledDest);
-                            CapgoUpdater.this.clearManifestStagingDest(id);
-                        });
+                        io.execute(() -> CapgoUpdater.this.cleanupManifestStagingAfterDownloadCancelled(id));
                         CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                         if (cancelledFuture != null) {
                             cancelledFuture.cancel(true);

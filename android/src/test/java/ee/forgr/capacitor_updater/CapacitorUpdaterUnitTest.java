@@ -4210,6 +4210,7 @@ public class CapacitorUpdaterUnitTest {
         final Path legacyStaging = tempDir.resolve("legacyStg1");
         Files.createDirectories(legacyStaging);
         Files.write(legacyStaging.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        Files.setLastModifiedTime(legacyStaging, java.nio.file.attribute.FileTime.from(java.time.Instant.now().minusSeconds(25 * 3600)));
         final Path unrelated = tempDir.resolve("unrelated1");
         Files.createDirectories(unrelated);
 
