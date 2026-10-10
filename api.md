@@ -99,6 +99,7 @@ CapacitorUpdater can be configured with these options:
 - [`getPluginVersion`](#getpluginversion)
 - [`isAutoUpdateEnabled`](#isautoupdateenabled)
 - [`removeAllListeners`](#removealllisteners)
+- [`addListener('updaterEvent')`](#addlistenerupdaterevent)
 - [`addListener('download')`](#addlistenerdownload)
 - [`addListener('noNeedUpdate')`](#addlistenernoneedupdate)
 - [`addListener('updateCheckResult')`](#addlistenerupdatecheckresult)
@@ -1432,6 +1433,7 @@ removeAllListeners() => Promise<void>
 Remove all event listeners registered for this plugin.
 
 This unregisters all listeners added via {@link addListener} for all event types:
+- `updaterEvent`
 - `download`
 - `noNeedUpdate`
 - `updateCheckResult`
@@ -1451,6 +1453,51 @@ to prevent memory leaks from lingering event listeners.
 `Promise<void>` — Resolves when all listeners are removed.
 
 **Since:** 1.0.0
+
+
+--------------------
+
+
+### addListener('updaterEvent')
+
+```typescript
+addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for every updater event with a single listener.
+
+Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+`updaterEvent` gets the same retention.
+
+The per-event listeners below are deprecated and will be removed in v9.
+
+```typescript
+CapacitorUpdater.addListener('updaterEvent', (event) => {
+  switch (event.type) {
+    case 'download':
+      console.log('progress', event.data.percent);
+      break;
+    case 'downloadFailed':
+      console.warn('download failed', event.data.version);
+      break;
+  }
+});
+```
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'updaterEvent'` |  |
+| `listenerFunc` | `(event: UpdaterEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.53.0
 
 
 --------------------

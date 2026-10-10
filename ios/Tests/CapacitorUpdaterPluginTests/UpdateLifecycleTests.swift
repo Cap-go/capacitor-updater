@@ -182,7 +182,7 @@ final class UpdateLifecycleTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             done.fulfill()
         }
-        wait(for: [done], timeout: seconds + 5)
+        wait(for: [done], timeout: max(seconds + 5, 10))
     }
 
     // set() activated the pending next bundle but left it stored, so getNextBundle() kept
