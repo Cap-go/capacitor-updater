@@ -874,7 +874,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * Available condition types:
    * - `background`: Wait until the app has spent more than the configured time in the background (see value formats below).
-   * - `kill`: The condition clears on the next launch and can also clear during Android activity destruction; activity destruction does not prove that the app process ended. The pending bundle still installs only on the next background, because install runs from appMovedToBackground.
+   * - `kill`: The condition clears on the next launch and can also clear during Android activity destruction; activity destruction does not prove that the app process ended. Automatic installation waits for the next background, because it runs from appMovedToBackground. Calling {@link reload} can apply the pending bundle immediately.
    * - `date`: Wait until a specific date/time (ISO 8601 format)
    * - `nativeVersion`: Wait until the native app is updated to a specific version
    *
