@@ -336,7 +336,7 @@ public class ManifestStagingCleanupTest {
         final Path tempDir = Files.createTempDirectory("capgo-work-cancel");
         tempDir.toFile().deleteOnExit();
         final String bundleId = "workCan001";
-        final String dest = stagingDest("workCancel0");
+        final String dest = stagingDest("workCanc01");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
