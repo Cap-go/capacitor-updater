@@ -4151,7 +4151,8 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void isManifestStagingFolderNameMatchesRandomDestPattern() {
-        assertTrue(CapgoUpdater.isManifestStagingFolderName("aBc123XyZ0"));
+        assertTrue(CapgoUpdater.isManifestStagingFolderName(CapgoUpdater.MANIFEST_STAGING_PREFIX + "aBc123XyZ0"));
+        assertFalse(CapgoUpdater.isManifestStagingFolderName("aBc123XyZ0"));
         assertFalse(CapgoUpdater.isManifestStagingFolderName("versions"));
         assertFalse(CapgoUpdater.isManifestStagingFolderName("capgo_unzip_abc"));
         assertFalse(CapgoUpdater.isManifestStagingFolderName("short"));
@@ -4162,7 +4163,7 @@ public class CapacitorUpdaterUnitTest {
     public void cleanupOrphanedManifestStagingFoldersRemovesLeftoverDest() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-manifest-staging");
         tempDir.toFile().deleteOnExit();
-        final Path orphanStaging = tempDir.resolve("orphanStg1");
+        final Path orphanStaging = tempDir.resolve(CapgoUpdater.MANIFEST_STAGING_PREFIX + "orphanStg1");
         Files.createDirectories(orphanStaging.resolve("assets"));
         Files.write(orphanStaging.resolve("assets").resolve("app.js"), "console.log(1)".getBytes(StandardCharsets.UTF_8));
 
@@ -4192,21 +4193,24 @@ public class CapacitorUpdaterUnitTest {
         when(prefs.getString(downloadingId + "_info", "")).thenReturn(
             new BundleInfo(downloadingId, "1.0.0", BundleStatus.DOWNLOADING, new Date(), "").toString()
         );
-        when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn("activeStg1");
+        when(prefs.getString(downloadingId + CapgoUpdater.MANIFEST_DEST_SUFFIX, null)).thenReturn(
+            CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeStg1"
+        );
 
         final Set<String> activeDests = updater.activeManifestStagingDests();
-        assertTrue(activeDests.contains("activeStg1"));
+        assertTrue(activeDests.contains(CapgoUpdater.MANIFEST_STAGING_PREFIX + "activeStg1"));
     }
 
     @Test
     public void deleteManifestStagingFolderAtRemovesDirectoryUnderDocuments() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-manifest-delete");
         tempDir.toFile().deleteOnExit();
-        final Path staging = tempDir.resolve("deleteMe01");
+        final String destName = CapgoUpdater.MANIFEST_STAGING_PREFIX + "deleteMe01";
+        final Path staging = tempDir.resolve(destName);
         Files.createDirectories(staging);
         Files.write(staging.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
 
-        CapgoUpdater.deleteManifestStagingFolderAt(tempDir.toFile(), "deleteMe01", mock(Logger.class));
+        CapgoUpdater.deleteManifestStagingFolderAt(tempDir.toFile(), destName, mock(Logger.class));
 
         assertFalse(Files.exists(staging));
     }

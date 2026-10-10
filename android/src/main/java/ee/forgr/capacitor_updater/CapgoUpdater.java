@@ -76,8 +76,9 @@ public class CapgoUpdater {
     private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    static final String MANIFEST_STAGING_PREFIX = "capgo_manifest_";
     static final String MANIFEST_DEST_SUFFIX = "_manifest_dest";
-    private static final String MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
+    private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
@@ -319,7 +320,32 @@ public class CapgoUpdater {
     }
 
     static boolean isManifestStagingFolderName(final String name) {
-        return name != null && name.matches(MANIFEST_STAGING_FOLDER_PATTERN);
+        if (name == null || !name.startsWith(MANIFEST_STAGING_PREFIX)) {
+            return false;
+        }
+        final String suffix = name.substring(MANIFEST_STAGING_PREFIX.length());
+        return suffix.length() == 10 && suffix.matches("[0-9A-Za-z]{10}");
+    }
+
+    String manifestStagingDest() {
+        return MANIFEST_STAGING_PREFIX + this.randomString();
+    }
+
+    private static boolean isLegacyBareManifestStagingFolderName(final String name) {
+        return name != null && name.matches(LEGACY_MANIFEST_STAGING_FOLDER_PATTERN);
+    }
+
+    private static boolean looksLikeLeakedManifestStaging(final File dir) {
+        if (dir == null || !dir.isDirectory()) {
+            return false;
+        }
+        if (new File(dir, "index.html").isFile()) {
+            return true;
+        }
+        if (new File(dir, "assets").isDirectory()) {
+            return true;
+        }
+        return new File(dir, "www").isDirectory();
     }
 
     void saveManifestStagingDest(final String bundleId, final String dest) {
@@ -446,6 +472,43 @@ public class CapgoUpdater {
                 logger.debug("Folder: " + folderName);
             } catch (IOException e) {
                 logger.error("Failed to delete orphaned manifest staging folder");
+                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
+            }
+        }
+
+        this.cleanupLegacyBareManifestStagingFolders(protectedDests, threadToCheck);
+    }
+
+    private void cleanupLegacyBareManifestStagingFolders(final Set<String> protectedDests, final Thread threadToCheck) {
+        final File[] entries = this.documentsDir.listFiles();
+        if (entries == null) {
+            return;
+        }
+
+        for (final File entry : entries) {
+            if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                logger.warn("cleanupLegacyBareManifestStagingFolders was cancelled");
+                return;
+            }
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            final String folderName = entry.getName();
+            if (!isLegacyBareManifestStagingFolderName(folderName)) {
+                continue;
+            }
+            if (protectedDests.contains(folderName)) {
+                continue;
+            }
+            if (!looksLikeLeakedManifestStaging(entry)) {
+                continue;
+            }
+            try {
+                this.deleteDirectory(entry, threadToCheck);
+                logger.info("Deleted legacy bare manifest staging folder");
+                logger.debug("Folder: " + folderName);
+            } catch (IOException e) {
+                logger.error("Failed to delete legacy bare manifest staging folder");
                 logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
             }
         }
@@ -1749,7 +1812,8 @@ public class CapgoUpdater {
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
 
-        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest, setNext);
+        final String dest = manifest != null ? this.manifestStagingDest() : this.randomString();
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext);
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
@@ -1826,7 +1890,7 @@ public class CapgoUpdater {
         saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
-        final String dest = this.randomString();
+        final String dest = this.manifestStagingDest();
 
         // Create a CompletableFuture to track download completion
         CompletableFuture<BundleInfo> downloadFuture = new CompletableFuture<>();
