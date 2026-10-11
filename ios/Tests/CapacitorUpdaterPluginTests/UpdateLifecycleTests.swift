@@ -121,6 +121,8 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
 
     override func endBackGroundTask() {}
 
+    override func beginDownloadBackgroundTask() {}
+
     override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         work()
     }
@@ -269,6 +271,7 @@ final class UpdateLifecycleTests: XCTestCase {
     func testPeriodicCheckDownloadsANewVersion() {
         plugin.setAutoUpdateModeForTesting("atBackground")
         updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
 
         plugin.runPeriodicUpdateCheck(url: updateUrl)
 
