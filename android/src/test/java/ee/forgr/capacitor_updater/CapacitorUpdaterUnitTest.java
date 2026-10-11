@@ -298,7 +298,7 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
-        public void downloadBackground(
+        public String downloadBackground(
             final String url,
             final String version,
             final String sessionKey,
@@ -311,6 +311,7 @@ public class CapacitorUpdaterUnitTest {
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
             this.updateAvailableNotifier.accept(version);
+            return "test-download-id";
         }
 
         @Override
