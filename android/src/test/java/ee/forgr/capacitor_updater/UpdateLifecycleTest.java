@@ -171,7 +171,7 @@ public class UpdateLifecycleTest {
         }
 
         @Override
-        public void downloadBackground(
+        public String downloadBackground(
             final String url,
             final String version,
             final String sessionKey,
@@ -180,6 +180,7 @@ public class UpdateLifecycleTest {
             final boolean setNext
         ) {
             this.downloadBackgroundCalls++;
+            return "test-download-id";
         }
 
         @Override
