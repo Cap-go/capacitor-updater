@@ -18,6 +18,7 @@ import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
+// Robolectric-free: Looper/Handler are mocked like UpdateLifecycleTest.
 public class NativeUpdatePromptTest {
 
     private MockedStatic<Looper> looperMock;
