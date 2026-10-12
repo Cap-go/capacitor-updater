@@ -22,7 +22,7 @@ CapacitorUpdater can be configured with these options:
 | **`resetWhenUpdate`** | `boolean` | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native. Only available for Android and iOS. | `true` |  |
 | **`updateUrl`** | `string` | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS. | `https://plugin.capgo.app/updates` |  |
 | **`channelUrl`** | `string` | Configure the URL / endpoint for channel operations. Only available for Android and iOS. | `https://plugin.capgo.app/channel_self` |  |
-| **`statsUrl`** | `string` | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, unclean WebView restarts, app launch readiness timing, and WebView load milestones when available. | `https://plugin.capgo.app/stats` |  |
+| **`statsUrl`** | `string` | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, unclean WebView restarts, app launch readiness timing, and WebView load milestones when available. Failed background update checks that never start a download (network errors, timeouts, non-2xx responses, unreadable payloads) are reported as `update_check_error` with `metadata.error` and optional `metadata.status_code`, not as `download_fail`. Self-hosted Capgo backends must allow the `update_check_error` stats action. | `https://plugin.capgo.app/stats` |  |
 | **`publicKey`** | `string` | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS. | `undefined` | 6.2.0 |
 | **`version`** | `string` | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS. | `undefined` | 4.17.48 |
 | **`directUpdate`** | `boolean \| 'always' \| 'atInstall' \| 'onLaunch'` | Configure when the plugin should direct install updates. Only for autoUpdate mode. Instant apply (`atInstall`, `onLaunch`, `always`) should be uploaded with `--delta` so the update does not slow the user experience. A full zip, especially over 10MB, is relatively slow for users. These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`. This flag makes the CLI upload delta in CI and ask for confirmation in local uploads. - false: Never do direct updates - atInstall: Same as `"atInstall"` for {@link autoUpdate} - onLaunch: Same as `"onLaunch"` for {@link autoUpdate} - always: Same as `"always"` for {@link autoUpdate} - true: (deprecated) Same as "always" for backward compatibility | `false` | 5.1.0 |
@@ -99,6 +99,7 @@ CapacitorUpdater can be configured with these options:
 - [`getPluginVersion`](#getpluginversion)
 - [`isAutoUpdateEnabled`](#isautoupdateenabled)
 - [`removeAllListeners`](#removealllisteners)
+- [`addListener('updaterEvent')`](#addlistenerupdaterevent)
 - [`addListener('download')`](#addlistenerdownload)
 - [`addListener('noNeedUpdate')`](#addlistenernoneedupdate)
 - [`addListener('updateCheckResult')`](#addlistenerupdatecheckresult)
@@ -818,16 +819,17 @@ setMultiDelay(options: MultiDelayConditions) => Promise<void>
 Configure conditions that must be met before a pending update is applied.
 
 After calling {@link next} to queue an update, use this method to control when it gets applied.
-The update will only be installed after ALL specified conditions are satisfied.
+By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
 
 Available condition types:
-- `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
-- `kill`: Wait for the app to be killed and relaunched (**Note:** Current behavior triggers update immediately on kill, not on next background. This will be fixed in v8.)
+- `background`: Wait until the app has spent more than the configured time in the background (see value formats below).
+- `kill`: The condition clears on the next launch and can also clear during Android activity destruction; activity destruction does not prove that the app process ended. Automatic installation waits for the next background, because it runs from appMovedToBackground. Calling {@link reload} can apply the pending bundle immediately.
 - `date`: Wait until a specific date/time (ISO 8601 format)
 - `nativeVersion`: Wait until the native app is updated to a specific version
 
 Condition value formats:
-- `background`: Number in milliseconds (e.g., `"300000"` for 5 minutes), or omit for immediate
+- `background`: Time in milliseconds in background must exceed this value before the condition can clear on return to foreground (e.g., `"300000"` for more than 5 minutes; exactly `300000` ms does not clear). Omit `value` or use `"0"` to clear after one background-and-return cycle; the update installs on the following background.
 - `kill`: No value needed
 - `date`: ISO 8601 date string (e.g., `"2025-12-31T23:59:59Z"`)
 - `nativeVersion`: Version string (e.g., `"2.0.0"`)
@@ -849,8 +851,9 @@ Condition value formats:
 **Example**
 
 ```ts
-// Update after user kills app OR after 5 minutes in background
+// Update after kill condition clears on launch AND background time exceeds 5 minutes
 await CapacitorUpdater.setMultiDelay({
+  conditionMode: 'or',
   delayConditions: [
     { kind: 'kill' },
     { kind: 'background', value: '300000' }
@@ -870,7 +873,7 @@ await CapacitorUpdater.setMultiDelay({
 **Example**
 
 ```ts
-// Default behavior: update on next background
+// One background-and-return clears the condition; update installs on the next background
 await CapacitorUpdater.setMultiDelay({
   delayConditions: [{ kind: 'background' }]
 });
@@ -1430,6 +1433,7 @@ removeAllListeners() => Promise<void>
 Remove all event listeners registered for this plugin.
 
 This unregisters all listeners added via {@link addListener} for all event types:
+- `updaterEvent`
 - `download`
 - `noNeedUpdate`
 - `updateCheckResult`
@@ -1449,6 +1453,51 @@ to prevent memory leaks from lingering event listeners.
 `Promise<void>` — Resolves when all listeners are removed.
 
 **Since:** 1.0.0
+
+
+--------------------
+
+
+### addListener('updaterEvent')
+
+```typescript
+addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for every updater event with a single listener.
+
+Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+`updaterEvent` gets the same retention.
+
+The per-event listeners below are deprecated and will be removed in v9.
+
+```typescript
+CapacitorUpdater.addListener('updaterEvent', (event) => {
+  switch (event.type) {
+    case 'download':
+      console.log('progress', event.data.percent);
+      break;
+    case 'downloadFailed':
+      console.warn('download failed', event.data.version);
+      break;
+  }
+});
+```
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `eventName` | `'updaterEvent'` |  |
+| `listenerFunc` | `(event: UpdaterEvent) => void` |  |
+
+**Returns**
+
+`Promise<PluginListenerHandle>`
+
+**Since:** 8.53.0
 
 
 --------------------
@@ -1516,7 +1565,8 @@ The backend can classify the UpdateCheckResultEvent payload as `up_to_date`, `bl
 
 This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
 `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-`downloadFailed` event and keeps the existing failure stats behavior.
+`downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
+instead of `download_fail`, because no bundle download was attempted.
 
 **Parameters**
 

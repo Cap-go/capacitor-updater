@@ -126,6 +126,11 @@ declare module '@capacitor/cli' {
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
+       * Failed background update checks that never start a download (network errors, timeouts,
+       * non-2xx responses, unreadable payloads) are reported as `update_check_error` with
+       * `metadata.error` and optional `metadata.status_code`, not as `download_fail`.
+       * Self-hosted Capgo backends must allow the `update_check_error` stats action.
+       *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
@@ -870,23 +875,25 @@ export interface CapacitorUpdaterPlugin {
    * Configure conditions that must be met before a pending update is applied.
    *
    * After calling {@link next} to queue an update, use this method to control when it gets applied.
-   * The update will only be installed after ALL specified conditions are satisfied.
+   * By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+   * Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
    *
    * Available condition types:
-   * - `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
-   * - `kill`: Wait for the app to be killed and relaunched (**Note:** Current behavior triggers update immediately on kill, not on next background. This will be fixed in v8.)
+   * - `background`: Wait until the app has spent more than the configured time in the background (see value formats below).
+   * - `kill`: The condition clears on the next launch and can also clear during Android activity destruction; activity destruction does not prove that the app process ended. Automatic installation waits for the next background, because it runs from appMovedToBackground. Calling {@link reload} can apply the pending bundle immediately.
    * - `date`: Wait until a specific date/time (ISO 8601 format)
    * - `nativeVersion`: Wait until the native app is updated to a specific version
    *
    * Condition value formats:
-   * - `background`: Number in milliseconds (e.g., `"300000"` for 5 minutes), or omit for immediate
+   * - `background`: Time in milliseconds in background must exceed this value before the condition can clear on return to foreground (e.g., `"300000"` for more than 5 minutes; exactly `300000` ms does not clear). Omit `value` or use `"0"` to clear after one background-and-return cycle; the update installs on the following background.
    * - `kill`: No value needed
    * - `date`: ISO 8601 date string (e.g., `"2025-12-31T23:59:59Z"`)
    * - `nativeVersion`: Version string (e.g., `"2.0.0"`)
    *
    * @example
-   * // Update after user kills app OR after 5 minutes in background
+   * // Update after kill condition clears on launch AND background time exceeds 5 minutes
    * await CapacitorUpdater.setMultiDelay({
+   *   conditionMode: 'or',
    *   delayConditions: [
    *     { kind: 'kill' },
    *     { kind: 'background', value: '300000' }
@@ -900,7 +907,7 @@ export interface CapacitorUpdaterPlugin {
    * });
    *
    * @example
-   * // Default behavior: update on next background
+   * // One background-and-return clears the condition; update installs on the next background
    * await CapacitorUpdater.setMultiDelay({
    *   delayConditions: [{ kind: 'background' }]
    * });
@@ -1279,6 +1286,7 @@ export interface CapacitorUpdaterPlugin {
    * Remove all event listeners registered for this plugin.
    *
    * This unregisters all listeners added via {@link addListener} for all event types:
+   * - `updaterEvent`
    * - `download`
    * - `noNeedUpdate`
    * - `updateCheckResult`
@@ -1299,9 +1307,37 @@ export interface CapacitorUpdaterPlugin {
   removeAllListeners(): Promise<void>;
 
   /**
+   * Listen for every updater event with a single listener.
+   *
+   * Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+   * `downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+   * When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+   * `updaterEvent` gets the same retention.
+   *
+   * The per-event listeners below are deprecated and will be removed in v9.
+   *
+   * ```typescript
+   * CapacitorUpdater.addListener('updaterEvent', (event) => {
+   *   switch (event.type) {
+   *     case 'download':
+   *       console.log('progress', event.data.percent);
+   *       break;
+   *     case 'downloadFailed':
+   *       console.warn('download failed', event.data.version);
+   *       break;
+   *   }
+   * });
+   * ```
+   *
+   * @since 8.53.0
+   */
+  addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void): Promise<PluginListenerHandle>;
+
+  /**
    * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
    * This will return you all download percent during the download
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 2.0.11
    */
   addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void): Promise<PluginListenerHandle>;
@@ -1309,6 +1345,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for no need to update event, useful when you want force check every time the app is launched
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
@@ -1319,8 +1356,10 @@ export interface CapacitorUpdaterPlugin {
    *
    * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
    * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-   * `downloadFailed` event and keeps the existing failure stats behavior.
+   * `downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
+   * instead of `download_fail`, because no bundle download was attempted.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.45.11
    */
   addListener(
@@ -1331,6 +1370,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for available update event, useful when you want to force check every time the app is launched
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1341,6 +1381,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for downloadComplete events.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1352,6 +1393,7 @@ export interface CapacitorUpdaterPlugin {
    * Listen for breaking update events when the backend flags an update as incompatible with the current app.
    * Emits the same payload as the legacy `majorAvailable` listener.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 7.22.0
    */
   addListener(
@@ -1373,6 +1415,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for update fail event in the App, let you know when update has fail to install at next app start
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 2.3.0
    */
   addListener(
@@ -1385,6 +1428,7 @@ export interface CapacitorUpdaterPlugin {
    * This event is retained natively until JavaScript consumes it, so if the app reloads before your
    * listener is attached, the last pending `set` event is delivered once the listener subscribes.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.43.12
    */
   addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void): Promise<PluginListenerHandle>;
@@ -1392,6 +1436,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 6.14.0
    */
   addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void): Promise<PluginListenerHandle>;
@@ -1399,6 +1444,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for download fail event in the App, let you know when a bundle download has failed
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.0.0
    */
   addListener(
@@ -1409,6 +1455,7 @@ export interface CapacitorUpdaterPlugin {
   /**
    *  Listen for reload event in the App, let you know when reload has happened
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 4.3.0
    */
   addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
@@ -1418,6 +1465,7 @@ export interface CapacitorUpdaterPlugin {
    * This event is retained natively until JavaScript consumes it, so it can still be delivered after
    * a reload even if the listener is attached later in app startup.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 5.1.0
    */
   addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
@@ -1430,6 +1478,7 @@ export interface CapacitorUpdaterPlugin {
    * - Implementing custom error handling for channel restrictions
    * - Logging unauthorized channel access attempts
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 7.34.0
    */
   addListener(
@@ -1457,6 +1506,7 @@ export interface CapacitorUpdaterPlugin {
    * When status is `DOWNLOADED`, you should prompt the user and call
    * {@link completeFlexibleUpdate} to finish the installation.
    *
+   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.0.0
    */
   addListener(
@@ -2006,6 +2056,38 @@ export interface ChannelPrivateEvent {
   message: string;
 }
 
+/**
+ * Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
+ * `type` is the legacy event name and `data` is the same payload the legacy listener receives,
+ * so you can switch on `type` and get a typed `data`.
+ *
+ * The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+ *
+ * @since 8.53.0
+ */
+export type UpdaterEvent =
+  | { type: 'download'; data: DownloadEvent }
+  | { type: 'noNeedUpdate'; data: NoNeedEvent }
+  | { type: 'updateCheckResult'; data: UpdateCheckResultEvent }
+  | { type: 'updateAvailable'; data: UpdateAvailableEvent }
+  | { type: 'downloadComplete'; data: DownloadCompleteEvent }
+  | { type: 'downloadFailed'; data: DownloadFailedEvent }
+  | { type: 'breakingAvailable'; data: BreakingAvailableEvent }
+  | { type: 'updateFailed'; data: UpdateFailedEvent }
+  | { type: 'set'; data: SetEvent }
+  | { type: 'setNext'; data: SetNextEvent }
+  | { type: 'appReloaded'; data: Record<string, never> }
+  | { type: 'appReady'; data: AppReadyEvent }
+  | { type: 'channelPrivate'; data: ChannelPrivateEvent }
+  | { type: 'onFlexibleUpdateStateChange'; data: FlexibleUpdateState };
+
+/**
+ * Every event name that can appear in {@link UpdaterEvent}.
+ *
+ * @since 8.53.0
+ */
+export type UpdaterEventType = UpdaterEvent['type'];
+
 export interface ManifestEntry {
   file_name: string | null;
   file_hash: string | null;
@@ -2543,8 +2625,25 @@ export interface CurrentBundleResult {
   native: string;
 }
 
+/**
+ * How multiple delay conditions are combined when more than one is set.
+ *
+ * - `and`: every condition must be satisfied before the pending update is applied (default, backward compatible).
+ * - `or`: the pending update is applied as soon as any condition is satisfied.
+ *
+ * @since 8.50.0
+ */
+export type DelayConditionMode = 'and' | 'or';
+
 export interface MultiDelayConditions {
   delayConditions: DelayCondition[];
+  /**
+   * How to combine multiple delay conditions.
+   *
+   * @default 'and'
+   * @since 8.50.0
+   */
+  conditionMode?: DelayConditionMode;
 }
 
 export interface BuiltinVersion {

@@ -82,6 +82,25 @@ body {
   padding: 18px 20px;
 }
 
+.maestro-pinned-actions {
+  display: none;
+  gap: 8px;
+}
+
+.platform-android .maestro-pinned-actions,
+.platform-ios .maestro-pinned-actions {
+  display: grid;
+}
+
+.maestro-pinned-smoke {
+  display: grid;
+}
+
+.maestro-pinned-actions button {
+  width: 100%;
+  text-align: left;
+}
+
 .brand-row {
   display: flex;
   gap: 14px;
@@ -382,10 +401,12 @@ button:disabled {
   transition: transform 0.15s ease;
 }
 
+.qa-tools-card.qa-tools-native-open .qa-tools-toggle::before,
 .qa-tools-card[open] .qa-tools-toggle::before {
   transform: rotate(90deg);
 }
 
+.qa-tools-card.qa-tools-native-open .qa-tools-toggle,
 .qa-tools-card[open] .qa-tools-toggle {
   border-bottom-color: var(--border);
 }
