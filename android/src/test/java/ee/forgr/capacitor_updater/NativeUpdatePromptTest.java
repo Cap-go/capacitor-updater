@@ -5,7 +5,6 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.SharedPreferences;
 import com.getcapacitor.JSObject;
-import com.getcapacitor.Logger;
 import com.getcapacitor.PluginConfig;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -53,7 +52,7 @@ public class NativeUpdatePromptTest {
         NativeUpdatePrompt prompt = new NativeUpdatePrompt(
             config,
             prefs,
-            Mockito.mock(Logger.class),
+            Mockito.mock(ee.forgr.capacitor_updater.Logger.class),
             Mockito.mock(NativeUpdatePrompt.NativeUpdatePromptHost.class)
         );
 
@@ -72,7 +71,7 @@ public class NativeUpdatePromptTest {
         NativeUpdatePrompt prompt = new NativeUpdatePrompt(
             config,
             Mockito.mock(SharedPreferences.class),
-            Mockito.mock(Logger.class),
+            Mockito.mock(ee.forgr.capacitor_updater.Logger.class),
             Mockito.mock(NativeUpdatePrompt.NativeUpdatePromptHost.class)
         );
 
