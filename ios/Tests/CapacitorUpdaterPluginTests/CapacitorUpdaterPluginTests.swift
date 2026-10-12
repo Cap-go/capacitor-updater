@@ -2594,7 +2594,7 @@ class CapacitorUpdaterTests: XCTestCase {
 
     func testNativeUpdatePromptCooldownAndSession() {
         NativeUpdatePromptCoordinator.resetSessionStateForTesting()
-        let coordinator = NativeUpdatePromptCoordinator(plugin: plugin)
+        let coordinator = NativeUpdatePromptCoordinator(plugin: nil, cooldownHours: 24)
         UserDefaults.standard.removeObject(forKey: NativeUpdatePromptCoordinator.lastNativeVersionDefaultsKey)
         UserDefaults.standard.removeObject(forKey: NativeUpdatePromptCoordinator.lastShownMsDefaultsKey)
 

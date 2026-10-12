@@ -22,17 +22,41 @@ final class NativeUpdatePromptCoordinator {
     private weak var plugin: CapacitorUpdaterPlugin?
 
     init(plugin: CapacitorUpdaterPlugin) {
-        self.plugin = plugin
         let config = plugin.getConfig()
-        self.enabled = config.getBoolean("nativeUpdatePrompt", false)
-        self.onStoreCheck = config.getBoolean("nativeUpdatePromptOnStoreCheck", false)
-        self.title = config.getString("nativeUpdatePromptTitle")
-        self.message = config.getString("nativeUpdatePromptMessage")
-        self.updateButton = config.getString("nativeUpdatePromptUpdateButton")
-        self.laterButton = config.getString("nativeUpdatePromptLaterButton")
-        self.countryFilter = config.getString("nativeUpdatePromptCountry")
-        let cooldownHours = max(1, config.getInt("nativeUpdatePromptCooldownHours", 24))
-        self.cooldownMs = TimeInterval(cooldownHours) * 60 * 60
+        self.init(
+            plugin: plugin,
+            enabled: config.getBoolean("nativeUpdatePrompt", false),
+            onStoreCheck: config.getBoolean("nativeUpdatePromptOnStoreCheck", false),
+            title: config.getString("nativeUpdatePromptTitle"),
+            message: config.getString("nativeUpdatePromptMessage"),
+            updateButton: config.getString("nativeUpdatePromptUpdateButton"),
+            laterButton: config.getString("nativeUpdatePromptLaterButton"),
+            countryFilter: config.getString("nativeUpdatePromptCountry"),
+            cooldownHours: config.getInt("nativeUpdatePromptCooldownHours", 24)
+        )
+    }
+
+    init(
+        plugin: CapacitorUpdaterPlugin?,
+        enabled: Bool = false,
+        onStoreCheck: Bool = false,
+        title: String? = nil,
+        message: String? = nil,
+        updateButton: String? = nil,
+        laterButton: String? = nil,
+        countryFilter: String? = nil,
+        cooldownHours: Int = 24
+    ) {
+        self.plugin = plugin
+        self.enabled = enabled
+        self.onStoreCheck = onStoreCheck
+        self.title = title
+        self.message = message
+        self.updateButton = updateButton
+        self.laterButton = laterButton
+        self.countryFilter = countryFilter
+        let normalizedCooldownHours = max(1, cooldownHours)
+        self.cooldownMs = TimeInterval(normalizedCooldownHours) * 60 * 60
     }
 
     var isOnStoreCheckEnabled: Bool {
