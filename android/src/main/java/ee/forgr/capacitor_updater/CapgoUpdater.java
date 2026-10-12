@@ -1804,10 +1804,10 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
-        downloadBackground(url, version, sessionKey, checksum, manifest, setNext, "", "");
+        return downloadBackground(url, version, sessionKey, checksum, manifest, setNext, "", "");
     }
 
-    public void downloadBackground(
+    public String downloadBackground(
         final String url,
         final String version,
         final String sessionKey,
