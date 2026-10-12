@@ -869,7 +869,8 @@ export interface CapacitorUpdaterPlugin {
    * Configure conditions that must be met before a pending update is applied.
    *
    * After calling {@link next} to queue an update, use this method to control when it gets applied.
-   * The update will only be installed after ALL specified conditions are satisfied.
+   * By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+   * Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
    *
    * Available condition types:
    * - `background`: Wait until the app has spent more than the configured time in the background (see value formats below).
@@ -886,6 +887,7 @@ export interface CapacitorUpdaterPlugin {
    * @example
    * // Update after kill condition clears on launch AND background time exceeds 5 minutes
    * await CapacitorUpdater.setMultiDelay({
+   *   conditionMode: 'or',
    *   delayConditions: [
    *     { kind: 'kill' },
    *     { kind: 'background', value: '300000' }
@@ -2616,8 +2618,25 @@ export interface CurrentBundleResult {
   native: string;
 }
 
+/**
+ * How multiple delay conditions are combined when more than one is set.
+ *
+ * - `and`: every condition must be satisfied before the pending update is applied (default, backward compatible).
+ * - `or`: the pending update is applied as soon as any condition is satisfied.
+ *
+ * @since 8.50.0
+ */
+export type DelayConditionMode = 'and' | 'or';
+
 export interface MultiDelayConditions {
   delayConditions: DelayCondition[];
+  /**
+   * How to combine multiple delay conditions.
+   *
+   * @default 'and'
+   * @since 8.50.0
+   */
+  conditionMode?: DelayConditionMode;
 }
 
 export interface BuiltinVersion {
