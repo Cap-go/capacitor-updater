@@ -2,14 +2,43 @@ package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.mockStatic;
 
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginConfig;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 public class NativeUpdatePromptTest {
+
+    private MockedStatic<Looper> looperMock;
+    private MockedConstruction<Handler> handlerMock;
+
+    @Before
+    public void setUp() {
+        this.looperMock = mockStatic(Looper.class);
+        this.looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+        this.handlerMock = mockConstruction(Handler.class);
+    }
+
+    @After
+    public void tearDown() {
+        if (this.handlerMock != null) {
+            this.handlerMock.close();
+        }
+        if (this.looperMock != null) {
+            this.looperMock.close();
+        }
+    }
 
     @Test
     public void detectsNativeStoreBlocksFromBackendErrors() {
