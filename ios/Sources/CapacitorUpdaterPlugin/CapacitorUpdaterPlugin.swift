@@ -238,6 +238,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var didEnterSemaphoreWaitForTesting = false
 
     private var delayUpdateUtils: DelayUpdateUtils!
+    private var nativeUpdatePromptCoordinator: NativeUpdatePromptCoordinator?
 
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
@@ -329,6 +330,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 ?? shakeChannelSelectorEnabled
         }
         syncShakeMenuGestureRecognizer()
+        nativeUpdatePromptCoordinator = NativeUpdatePromptCoordinator(plugin: self)
         periodCheckDelay = Self.normalizedPeriodCheckDelaySeconds(getConfig().getInt("periodCheckDelay", 0))
 
         implementation.setPublicKey(getConfig().getString("publicKey") ?? "")
@@ -4448,17 +4450,67 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
-        if response.breaking == true {
-            return true
-        }
-
-        return response.error == "disable_auto_update_to_major" || response.message == "store_update_required"
+        NativeUpdatePromptCoordinator.isNativeStoreUpdateBlock(response: response)
     }
 
     private func notifyBreakingEventsIfNeeded(response: AppVersion, version: String) {
         if self.shouldNotifyBreakingEvents(response: response) {
             let eventVersion = version.isEmpty ? self.implementation.getCurrentBundle().getVersionName() : version
             self.notifyBreakingEvents(version: eventVersion)
+        }
+        self.nativeUpdatePromptCoordinator?.maybeShowForUpdateBlock(response: response)
+    }
+
+    func currentBuildVersionForNativeUpdatePrompt() -> String {
+        currentBuildVersion
+    }
+
+    func openAppStoreFromNativeUpdatePrompt() {
+        let bundleId = implementation.appId
+
+        func openAppStorePage(urlString: String) {
+            guard let url = URL(string: urlString) else {
+                logger.error("Invalid App Store URL from native update prompt")
+                return
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
+        }
+
+        func openFallbackAppStorePage() {
+            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                logger.error("Failed to build App Store fallback URL from native update prompt")
+                return
+            }
+            openAppStorePage(urlString: "https://apps.apple.com/app/\(encodedBundleId)")
+        }
+
+        let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
+        DispatchQueue.global(qos: .background).async {
+            guard let url = URL(string: lookupUrl) else {
+                openFallbackAppStorePage()
+                return
+            }
+
+            let task = URLSession.shared.dataTask(with: url) { data, _, error in
+                if error != nil {
+                    openFallbackAppStorePage()
+                    return
+                }
+
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let results = json["results"] as? [[String: Any]],
+                      let appInfo = results.first,
+                      let trackId = appInfo["trackId"] as? Int else {
+                    openFallbackAppStorePage()
+                    return
+                }
+
+                openAppStorePage(urlString: "https://apps.apple.com/app/id\(trackId)")
+            }
+            task.resume()
         }
     }
 
@@ -5288,6 +5340,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
 
                     self.resolveCall(call, data: result)
+                    if let availability = result["updateAvailability"] as? Int,
+                       availability == AppUpdateAvailability.updateAvailable.rawValue {
+                        self.nativeUpdatePromptCoordinator?.maybeShowForStoreUpdateAvailable()
+                    }
                 } catch {
                     self.logger.error("Failed to parse App Store response: \(error.localizedDescription)")
                     self.rejectCall(call, message: "Failed to parse App Store response: \(error.localizedDescription)")
