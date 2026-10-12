@@ -99,7 +99,7 @@ final class NativeUpdatePromptCoordinator {
         guard let filter = countryFilter?.trimmingCharacters(in: .whitespacesAndNewlines), !filter.isEmpty else {
             return true
         }
-        let deviceCountry = Locale.current.region?.identifier ?? ""
+        let deviceCountry = Self.currentDeviceRegionCode()
         if deviceCountry.isEmpty {
             return false
         }
@@ -144,5 +144,12 @@ final class NativeUpdatePromptCoordinator {
         UserDefaults.standard.set(nativeVersion, forKey: Self.lastNativeVersionDefaultsKey)
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastShownMsDefaultsKey)
         UserDefaults.standard.synchronize()
+    }
+
+    private static func currentDeviceRegionCode() -> String {
+        if #available(iOS 16, *) {
+            return Locale.current.region?.identifier ?? ""
+        }
+        return Locale.current.regionCode ?? ""
     }
 }
