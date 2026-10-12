@@ -2,6 +2,8 @@
 
 Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to users right away without waiting for store review, with Capgo Cloud or your own server.
 
+This plugin is the live update layer of [Capgo](https://capgo.app/), the AI-ready platform to build, ship, and maintain Capacitor apps: Capacitor skills and MCP servers for AI coding agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI), [maintained Capacitor plugins](https://capgo.app/plugins/), [cloud native iOS/Android builds](https://capgo.app/native-build/) with App Store and Google Play publishing, live updates with channels and rollback, and release monitoring.
+
 <a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
 
 <div align="center">
@@ -14,6 +16,19 @@ Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Cap-go/capacitor-updater/main/assets/github-social-preview.png" alt="@capgo/capacitor-updater for Capacitor apps" width="300" />
 </p>
+
+## Use with AI coding agents
+
+Capgo provides skills and a hosted MCP server so AI coding agents can set up and operate Capacitor apps, including this plugin.
+
+- **Skills**: install the [Capgo skills](https://capgo.app/skills/) ([source](https://github.com/Cap-go/capgo-skills)) in your agent:
+
+  ```bash
+  npx skills add Cap-go/capgo-skills
+  ```
+
+- **Hosted MCP server**: `https://api.capgo.app/mcp` ([docs](https://capgo.app/docs/ai/mcp/)).
+- **Agent setup guides**: [capgo.app/agents](https://capgo.app/agents/) and [AI tools for Capacitor](https://capgo.app/best/ai-tools-for-capacitor/).
 
 ## Key features
 
@@ -156,13 +171,13 @@ We recommend to declare [`CA92.1`](https://developer.apple.com/documentation/bun
 You can use our AI-Assisted Setup to install the plugin. Add the Capgo skills to your AI tool using the following command:
 
 ```bash
-npx skills add https://github.com/cap-go/capacitor-skills --skill capacitor-plugins
+npx skills add https://github.com/Cap-go/capgo-skills --skill capacitor-plugins
 ```
 
 Then use the following prompt:
 
 ```text
-Use the `capacitor-plugins` skill from `cap-go/capacitor-skills` to install the `@capgo/capacitor-updater` plugin in my project.
+Use the `capacitor-plugins` skill from `Cap-go/capgo-skills` to install the `@capgo/capacitor-updater` plugin in my project.
 ```
 
 If you prefer Manual Setup, install the plugin by running the following commands and follow the platform-specific instructions below:
@@ -2985,7 +3000,9 @@ Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvai
 
 Construct a type with a set of properties K of type T
 
-<code>{ [P in K]: T; }</code>
+<code>{
+ [P in K]: T;
+ }</code>
 
 
 ##### ShakeMenuGesture
