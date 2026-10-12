@@ -18,6 +18,9 @@ public class DelayUpdateUtils {
 
     // swiftlint:disable identifier_name
     static let DELAY_CONDITION_PREFERENCES = "DELAY_CONDITION_PREFERENCES_CAPGO"
+    static let DELAY_CONDITION_MODE_PREFERENCES = "DELAY_CONDITION_MODE_PREFERENCES_CAPGO"
+    static let DELAY_CONDITION_MODE_AND = "and"
+    static let DELAY_CONDITION_MODE_OR = "or"
     static let BACKGROUND_TIMESTAMP_KEY = "BACKGROUND_TIMESTAMP_KEY_CAPGO"
     // swiftlint:enable identifier_name
     private let logger: Logger
@@ -47,109 +50,218 @@ public class DelayUpdateUtils {
         let delayUpdatePreferences = UserDefaults.standard.string(
             forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
+        if delayConditionList.isEmpty {
+            return
+        }
 
+        let useOrMode = isOrConditionMode()
         var delayConditionListToKeep: [DelayCondition] = []
         var index = 0
+        var anyConditionMet = false
 
         for condition in delayConditionList {
-            let kind = condition.getKind()
-            let value = condition.getValue()
-
-            switch kind {
-            case "background":
-                if source == .foreground {
-                    let backgroundedAt = getBackgroundTimestamp()
-                    let now = Int64(Date().timeIntervalSince1970 * 1000) // Convert to milliseconds
-                    let delta = max(0, now - backgroundedAt)
-
-                    var longValue: Int64 = 0
-                    if let value = value, !value.isEmpty {
-                        longValue = Int64(value) ?? 0
-                    }
-
-                    if delta > longValue {
-                        // swiftlint:disable:next line_length
-                        logger.info("Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)")
-                    } else {
-                        delayConditionListToKeep.append(condition)
-                        // swiftlint:disable:next line_length
-                        logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
-                    }
-                } else {
+            let result = evaluateCondition(condition, source: source, index: index)
+            if result.met {
+                anyConditionMet = true
+                if !useOrMode, let logMessage = result.logMessage {
+                    logger.info(logMessage)
+                }
+            } else {
+                if result.keep {
                     delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
-                    logger.info("Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
                 }
-
-            case "kill":
-                if source == .killed {
-                    logger.info("Kill delay (value: \(value ?? "")) removed at index \(index) after app kill")
-                } else {
-                    delayConditionListToKeep.append(condition)
-                    // swiftlint:disable:next line_length
-                    logger.info("Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))")
-                }
-
-            case "date":
-                if let value = value, !value.isEmpty {
-                    if let date = parseDateCondition(value) {
-                        if Date() > date {
-                            // swiftlint:disable:next line_length
-                            logger.info("Date delay (value: \(value)) condition removed due to expired date at index \(index)")
-                        } else {
-                            delayConditionListToKeep.append(condition)
-                            logger.info("Date delay (value: \(value)) kept at index \(index)")
-                        }
-                    } else {
-                        // swiftlint:disable:next line_length
-                        logger.error("Date delay (value: \(value)) condition removed due to parsing issue at index \(index)")
+                if let logMessage = result.logMessage, !useOrMode || result.error {
+                    if result.error {
+                        logger.error(logMessage)
+                    } else if !useOrMode {
+                        logger.info(logMessage)
                     }
-                } else {
-                    // swiftlint:disable:next line_length
-                    logger.error("Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
                 }
-
-            case "nativeVersion":
-                if let value = value, !value.isEmpty {
-                    do {
-                        let versionLimit = try CapgoSemanticVersion(value)
-                        if currentVersionNative >= versionLimit {
-                            // swiftlint:disable:next line_length
-                            logger.info("Native version delay (value: \(value)) condition removed due to above limit at index \(index)")
-                        } else {
-                            delayConditionListToKeep.append(condition)
-                            logger.info("Native version delay (value: \(value)) kept at index \(index)")
-                        }
-                    } catch {
-                        // swiftlint:disable:next line_length
-                        logger.error("Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)")
-                    }
-                } else {
-                    // swiftlint:disable:next line_length
-                    logger.error("Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)")
-                }
-
-            default:
-                logger.error("Unknown delay condition kind: \(kind) at index \(index)")
             }
-
             index += 1
+        }
+
+        if useOrMode {
+            if anyConditionMet {
+                logger.info("Delay condition met in OR mode (source: \(source.description)), canceling delay")
+                _ = cancelDelay(source: "checkCancelDelay")
+            } else if delayConditionListToKeep.isEmpty {
+                _ = cancelDelay(source: "checkCancelDelay")
+            } else if delayConditionListToKeep.count != delayConditionList.count {
+                let json = toJson(object: delayConditionListToKeep.map { $0.toJSON() })
+                _ = setMultiDelay(delayConditions: json)
+            }
+            return
         }
 
         if !delayConditionListToKeep.isEmpty {
             let json = toJson(object: delayConditionListToKeep.map { $0.toJSON() })
             _ = setMultiDelay(delayConditions: json)
         } else {
-            // Clear all delay conditions if none are left to keep
             _ = cancelDelay(source: "checkCancelDelay")
         }
     }
 
+    private struct ConditionCheckResult {
+        let met: Bool
+        let keep: Bool
+        let error: Bool
+        let logMessage: String?
+    }
+
+    private func evaluateCondition(_ condition: DelayCondition, source: CancelDelaySource, index: Int) -> ConditionCheckResult {
+        let kind = condition.getKind()
+        let value = condition.getValue()
+
+        switch kind {
+        case "background":
+            if source == .foreground {
+                let backgroundedAt = getBackgroundTimestamp()
+                let now = Int64(Date().timeIntervalSince1970 * 1000)
+                let delta = max(0, now - backgroundedAt)
+                var longValue: Int64 = 0
+                if let value = value, !value.isEmpty {
+                    longValue = Int64(value) ?? 0
+                }
+
+                if delta > longValue {
+                    return ConditionCheckResult(
+                        met: true,
+                        keep: false,
+                        error: false,
+                        logMessage: "Background condition (value: \(value ?? "")) deleted at index \(index). Delta: \(delta), longValue: \(longValue)"
+                    )
+                }
+                return ConditionCheckResult(
+                    met: false,
+                    keep: true,
+                    error: false,
+                    logMessage: "Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))"
+                )
+            }
+            return ConditionCheckResult(
+                met: false,
+                keep: true,
+                error: false,
+                logMessage: "Background delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))"
+            )
+
+        case "kill":
+            if source == .killed {
+                return ConditionCheckResult(
+                    met: true,
+                    keep: false,
+                    error: false,
+                    logMessage: "Kill delay (value: \(value ?? "")) removed at index \(index) after app kill"
+                )
+            }
+            return ConditionCheckResult(
+                met: false,
+                keep: true,
+                error: false,
+                logMessage: "Kill delay (value: \(value ?? "")) condition kept at index \(index) (source: \(source.description))"
+            )
+
+        case "date":
+            if let value = value, !value.isEmpty {
+                if let date = parseDateCondition(value) {
+                    if Date() > date {
+                        return ConditionCheckResult(
+                            met: true,
+                            keep: false,
+                            error: false,
+                            logMessage: "Date delay (value: \(value)) condition removed due to expired date at index \(index)"
+                        )
+                    }
+                    return ConditionCheckResult(met: false, keep: true, error: false, logMessage: "Date delay (value: \(value)) kept at index \(index)")
+                }
+                return ConditionCheckResult(
+                    met: false,
+                    keep: false,
+                    error: true,
+                    logMessage: "Date delay (value: \(value)) condition removed due to parsing issue at index \(index)"
+                )
+            }
+            return ConditionCheckResult(
+                met: false,
+                keep: false,
+                error: true,
+                logMessage: "Date delay (value: \(value ?? "")) condition removed due to empty value at index \(index)"
+            )
+
+        case "nativeVersion":
+            if let value = value, !value.isEmpty {
+                do {
+                    let versionLimit = try CapgoSemanticVersion(value)
+                    if currentVersionNative >= versionLimit {
+                        return ConditionCheckResult(
+                            met: true,
+                            keep: false,
+                            error: false,
+                            logMessage: "Native version delay (value: \(value)) condition removed due to above limit at index \(index)"
+                        )
+                    }
+                    return ConditionCheckResult(met: false, keep: true, error: false, logMessage: "Native version delay (value: \(value)) kept at index \(index)")
+                } catch {
+                    return ConditionCheckResult(
+                        met: false,
+                        keep: false,
+                        error: true,
+                        logMessage: "Native version delay (value: \(value)) condition removed due to parsing issue at index \(index): \(error)"
+                    )
+                }
+            }
+            return ConditionCheckResult(
+                met: false,
+                keep: false,
+                error: true,
+                logMessage: "Native version delay (value: \(value ?? "")) condition removed due to empty value at index \(index)"
+            )
+
+        default:
+            return ConditionCheckResult(met: false, keep: false, error: true, logMessage: "Unknown delay condition kind: \(kind) at index \(index)")
+        }
+    }
+
+    public func isOrConditionMode() -> Bool {
+        return getConditionMode() == DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+    }
+
+    public func getConditionMode() -> String {
+        let mode = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES)
+            ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+        return mode == DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+            ? DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+            : DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+    }
+
+    public func setConditionMode(_ conditionMode: String) -> Bool {
+        let normalized = conditionMode == DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+            ? DelayUpdateUtils.DELAY_CONDITION_MODE_OR
+            : DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+        if conditionMode != DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+            && conditionMode != DelayUpdateUtils.DELAY_CONDITION_MODE_OR {
+            logger.warn("Unknown delay condition mode '\(conditionMode)', defaulting to '\(DelayUpdateUtils.DELAY_CONDITION_MODE_AND)'")
+        }
+        UserDefaults.standard.set(normalized, forKey: DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES)
+        let synchronized = UserDefaults.standard.synchronize()
+        if synchronized {
+            logger.info("Delay condition mode saved: \(normalized)")
+        } else {
+            logger.error("Failed to save delay condition mode: synchronize returned false")
+        }
+        return synchronized
+    }
+
     public func setMultiDelay(delayConditions: String) -> Bool {
         UserDefaults.standard.set(delayConditions, forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
-        UserDefaults.standard.synchronize()
-        logger.info("Delay update saved")
-        return true
+        let synchronized = UserDefaults.standard.synchronize()
+        if synchronized {
+            logger.info("Delay update saved")
+        } else {
+            logger.error("Failed to delay update: synchronize returned false")
+        }
+        return synchronized
     }
 
     public func setBackgroundTimestamp(_ backgroundTimestamp: Int64) {
@@ -171,6 +283,7 @@ public class DelayUpdateUtils {
 
     public func cancelDelay(source: String) -> Bool {
         UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES)
+        UserDefaults.standard.removeObject(forKey: DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES)
         UserDefaults.standard.synchronize()
         logger.info("All delays canceled from \(source)")
         return true
