@@ -1886,7 +1886,11 @@ public class CapgoUpdater {
                 }
                 BundleInfo orphanedBundle = null;
                 for (final BundleInfo info : this.list(true)) {
-                    if (info != null && version.equals(info.getVersionName())) {
+                    if (
+                        info != null &&
+                        info.getStatus() == BundleStatus.DOWNLOADING &&
+                        version.equals(info.getVersionName())
+                    ) {
                         orphanedBundle = info;
                         break;
                     }
