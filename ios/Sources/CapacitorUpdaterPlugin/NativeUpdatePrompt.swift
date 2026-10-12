@@ -21,7 +21,7 @@ final class NativeUpdatePromptCoordinator {
     private let cooldownMs: TimeInterval
     private weak var plugin: CapacitorUpdaterPlugin?
 
-    init(plugin: CapacitorUpdaterPlugin) {
+    convenience init(plugin: CapacitorUpdaterPlugin) {
         let config = plugin.getConfig()
         self.init(
             plugin: plugin,
