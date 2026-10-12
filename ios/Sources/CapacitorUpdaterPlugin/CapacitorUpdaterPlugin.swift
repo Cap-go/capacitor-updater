@@ -4467,35 +4467,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func openAppStoreFromNativeUpdatePrompt() {
         let bundleId = implementation.appId
-
-        func openAppStorePage(urlString: String) {
-            guard let url = URL(string: urlString) else {
-                logger.error("Invalid App Store URL from native update prompt")
-                return
-            }
-            DispatchQueue.main.async {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            }
-        }
-
-        func openFallbackAppStorePage() {
-            guard let encodedBundleId = bundleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-                logger.error("Failed to build App Store fallback URL from native update prompt")
-                return
-            }
-            openAppStorePage(urlString: "https://apps.apple.com/app/\(encodedBundleId)")
-        }
-
         let lookupUrl = "https://itunes.apple.com/lookup?bundleId=\(bundleId)"
         DispatchQueue.global(qos: .background).async {
             guard let url = URL(string: lookupUrl) else {
-                openFallbackAppStorePage()
+                self.logger.error("Invalid App Store lookup URL from native update prompt")
                 return
             }
 
             let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                if error != nil {
-                    openFallbackAppStorePage()
+                if let error = error {
+                    self.logger.error("App Store lookup from native update prompt failed: \(error.localizedDescription)")
                     return
                 }
 
@@ -4504,13 +4485,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                       let results = json["results"] as? [[String: Any]],
                       let appInfo = results.first,
                       let trackId = appInfo["trackId"] as? Int else {
-                    openFallbackAppStorePage()
+                    self.logger.error("App Store lookup from native update prompt did not return a trackId for bundleId \(bundleId)")
                     return
                 }
 
-                openAppStorePage(urlString: "https://apps.apple.com/app/id\(trackId)")
+                self.openAppStorePageFromNativeUpdatePrompt(urlString: "https://apps.apple.com/app/id\(trackId)")
             }
             task.resume()
+        }
+    }
+
+    private func openAppStorePageFromNativeUpdatePrompt(urlString: String) {
+        guard let url = URL(string: urlString) else {
+            logger.error("Invalid App Store URL from native update prompt")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
     }
 

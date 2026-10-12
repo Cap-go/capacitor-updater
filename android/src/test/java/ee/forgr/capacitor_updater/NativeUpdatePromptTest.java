@@ -62,6 +62,36 @@ public class NativeUpdatePromptTest {
     }
 
     @Test
+    public void scheduleShowIgnoresDuplicatePresentationWhileInFlight() {
+        NativeUpdatePrompt.resetSessionStateForTesting();
+        PluginConfig config = Mockito.mock(PluginConfig.class);
+        Mockito.when(config.getBoolean("nativeUpdatePrompt", false)).thenReturn(true);
+        Mockito.when(config.getBoolean("nativeUpdatePromptOnStoreCheck", false)).thenReturn(false);
+        Mockito.when(config.getInt("nativeUpdatePromptCooldownHours", 24)).thenReturn(24);
+
+        NativeUpdatePrompt.NativeUpdatePromptHost host = Mockito.mock(NativeUpdatePrompt.NativeUpdatePromptHost.class);
+        Mockito.when(host.getNativeBuildVersion()).thenReturn("42");
+
+        NativeUpdatePrompt prompt = new NativeUpdatePrompt(
+            config,
+            Mockito.mock(SharedPreferences.class),
+            Mockito.mock(ee.forgr.capacitor_updater.Logger.class),
+            host
+        );
+        prompt.resetPresentationStateForTesting();
+
+        JSObject response = new JSObject();
+        response.put("breaking", true);
+        prompt.maybeShowForUpdateBlock(response);
+        assertTrue(prompt.isPromptPresentationActiveForTesting());
+        prompt.maybeShowForUpdateBlock(response);
+        assertTrue(prompt.isPromptPresentationActiveForTesting());
+
+        prompt.resetPresentationStateForTesting();
+        assertFalse(prompt.isPromptPresentationActiveForTesting());
+    }
+
+    @Test
     public void showsInAllRegionsWhenCountryFilterUnset() {
         PluginConfig config = Mockito.mock(PluginConfig.class);
         Mockito.when(config.getBoolean("nativeUpdatePrompt", false)).thenReturn(true);

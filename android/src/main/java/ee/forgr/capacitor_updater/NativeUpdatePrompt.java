@@ -29,6 +29,18 @@ final class NativeUpdatePrompt {
         SESSION_SHOWN_NATIVE_VERSIONS.clear();
     }
 
+    void resetPresentationStateForTesting() {
+        this.promptPresentationActive = false;
+        if (this.pendingShowRunnable != null) {
+            this.mainHandler.removeCallbacks(this.pendingShowRunnable);
+            this.pendingShowRunnable = null;
+        }
+    }
+
+    boolean isPromptPresentationActiveForTesting() {
+        return this.promptPresentationActive;
+    }
+
     private final boolean enabled;
     private final boolean onStoreCheck;
     private final String title;
@@ -40,6 +52,9 @@ final class NativeUpdatePrompt {
     private final SharedPreferences prefs;
     private final Logger logger;
     private final NativeUpdatePromptHost host;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean promptPresentationActive = false;
+    private Runnable pendingShowRunnable;
 
     interface NativeUpdatePromptHost {
         Activity getActivity();
@@ -113,8 +128,20 @@ final class NativeUpdatePrompt {
         if (!this.shouldShowForNativeVersion(nativeVersion)) {
             return;
         }
+        if (this.promptPresentationActive) {
+            return;
+        }
+        this.promptPresentationActive = true;
+        if (this.pendingShowRunnable != null) {
+            this.mainHandler.removeCallbacks(this.pendingShowRunnable);
+        }
+        this.pendingShowRunnable = () -> this.showDialog(nativeVersion);
+        this.mainHandler.postDelayed(this.pendingShowRunnable, 600);
+    }
 
-        new Handler(Looper.getMainLooper()).postDelayed(() -> this.showDialog(nativeVersion), 600);
+    private void clearPresentationGuard() {
+        this.promptPresentationActive = false;
+        this.pendingShowRunnable = null;
     }
 
     boolean shouldShowForNativeVersion(final String nativeVersion) {
@@ -153,6 +180,7 @@ final class NativeUpdatePrompt {
     private void showDialog(final String nativeVersion) {
         final Activity activity = this.host.getActivity();
         if (activity == null || activity.isFinishing()) {
+            this.clearPresentationGuard();
             return;
         }
 
@@ -165,21 +193,27 @@ final class NativeUpdatePrompt {
         final String negative = this.laterButton != null && !this.laterButton.isEmpty() ? this.laterButton : "Not now";
 
         try {
-            new AlertDialog.Builder(activity)
+            final AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle(dialogTitle)
                 .setMessage(dialogMessage)
                 .setCancelable(true)
-                .setPositiveButton(positive, (dialog, which) -> {
+                .setPositiveButton(positive, (d, which) -> this.onUpdateSelected())
+                .setNegativeButton(negative, (d, which) -> d.dismiss())
+                .create();
+            final boolean[] recorded = { false };
+            final Runnable markRecorded = () -> {
+                if (!recorded[0]) {
+                    recorded[0] = true;
                     this.recordShown(nativeVersion);
-                    this.onUpdateSelected();
-                })
-                .setNegativeButton(negative, (dialog, which) -> {
-                    this.recordShown(nativeVersion);
-                    dialog.dismiss();
-                })
-                .show();
+                }
+            };
+            dialog.setOnShowListener((d) -> markRecorded.run());
+            dialog.setOnCancelListener((d) -> markRecorded.run());
+            dialog.setOnDismissListener((d) -> this.clearPresentationGuard());
+            dialog.show();
         } catch (final Exception e) {
             this.logger.warn("Could not show native update prompt: " + e.getMessage());
+            this.clearPresentationGuard();
         }
     }
 
