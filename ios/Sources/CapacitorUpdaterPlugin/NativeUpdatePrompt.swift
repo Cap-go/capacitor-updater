@@ -7,6 +7,10 @@ final class NativeUpdatePromptCoordinator {
 
     private static var sessionShownNativeVersions = Set<String>()
 
+    static func resetSessionStateForTesting() {
+        sessionShownNativeVersions.removeAll()
+    }
+
     private let enabled: Bool
     private let onStoreCheck: Bool
     private let title: String?

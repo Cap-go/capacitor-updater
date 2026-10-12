@@ -40,6 +40,7 @@ public class NativeUpdatePromptTest {
 
     @Test
     public void respectsSessionAndCooldownForNativeVersion() {
+        NativeUpdatePrompt.resetSessionStateForTesting();
         PluginConfig config = Mockito.mock(PluginConfig.class);
         Mockito.when(config.getBoolean("nativeUpdatePrompt", false)).thenReturn(true);
         Mockito.when(config.getBoolean("nativeUpdatePromptOnStoreCheck", false)).thenReturn(false);

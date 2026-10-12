@@ -25,6 +25,10 @@ final class NativeUpdatePrompt {
 
     private static final Set<String> SESSION_SHOWN_NATIVE_VERSIONS = new HashSet<>();
 
+    static void resetSessionStateForTesting() {
+        SESSION_SHOWN_NATIVE_VERSIONS.clear();
+    }
+
     private final boolean enabled;
     private final boolean onStoreCheck;
     private final String title;
