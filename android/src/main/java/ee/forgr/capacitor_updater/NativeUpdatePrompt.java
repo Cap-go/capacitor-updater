@@ -262,12 +262,15 @@ final class NativeUpdatePrompt {
         }
         try {
             final AppUpdateManager manager = this.host.getAppUpdateManager();
-            manager.startUpdateFlowForResult(
+            final boolean started = manager.startUpdateFlowForResult(
                 appUpdateInfo,
                 activity,
                 AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
                 CapacitorUpdaterPlugin.APP_UPDATE_REQUEST_CODE
             );
+            if (!started) {
+                this.openPlayStore();
+            }
         } catch (final Exception e) {
             this.logger.warn("Immediate update from prompt failed: " + e.getMessage());
             this.openPlayStore();
