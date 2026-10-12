@@ -351,7 +351,15 @@ public class ManifestStagingCleanupTest {
             harness.store.containsKey(bundleId + CapgoUpdater.MANIFEST_DEST_SUFFIX)
         );
         assertEquals(BundleStatus.ERROR, harness.updater.getBundleInfo(bundleId).getStatus());
-        assertTrue(harness.updater.activeManifestStagingDests().isEmpty());
+        assertFalse(
+            "Stale manifest staging dest must not remain active after orphan restart",
+            harness.updater.activeManifestStagingDests().contains(dest)
+        );
+        assertEquals(
+            "Restarted manifest download should track one new staging dest",
+            1,
+            harness.updater.activeManifestStagingDests().size()
+        );
     }
 
     @Test
