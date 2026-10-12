@@ -285,7 +285,7 @@ public class ManifestStagingCleanupTest {
         tempDir.toFile().deleteOnExit();
         final String bundleId = "orphnBnd01";
         final String version = "2.0.0";
-        final String dest = stagingDest("orphanStg01");
+        final String dest = stagingDest("orphnStg01");
         Files.createDirectories(tempDir.resolve(dest));
 
         final PrefsHarness harness = updaterWithPrefs(tempDir);
