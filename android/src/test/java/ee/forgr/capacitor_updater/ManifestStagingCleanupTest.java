@@ -2,8 +2,11 @@ package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
@@ -31,6 +34,7 @@ import java.util.Map;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -273,6 +277,81 @@ public class ManifestStagingCleanupTest {
         harness.updater.cleanupManifestStagingAfterDownloadCancelled("bundleCan1");
 
         assertFalse(Files.exists(tempDir.resolve(dest)));
+    }
+
+    @Test
+    public void downloadBackgroundOrphanRestartClearsStaleManifestStaging() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-orphan-bg");
+        tempDir.toFile().deleteOnExit();
+        final String bundleId = "orphnBnd01";
+        final String version = "2.0.0";
+        final String dest = stagingDest("orphanStg01");
+        Files.createDirectories(tempDir.resolve(dest));
+
+        final PrefsHarness harness = updaterWithPrefs(tempDir);
+        harness.store.put(bundleId + "_info", new BundleInfo(bundleId, version, BundleStatus.DOWNLOADING, new Date(), "").toString());
+        harness.store.put(bundleId + CapgoUpdater.MANIFEST_DEST_SUFFIX, dest);
+        setIoExecutor(harness.updater, directExecutor());
+
+        final Context appContext = mock(Context.class);
+        when(appContext.getApplicationContext()).thenReturn(appContext);
+        harness.updater.appContext = appContext;
+
+        final MutableLiveData<List<WorkInfo>> liveData = new MutableLiveData<>(Collections.emptyList());
+        final JSONArray manifest = new JSONArray();
+
+        try (
+            MockedStatic<WorkManager> workManagerStatic = mockStatic(WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloadWorkerStatic = mockStatic(DownloadWorkerManager.class)
+        ) {
+            downloadWorkerStatic.when(() -> DownloadWorkerManager.isVersionDownloading(any(Context.class), eq(version))).thenReturn(true);
+            downloadWorkerStatic
+                .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(any(Context.class), eq(version)))
+                .thenReturn(true);
+            downloadWorkerStatic
+                .when(() ->
+                    DownloadWorkerManager.enqueueDownload(
+                        any(Context.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        anyBoolean(),
+                        anyBoolean(),
+                        any(String.class),
+                        any(String.class),
+                        anyBoolean(),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class),
+                        any(String.class)
+                    )
+                )
+                .thenAnswer((invocation) -> null);
+            final WorkManager workManager = mock(WorkManager.class);
+            workManagerStatic.when(() -> WorkManager.getInstance(any(Context.class))).thenReturn(workManager);
+            when(workManager.getWorkInfosByTagLiveData(any(String.class))).thenReturn(liveData);
+
+            final String newId = harness.updater.downloadBackground("https://example.com/update.zip", version, "", "", manifest, false);
+            assertNotNull(newId);
+            assertFalse(bundleId.equals(newId));
+        }
+
+        assertFalse("Stale manifest staging folder must be removed on orphan restart", Files.exists(tempDir.resolve(dest)));
+        assertFalse(
+            "Stale manifest dest record must be cleared on orphan restart",
+            harness.store.containsKey(bundleId + CapgoUpdater.MANIFEST_DEST_SUFFIX)
+        );
+        assertEquals(BundleStatus.ERROR, harness.updater.getBundleInfo(bundleId).getStatus());
+        assertTrue(harness.updater.activeManifestStagingDests().isEmpty());
     }
 
     @Test

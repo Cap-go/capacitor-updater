@@ -398,25 +398,6 @@ public class CapgoUpdater {
         return ageMs >= LEGACY_MANIFEST_STAGING_MIN_AGE_MS;
     }
 
-    private boolean isProtectedManifestStagingDest(final String folderName) {
-        if (this.prefs == null || folderName == null || folderName.isEmpty()) {
-            return false;
-        }
-        for (final BundleInfo info : this.list(true)) {
-            if (info == null || info.getId() == null || info.getId().isEmpty()) {
-                continue;
-            }
-            if (info.getStatus() != BundleStatus.DOWNLOADING) {
-                continue;
-            }
-            final String dest = this.prefs.getString(info.getId() + MANIFEST_DEST_SUFFIX, null);
-            if (folderName.equals(dest)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     void saveManifestStagingDest(final String bundleId, final String dest) {
         if (this.editor == null || bundleId == null || dest == null || dest.isEmpty()) {
             return;
@@ -544,6 +525,8 @@ public class CapgoUpdater {
             return;
         }
 
+        final Set<String> protectedDests = this.activeManifestStagingDests();
+
         for (final File entry : entries) {
             if (threadToCheck != null && threadToCheck.isInterrupted()) {
                 logger.warn("cleanupOrphanedManifestStagingFolders was cancelled");
@@ -556,7 +539,7 @@ public class CapgoUpdater {
             if (!isManifestStagingFolderName(folderName)) {
                 continue;
             }
-            if (this.isProtectedManifestStagingDest(folderName)) {
+            if (protectedDests.contains(folderName)) {
                 continue;
             }
             try {
@@ -569,10 +552,10 @@ public class CapgoUpdater {
             }
         }
 
-        this.cleanupLegacyBareManifestStagingFolders(threadToCheck);
+        this.cleanupLegacyBareManifestStagingFolders(threadToCheck, protectedDests);
     }
 
-    private void cleanupLegacyBareManifestStagingFolders(final Thread threadToCheck) {
+    private void cleanupLegacyBareManifestStagingFolders(final Thread threadToCheck, final Set<String> protectedDests) {
         final File[] entries = this.documentsDir.listFiles();
         if (entries == null) {
             return;
@@ -590,7 +573,7 @@ public class CapgoUpdater {
             if (!isLegacyBareManifestStagingFolderName(folderName)) {
                 continue;
             }
-            if (this.isProtectedManifestStagingDest(folderName)) {
+            if (protectedDests.contains(folderName)) {
                 continue;
             }
             if (!looksLikeLeakedManifestStaging(entry)) {
@@ -1900,6 +1883,11 @@ public class CapgoUpdater {
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel orphaned download before restarting it");
                     return null;
+                }
+                final BundleInfo orphanedBundle = this.getBundleInfoByName(version);
+                if (orphanedBundle != null) {
+                    this.cleanupManifestStagingAfterDownloadCancelled(orphanedBundle.getId());
+                    this.saveBundleInfo(orphanedBundle.getId(), orphanedBundle.setStatus(BundleStatus.ERROR));
                 }
                 logger.info("Restarting download orphaned by a previous process for version: " + version);
             } else {
