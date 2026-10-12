@@ -767,7 +767,8 @@ extension UIWindow {
                                 bundle = try updater.downloadManifest(
                                     manifest: manifest,
                                     version: latest.version,
-                                    sessionKey: latest.sessionKey ?? ""
+                                    sessionKey: latest.sessionKey ?? "",
+                                    manifestSignature: latest.manifestSignature ?? ""
                                 )
                             } else {
                                 // Safe unwrap URL
@@ -785,7 +786,8 @@ extension UIWindow {
                                     url: downloadUrl,
                                     version: latest.version,
                                     sessionKey: latest.sessionKey ?? "",
-                                    expectedChecksum: latest.checksum
+                                    expectedChecksum: latest.checksum,
+                                    signature: latest.signature ?? ""
                                 )
                             }
 
