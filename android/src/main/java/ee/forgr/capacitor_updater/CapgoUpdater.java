@@ -1884,7 +1884,13 @@ public class CapgoUpdater {
                     logger.error("Failed to cancel orphaned download before restarting it");
                     return null;
                 }
-                final BundleInfo orphanedBundle = this.getBundleInfoByName(version);
+                BundleInfo orphanedBundle = null;
+                for (final BundleInfo info : this.list(true)) {
+                    if (info != null && version.equals(info.getVersionName())) {
+                        orphanedBundle = info;
+                        break;
+                    }
+                }
                 if (orphanedBundle != null) {
                     this.cleanupManifestStagingAfterDownloadCancelled(orphanedBundle.getId());
                     this.saveBundleInfo(orphanedBundle.getId(), orphanedBundle.setStatus(BundleStatus.ERROR));
