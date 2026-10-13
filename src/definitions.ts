@@ -147,8 +147,10 @@ declare module '@capacitor/cli' {
        * keep loading from the network) and a single download is capped at 300 MB.
        *
        * The bundle version is `web-<first 12 hex of sha256(website URL + "\n" + entry HTML)>`. A new version is applied immediately
-       * (like `directUpdate: 'always'`). `notifyAppReady()` is still required: if it is not called within
-       * `appReadyTimeout`, the plugin rolls back to the previous bundle and skips that `web-*` version for 24 hours.
+       * (like `directUpdate: 'always'`). The website does not need to call `notifyAppReady()`: with
+       * `websiteAutoNotifyReady` (default `true`) the plugin calls it once the page loaded and shows content. If the
+       * bundle is not marked ready within `appReadyTimeout` (failed or blank load), the plugin rolls back to the
+       * previous bundle and skips that `web-*` version for 24 hours.
        *
        * In website mode there are no channels, no stats, no bundle uploads, no encryption and no checksum
        * signatures. If the backend answers `mode: "capgo"` (the app was upgraded to full Capgo), the classic
@@ -173,6 +175,21 @@ declare module '@capacitor/cli' {
        * @since 8.53.0
        */
       websiteLiveUrl?: string;
+
+      /**
+       * In website mode, call `notifyAppReady()` automatically for `web-*` bundles, because a plain website never
+       * imports the plugin. The call happens once the main frame finished loading from the app origin (not the
+       * Capacitor error page), `document.readyState` is `complete` and the page shows content (text or media). A failed,
+       * error or blank load never marks the bundle ready, so the `appReadyTimeout` rollback still protects users.
+       * Set to `false` if your website calls `notifyAppReady()` itself.
+       *
+       * Only available for Android and iOS. Ignored unless `websiteMode` is `true`.
+       *
+       * @default true
+       * @example false
+       * @since 8.53.0
+       */
+      websiteAutoNotifyReady?: boolean;
 
       /**
        * Configure the public key for end to end live update encryption Version 2

@@ -602,4 +602,54 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         defaults.set("web-cccccccccccc", forKey: WebsiteModeUpdater.failedVersionsKey)
         XCTAssertFalse(updater.isFailedVersion("web-cccccccccccc", nowMs: 1_000))
     }
+    func testAutoNotifyReadyOnlyForWebsiteBundlesFromTheAppOrigin() {
+        let app = URL(string: "capacitor://localhost")
+        let error = URL(string: "capacitor://localhost/error.html")
+        func check(_ mode: Bool, _ auto: Bool, _ version: String?, _ page: String?) -> Bool {
+            WebsiteModeUpdater.shouldAutoNotifyReady(
+                websiteMode: mode,
+                autoNotifyReady: auto,
+                currentVersion: version,
+                pageUrl: page.flatMap { URL(string: $0) },
+                appUrl: app,
+                errorUrl: error
+            )
+        }
+        XCTAssertTrue(check(true, true, "web-0123456789ab", "capacitor://localhost/"))
+        XCTAssertTrue(check(true, true, "web-0123456789ab", "capacitor://localhost/a?b=1#c"))
+        XCTAssertFalse(check(false, true, "web-0123456789ab", "capacitor://localhost/"))
+        XCTAssertFalse(check(true, false, "web-0123456789ab", "capacitor://localhost/"))
+        XCTAssertFalse(check(true, true, "1.0.0", "capacitor://localhost/"))
+        XCTAssertFalse(check(true, true, "builtin", "capacitor://localhost/"))
+        XCTAssertFalse(check(true, true, nil, "capacitor://localhost/"))
+    }
+
+    func testAutoNotifyReadySkipsFailedOrForeignLoads() {
+        let app = URL(string: "capacitor://localhost")
+        let error = URL(string: "capacitor://localhost/error.html")
+        func check(_ page: String?) -> Bool {
+            WebsiteModeUpdater.shouldAutoNotifyReady(
+                websiteMode: true,
+                autoNotifyReady: true,
+                currentVersion: "web-0123456789ab",
+                pageUrl: page.flatMap { URL(string: $0) },
+                appUrl: app,
+                errorUrl: error
+            )
+        }
+        XCTAssertFalse(check("capacitor://localhost/error.html"))
+        XCTAssertFalse(check("capacitor://localhost/error.html?x=1"))
+        XCTAssertFalse(check("about:blank"))
+        XCTAssertFalse(check("file:///var/app/public/error.html"))
+        XCTAssertFalse(check("https://app.example.com/"))
+        XCTAssertFalse(check(nil))
+    }
+
+    func testAutoReadyScriptCallsNotifyAppReadyOnlyAfterContent() {
+        let script = WebsiteModeUpdater.autoReadyScript
+        XCTAssertTrue(script.contains("Plugins.CapacitorUpdater"))
+        XCTAssertTrue(script.contains("notifyAppReady()"))
+        XCTAssertTrue(script.contains("document.readyState==='complete'&&hasContent()"))
+        XCTAssertFalse(script.contains("\n"))
+    }
 }

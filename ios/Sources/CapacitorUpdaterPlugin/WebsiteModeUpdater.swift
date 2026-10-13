@@ -173,6 +173,69 @@ final class WebsiteModeUpdater {
         version.hasPrefix(versionPrefix)
     }
 
+    // MARK: - Automatic notifyAppReady
+
+    /// Evaluated in the main frame after it finished loading. A website bundle is the customer's plain
+    /// website: it never imports the updater, so nothing calls notifyAppReady(). This script calls it
+    /// through the native plugin proxy (so the readiness generation guard still applies) once the
+    /// document is complete and shows content. A blank page never calls it, so the rollback still runs.
+    static let autoReadyScript = """
+    (function(){\
+    if(window.__capgoWebsiteAutoReady){return;}\
+    window.__capgoWebsiteAutoReady=true;\
+    var tries=0;\
+    function hasContent(){var b=document.body;if(!b){return false;}\
+    if(String(b.innerText||'').trim().length>0){return true;}\
+    return !!b.querySelector('img,svg,canvas,video,picture,iframe,input,button,textarea,select');}\
+    function tick(){try{var cap=window.Capacitor;var p=cap&&cap.Plugins&&cap.Plugins.CapacitorUpdater;\
+    if(document.readyState==='complete'&&hasContent()&&p&&typeof p.notifyAppReady==='function'){\
+    var r=p.notifyAppReady();if(r&&typeof r.catch==='function'){r.catch(function(){});}return;}}catch(_){}\
+    if(tries++<60){setTimeout(tick,500);}}\
+    if(document.readyState==='complete'){tick();}else{window.addEventListener('load',tick);}\
+    })();
+    """
+
+    /// True when a finished main-frame load should auto-mark the current website bundle as ready:
+    /// website mode with auto notify enabled, a web-* bundle, and a page served from the app origin
+    /// that is not the Capacitor error page.
+    static func shouldAutoNotifyReady(
+        websiteMode: Bool,
+        autoNotifyReady: Bool,
+        currentVersion: String?,
+        pageUrl: URL?,
+        appUrl: URL?,
+        errorUrl: URL?
+    ) -> Bool {
+        guard websiteMode, autoNotifyReady, let currentVersion, isWebsiteVersion(currentVersion) else {
+            return false
+        }
+        guard let pageUrl, let appUrl, let pageOrigin = origin(of: pageUrl), pageOrigin == origin(of: appUrl) else {
+            return false
+        }
+        if let errorUrl, stripQueryAndFragment(pageUrl) == stripQueryAndFragment(errorUrl) {
+            return false
+        }
+        return true
+    }
+
+    private static func origin(of url: URL) -> String? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(), !host.isEmpty else {
+            return nil
+        }
+        return "\(scheme)://\(host):\(components.port ?? -1)"
+    }
+
+    private static func stripQueryAndFragment(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? url.absoluteString
+    }
+
     // MARK: - Website download
 
     /// Deterministic bundle version:

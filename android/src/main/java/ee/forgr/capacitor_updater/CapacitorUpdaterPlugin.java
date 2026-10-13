@@ -205,6 +205,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Website mode (Capgo Website Live plan): the deployed website is the source of truth.
     private boolean websiteMode = false;
     private WebsiteModeUpdater websiteModeUpdater;
+    private boolean websiteAutoNotifyReady = true;
+    private WebViewListener websiteAutoReadyListener;
     private String configuredStatsUrl = "";
     private String configuredChannelUrl = "";
 
@@ -995,6 +997,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
         this.installWebViewStatsReporter();
+        this.installWebsiteAutoReadyListener();
         // Downloads (including shake-menu / CapgoUpdater entry points) wait on this gate.
         this.implementation.downloadGate = this::waitForCleanupIfNeeded;
         // Always run async cleanup: delete obsolete bundles on native update (when enabled)
@@ -5110,6 +5113,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.configuredStatsUrl = this.implementation.statsUrl;
         this.configuredChannelUrl = this.implementation.channelUrl;
         this.websiteMode = Boolean.TRUE.equals(this.getConfig().getBoolean("websiteMode", false));
+        this.websiteAutoNotifyReady = Boolean.TRUE.equals(this.getConfig().getBoolean("websiteAutoNotifyReady", true));
         if (!this.websiteMode) {
             return;
         }
@@ -5122,6 +5126,51 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.websiteModeUpdater.setLog((message) -> logger.info(message));
         logger.info("Website mode enabled, live check via: " + this.websiteModeUpdater.getWebsiteLiveUrl());
         this.applyWebsiteModeTelemetry(this.websiteModeUpdater.lastKnownModeIsCapgo());
+    }
+
+    /**
+     * A website bundle is the customer's plain website and never calls notifyAppReady(). When the main
+     * frame finished loading a web-* bundle from the app origin (not the Capacitor error page), run a
+     * script that calls notifyAppReady() once the document shows content. Failed or blank loads never
+     * call it, so the appReadyTimeout rollback still protects users.
+     */
+    private void installWebsiteAutoReadyListener() {
+        if (!this.websiteMode || !this.websiteAutoNotifyReady || this.bridge == null || this.websiteAutoReadyListener != null) {
+            return;
+        }
+        this.websiteAutoReadyListener = new WebViewListener() {
+            @Override
+            public void onPageLoaded(final android.webkit.WebView view) {
+                CapacitorUpdaterPlugin.this.maybeAutoNotifyWebsiteReady(view);
+            }
+        };
+        this.bridge.addWebViewListener(this.websiteAutoReadyListener);
+    }
+
+    private void maybeAutoNotifyWebsiteReady(final android.webkit.WebView view) {
+        try {
+            if (view == null || this.bridge == null) {
+                return;
+            }
+            final BundleInfo current = this.implementation.getCurrentBundle();
+            final String versionName = current != null ? current.getVersionName() : null;
+            if (
+                !WebsiteModeUpdater.shouldAutoNotifyReady(
+                    this.websiteMode,
+                    this.websiteAutoNotifyReady,
+                    versionName,
+                    view.getUrl(),
+                    this.bridge.getAppUrl(),
+                    this.bridge.getErrorUrl()
+                )
+            ) {
+                return;
+            }
+            logger.info("Website bundle loaded, notifyAppReady will be called automatically: " + versionName);
+            view.evaluateJavascript(WebsiteModeUpdater.AUTO_READY_SCRIPT, null);
+        } catch (final Exception e) {
+            logger.warn("Unable to auto notify website bundle ready: " + e.getMessage());
+        }
     }
 
     /** Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo. */
@@ -6479,6 +6528,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (webViewStatsListener != null && bridge != null) {
                 bridge.removeWebViewListener(webViewStatsListener);
                 webViewStatsListener = null;
+            }
+            if (websiteAutoReadyListener != null && bridge != null) {
+                bridge.removeWebViewListener(websiteAutoReadyListener);
+                websiteAutoReadyListener = null;
             }
         } catch (Exception e) {
             logger.error("Failed to run handleOnDestroy: " + e.getMessage());

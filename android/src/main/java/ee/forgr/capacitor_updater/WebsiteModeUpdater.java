@@ -474,6 +474,82 @@ final class WebsiteModeUpdater {
         return version != null && version.startsWith(VERSION_PREFIX);
     }
 
+    // ---- Automatic notifyAppReady ----
+
+    /**
+     * Evaluated in the main frame after it finished loading. A website bundle is the customer's plain
+     * website: it never imports the updater, so nothing calls notifyAppReady(). This script calls it
+     * through the native plugin proxy (so the readiness generation guard still applies) once the
+     * document is complete and shows content. A blank page never calls it, so the rollback still runs.
+     */
+    static final String AUTO_READY_SCRIPT =
+        "(function(){" +
+        "if(window.__capgoWebsiteAutoReady){return;}" +
+        "window.__capgoWebsiteAutoReady=true;" +
+        "var tries=0;" +
+        "function hasContent(){var b=document.body;if(!b){return false;}" +
+        "if(String(b.innerText||'').trim().length>0){return true;}" +
+        "return !!b.querySelector('img,svg,canvas,video,picture,iframe,input,button,textarea,select');}" +
+        "function tick(){try{var cap=window.Capacitor;var p=cap&&cap.Plugins&&cap.Plugins.CapacitorUpdater;" +
+        "if(document.readyState==='complete'&&hasContent()&&p&&typeof p.notifyAppReady==='function'){" +
+        "var r=p.notifyAppReady();if(r&&typeof r.catch==='function'){r.catch(function(){});}return;}}catch(_){}" +
+        "if(tries++<60){setTimeout(tick,500);}}" +
+        "if(document.readyState==='complete'){tick();}else{window.addEventListener('load',tick);}" +
+        "})();";
+
+    /**
+     * True when a finished main-frame load should auto-mark the current website bundle as ready:
+     * website mode with auto notify enabled, a web-* bundle, and a page served from the app origin
+     * that is not the Capacitor error page.
+     */
+    static boolean shouldAutoNotifyReady(
+        final boolean websiteMode,
+        final boolean autoNotifyReady,
+        final String currentVersion,
+        final String pageUrl,
+        final String appUrl,
+        final String errorUrl
+    ) {
+        if (!websiteMode || !autoNotifyReady || !isWebsiteVersion(currentVersion)) {
+            return false;
+        }
+        if (pageUrl == null || pageUrl.isEmpty() || appUrl == null || appUrl.isEmpty()) {
+            return false;
+        }
+        if (errorUrl != null && !errorUrl.isEmpty() && stripQueryAndFragment(pageUrl).equals(stripQueryAndFragment(errorUrl))) {
+            return false;
+        }
+        final String pageOrigin = originOf(pageUrl);
+        return pageOrigin != null && pageOrigin.equals(originOf(appUrl));
+    }
+
+    private static String stripQueryAndFragment(final String url) {
+        int end = url.length();
+        final int query = url.indexOf('?');
+        final int fragment = url.indexOf('#');
+        if (query >= 0) {
+            end = Math.min(end, query);
+        }
+        if (fragment >= 0) {
+            end = Math.min(end, fragment);
+        }
+        return url.substring(0, end);
+    }
+
+    private static String originOf(final String url) {
+        try {
+            final URI uri = new URI(url);
+            final String scheme = uri.getScheme();
+            final String host = uri.getHost();
+            if (scheme == null || host == null) {
+                return null;
+            }
+            return scheme.toLowerCase(Locale.ROOT) + "://" + host.toLowerCase(Locale.ROOT) + ":" + uri.getPort();
+        } catch (final Exception e) {
+            return null;
+        }
+    }
+
     // ---- Website download ----
 
     /**

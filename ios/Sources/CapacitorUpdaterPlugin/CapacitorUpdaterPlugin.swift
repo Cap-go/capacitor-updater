@@ -93,6 +93,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     public var implementation = CapgoUpdater()
 
     deinit {
+        websiteLoadingObservation?.invalidate()
         implementation.shutdown()
     }
     private let pluginVersion: String = "8.52.1"
@@ -191,6 +192,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Website mode (Capgo Website Live plan): the deployed website is the source of truth.
     private var websiteMode = false
     private var websiteModeUpdater: WebsiteModeUpdater?
+    private var websiteAutoNotifyReady = true
+    private var websiteLoadingObservation: NSKeyValueObservation?
     private var configuredStatsUrl = ""
     private var configuredChannelUrl = ""
     var allowSetDefaultChannel = true
@@ -385,6 +388,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         self.configureWebsiteMode()
+        self.installWebsiteAutoReadyObserver()
         implementation.restorePendingStats()
 
         let nativeBuildVersionChanged = self.hasNativeBuildVersionChanged()
@@ -4636,6 +4640,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.configuredStatsUrl = implementation.statsUrl
         self.configuredChannelUrl = implementation.channelUrl
         self.websiteMode = getConfig().getBoolean("websiteMode", false)
+        self.websiteAutoNotifyReady = getConfig().getBoolean("websiteAutoNotifyReady", true)
         guard self.websiteMode else {
             return
         }
@@ -4650,6 +4655,51 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.websiteModeUpdater = updater
         logger.info("Website mode enabled, live check via: \(updater.websiteLiveUrl)")
         self.applyWebsiteModeTelemetry(capgoMode: updater.lastKnownModeIsCapgo)
+    }
+
+    /// A website bundle is the customer's plain website and never calls notifyAppReady(). Observe the
+    /// WebView loading state (Capacitor keeps its own navigation delegate) and, when the main frame
+    /// finished loading a web-* bundle from the app origin (not the Capacitor error page), run a script
+    /// that calls notifyAppReady() once the document shows content. Failed or blank loads never call it,
+    /// so the appReadyTimeout rollback still protects users.
+    private func installWebsiteAutoReadyObserver() {
+        guard self.websiteMode, self.websiteAutoNotifyReady, self.websiteLoadingObservation == nil,
+              let webView = self.bridge?.webView else {
+            return
+        }
+        self.websiteLoadingObservation = webView.observe(\.isLoading, options: [.new]) { [weak self] webView, change in
+            guard change.newValue == false else {
+                return
+            }
+            DispatchQueue.main.async {
+                self?.maybeAutoNotifyWebsiteReady(webView)
+            }
+        }
+    }
+
+    private func maybeAutoNotifyWebsiteReady(_ webView: WKWebView) {
+        guard !webView.isLoading else {
+            return
+        }
+        let config = self.bridge?.config
+        let appUrl = config?.serverURL
+        var errorUrl: URL?
+        if let errorPath = config?.errorPath, let appUrl {
+            errorUrl = appUrl.appendingPathComponent(errorPath)
+        }
+        let versionName = self.implementation.getCurrentBundle().getVersionName()
+        guard WebsiteModeUpdater.shouldAutoNotifyReady(
+            websiteMode: self.websiteMode,
+            autoNotifyReady: self.websiteAutoNotifyReady,
+            currentVersion: versionName,
+            pageUrl: webView.url,
+            appUrl: appUrl,
+            errorUrl: errorUrl
+        ) else {
+            return
+        }
+        logger.info("Website bundle loaded, notifyAppReady will be called automatically: \(versionName)")
+        webView.evaluateJavaScript(WebsiteModeUpdater.autoReadyScript, completionHandler: nil)
     }
 
     /// Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo.

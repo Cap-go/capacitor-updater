@@ -730,4 +730,40 @@ public class WebsiteModeUpdaterTest {
         store.putString(WebsiteModeUpdater.PREF_FAILED_VERSIONS, "web-cccccccccccc");
         assertFalse(updater.isFailedVersion("web-cccccccccccc", 1_000L));
     }
+
+    @Test
+    public void autoNotifyReadyOnlyForWebsiteBundlesFromTheAppOrigin() {
+        final String app = "https://localhost";
+        final String error = "https://localhost/error.html";
+        assertTrue(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, "web-0123456789ab", "https://localhost/", app, error));
+        assertTrue(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, "web-0123456789ab", "https://localhost/a?b=1#c", app, null));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(false, true, "web-0123456789ab", "https://localhost/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, false, "web-0123456789ab", "https://localhost/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, "1.0.0", "https://localhost/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, "builtin", "https://localhost/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, null, "https://localhost/", app, error));
+    }
+
+    @Test
+    public void autoNotifyReadySkipsFailedOrForeignLoads() {
+        final String app = "https://localhost";
+        final String error = "https://localhost/error.html";
+        final String v = "web-0123456789ab";
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "https://localhost/error.html", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "https://localhost/error.html?x=1", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "about:blank", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "chrome-error://chromewebdata/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "https://app.example.com/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "http://localhost/", app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, null, app, error));
+        assertFalse(WebsiteModeUpdater.shouldAutoNotifyReady(true, true, v, "", app, error));
+    }
+
+    @Test
+    public void autoReadyScriptCallsNotifyAppReadyOnlyAfterContent() {
+        final String script = WebsiteModeUpdater.AUTO_READY_SCRIPT;
+        assertTrue(script.contains("Plugins.CapacitorUpdater"));
+        assertTrue(script.contains("notifyAppReady()"));
+        assertTrue(script.contains("document.readyState==='complete'&&hasContent()"));
+    }
 }
