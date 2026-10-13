@@ -764,6 +764,14 @@ public class WebsiteModeUpdaterTest {
         final String script = WebsiteModeUpdater.AUTO_READY_SCRIPT;
         assertTrue(script.contains("Plugins.CapacitorUpdater"));
         assertTrue(script.contains("notifyAppReady()"));
-        assertTrue(script.contains("document.readyState==='complete'&&hasContent()"));
+        assertTrue(script.contains("document.readyState==='complete'&&hasContent()&&call"));
+        assertTrue(script.contains("cap.nativePromise('CapacitorUpdater','notifyAppReady',{})"));
+    }
+
+    @Test
+    public void websiteTelemetryUrlStaysBlankUntilCapgoMode() {
+        assertEquals("", CapacitorUpdaterPlugin.websiteTelemetryUrl("https://stats.example.com", true, false));
+        assertEquals("https://stats.example.com", CapacitorUpdaterPlugin.websiteTelemetryUrl("https://stats.example.com", true, true));
+        assertEquals("https://stats.example.com", CapacitorUpdaterPlugin.websiteTelemetryUrl("https://stats.example.com", false, false));
     }
 }

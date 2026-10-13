@@ -645,11 +645,19 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertFalse(check(nil))
     }
 
+    func testWebsiteTelemetryUrlStaysBlankUntilCapgoMode() {
+        let url = "https://stats.example.com"
+        XCTAssertEqual(CapacitorUpdaterPlugin.websiteTelemetryUrl(url, websiteMode: true, capgoMode: false), "")
+        XCTAssertEqual(CapacitorUpdaterPlugin.websiteTelemetryUrl(url, websiteMode: true, capgoMode: true), url)
+        XCTAssertEqual(CapacitorUpdaterPlugin.websiteTelemetryUrl(url, websiteMode: false, capgoMode: false), url)
+    }
+
     func testAutoReadyScriptCallsNotifyAppReadyOnlyAfterContent() {
         let script = WebsiteModeUpdater.autoReadyScript
         XCTAssertTrue(script.contains("Plugins.CapacitorUpdater"))
         XCTAssertTrue(script.contains("notifyAppReady()"))
-        XCTAssertTrue(script.contains("document.readyState==='complete'&&hasContent()"))
+        XCTAssertTrue(script.contains("document.readyState==='complete'&&hasContent()&&call"))
+        XCTAssertTrue(script.contains("cap.nativePromise('CapacitorUpdater','notifyAppReady',{})"))
         XCTAssertFalse(script.contains("\n"))
     }
 }

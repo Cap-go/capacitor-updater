@@ -1383,7 +1383,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setStatsUrl called without url")
             return
         }
-        self.implementation.statsUrl = url
+        self.configuredStatsUrl = url
+        self.implementation.statsUrl = self.effectiveTelemetryUrl(url)
         if persistModifyUrl {
             UserDefaults.standard.set(url, forKey: statsUrlDefaultsKey)
             UserDefaults.standard.synchronize()
@@ -1402,7 +1403,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setChannelUrl called without url")
             return
         }
-        self.implementation.channelUrl = url
+        self.configuredChannelUrl = url
+        self.implementation.channelUrl = self.effectiveTelemetryUrl(url)
         if persistModifyUrl {
             UserDefaults.standard.set(url, forKey: channelUrlDefaultsKey)
             UserDefaults.standard.synchronize()
@@ -4702,13 +4704,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         webView.evaluateJavaScript(WebsiteModeUpdater.autoReadyScript, completionHandler: nil)
     }
 
+    /// Stats / channel URL actually used: blank in website mode unless the backend switched the app to full Capgo.
+    static func websiteTelemetryUrl(_ configured: String, websiteMode: Bool, capgoMode: Bool) -> String {
+        (!websiteMode || capgoMode) ? configured : ""
+    }
+
+    /// Runtime setStatsUrl / setChannelUrl keep the website-mode gate and survive a later switch to Capgo mode.
+    private func effectiveTelemetryUrl(_ url: String) -> String {
+        Self.websiteTelemetryUrl(url, websiteMode: self.websiteMode, capgoMode: self.websiteModeUpdater?.lastKnownModeIsCapgo ?? false)
+    }
+
     /// Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo.
     private func applyWebsiteModeTelemetry(capgoMode: Bool) {
         guard self.websiteMode else {
             return
         }
-        implementation.statsUrl = capgoMode ? configuredStatsUrl : ""
-        implementation.channelUrl = capgoMode ? configuredChannelUrl : ""
+        implementation.statsUrl = Self.websiteTelemetryUrl(configuredStatsUrl, websiteMode: true, capgoMode: capgoMode)
+        implementation.channelUrl = Self.websiteTelemetryUrl(configuredChannelUrl, websiteMode: true, capgoMode: capgoMode)
     }
 
     private func markWebsiteVersionFailed(_ versionName: String) {

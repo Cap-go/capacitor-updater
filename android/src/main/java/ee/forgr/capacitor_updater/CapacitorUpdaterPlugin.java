@@ -2712,7 +2712,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
         }
-        this.implementation.statsUrl = url;
+        this.configuredStatsUrl = url;
+        this.implementation.statsUrl = this.effectiveTelemetryUrl(url);
         call.resolve();
     }
 
@@ -2737,7 +2738,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
         }
-        this.implementation.channelUrl = url;
+        this.configuredChannelUrl = url;
+        this.implementation.channelUrl = this.effectiveTelemetryUrl(url);
         call.resolve();
     }
 
@@ -5173,13 +5175,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    /** Stats / channel URL actually used: blank in website mode unless the backend switched the app to full Capgo. */
+    static String websiteTelemetryUrl(final String configured, final boolean websiteMode, final boolean capgoMode) {
+        return !websiteMode || capgoMode ? configured : "";
+    }
+
+    /** Runtime setStatsUrl / setChannelUrl keep the website-mode gate and survive a later switch to Capgo mode. */
+    private String effectiveTelemetryUrl(final String url) {
+        final boolean capgoMode = this.websiteModeUpdater != null && this.websiteModeUpdater.lastKnownModeIsCapgo();
+        return websiteTelemetryUrl(url, this.websiteMode, capgoMode);
+    }
+
     /** Website mode never talks to stats or channel endpoints, unless the backend switched the app to full Capgo. */
     private void applyWebsiteModeTelemetry(final boolean capgoMode) {
         if (!this.websiteMode) {
             return;
         }
-        this.implementation.statsUrl = capgoMode ? this.configuredStatsUrl : "";
-        this.implementation.channelUrl = capgoMode ? this.configuredChannelUrl : "";
+        this.implementation.statsUrl = websiteTelemetryUrl(this.configuredStatsUrl, true, capgoMode);
+        this.implementation.channelUrl = websiteTelemetryUrl(this.configuredChannelUrl, true, capgoMode);
     }
 
     private void markWebsiteVersionFailed(final String versionName) {
@@ -5295,7 +5308,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             final JSObject downloaded = new JSObject();
             downloaded.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
-            this.notifyListeners("downloadComplete", downloaded);
+            this.notifyListeners("downloadComplete", downloaded, false);
             this.applyWebsiteBundle(target, current);
         } catch (final Exception e) {
             logger.error("Website download failed: " + e.getMessage());
@@ -5317,7 +5330,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.setNextBundle(target.getId());
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
-            this.notifyListeners("updateAvailable", ret);
+            this.notifyListeners("updateAvailable", ret, false);
             this.endBackGroundTaskWithNotif("Website update will install next background", version, current, false, true);
             return;
         }
@@ -5334,7 +5347,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.setNextBundle(target.getId());
         final JSObject ret = new JSObject();
         ret.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
-        this.notifyListeners("updateAvailable", ret);
+        this.notifyListeners("updateAvailable", ret, false);
         this.endBackGroundTaskWithNotif(
             "Website update will install next background",
             version,

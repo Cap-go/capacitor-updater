@@ -188,8 +188,10 @@ final class WebsiteModeUpdater {
     if(String(b.innerText||'').trim().length>0){return true;}\
     return !!b.querySelector('img,svg,canvas,video,picture,iframe,input,button,textarea,select');}\
     function tick(){try{var cap=window.Capacitor;var p=cap&&cap.Plugins&&cap.Plugins.CapacitorUpdater;\
-    if(document.readyState==='complete'&&hasContent()&&p&&typeof p.notifyAppReady==='function'){\
-    var r=p.notifyAppReady();if(r&&typeof r.catch==='function'){r.catch(function(){});}return;}}catch(_){}\
+    var call=p&&typeof p.notifyAppReady==='function'?function(){return p.notifyAppReady();}:\
+    (cap&&typeof cap.nativePromise==='function'?function(){return cap.nativePromise('CapacitorUpdater','notifyAppReady',{});}:null);\
+    if(document.readyState==='complete'&&hasContent()&&call){\
+    var r=call();if(r&&typeof r.catch==='function'){r.catch(function(){});}return;}}catch(_){}\
     if(tries++<60){setTimeout(tick,500);}}\
     if(document.readyState==='complete'){tick();}else{window.addEventListener('load',tick);}\
     })();
