@@ -2588,6 +2588,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         final Set<String> allowedIds = this.implementation.allowedBundleIdsForCleanup();
                         this.implementation.cleanupDownloadDirectories(allowedIds);
                         this.implementation.cleanupOrphanedTempFolders(null);
+                        this.implementation.cleanupOrphanedManifestStagingFolders(null);
 
                         this.persistCurrentNativeBuildVersion();
                     } catch (Exception e) {

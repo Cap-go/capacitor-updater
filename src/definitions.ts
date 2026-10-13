@@ -126,6 +126,11 @@ declare module '@capacitor/cli' {
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
+       * Failed background update checks that never start a download (network errors, timeouts,
+       * non-2xx responses, unreadable payloads) are reported as `update_check_error` with
+       * `metadata.error` and optional `metadata.status_code`, not as `download_fail`.
+       * Self-hosted Capgo backends must allow the `update_check_error` stats action.
+       *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
@@ -1435,7 +1440,8 @@ export interface CapacitorUpdaterPlugin {
    *
    * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
    * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-   * `downloadFailed` event and keeps the existing failure stats behavior.
+   * `downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
+   * instead of `download_fail`, because no bundle download was attempted.
    *
    * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.45.11

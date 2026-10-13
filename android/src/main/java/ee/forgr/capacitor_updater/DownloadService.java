@@ -277,8 +277,21 @@ public class DownloadService extends Worker {
     }
 
     private Result createFailureResult(String error) {
-        Data output = new Data.Builder().putString(ERROR, error).build();
-        return Result.failure(output);
+        return createFailureResult(error, null, null, false);
+    }
+
+    private Result createFailureResult(String error, String version, String dest, boolean isManifest) {
+        Data.Builder builder = new Data.Builder().putString(ERROR, error);
+        if (version != null) {
+            builder.putString(VERSION, version);
+        }
+        if (dest != null) {
+            builder.putString(FILEDEST, dest);
+        }
+        if (isManifest) {
+            builder.putBoolean(IS_MANIFEST, true);
+        }
+        return Result.failure(builder.build());
     }
 
     private Result createSuccessResult(String dest, String version, String sessionKey, String checksum, boolean isManifest) {
@@ -469,16 +482,16 @@ public class DownloadService extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        final String documentsDir = getInputData().getString(DOCDIR);
+        final String dest = getInputData().getString(FILEDEST);
+        final String version = getInputData().getString(VERSION);
+        final boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
         try {
             String url = getInputData().getString(URL);
             String id = getInputData().getString(ID);
-            String documentsDir = getInputData().getString(DOCDIR);
-            String dest = getInputData().getString(FILEDEST);
-            String version = getInputData().getString(VERSION);
             String sessionKey = getInputData().getString(SESSIONKEY);
             String checksum = getInputData().getString(CHECKSUM);
             String publicKey = getInputData().getString(PUBLIC_KEY);
-            boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
 
             logger.debug("doWork isManifest: " + isManifest);
 
@@ -488,10 +501,12 @@ public class DownloadService extends Worker {
                     handleManifestDownload(id, documentsDir, dest, version, sessionKey, publicKey, manifest);
                     return createSuccessResult(dest, version, sessionKey, checksum, true);
                 } else if (isStopped()) {
-                    return createFailureResult("download_cancelled");
+                    CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
+                    return createFailureResult("download_cancelled", version, dest, true);
                 } else {
                     logger.error("Manifest is null");
-                    return createFailureResult("Manifest is null");
+                    CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
+                    return createFailureResult("Manifest is null", version, dest, true);
                 }
             } else {
                 handleSingleFileDownload(url, id, documentsDir, dest, version, sessionKey, checksum, publicKey);
@@ -503,7 +518,10 @@ public class DownloadService extends Worker {
             }
             return Result.retry();
         } catch (Exception e) {
-            return createFailureResult(e.getMessage());
+            if (isManifest) {
+                CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
+            }
+            return createFailureResult(e.getMessage(), version, dest, isManifest);
         }
     }
 
