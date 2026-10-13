@@ -506,6 +506,18 @@ import UIKit
         return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
     }
 
+    private func removePartialManifestBundleDirectory(_ destFolder: URL) {
+        guard FileManager.default.fileExists(atPath: destFolder.path) else {
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: destFolder)
+        } catch {
+            logger.error("Failed to remove partial manifest bundle directory")
+            logger.debug("Path: \(destFolder.path), Error: \(error.localizedDescription)")
+        }
+    }
+
     private func cleanupOldManifestPartials() {
         let cutoff = Date().addingTimeInterval(-3600)
         guard let files = try? FileManager.default.contentsOfDirectory(
@@ -1816,17 +1828,26 @@ import UIKit
             )
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
+            removePartialManifestBundleDirectory(destFolder)
             throw resolvedError
         }
 
         var operations: [Operation] = []
 
         for task in tasks {
-            try FileManager.default.createDirectory(
-                at: task.destFilePath.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: task.destFilePath.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+            } catch {
+                let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+                self.saveBundleInfo(id: id, bundle: errorBundle)
+                removePartialManifestBundleDirectory(destFolder)
+                self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
+                throw error
+            }
 
             let operation = BlockOperation { [weak self] in
                 guard let self = self else { return }
@@ -1894,6 +1915,7 @@ import UIKit
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
+            removePartialManifestBundleDirectory(destFolder)
             throw resolvedError
         }
 
@@ -3951,6 +3973,17 @@ import UIKit
     public func getNextBundle() -> BundleInfo? {
         let id: String? = UserDefaults.standard.string(forKey: self.NEXT_VERSION)
         return self.getBundleInfo(id: id)
+    }
+
+    /// Clears the stored next bundle when it is already the running bundle, so nothing stays pending.
+    @discardableResult
+    public func clearNextBundleIfCurrent() -> Bool {
+        guard let next = self.getNextBundle(), !next.isUnknown(), next.getId() == self.getCurrentBundle().getId() else {
+            return false
+        }
+        logger?.info("Next bundle \(next.getId()) is already the current bundle. Clearing next.")
+        _ = self.setNextBundle(next: Optional<String>.none)
+        return true
     }
 
     public func getPreviewFallbackBundle() -> BundleInfo? {

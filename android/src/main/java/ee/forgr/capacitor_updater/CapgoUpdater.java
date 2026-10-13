@@ -11,8 +11,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.annotation.NonNull;
-import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.Observer;
 import androidx.work.Constraints;
 import androidx.work.Data;
 import androidx.work.ExistingPeriodicWorkPolicy;
@@ -33,6 +36,7 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
@@ -49,8 +53,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
@@ -76,6 +82,9 @@ public class CapgoUpdater {
     private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
+    static final String MANIFEST_STAGING_PREFIX = "capgo_manifest_";
+    static final String MANIFEST_DEST_SUFFIX = "_manifest_dest";
+    private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
     private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
@@ -93,6 +102,9 @@ public class CapgoUpdater {
     public File noBackupDir;
     public Boolean directUpdate = false;
     public Activity activity;
+    // Application context: lets downloads run and finish without an Activity (app in the
+    // background, or a process woken by a push with no UI at all).
+    public Context appContext;
     public String pluginVersion = "";
     public String versionBuild = "";
     public String versionCode = "";
@@ -162,7 +174,15 @@ public class CapgoUpdater {
     // Versions whose WorkManager download is observed by this process. WorkManager persists work across a
     // process kill, but the observer that finishes the download does not survive it.
     private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService io = createIoExecutor();
+
+    private static ExecutorService createIoExecutor() {
+        final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
+
+    private volatile Handler mainHandler;
 
     public CapgoUpdater(Logger logger) {
         this.logger = logger;
@@ -173,12 +193,22 @@ public class CapgoUpdater {
         return !name.startsWith("__MACOSX") && !name.startsWith(".") && !name.startsWith(".DS_Store");
     };
 
+    /** The Activity when the app has one, otherwise the application context. */
+    Context context() {
+        final Activity current = this.activity;
+        if (current != null) {
+            return current;
+        }
+        return this.appContext;
+    }
+
     private boolean isProd() {
         try {
-            if (activity == null) {
-                return true; // Default to production if no activity context
+            final Context context = this.context();
+            if (context == null) {
+                return true; // Default to production if no context
             }
-            return (activity.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0;
+            return (context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0;
         } catch (Exception e) {
             return true; // Default to production if we can't determine
         }
@@ -206,13 +236,14 @@ public class CapgoUpdater {
 
     @SuppressWarnings("deprecation")
     private String getInstallSource() {
-        if (activity == null) {
+        final Context context = this.context();
+        if (context == null) {
             return "";
         }
 
         try {
-            PackageManager packageManager = activity.getPackageManager();
-            String packageName = activity.getPackageName();
+            PackageManager packageManager = context.getPackageManager();
+            String packageName = context.getPackageName();
             String installerPackageName;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 android.content.pm.InstallSourceInfo installSourceInfo = packageManager.getInstallSourceInfo(packageName);
@@ -272,6 +303,9 @@ public class CapgoUpdater {
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
 
+    /** A downloaded bundle was stored as next bundle and waits for its install moment. */
+    void nextBundleReady(final BundleInfo bundle) {}
+
     static boolean shouldNotifyLaunchDownloadReady(
         final boolean awaitedByCaller,
         final boolean success,
@@ -314,6 +348,249 @@ public class CapgoUpdater {
         final StringBuilder sb = new StringBuilder(10);
         for (int i = 0; i < 10; i++) sb.append(AB.charAt(rnd.nextInt(AB.length())));
         return sb.toString();
+    }
+
+    static boolean isManifestStagingFolderName(final String name) {
+        if (name == null || !name.startsWith(MANIFEST_STAGING_PREFIX)) {
+            return false;
+        }
+        final String suffix = name.substring(MANIFEST_STAGING_PREFIX.length());
+        return suffix.length() == 10 && suffix.matches("[0-9A-Za-z]{10}");
+    }
+
+    String manifestStagingDest() {
+        return MANIFEST_STAGING_PREFIX + this.randomString();
+    }
+
+    private static boolean isLegacyBareManifestStagingFolderName(final String name) {
+        return name != null && name.matches(LEGACY_MANIFEST_STAGING_FOLDER_PATTERN);
+    }
+
+    private static boolean isSymbolicLinkEntry(final File file) {
+        return Files.isSymbolicLink(file.toPath());
+    }
+
+    private static boolean isRegularFileEntry(final File file) {
+        return file.isFile() && !isSymbolicLinkEntry(file);
+    }
+
+    private static boolean isRegularDirectoryEntry(final File file) {
+        return file.isDirectory() && !isSymbolicLinkEntry(file);
+    }
+
+    private static final long LEGACY_MANIFEST_STAGING_MIN_AGE_MS = 24L * 60L * 60L * 1000L;
+
+    private static boolean looksLikeLeakedManifestStaging(final File dir) {
+        if (dir == null || !isRegularDirectoryEntry(dir)) {
+            return false;
+        }
+        if (isRegularFileEntry(new File(dir, "index.html"))) {
+            return true;
+        }
+        if (isRegularDirectoryEntry(new File(dir, "assets"))) {
+            return true;
+        }
+        return isRegularDirectoryEntry(new File(dir, "www"));
+    }
+
+    private static boolean isOldEnoughForLegacyManifestCleanup(final File dir) {
+        final long ageMs = System.currentTimeMillis() - dir.lastModified();
+        return ageMs >= LEGACY_MANIFEST_STAGING_MIN_AGE_MS;
+    }
+
+    void saveManifestStagingDest(final String bundleId, final String dest) {
+        if (this.editor == null || bundleId == null || dest == null || dest.isEmpty()) {
+            return;
+        }
+        this.editor.putString(bundleId + MANIFEST_DEST_SUFFIX, dest);
+        this.editor.commit();
+    }
+
+    void clearManifestStagingDest(final String bundleId) {
+        if (this.editor == null || bundleId == null) {
+            return;
+        }
+        this.editor.remove(bundleId + MANIFEST_DEST_SUFFIX);
+        this.editor.commit();
+    }
+
+    void cleanupManifestStagingAfterDownloadFailed(final String bundleId, final String failedDest, final boolean failedManifest) {
+        if (failedManifest) {
+            this.deleteManifestStagingFolder(failedDest);
+        }
+        this.clearManifestStagingDest(bundleId);
+    }
+
+    void cleanupManifestStagingAfterDownloadCancelled(final String bundleId) {
+        final String cancelledDest = this.prefs != null ? this.prefs.getString(bundleId + MANIFEST_DEST_SUFFIX, null) : null;
+        this.deleteManifestStagingFolder(cancelledDest);
+        this.clearManifestStagingDest(bundleId);
+    }
+
+    Set<String> activeManifestStagingDests() {
+        final Set<String> activeDests = new HashSet<>();
+        if (this.prefs == null) {
+            return activeDests;
+        }
+        for (final BundleInfo info : this.list(true)) {
+            if (info == null || info.getId() == null || info.getId().isEmpty()) {
+                continue;
+            }
+            if (info.getStatus() != BundleStatus.DOWNLOADING) {
+                continue;
+            }
+            final String dest = this.prefs.getString(info.getId() + MANIFEST_DEST_SUFFIX, null);
+            if (dest != null && !dest.isEmpty()) {
+                activeDests.add(dest);
+            }
+        }
+        return activeDests;
+    }
+
+    public void deleteManifestStagingFolder(final String dest) {
+        if (this.documentsDir == null || dest == null || dest.isEmpty() || !isManifestStagingFolderName(dest)) {
+            return;
+        }
+        final File folder = new File(this.documentsDir, dest);
+        try {
+            this.assertPathInsideDocumentsDir(folder);
+            deleteManifestStagingTree(folder);
+        } catch (IOException e) {
+            logger.warn("Failed to delete manifest staging folder: " + e.getMessage());
+        }
+    }
+
+    static void deleteManifestStagingFolderAt(final File documentsDir, final String dest, final Logger log) {
+        if (documentsDir == null || dest == null || dest.isEmpty() || !isManifestStagingFolderName(dest)) {
+            return;
+        }
+        final File folder = new File(documentsDir, dest);
+        if (!folder.exists()) {
+            return;
+        }
+        try {
+            final File canonicalBase = documentsDir.getCanonicalFile();
+            final File canonicalTarget = folder.getCanonicalFile();
+            final String basePath = canonicalBase.getPath();
+            final String normalizedBasePath = basePath.endsWith(File.separator) ? basePath : basePath + File.separator;
+            final String targetPath = canonicalTarget.getPath();
+            if (!targetPath.equals(basePath) && !targetPath.startsWith(normalizedBasePath)) {
+                if (log != null) {
+                    log.warn("Refusing unsafe manifest staging delete: " + folder.getAbsolutePath());
+                }
+                return;
+            }
+            if (canonicalTarget.isDirectory()) {
+                deleteManifestStagingTree(canonicalTarget);
+            } else if (!canonicalTarget.delete()) {
+                if (log != null) {
+                    log.warn("Failed to delete manifest staging file: " + canonicalTarget.getAbsolutePath());
+                }
+            }
+        } catch (IOException e) {
+            if (log != null) {
+                log.warn("Failed to delete manifest staging folder: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void deleteManifestStagingTree(final File file) throws IOException {
+        if (isSymbolicLinkEntry(file)) {
+            if (!file.delete()) {
+                throw new IOException("Failed to delete symlink: " + file);
+            }
+            return;
+        }
+        if (file.isDirectory()) {
+            final File[] entries = file.listFiles();
+            if (entries != null) {
+                for (final File entry : entries) {
+                    deleteManifestStagingTree(entry);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new IOException("Failed to delete: " + file);
+        }
+    }
+
+    public void cleanupOrphanedManifestStagingFolders(final Thread threadToCheck) {
+        if (this.documentsDir == null) {
+            logger.warn("Documents directory is null, skipping manifest staging cleanup");
+            return;
+        }
+
+        final File[] entries = this.documentsDir.listFiles();
+        if (entries == null) {
+            return;
+        }
+
+        final Set<String> protectedDests = this.activeManifestStagingDests();
+
+        for (final File entry : entries) {
+            if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                logger.warn("cleanupOrphanedManifestStagingFolders was cancelled");
+                return;
+            }
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            final String folderName = entry.getName();
+            if (!isManifestStagingFolderName(folderName)) {
+                continue;
+            }
+            if (protectedDests.contains(folderName)) {
+                continue;
+            }
+            try {
+                deleteManifestStagingTree(entry);
+                logger.info("Deleted orphaned manifest staging folder");
+                logger.debug("Folder: " + folderName);
+            } catch (IOException e) {
+                logger.error("Failed to delete orphaned manifest staging folder");
+                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
+            }
+        }
+
+        this.cleanupLegacyBareManifestStagingFolders(threadToCheck, protectedDests);
+    }
+
+    private void cleanupLegacyBareManifestStagingFolders(final Thread threadToCheck, final Set<String> protectedDests) {
+        final File[] entries = this.documentsDir.listFiles();
+        if (entries == null) {
+            return;
+        }
+
+        for (final File entry : entries) {
+            if (threadToCheck != null && threadToCheck.isInterrupted()) {
+                logger.warn("cleanupLegacyBareManifestStagingFolders was cancelled");
+                return;
+            }
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            final String folderName = entry.getName();
+            if (!isLegacyBareManifestStagingFolderName(folderName)) {
+                continue;
+            }
+            if (protectedDests.contains(folderName)) {
+                continue;
+            }
+            if (!looksLikeLeakedManifestStaging(entry)) {
+                continue;
+            }
+            if (!isOldEnoughForLegacyManifestCleanup(entry)) {
+                continue;
+            }
+            try {
+                deleteManifestStagingTree(entry);
+                logger.info("Deleted legacy bare manifest staging folder");
+                logger.debug("Folder: " + folderName);
+            } catch (IOException e) {
+                logger.error("Failed to delete legacy bare manifest staging folder");
+                logger.debug("Folder: " + folderName + ", Error: " + e.getMessage());
+            }
+        }
     }
 
     public void setPublicKey(String publicKey) {
@@ -490,8 +767,8 @@ public class CapgoUpdater {
     }
 
     void cacheBundleFiles(final String id) {
-        if (this.activity == null) {
-            logger.debug("Skip delta cache population: activity is null");
+        if (this.context() == null) {
+            logger.debug("Skip delta cache population: no context");
             return;
         }
 
@@ -507,7 +784,7 @@ public class CapgoUpdater {
             return;
         }
 
-        final File cacheDir = new File(this.activity.getCacheDir(), "capgo_downloads");
+        final File cacheDir = new File(this.context().getCacheDir(), "capgo_downloads");
         if (cacheDir.exists() && !cacheDir.isDirectory()) {
             logger.debug("Skip delta cache population: cache dir is not a directory");
             return;
@@ -517,7 +794,7 @@ public class CapgoUpdater {
             return;
         }
 
-        final File builtinFolder = new File(this.activity.getFilesDir(), "public");
+        final File builtinFolder = new File(this.context().getFilesDir(), "public");
 
         final List<File> files = new ArrayList<>();
         collectFiles(bundleDir, files);
@@ -607,16 +884,16 @@ public class CapgoUpdater {
     private boolean isManifestEntryAvailableLocally(final JSONObject entry, final String sessionKey) {
         final String fileName = entry.optString("file_name", "");
         final String fileHash = resolveManifestFileHash(entry, sessionKey);
-        if (fileName.isEmpty() || fileHash.isEmpty() || this.activity == null) {
+        if (fileName.isEmpty() || fileHash.isEmpty() || this.context() == null) {
             return false;
         }
 
-        if (DownloadService.builtinAssetMatches(this.activity.getAssets(), fileName, fileHash)) {
+        if (DownloadService.builtinAssetMatches(this.context().getAssets(), fileName, fileHash)) {
             return true;
         }
 
         try {
-            final File builtinFile = DownloadService.resolveManifestBuiltinFile(new File(this.activity.getFilesDir(), "public"), fileName);
+            final File builtinFile = DownloadService.resolveManifestBuiltinFile(new File(this.context().getFilesDir(), "public"), fileName);
             if (verifyChecksum(builtinFile, fileHash)) {
                 return true;
             }
@@ -628,7 +905,7 @@ public class CapgoUpdater {
         final String fileNameWithoutPath = new File(fileName).getName();
         final String cacheBaseName = isBrotli ? fileNameWithoutPath.substring(0, fileNameWithoutPath.length() - 3) : fileNameWithoutPath;
         if (isSafeCacheHash(fileHash)) {
-            final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+            final File cacheFolder = new File(this.context().getCacheDir(), "capgo_downloads");
             final File cacheFile = new File(cacheFolder, fileHash + "_" + cacheBaseName);
             // Cache files are named `{hash}_{filename}` and were checksum-verified
             // when written. Re-hashing every hit re-reads the whole bundle and
@@ -771,152 +1048,168 @@ public class CapgoUpdater {
         this.backgroundDownloadSettled(readyBundle, launchDownloadReadyStatus(success, setNext));
     }
 
-    private void observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
-        if (!(context instanceof LifecycleOwner)) {
-            logger.error("Context is not a LifecycleOwner, cannot observe work progress");
-            return;
+    // Created on first use: plain JVM unit tests construct CapgoUpdater without a main Looper.
+    private Handler mainHandler() {
+        Handler handler = this.mainHandler;
+        if (handler == null) {
+            handler = new Handler(Looper.getMainLooper());
+            this.mainHandler = handler;
         }
+        return handler;
+    }
 
+    @SuppressWarnings("unchecked")
+    private void observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
         final AtomicBoolean terminalHandled = new AtomicBoolean(false);
         final AtomicBoolean launchReleasedWhileRetrying = new AtomicBoolean(false);
-        activity.runOnUiThread(() -> {
-            WorkManager.getInstance(context)
-                .getWorkInfosByTagLiveData(id)
-                .observe((LifecycleOwner) context, (workInfos) -> {
-                    if (workInfos == null || workInfos.isEmpty()) return;
+        final LiveData<List<WorkInfo>> workInfosLiveData = WorkManager.getInstance(
+            context.getApplicationContext()
+        ).getWorkInfosByTagLiveData(id);
+        // observeForever, not observe(activity): a stopped Activity pauses LiveData, so a download
+        // that completes while the app is in the background would only be finished once the user
+        // opens the app again. The observer removes itself on a terminal state.
+        final Observer<List<WorkInfo>>[] observerRef = new Observer[1];
+        final Runnable removeObserver = () -> mainHandler().post(() -> workInfosLiveData.removeObserver(observerRef[0]));
+        mainHandler().post(() -> {
+            observerRef[0] = (workInfos) -> {
+                if (workInfos == null || workInfos.isEmpty()) return;
 
-                    WorkInfo workInfo = workInfos.get(0);
-                    Data progress = workInfo.getProgress();
+                WorkInfo workInfo = workInfos.get(0);
+                Data progress = workInfo.getProgress();
 
-                    switch (workInfo.getState()) {
-                        case ENQUEUED:
-                            // A run attempt already happened, so WorkManager scheduled a retry (network lost midway,
-                            // 5xx, ...). Retries back off without limit, so a direct install must not keep the launch
-                            // (and its splashscreen) blocked until the network comes back.
-                            if (
-                                workInfo.getRunAttemptCount() > 0 &&
-                                shouldReleaseLaunchWhileRetrying(
-                                    downloadFutures.containsKey(id),
-                                    setNext,
-                                    Boolean.TRUE.equals(CapgoUpdater.this.directUpdate),
-                                    CapgoUpdater.this.previewSession
-                                ) &&
-                                launchReleasedWhileRetrying.compareAndSet(false, true)
-                            ) {
-                                logger.warn("Direct update download is retrying, continuing launch on the current bundle");
-                                // Same fallback as the autoSplashscreen timeout: a later success installs on next background.
-                                CapgoUpdater.this.directUpdate = false;
-                                io.execute(() -> backgroundDownloadSettled(getCurrentBundle(), launchDownloadReadyStatus(false, false)));
+                switch (workInfo.getState()) {
+                    case ENQUEUED:
+                        // A run attempt already happened, so WorkManager scheduled a retry (network lost midway,
+                        // 5xx, ...). Retries back off without limit, so a direct install must not keep the launch
+                        // (and its splashscreen) blocked until the network comes back.
+                        if (
+                            workInfo.getRunAttemptCount() > 0 &&
+                            shouldReleaseLaunchWhileRetrying(
+                                downloadFutures.containsKey(id),
+                                setNext,
+                                Boolean.TRUE.equals(CapgoUpdater.this.directUpdate),
+                                CapgoUpdater.this.previewSession
+                            ) &&
+                            launchReleasedWhileRetrying.compareAndSet(false, true)
+                        ) {
+                            logger.warn("Direct update download is retrying, continuing launch on the current bundle");
+                            // Same fallback as the autoSplashscreen timeout: a later success installs on next background.
+                            CapgoUpdater.this.directUpdate = false;
+                            io.execute(() -> backgroundDownloadSettled(getCurrentBundle(), launchDownloadReadyStatus(false, false)));
+                        }
+                        break;
+                    case RUNNING:
+                        int percent = progress.getInt(DownloadService.PERCENT, 0);
+                        notifyDownload(id, percent);
+                        break;
+                    case SUCCEEDED:
+                        if (!terminalHandled.compareAndSet(false, true)) break;
+                        removeObserver.run();
+                        observedDownloadVersions.remove(observedVersion);
+                        logger.info("Download succeeded: " + workInfo.getState());
+                        Data outputData = workInfo.getOutputData();
+                        String dest = outputData.getString(DownloadService.FILEDEST);
+                        String version = outputData.getString(DownloadService.VERSION);
+                        String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
+                        String checksum = outputData.getString(DownloadService.CHECKSUM);
+                        boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
+
+                        io.execute(() -> {
+                            // finishDownload clears directUpdate, so read the install plan first.
+                            final boolean directInstall =
+                                setNext && Boolean.TRUE.equals(CapgoUpdater.this.directUpdate) && !CapgoUpdater.this.previewSession;
+                            final boolean previewSession = CapgoUpdater.this.previewSession;
+                            boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
+                            BundleInfo resultBundle;
+                            if (!success) {
+                                logger.error("Finish download failed");
+                                logger.debug("Version: " + version);
+                                resultBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
+                                saveBundleInfo(id, resultBundle);
+                                // Cleanup download tracking
+                                DownloadWorkerManager.cancelBundleDownload(context, id, version);
+                                sendStats("finish_download_fail", version);
+                                // finishDownload already emitted downloadFailed for this failure.
+                            } else {
+                                // Successful download - cleanup tracking
+                                DownloadWorkerManager.cancelBundleDownload(context, id, version);
+                                resultBundle = getBundleInfo(id);
                             }
-                            break;
-                        case RUNNING:
-                            int percent = progress.getInt(DownloadService.PERCENT, 0);
-                            notifyDownload(id, percent);
-                            break;
-                        case SUCCEEDED:
-                            if (!terminalHandled.compareAndSet(false, true)) break;
-                            observedDownloadVersions.remove(observedVersion);
-                            logger.info("Download succeeded: " + workInfo.getState());
-                            Data outputData = workInfo.getOutputData();
-                            String dest = outputData.getString(DownloadService.FILEDEST);
-                            String version = outputData.getString(DownloadService.VERSION);
-                            String sessionKey = outputData.getString(DownloadService.SESSIONKEY);
-                            String checksum = outputData.getString(DownloadService.CHECKSUM);
-                            boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
-                            io.execute(() -> {
-                                // finishDownload clears directUpdate, so read the install plan first.
-                                final boolean directInstall =
-                                    setNext && Boolean.TRUE.equals(CapgoUpdater.this.directUpdate) && !CapgoUpdater.this.previewSession;
-                                final boolean previewSession = CapgoUpdater.this.previewSession;
-                                boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
-                                BundleInfo resultBundle;
-                                if (!success) {
-                                    logger.error("Finish download failed");
-                                    logger.debug("Version: " + version);
-                                    resultBundle = new BundleInfo(
-                                        id,
-                                        version,
-                                        BundleStatus.ERROR,
-                                        new Date(System.currentTimeMillis()),
-                                        ""
-                                    );
-                                    saveBundleInfo(id, resultBundle);
-                                    // Cleanup download tracking
-                                    DownloadWorkerManager.cancelBundleDownload(activity, id, version);
-                                    sendStats("finish_download_fail", version);
-                                    // finishDownload already emitted downloadFailed for this failure.
-                                } else {
-                                    // Successful download - cleanup tracking
-                                    DownloadWorkerManager.cancelBundleDownload(activity, id, version);
-                                    resultBundle = getBundleInfo(id);
-                                }
+                            CapgoUpdater.this.clearManifestStagingDest(id);
 
-                                // Complete the future if it exists. download() waits on it.
-                                // downloadBackground does not, so the launch check must emit appReady here.
-                                CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
-                                if (future != null) {
-                                    future.complete(resultBundle);
-                                }
-                                final BundleInfo readyBundle = success && setNext ? resultBundle : null;
-                                if (!launchReleasedWhileRetrying.get()) {
-                                    notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
-                                }
-                            });
-                            break;
-                        case FAILED:
-                            if (!terminalHandled.compareAndSet(false, true)) break;
-                            observedDownloadVersions.remove(observedVersion);
-                            Data failedData = workInfo.getOutputData();
-                            String error = failedData.getString(DownloadService.ERROR);
-                            logger.error("Download failed");
-                            logger.debug("Error: " + error + ", State: " + workInfo.getState());
-                            String failedVersion = failedData.getString(DownloadService.VERSION);
-
-                            io.execute(() -> {
-                                BundleInfo failedBundle = new BundleInfo(
-                                    id,
-                                    failedVersion,
-                                    BundleStatus.ERROR,
-                                    new Date(System.currentTimeMillis()),
-                                    ""
-                                );
-                                saveBundleInfo(id, failedBundle);
-                                // Cleanup download tracking for failed downloads
-                                DownloadWorkerManager.cancelBundleDownload(activity, id, failedVersion);
-                                Map<String, Object> ret = new HashMap<>();
-                                ret.put("version", failedVersion);
-                                if ("low_mem_fail".equals(error)) {
-                                    sendStats("low_mem_fail", failedVersion);
-                                }
-                                if ("insufficient_disk_space".equals(error)) {
-                                    sendStats("insufficient_disk_space", failedVersion);
-                                }
-                                ret.put("error", error != null ? error : "download_fail");
-                                sendStats("download_fail", failedVersion);
-                                notifyListeners("downloadFailed", ret);
-
-                                // Complete the future with error status
-                                CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
-                                if (failedFuture != null) {
-                                    failedFuture.complete(failedBundle);
-                                }
-                                if (!launchReleasedWhileRetrying.get()) {
-                                    notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
-                                }
-                            });
-                            break;
-                        case CANCELLED:
-                            if (!terminalHandled.compareAndSet(false, true)) break;
-                            observedDownloadVersions.remove(observedVersion);
-                            DataManager.getInstance().clearManifest(id);
-                            CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
-                            if (cancelledFuture != null) {
-                                cancelledFuture.cancel(true);
+                            // Complete the future if it exists. download() waits on it.
+                            // downloadBackground does not, so the launch check must emit appReady here.
+                            CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
+                            if (future != null) {
+                                future.complete(resultBundle);
                             }
-                            break;
-                    }
-                });
+                            final BundleInfo readyBundle = success && setNext ? resultBundle : null;
+                            if (!launchReleasedWhileRetrying.get()) {
+                                notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
+                            }
+                        });
+                        break;
+                    case FAILED:
+                        if (!terminalHandled.compareAndSet(false, true)) break;
+                        removeObserver.run();
+                        observedDownloadVersions.remove(observedVersion);
+                        Data failedData = workInfo.getOutputData();
+                        String error = failedData.getString(DownloadService.ERROR);
+                        logger.error("Download failed");
+                        logger.debug("Error: " + error + ", State: " + workInfo.getState());
+                        String failedVersion = failedData.getString(DownloadService.VERSION);
+                        final String failedDest = failedData.getString(DownloadService.FILEDEST);
+                        final boolean failedManifest = failedData.getBoolean(DownloadService.IS_MANIFEST, false);
+
+                        io.execute(() -> {
+                            CapgoUpdater.this.cleanupManifestStagingAfterDownloadFailed(id, failedDest, failedManifest);
+                            BundleInfo failedBundle = new BundleInfo(
+                                id,
+                                failedVersion,
+                                BundleStatus.ERROR,
+                                new Date(System.currentTimeMillis()),
+                                ""
+                            );
+                            saveBundleInfo(id, failedBundle);
+                            // Cleanup download tracking for failed downloads
+                            DownloadWorkerManager.cancelBundleDownload(context, id, failedVersion);
+                            Map<String, Object> ret = new HashMap<>();
+                            ret.put("version", failedVersion);
+                            if ("low_mem_fail".equals(error)) {
+                                sendStats("low_mem_fail", failedVersion);
+                            }
+                            if ("insufficient_disk_space".equals(error)) {
+                                sendStats("insufficient_disk_space", failedVersion);
+                            }
+                            ret.put("error", error != null ? error : "download_fail");
+                            sendStats("download_fail", failedVersion);
+                            notifyListeners("downloadFailed", ret);
+
+                            // Complete the future with error status
+                            CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
+                            if (failedFuture != null) {
+                                failedFuture.complete(failedBundle);
+                            }
+                            if (!launchReleasedWhileRetrying.get()) {
+                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
+                            }
+                        });
+                        break;
+                    case CANCELLED:
+                        if (!terminalHandled.compareAndSet(false, true)) break;
+                        removeObserver.run();
+                        observedDownloadVersions.remove(observedVersion);
+                        DataManager.getInstance().clearManifest(id);
+                        io.execute(() -> CapgoUpdater.this.cleanupManifestStagingAfterDownloadCancelled(id));
+                        CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
+                        if (cancelledFuture != null) {
+                            cancelledFuture.cancel(true);
+                        }
+                        break;
+                }
+            };
+            workInfosLiveData.observeForever(observerRef[0]);
         });
     }
 
@@ -930,19 +1223,21 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
-        if (this.activity == null) {
-            logger.error("Activity is null, cannot observe work progress");
+        final Context context = this.context();
+        if (context == null) {
+            logger.error("No context, cannot observe work progress");
             return;
         }
         observedDownloadVersions.add(version);
-        observeWorkProgress(this.activity, id, version, setNext);
+        observeWorkProgress(context, id, version, setNext);
 
         if (manifest != null) {
             DataManager.getInstance().setManifest(id, manifest);
+            this.saveManifestStagingDest(id, dest);
         }
 
         DownloadWorkerManager.enqueueDownload(
-            this.activity,
+            context,
             url,
             id,
             this.documentsDir.getAbsolutePath(),
@@ -1005,9 +1300,7 @@ public class CapgoUpdater {
             }
             // Remove the decryption for manifest downloads
         } catch (Exception e) {
-            if (!isManifest) {
-                safeDelete(downloaded);
-            }
+            safeDelete(downloaded);
             final Boolean res = this.delete(id);
             if (!res) {
                 logger.info("Failed to cleanup after error");
@@ -1054,14 +1347,14 @@ public class CapgoUpdater {
                     this.directUpdate = false;
                 } else {
                     logger.info("directUpdate: " + this.directUpdate);
-                    this.setNextBundle(next.getId());
+                    if (this.setNextBundle(next.getId())) {
+                        this.nextBundleReady(next);
+                    }
                 }
             }
         } catch (IOException e) {
-            if (!isManifest) {
-                safeDelete(extractedDir);
-                safeDelete(downloaded);
-            }
+            safeDelete(extractedDir);
+            safeDelete(downloaded);
             e.printStackTrace();
             final Map<String, Object> ret = new HashMap<>();
             ret.put("version", version);
@@ -1103,11 +1396,11 @@ public class CapgoUpdater {
     }
 
     public void cleanupDeltaCache(final Thread threadToCheck) {
-        if (this.activity == null) {
+        if (this.context() == null) {
             logger.warn("Activity is null, skipping delta cache cleanup");
             return;
         }
-        final File cacheFolder = new File(this.activity.getCacheDir(), "capgo_downloads");
+        final File cacheFolder = new File(this.context().getCacheDir(), "capgo_downloads");
         if (!cacheFolder.exists()) {
             return;
         }
@@ -1373,7 +1666,7 @@ public class CapgoUpdater {
         final StringBuilder buffer = new StringBuilder();
         try (
             final BufferedReader reader = new BufferedReader(
-                new InputStreamReader(this.activity.getAssets().open(assetPath), StandardCharsets.UTF_8)
+                new InputStreamReader(this.context().getAssets().open(assetPath), StandardCharsets.UTF_8)
             )
         ) {
             String line;
@@ -1411,7 +1704,7 @@ public class CapgoUpdater {
     }
 
     private void syncBackgroundRunnerScriptFromBundle(final File bundle, final BackgroundRunnerWorkConfig config) {
-        if (this.activity == null || bundle == null || config == null || config.src == null || config.src.isEmpty()) {
+        if (this.context() == null || bundle == null || config == null || config.src == null || config.src.isEmpty()) {
             return;
         }
 
@@ -1425,7 +1718,7 @@ public class CapgoUpdater {
                 return;
             }
 
-            final File publicDir = new File(this.activity.getFilesDir(), "public");
+            final File publicDir = new File(this.context().getFilesDir(), "public");
             final File dest = resolvePathInsideDirectory(publicDir, config.src);
             this.copyFileAtomically(source, dest);
             logger.info("Synced Background Runner script into native public storage before bundle switch.");
@@ -1436,7 +1729,7 @@ public class CapgoUpdater {
     }
 
     private void resetBackgroundRunnerWorkForBundleSwitch(final File bundle) {
-        if (this.activity == null) {
+        if (this.context() == null) {
             return;
         }
 
@@ -1452,7 +1745,7 @@ public class CapgoUpdater {
         }
 
         try {
-            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+            final WorkManager workManager = WorkManager.getInstance(this.context().getApplicationContext());
             workManager.cancelUniqueWork(config.label);
             workManager.cancelAllWorkByTag(config.label);
             logger.info("Cancelled Background Runner work before bundle switch.");
@@ -1482,7 +1775,7 @@ public class CapgoUpdater {
                 .putString("event", config.event)
                 .build();
             final Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
-            final WorkManager workManager = WorkManager.getInstance(this.activity.getApplicationContext());
+            final WorkManager workManager = WorkManager.getInstance(this.context().getApplicationContext());
 
             if (!config.repeat) {
                 final OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(workerClass)
@@ -1598,7 +1891,7 @@ public class CapgoUpdater {
         downloadBackground(url, version, sessionKey, checksum, manifest, true);
     }
 
-    public void downloadBackground(
+    public String downloadBackground(
         final String url,
         final String version,
         final String sessionKey,
@@ -1613,34 +1906,45 @@ public class CapgoUpdater {
             }
         } catch (final IOException e) {
             logger.error("Download blocked: " + e.getMessage());
-            return;
+            return null;
         }
         if (!this.runDownloadGateQuiet()) {
-            return;
+            return null;
         }
         final String id = this.randomString();
 
         // Check if version is already downloading, but allow retry if previous download failed
-        if (this.activity != null && DownloadWorkerManager.isVersionDownloading(this.activity, version)) {
+        if (this.context() != null && DownloadWorkerManager.isVersionDownloading(this.context(), version)) {
             // Check if there's an existing bundle with error status that we can retry
             BundleInfo existingBundle = this.getBundleInfoByName(version);
             if (existingBundle != null && existingBundle.isErrorStatus()) {
                 // Cancel the failed download and allow retry
-                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version)) {
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel previous download before retry");
-                    return;
+                    return null;
                 }
                 logger.info("Retrying failed download for version: " + version);
             } else if (shouldRestartOrphanedDownload(observedDownloadVersions.contains(version))) {
                 // Left over from a killed process: nothing would finish it or release the launch, so start over.
-                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, version)) {
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel orphaned download before restarting it");
-                    return;
+                    return null;
+                }
+                BundleInfo orphanedBundle = null;
+                for (final BundleInfo info : this.list(true)) {
+                    if (info != null && info.getStatus() == BundleStatus.DOWNLOADING && version.equals(info.getVersionName())) {
+                        orphanedBundle = info;
+                        break;
+                    }
+                }
+                if (orphanedBundle != null) {
+                    this.cleanupManifestStagingAfterDownloadCancelled(orphanedBundle.getId());
+                    this.saveBundleInfo(orphanedBundle.getId(), orphanedBundle.setStatus(BundleStatus.ERROR));
                 }
                 logger.info("Restarting download orphaned by a previous process for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
-                return;
+                return null;
             }
         }
 
@@ -1648,7 +1952,9 @@ public class CapgoUpdater {
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
 
-        this.download(id, url, this.randomString(), version, sessionKey, checksum, manifest, setNext);
+        final String dest = manifest != null ? this.manifestStagingDest() : this.randomString();
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext);
+        return id;
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
@@ -1725,7 +2031,7 @@ public class CapgoUpdater {
         saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.DOWNLOADING, new Date(System.currentTimeMillis()), ""));
         this.notifyDownload(id, 0);
         this.notifyDownload(id, 5);
-        final String dest = this.randomString();
+        final String dest = this.manifestStagingDest();
 
         // Create a CompletableFuture to track download completion
         CompletableFuture<BundleInfo> downloadFuture = new CompletableFuture<>();
@@ -1840,8 +2146,8 @@ public class CapgoUpdater {
             }
 
             // Cancel download for this version if active
-            if (cancelActiveDownload && this.activity != null) {
-                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, deleted.getVersionName())) {
+            if (cancelActiveDownload && this.context() != null) {
+                if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), deleted.getVersionName())) {
                     logger.error("Failed to cancel active download before delete");
                     return false;
                 }
@@ -2034,8 +2340,8 @@ public class CapgoUpdater {
     }
 
     void finalizeResetTransition(final String previousBundleName, final boolean internal) {
-        if (this.activity != null) {
-            DownloadWorkerManager.cancelAllDownloads(this.activity);
+        if (this.context() != null) {
+            DownloadWorkerManager.cancelAllDownloads(this.context());
         }
         if (!internal) {
             this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
@@ -2213,8 +2519,8 @@ public class CapgoUpdater {
             final String asyncPreviousFallbackId = previousFallbackId;
             final String asyncPreviousFallbackVersion = previousFallbackVersion;
             io.execute(() -> {
-                if (this.activity != null) {
-                    if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.activity, asyncPreviousFallbackVersion)) {
+                if (this.context() != null) {
+                    if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), asyncPreviousFallbackVersion)) {
                         logger.error("Failed to cancel previous version download before delete");
                         return;
                     }
@@ -3594,6 +3900,16 @@ public class CapgoUpdater {
         final String id = this.prefs.getString(NEXT_VERSION, null);
         if (id == null) return null;
         return this.getBundleInfo(id);
+    }
+
+    public boolean clearNextBundleIfCurrent() {
+        final BundleInfo next = this.getNextBundle();
+        if (next == null || !next.getId().equals(this.getCurrentBundle().getId())) {
+            return false;
+        }
+        logger.info("Next bundle " + next.getId() + " is already the current bundle. Clearing next.");
+        this.setNextBundle(null);
+        return true;
     }
 
     public BundleInfo getPreviewFallbackBundle() {

@@ -100,6 +100,13 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
     static let channelUrlDefault = "https://plugin.capgo.app/channel_self"
+    // Stats action for a failed update check (offline, timeout, unreadable response, 429 block).
+    // Nothing was downloaded, so it is reported apart from download_fail.
+    static let updateCheckErrorAction = "update_check_error"
+    // Single listener that receives every plugin event as { type, data }.
+    static let updaterEvent = "updaterEvent"
+    // Deprecated alias emitted next to breakingAvailable; not forwarded to avoid duplicates.
+    static let deprecatedMajorAvailableEvent = "majorAvailable"
     static let autoUpdateModeOff = "off"
     static let autoUpdateModeBackground = "atBackground"
     static let autoUpdateModeInstall = "atInstall"
@@ -255,6 +262,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
 
         self.semaphoreUp()
+        // A silent push or background fetch launches the app straight into the background:
+        // no didEnterBackground is posted, so read the state once. Otherwise the notifyAppReady
+        // check would roll back a bundle whose page cannot run before the user opens the app.
+        if Thread.isMainThread {
+            self.appInBackground = UIApplication.shared.applicationState == .background
+        } else {
+            DispatchQueue.main.sync {
+                self.appInBackground = UIApplication.shared.applicationState == .background
+            }
+        }
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
         persistCustomId = getConfig().getBoolean("persistCustomId", false)
@@ -456,7 +473,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         // This handles cases where the app was killed (willTerminateNotification is not reliable for system kills)
         self.delayUpdateUtils.checkCancelDelay(source: .killed)
 
-        self.appMovedToForeground()
+        if !self.appInBackground {
+            self.appMovedToForeground()
+        }
         self.checkForUpdateAfterDelay()
         self.showPreviewSessionNoticeIfNeeded()
     }
@@ -1263,11 +1282,34 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.keepAlive = true
     }
 
+    static func updateCheckErrorMetadata(error: String, statusCode: Int) -> [String: String] {
+        var metadata = ["error": error.isEmpty ? "unknown" : error]
+        if statusCode > 0 {
+            metadata["status_code"] = String(statusCode)
+        }
+        return metadata
+    }
+
+    static func updaterEventPayload(eventName: String, data: [String: Any]?) -> [String: Any] {
+        return ["type": eventName, "data": data ?? [:]]
+    }
+
+    static func shouldForwardToUpdaterEvent(_ eventName: String) -> Bool {
+        return eventName != updaterEvent && eventName != deprecatedMajorAvailableEvent
+    }
+
     /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
     /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
     private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
             self.notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
+            if CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent(eventName) {
+                self.notifyListeners(
+                    CapacitorUpdaterPlugin.updaterEvent,
+                    data: CapacitorUpdaterPlugin.updaterEventPayload(eventName: eventName, data: data),
+                    retainUntilConsumed: retainUntilConsumed
+                )
+            }
         }
 
         if Thread.isMainThread {
@@ -1929,7 +1971,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if !res {
             logger.info("Bundle successfully set to: \(id) ")
             call.reject("Update failed, id \(id) doesn't exist")
-        } else if self.previewSessionEnabled {
+            return
+        }
+        // The bundle is now active: it must not stay reported as the pending next bundle.
+        self.implementation.clearNextBundleIfCurrent()
+        if self.previewSessionEnabled {
             let bundle = self.implementation.getBundleInfo(id: id)
             _ = self.recordPreviewBundle(bundle)
             if !self.reloadWithoutWaitingForAppReady() {
@@ -3443,7 +3489,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Handle background conditions with empty value (set to "0")
+        var conditionsPayload: Any = delayConditionList
         if var modifiableList = delayConditionList as? [[String: Any]] {
             for i in 0..<modifiableList.count {
                 if let kind = modifiableList[i]["kind"] as? String,
@@ -3453,20 +3499,33 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     modifiableList[i]["value"] = "0"
                 }
             }
-            let delayConditions: String = toJson(object: modifiableList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
-        } else {
-            let delayConditions: String = toJson(object: delayConditionList)
-            if delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) {
-                call.resolve()
-            } else {
-                call.reject("Failed to delay update")
-            }
+            conditionsPayload = modifiableList
         }
+
+        let delayConditions: String = toJson(object: conditionsPayload)
+        let previousConditions = UserDefaults.standard.string(
+            forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+        ) ?? "[]"
+        let previousMode = delayUpdateUtils.getConditionMode()
+        guard delayUpdateUtils.setMultiDelay(delayConditions: delayConditions) else {
+            if !delayUpdateUtils.setMultiDelay(delayConditions: previousConditions) {
+                logger.error("Failed to restore previous delay conditions after setMultiDelay failure")
+            }
+            call.reject("Failed to delay update")
+            return
+        }
+        let conditionMode = call.getString("conditionMode") ?? DelayUpdateUtils.DELAY_CONDITION_MODE_AND
+        guard delayUpdateUtils.setConditionMode(conditionMode) else {
+            if !delayUpdateUtils.setMultiDelay(delayConditions: previousConditions) {
+                logger.error("Failed to restore previous delay conditions after setConditionMode failure")
+            }
+            if !delayUpdateUtils.setConditionMode(previousMode) {
+                logger.error("Failed to restore previous delay condition mode after setConditionMode failure")
+            }
+            call.reject("Failed to delay update")
+            return
+        }
+        call.resolve()
     }
 
     // Note: _setMultiDelay and _cancelDelay methods have been moved to DelayUpdateUtils class
@@ -4301,6 +4360,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.updateUrl = updateUrl
     }
 
+    func notifyListenersOnMainForTesting(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool) {
+        self.notifyListenersOnMain(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
+    }
+
     func downloadBundleForTesting(
         urlString: String,
         version: String,
@@ -4461,13 +4524,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.notifyBreakingEventsIfNeeded(response: res, version: res.version)
 
         let isFailure = responseKind == "failed"
+        if isFailure {
+            // The check itself failed: nothing was downloaded, so report it apart from download_fail.
+            self.implementation.sendStats(
+                action: CapacitorUpdaterPlugin.updateCheckErrorAction,
+                versionName: current.getVersionName(),
+                oldVersionName: "",
+                metadata: CapacitorUpdaterPlugin.updateCheckErrorMetadata(error: backendError, statusCode: res.statusCode)
+            )
+        }
         self.endBackGroundTaskWithNotif(
             msg: message,
             latestVersionName: latestVersionName,
             current: current,
             error: isFailure,
             plannedDirectUpdate: plannedDirectUpdate,
-            sendStats: isFailure
+            sendStats: false
         )
     }
 
@@ -4540,7 +4612,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
 
-    private func beginDownloadBackgroundTask() {
+    func beginDownloadBackgroundTask() {
         let registerTask = {
             self.backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Finish Download Tasks") {
                 self.endBackGroundTask()
@@ -5384,6 +5456,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getNextBundle(_ call: CAPPluginCall) {
+        // Heals a next bundle left stored after it was activated (set() did not clear it before).
+        self.implementation.clearNextBundleIfCurrent()
         let bundle = self.implementation.getNextBundle()
         if bundle == nil || bundle?.isUnknown() == true {
             call.resolve()

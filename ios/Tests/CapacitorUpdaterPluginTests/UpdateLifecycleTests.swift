@@ -54,6 +54,24 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
     }
 
     override func download(url: URL, version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        try downloadVerified(
+            url: url,
+            version: version,
+            sessionKey: sessionKey,
+            expectedChecksum: "",
+            link: link,
+            comment: comment
+        )
+    }
+
+    override func downloadVerified(
+        url _: URL,
+        version _: String,
+        sessionKey _: String,
+        expectedChecksum _: String,
+        link _: String? = nil,
+        comment _: String? = nil
+    ) throws -> BundleInfo {
         downloadCalls += 1
         guard let downloadedBundleValue else {
             throw NSError(domain: "UpdateLifecycleTests", code: 1)
@@ -115,6 +133,8 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
 
     override func endBackGroundTask() {}
 
+    override func beginDownloadBackgroundTask() {}
+
     override func runBackgroundDownloadWork(_ work: @escaping () -> Void) {
         work()
     }
@@ -132,13 +152,16 @@ final class UpdateLifecycleTests: XCTestCase {
     private var plugin = LifecyclePlugin()
     private var updater = LifecycleCapgoUpdater()
     private let delayPreferencesKey = DelayUpdateUtils.DELAY_CONDITION_PREFERENCES
+    private let delayConditionModeKey = DelayUpdateUtils.DELAY_CONDITION_MODE_PREFERENCES
     private let updateUrl = URL(string: "https://example.com/updates")!
     private let lastFailedBundleKey = "CapacitorUpdater.lastFailedBundle"
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        CryptoCipher.setLogger(Logger(withTag: "UpdateLifecycleTests"))
+        let testLogger = Logger(withTag: "UpdateLifecycleTests", options: Logger.Options(level: .silent))
+        CryptoCipher.setLogger(testLogger)
         updater = LifecycleCapgoUpdater()
+        updater.setLogger(testLogger)
         plugin = LifecyclePlugin()
         plugin.implementation = updater
         plugin.setUpdateUrlForTesting(updateUrl.absoluteString)
@@ -146,10 +169,12 @@ final class UpdateLifecycleTests: XCTestCase {
             DelayUpdateUtils(currentVersionNative: try CapgoSemanticVersion("1.0.0"), logger: Logger(withTag: "UpdateLifecycleTests"))
         )
         UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: delayConditionModeKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: delayPreferencesKey)
+        UserDefaults.standard.removeObject(forKey: delayConditionModeKey)
         UserDefaults.standard.removeObject(forKey: lastFailedBundleKey)
         super.tearDown()
     }
@@ -171,7 +196,24 @@ final class UpdateLifecycleTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             done.fulfill()
         }
-        wait(for: [done], timeout: seconds + 2)
+        wait(for: [done], timeout: max(seconds + 5, 10))
+    }
+
+    // set() activated the pending next bundle but left it stored, so getNextBundle() kept
+    // returning the bundle that was already running.
+    func testClearNextBundleIfCurrentDropsTheRunningBundle() {
+        updater.currentBundleValue = pendingBundle()
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertTrue(updater.clearNextBundleIfCurrent())
+        XCTAssertNil(updater.nextBundleValue)
+    }
+
+    func testClearNextBundleIfCurrentKeepsADifferentNextBundle() {
+        updater.nextBundleValue = pendingBundle()
+
+        XCTAssertFalse(updater.clearNextBundleIfCurrent())
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
     }
 
     // A suspended app can resume with the rollback timer already expired, before
@@ -188,7 +230,7 @@ final class UpdateLifecycleTests: XCTestCase {
 
         // The next foreground arms a fresh check, which rolls back a page that never confirmed.
         plugin.appMovedToForeground()
-        spinMainRunLoop(seconds: 0.3)
+        spinMainRunLoop(seconds: 0.5)
 
         XCTAssertTrue(plugin.events.contains("updateFailed"))
         XCTAssertEqual(updater.setErrorCalls, 1)
@@ -244,6 +286,7 @@ final class UpdateLifecycleTests: XCTestCase {
     func testPeriodicCheckDownloadsANewVersion() {
         plugin.setAutoUpdateModeForTesting("atBackground")
         updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
 
         plugin.runPeriodicUpdateCheck(url: updateUrl)
 

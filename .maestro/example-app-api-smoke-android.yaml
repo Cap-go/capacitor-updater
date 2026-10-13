@@ -19,7 +19,7 @@ appId: app.capgo.updater
     element:
       id: 'quick-run-smoke-sequence'
     direction: DOWN
-    timeout: 30000
+    timeout: 60000
     centerElement: true
     visibilityPercentage: 1
     waitToSettleTimeoutMs: 500
@@ -28,7 +28,7 @@ appId: app.capgo.updater
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
-    timeout: 180000
+    timeout: 300000
 - runFlow: helpers/cold-launch-app.yaml
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'

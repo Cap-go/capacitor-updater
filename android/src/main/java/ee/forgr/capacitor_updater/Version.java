@@ -82,7 +82,7 @@ public class Version implements Comparable<Version> {
                     }
                 }
             }
-            suffix = (suffixSb != null) ? suffixSb.toString() : "";
+            suffix = suffixSb != null ? suffixSb.toString() : "";
             trimmedSubversionNumbers.addAll(subversionNumbers);
             while (!trimmedSubversionNumbers.isEmpty() && trimmedSubversionNumbers.get(trimmedSubversionNumbers.size() - 1) == 0L) {
                 trimmedSubversionNumbers.remove(trimmedSubversionNumbers.size() - 1);

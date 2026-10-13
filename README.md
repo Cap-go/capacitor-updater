@@ -1,5 +1,45 @@
 # Capacitor updater
-<a href="https://capgo.app/"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to users right away without waiting for store review, with Capgo Cloud or your own server.
+
+This plugin is the live update layer of [Capgo](https://capgo.app/), the AI-ready platform to build, ship, and maintain Capacitor apps: Capacitor skills and MCP servers for AI coding agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI), [maintained Capacitor plugins](https://capgo.app/plugins/), [cloud native iOS/Android builds](https://capgo.app/native-build/) with App Store and Google Play publishing, live updates with channels and rollback, and release monitoring.
+
+<a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+
+<div align="center">
+  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <h2><a href="https://capgo.app/register/?ref=plugin_updater_v7">➡️ Get started for free</a></h2>
+  <p>14-day unlimited free trial. No credit card required</p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v7">Missing a feature? We'll build the plugin for you 💪</a></p>
+</div>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Cap-go/capacitor-updater/main/assets/github-social-preview.png" alt="@capgo/capacitor-updater for Capacitor apps" width="300" />
+</p>
+
+## Use with AI coding agents
+
+Capgo provides skills and a hosted MCP server so AI coding agents can set up and operate Capacitor apps, including this plugin.
+
+- **Skills**: install the [Capgo skills](https://capgo.app/skills/) ([source](https://github.com/Cap-go/capgo-skills)) in your agent:
+
+  ```bash
+  npx skills add Cap-go/capgo-skills
+  ```
+
+- **Hosted MCP server**: `https://api.capgo.app/mcp` ([docs](https://capgo.app/docs/ai/mcp/)).
+- **Agent setup guides**: [capgo.app/agents](https://capgo.app/agents/) and [AI tools for Capacitor](https://capgo.app/best/ai-tools-for-capacitor/).
+
+## Key features
+
+- **Auto update**: downloads and applies the latest bundle from Capgo Cloud or your own update server.
+- **Safe rollouts**: `notifyAppReady()` confirms a bundle works, otherwise the app rolls back to the last working one.
+- **Bundle control**: `download()`, `next()`, `set()`, `list()`, `delete()` and `reset()` for manual flows.
+- **Channels**: `setChannel()`, `getChannel()` and `listChannels()` for environments and per-device QA.
+- **Delta updates and security**: only changed files are downloaded, checksums are verified, and encryption is optional.
+- **Preview sessions**: `startPreviewSession()`, `setPreview()` and `resetPreview()` to test bundles on a device.
+- **Platforms**: iOS and Android. Web is a stub for development.
+
 [![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.com/invite/VnYRvBfgA6)
 <a href="https://discord.com/invite/VnYRvBfgA6"><img src="https://img.shields.io/discord/912707985829163099?color=%237289DA&label=Discord" alt="Discord">
 [![npm](https://img.shields.io/npm/dm/@capgo/capacitor-updater)](https://www.npmjs.com/package/@capgo/capacitor-updater)
@@ -14,11 +54,6 @@
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Cap-go_capacitor-updater&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Cap-go_capacitor-updater)
 [![Open Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dopen)](https://console.algora.io/org/Capgo/bounties?status=open)
 [![Rewarded Bounties](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.algora.io%2Fapi%2Fshields%2FCapgo%2Fbounties%3Fstatus%3Dcompleted)](https://console.algora.io/org/Capgo/bounties?status=completed)
-
-<div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin_updater_v7"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin_updater_v7"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
-</div>
 
 Capacitor plugin to update your app remotely in real-time.
 
@@ -136,13 +171,13 @@ We recommend to declare [`CA92.1`](https://developer.apple.com/documentation/bun
 You can use our AI-Assisted Setup to install the plugin. Add the Capgo skills to your AI tool using the following command:
 
 ```bash
-npx skills add https://github.com/cap-go/capacitor-skills --skill capacitor-plugins
+npx skills add https://github.com/Cap-go/capgo-skills --skill capacitor-plugins
 ```
 
 Then use the following prompt:
 
 ```text
-Use the `capacitor-plugins` skill from `cap-go/capacitor-skills` to install the `@capgo/capacitor-updater` plugin in my project.
+Use the `capacitor-plugins` skill from `Cap-go/capgo-skills` to install the `@capgo/capacitor-updater` plugin in my project.
 ```
 
 If you prefer Manual Setup, install the plugin by running the following commands and follow the platform-specific instructions below:
@@ -357,7 +392,7 @@ CapacitorUpdater can be configured with these options:
 | **`resetWhenUpdate`**                  | <code>boolean</code>                                                                                       | Automatically delete previous downloaded bundles when a newer native app bundle is installed to the device. Setting this to false can broke the auto update flow if the user download from the store a native app bundle that is older than the current downloaded bundle. Upload will be prevented by channel setting downgrade_under_native. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>true</code>                                                             |         |
 | **`updateUrl`**                        | <code>string</code>                                                                                        | Configure the URL / endpoint to which update checks are sent. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | <code>https://plugin.capgo.app/updates</code>                                 |         |
 | **`channelUrl`**                       | <code>string</code>                                                                                        | Configure the URL / endpoint for channel operations. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | <code>https://plugin.capgo.app/channel_self</code>                            |         |
-| **`statsUrl`**                         | <code>string</code>                                                                                        | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, unclean WebView restarts, app launch readiness timing, and WebView load milestones when available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | <code>https://plugin.capgo.app/stats</code>                                   |         |
+| **`statsUrl`**                         | <code>string</code>                                                                                        | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, unclean WebView restarts, app launch readiness timing, and WebView load milestones when available. Failed background update checks that never start a download (network errors, timeouts, non-2xx responses, unreadable payloads) are reported as `update_check_error` with `metadata.error` and optional `metadata.status_code`, not as `download_fail`. Self-hosted Capgo backends must allow the `update_check_error` stats action.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>https://plugin.capgo.app/stats</code>                                   |         |
 | **`websiteMode`**                      | <code>boolean</code>                                                                                       | Enable website mode (Capgo Website Live plan). Your deployed static website (for example a Vite SPA served at `https://app.example.com`) becomes the source of truth: at the moments auto update normally checks (app launch and resume), the plugin asks `websiteLiveUrl` whether the app may update and which website URL to use, then downloads the entry HTML and the same-origin assets it references (HTML, CSS `url()`, JS asset refs) directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they keep loading from the network) and a single download is capped at 300 MB. The bundle version is `web-&lt;first 12 hex of sha256(website URL + "\n" + entry HTML)&gt;`. A new version is applied immediately (like `directUpdate: 'always'`). `notifyAppReady()` is still required: if it is not called within `appReadyTimeout`, the plugin rolls back to the previous bundle and skips that `web-*` version for 24 hours. In website mode there are no channels, no stats, no bundle uploads, no encryption and no checksum signatures. If the backend answers `mode: "capgo"` (the app was upgraded to full Capgo), the classic update flow runs instead. Requires `autoUpdate` to stay enabled. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                            | 8.53.0  |
 | **`websiteLiveUrl`**                   | <code>string</code>                                                                                        | Configure the URL / endpoint used by website mode to know whether the app may update from its website. Only `app_id` is sent as query parameter; the response is device independent and can be edge cached. Only available for Android and iOS. Ignored unless `websiteMode` is `true`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>https://plugin.capgo.app/website_live</code>                            | 8.53.0  |
 | **`publicKey`**                        | <code>string</code>                                                                                        | Configure the public key for end to end live update encryption Version 2 Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | <code>undefined</code>                                                        | 6.2.0   |
@@ -549,6 +584,7 @@ export default config;
 * [`getPluginVersion()`](#getpluginversion)
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`removeAllListeners()`](#removealllisteners)
+* [`addListener('updaterEvent', ...)`](#addlistenerupdaterevent-)
 * [`addListener('download', ...)`](#addlistenerdownload-)
 * [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
 * [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
@@ -1114,16 +1150,17 @@ setMultiDelay(options: MultiDelayConditions) => Promise<void>
 Configure conditions that must be met before a pending update is applied.
 
 After calling {@link next} to queue an update, use this method to control when it gets applied.
-The update will only be installed after ALL specified conditions are satisfied.
+By default, the update is installed only after **all** specified conditions are satisfied (`conditionMode: 'and'`).
+Set `conditionMode` to `'or'` to apply the update as soon as **any** condition is met.
 
 Available condition types:
-- `background`: Wait for the app to be backgrounded. Optionally specify duration in milliseconds.
-- `kill`: Wait for the app to be killed and relaunched (**Note:** Current behavior triggers update immediately on kill, not on next background. This will be fixed in v8.)
+- `background`: Wait until the app has spent more than the configured time in the background (see value formats below).
+- `kill`: The condition clears on the next launch and can also clear during Android activity destruction; activity destruction does not prove that the app process ended. Automatic installation waits for the next background, because it runs from appMovedToBackground. Calling {@link reload} can apply the pending bundle immediately.
 - `date`: Wait until a specific date/time (ISO 8601 format)
 - `nativeVersion`: Wait until the native app is updated to a specific version
 
 Condition value formats:
-- `background`: Number in milliseconds (e.g., `"300000"` for 5 minutes), or omit for immediate
+- `background`: Time in milliseconds in background must exceed this value before the condition can clear on return to foreground (e.g., `"300000"` for more than 5 minutes; exactly `300000` ms does not clear). Omit `value` or use `"0"` to clear after one background-and-return cycle; the update installs on the following background.
 - `kill`: No value needed
 - `date`: ISO 8601 date string (e.g., `"2025-12-31T23:59:59Z"`)
 - `nativeVersion`: Version string (e.g., `"2.0.0"`)
@@ -1603,6 +1640,7 @@ removeAllListeners() => Promise<void>
 Remove all event listeners registered for this plugin.
 
 This unregisters all listeners added via {@link addListener} for all event types:
+- `updaterEvent`
 - `download`
 - `noNeedUpdate`
 - `updateCheckResult`
@@ -1618,6 +1656,46 @@ Use this during cleanup (e.g., when unmounting components or closing screens)
 to prevent memory leaks from lingering event listeners.
 
 **Since:** 1.0.0
+
+--------------------
+
+
+#### addListener('updaterEvent', ...)
+
+```typescript
+addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for every updater event with a single listener.
+
+Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
+`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
+When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
+`updaterEvent` gets the same retention.
+
+The per-event listeners below are deprecated and will be removed in v9.
+
+```typescript
+CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
+  switch (event.type) {
+    case 'download':
+      console.log('progress', event.data.percent);
+      break;
+    case 'downloadFailed':
+      console.warn('download failed', event.data.version);
+      break;
+  }
+});
+```
+
+| Param              | Type                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'updaterEvent'</code>                                               |
+| **`listenerFunc`** | <code>(event: <a href="#updaterevent">UpdaterEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+**Since:** 8.53.0
 
 --------------------
 
@@ -1674,7 +1752,8 @@ The backend can classify the <a href="#updatecheckresultevent">UpdateCheckResult
 
 This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
 `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-`downloadFailed` event and keeps the existing failure stats behavior.
+`downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
+instead of `download_fail`, because no bundle download was attempted.
 
 | Param              | Type                                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------------- |
@@ -2509,9 +2588,10 @@ If you don't use backend, you need to provide the URL and version of the bundle.
 
 ##### MultiDelayConditions
 
-| Prop                  | Type                          |
-| --------------------- | ----------------------------- |
-| **`delayConditions`** | <code>DelayCondition[]</code> |
+| Prop                  | Type                                                              | Description                               | Default            | Since  |
+| --------------------- | ----------------------------------------------------------------- | ----------------------------------------- | ------------------ | ------ |
+| **`delayConditions`** | <code>DelayCondition[]</code>                                     |                                           |                    |        |
+| **`conditionMode`**   | <code><a href="#delayconditionmode">DelayConditionMode</a></code> | How to combine multiple delay conditions. | <code>'and'</code> | 8.50.0 |
 
 
 ##### DelayCondition
@@ -2746,6 +2826,13 @@ Result returned after requesting an immediate native auto-update check.
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a new update is available. | 4.0.0 |
 
 
+##### DownloadFailedEvent
+
+| Prop          | Type                | Description                | Since |
+| ------------- | ------------------- | -------------------------- | ----- |
+| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
+
+
 ##### MajorAvailableEvent
 
 | Prop          | Type                | Description                               | Since |
@@ -2772,13 +2859,6 @@ Result returned after requesting an immediate native auto-update check.
 | Prop         | Type                                              | Description                                                 | Since  |
 | ------------ | ------------------------------------------------- | ----------------------------------------------------------- | ------ |
 | **`bundle`** | <code><a href="#bundleinfo">BundleInfo</a></code> | Emit when a bundle is queued as the next bundle to install. | 6.14.0 |
-
-
-##### DownloadFailedEvent
-
-| Prop          | Type                | Description                | Since |
-| ------------- | ------------------- | -------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
 ##### AppReadyEvent
@@ -2924,6 +3004,16 @@ error: The bundle has failed to download.
 <code>'background' | 'kill' | 'nativeVersion' | 'date'</code>
 
 
+##### DelayConditionMode
+
+How multiple delay conditions are combined when more than one is set.
+
+- `and`: every condition must be satisfied before the pending update is applied (default, backward compatible).
+- `or`: the pending update is applied as soon as any condition is satisfied.
+
+<code>'and' | 'or'</code>
+
+
 ##### UpdateResponseKind
 
 Classification for update-check responses that do not provide a downloadable bundle.
@@ -2933,11 +3023,29 @@ failed by native clients.
 <code>'up_to_date' | 'blocked' | 'failed'</code>
 
 
+##### UpdaterEvent
+
+Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
+`type` is the legacy event name and `data` is the same payload the legacy listener receives,
+so you can switch on `type` and get a typed `data`.
+
+The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+
+<code>{ type: 'download'; data: <a href="#downloadevent">DownloadEvent</a> } | { type: 'noNeedUpdate'; data: <a href="#noneedevent">NoNeedEvent</a> } | { type: 'updateCheckResult'; data: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> } | { type: 'updateAvailable'; data: <a href="#updateavailableevent">UpdateAvailableEvent</a> } | { type: 'downloadComplete'; data: <a href="#downloadcompleteevent">DownloadCompleteEvent</a> } | { type: 'downloadFailed'; data: <a href="#downloadfailedevent">DownloadFailedEvent</a> } | { type: 'breakingAvailable'; data: <a href="#breakingavailableevent">BreakingAvailableEvent</a> } | { type: 'updateFailed'; data: <a href="#updatefailedevent">UpdateFailedEvent</a> } | { type: 'set'; data: <a href="#setevent">SetEvent</a> } | { type: 'setNext'; data: <a href="#setnextevent">SetNextEvent</a> } | { type: 'appReloaded'; data: <a href="#record">Record</a>&lt;string, never&gt; } | { type: 'appReady'; data: <a href="#appreadyevent">AppReadyEvent</a> } | { type: 'channelPrivate'; data: <a href="#channelprivateevent">ChannelPrivateEvent</a> } | { type: 'onFlexibleUpdateStateChange'; data: <a href="#flexibleupdatestate">FlexibleUpdateState</a> }</code>
+
+
 ##### BreakingAvailableEvent
 
 Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
 
 <code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
+
+
+##### Record
+
+Construct a type with a set of properties K of type T
+
+<code>{ [P in K]: T; }</code>
 
 
 ##### ShakeMenuGesture
