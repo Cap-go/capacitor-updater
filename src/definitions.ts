@@ -142,7 +142,7 @@ declare module '@capacitor/cli' {
        * Your deployed static website (for example a Vite SPA served at `https://app.example.com`) becomes the
        * source of truth: at the moments auto update normally checks (app launch and resume), the plugin asks
        * `websiteLiveUrl` whether the app may update and which website URL to use,
-       * then downloads the entry HTML and the same-origin assets it references (HTML, CSS `url()`, JS asset refs)
+       * then downloads the entry HTML and the same-origin assets it references (HTML, SVG sprites, linked `.html` pages, CSS `url()`, JS asset refs)
        * directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they
        * keep loading from the network) and a single download is capped at 300 MB.
        *
@@ -467,6 +467,8 @@ declare module '@capacitor/cli' {
       /**
        * Configure the plugin to keep the URL path after a reload.
        * WARNING: When a reload is triggered, 'window.history' will be cleared.
+       *
+       * Defaults to `true` when `websiteMode` is enabled, so a website update keeps the current route.
        *
        * @default false
        * @since  6.8.0

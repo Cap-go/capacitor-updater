@@ -954,7 +954,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.configureAutoUpdateModeFromConfig();
         this.appReadyTimeout = Math.max(1000, this.getConfig().getInt("appReadyTimeout", 10000)); // Minimum 1 second
-        this.keepUrlPathAfterReload = this.getConfig().getBoolean("keepUrlPathAfterReload", false);
+        this.keepUrlPathAfterReload = this.getConfig().getBoolean(
+            "keepUrlPathAfterReload",
+            WebsiteModeUpdater.defaultKeepUrlPathAfterReload(this.websiteMode)
+        );
         this.syncKeepUrlPathFlag(this.keepUrlPathAfterReload);
         this.allowManualBundleError = this.getConfig().getBoolean("allowManualBundleError", false);
         this.autoSplashscreen = this.getConfig().getBoolean("autoSplashscreen", false);
@@ -5299,8 +5302,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (target == null || !this.implementation.canSet(target) || target.isErrorStatus()) {
                 logger.info("New website version found: " + version + ". Downloading from website.");
                 tempDir = this.implementation.createWebsiteTempDir();
-                final int files = updater.downloadWebsite(entryHtml, websiteUrl, downloadBase, tempDir);
-                target = this.implementation.installWebsiteBundle(tempDir, version);
+                // Same download events as a classic bundle: the id is reserved now so listeners
+                // see the bundle that is eventually installed.
+                final BundleInfo downloading = new BundleInfo(
+                    this.implementation.randomString(),
+                    version,
+                    BundleStatus.DOWNLOADING,
+                    new Date(System.currentTimeMillis()),
+                    ""
+                );
+                this.notifyWebsiteDownload(downloading, 0);
+                final int files = updater.downloadWebsite(entryHtml, websiteUrl, downloadBase, tempDir, (percent) ->
+                    this.notifyWebsiteDownload(downloading, percent)
+                );
+                target = this.implementation.installWebsiteBundle(tempDir, version, downloading.getId());
+                this.notifyWebsiteDownload(target, 100);
                 tempDir = null;
                 logger.info("Website version " + version + " downloaded (" + files + " files)");
             } else {
@@ -5317,6 +5333,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             this.endBackGroundTaskWithNotif("Website download failed", version, current, true, true);
         }
+    }
+
+    private void notifyWebsiteDownload(final BundleInfo bundle, final int percent) {
+        final JSObject ret = new JSObject();
+        ret.put("percent", percent);
+        ret.put("bundle", InternalUtils.mapToJSObject(bundle.toJSONMap()));
+        this.notifyListeners("download", ret, false);
     }
 
     /** Website mode always applies updates directly, through the regular set/reload path. */

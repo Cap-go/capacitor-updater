@@ -774,4 +774,108 @@ public class WebsiteModeUpdaterTest {
         assertEquals("https://stats.example.com", CapacitorUpdaterPlugin.websiteTelemetryUrl("https://stats.example.com", true, true));
         assertEquals("https://stats.example.com", CapacitorUpdaterPlugin.websiteTelemetryUrl("https://stats.example.com", false, false));
     }
+
+    // ---- Gaps ported from the website updater ----
+
+    @Test
+    public void discoversSvgSpriteAndImageHrefs() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        final String html =
+            "<svg><use href=\"/icons.svg#home\"></use><use xlink:href='/legacy.svg#x'></use>" +
+            "<image href=\"/img/logo.png\"/><use href=\"#local\"></use></svg>";
+        final List<String> found = urls(WebsiteModeUpdater.discoverMarkupAssets(html, root, root, true));
+        assertTrue(found.contains("https://app.example.com/icons.svg"));
+        assertTrue(found.contains("https://app.example.com/legacy.svg"));
+        assertTrue(found.contains("https://app.example.com/img/logo.png"));
+        assertEquals(3, found.size());
+    }
+
+    @Test
+    public void discoversLinkedStaticPagesOnlyFromEntryHtml() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        final String html =
+            "<a href=\"/about.html\">About</a><a class=x href='docs/guide.htm#top'>Guide</a>" +
+            "<a href=\"/dashboard\">SPA route</a><a href=\"https://other.com/x.html\">Ext</a><area href=\"/map.html\">";
+        final List<WebsiteModeUpdater.Asset> assets = WebsiteModeUpdater.discoverMarkupAssets(html, root, root, true);
+        final List<String> found = urls(assets);
+        assertTrue(found.contains("https://app.example.com/about.html"));
+        assertTrue(found.contains("https://app.example.com/docs/guide.htm"));
+        assertTrue(found.contains("https://app.example.com/map.html"));
+        assertFalse(found.contains("https://app.example.com/dashboard"));
+        assertFalse(found.contains("https://other.com/x.html"));
+        for (WebsiteModeUpdater.Asset asset : assets) {
+            assertFalse(asset.required);
+        }
+        // Pages are not crawled transitively.
+        assertTrue(WebsiteModeUpdater.discoverMarkupAssets(html, root, root, false).isEmpty());
+    }
+
+    @Test
+    public void downloadBundlesLinkedPagesWithTheirAssets() throws Exception {
+        final FakeSite site = new FakeSite();
+        final String html =
+            "<html><body><a href=\"https://app.example.com/about.html\">About</a><a href=\"/missing.html\">X</a>" +
+            "<a href=\"https://app.example.com/route\">R</a></body></html>";
+        site.put("https://app.example.com/about.html", "<img src=\"img/team.png\"><a href=\"/deeper.html\">D</a>", "text/html");
+        site.put("https://app.example.com/img/team.png", "PNG", "image/png");
+        site.put("https://app.example.com/deeper.html", "<p>deep</p>", "text/html");
+        // SPA hosts answer unknown pages with the entry HTML.
+        site.put("https://app.example.com/missing.html", html, "text/html");
+
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        final File dir = tmp.newFolder("pages");
+        final int files = updater.downloadWebsite(html.getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, dir);
+
+        assertEquals(3, files);
+        assertTrue(new File(dir, "about.html").isFile());
+        assertTrue(new File(dir, "img/team.png").isFile());
+        assertFalse(new File(dir, "missing.html").exists());
+        assertFalse(site.requested.contains("https://app.example.com/deeper.html"));
+        final String index = new String(Files.readAllBytes(new File(dir, "index.html").toPath()), StandardCharsets.UTF_8);
+        assertTrue(index.contains("<a href=\"/about.html\">"));
+        assertTrue(index.contains("<a href=\"https://app.example.com/route\">"));
+    }
+
+    @Test
+    public void downloadReportsNeverDecreasingProgress() throws Exception {
+        final FakeSite site = new FakeSite();
+        final String html = "<script src=\"/a.js\"></script><link rel=stylesheet href=\"/b.css\">";
+        site.put("https://app.example.com/a.js", "import('./c.js');import('./d.js')", "application/javascript");
+        site.put("https://app.example.com/b.css", ".a{}", "text/css");
+        site.put("https://app.example.com/c.js", "1", "text/javascript");
+        site.put("https://app.example.com/d.js", "2", "text/javascript");
+        final List<Integer> progress = new ArrayList<>();
+        new WebsiteModeUpdater(null, site, new MemoryStore()).downloadWebsite(
+            html.getBytes(StandardCharsets.UTF_8),
+            new URL("https://app.example.com/"),
+            null,
+            tmp.newFolder("progress"),
+            progress::add
+        );
+        assertFalse(progress.isEmpty());
+        for (int i = 0; i < progress.size(); i++) {
+            assertTrue(progress.get(i) >= 5 && progress.get(i) <= 95);
+            if (i > 0) {
+                assertTrue(progress.get(i) > progress.get(i - 1));
+            }
+        }
+        assertEquals(95, WebsiteModeUpdater.crawlPercent(4, 0));
+        assertEquals(5, WebsiteModeUpdater.crawlPercent(0, 0));
+    }
+
+    @Test
+    public void srcsetAcceptsAnyWhitespaceBeforeDescriptor() throws Exception {
+        final URL root = new URL("https://app.example.com/");
+        final String html = "<img srcset=\"/a.png\t1x,\n/b.png\n2x\">";
+        final List<String> found = urls(WebsiteModeUpdater.discoverMarkupAssets(html, root, root, false));
+        assertTrue(found.contains("https://app.example.com/a.png"));
+        assertTrue(found.contains("https://app.example.com/b.png"));
+        assertEquals(2, found.size());
+    }
+
+    @Test
+    public void websiteModeKeepsUrlPathAfterReloadByDefault() {
+        assertTrue(WebsiteModeUpdater.defaultKeepUrlPathAfterReload(true));
+        assertFalse(WebsiteModeUpdater.defaultKeepUrlPathAfterReload(false));
+    }
 }

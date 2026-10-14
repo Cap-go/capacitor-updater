@@ -660,4 +660,91 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         XCTAssertTrue(script.contains("cap.nativePromise('CapacitorUpdater','notifyAppReady',{})"))
         XCTAssertFalse(script.contains("\n"))
     }
+
+    // MARK: - Gaps ported from the website updater
+
+    func testDiscoversSvgSpriteAndImageHrefs() {
+        let root = URL(string: "https://app.example.com/")!
+        let html = #"<svg><use href="/icons.svg#home"></use><use xlink:href='/legacy.svg#x'></use>"# +
+            ##"<image href="/img/logo.png"/><use href="#local"></use></svg>"##
+        let found = WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: true).map(\.url.absoluteString)
+        XCTAssertEqual(
+            Set(found),
+            ["https://app.example.com/icons.svg", "https://app.example.com/legacy.svg", "https://app.example.com/img/logo.png"]
+        )
+        XCTAssertEqual(found.count, 3)
+    }
+
+    func testDiscoversLinkedStaticPagesOnlyFromEntryHtml() {
+        let root = URL(string: "https://app.example.com/")!
+        let html = #"<a href="/about.html">About</a><a class=x href='docs/guide.htm#top'>Guide</a>"# +
+            #"<a href="/dashboard">SPA route</a><a href="https://other.com/x.html">Ext</a><area href="/map.html">"#
+        let assets = WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: true)
+        XCTAssertEqual(
+            Set(assets.map(\.url.absoluteString)),
+            ["https://app.example.com/about.html", "https://app.example.com/docs/guide.htm", "https://app.example.com/map.html"]
+        )
+        XCTAssertTrue(assets.allSatisfy { !$0.required })
+        // Pages are not crawled transitively.
+        XCTAssertTrue(WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: false).isEmpty)
+    }
+
+    func testDownloadBundlesLinkedPagesWithTheirAssets() throws {
+        let site = FakeSite()
+        let html = #"<html><body><a href="https://app.example.com/about.html">About</a><a href="/missing.html">X</a>"# +
+            #"<a href="https://app.example.com/route">R</a></body></html>"#
+        site.put("https://app.example.com/about.html", #"<img src="img/team.png"><a href="/deeper.html">D</a>"#, "text/html")
+        site.put("https://app.example.com/img/team.png", "PNG", "image/png")
+        site.put("https://app.example.com/deeper.html", "<p>deep</p>", "text/html")
+        // SPA hosts answer unknown pages with the entry HTML.
+        site.put("https://app.example.com/missing.html", html, "text/html")
+
+        let dir = tempRoot.appendingPathComponent("pages", isDirectory: true)
+        let files = try makeUpdater(site).downloadWebsite(
+            entryHtml: Data(html.utf8), websiteUrl: URL(string: "https://app.example.com/")!, downloadBase: nil, targetDir: dir
+        )
+
+        XCTAssertEqual(files, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("about.html").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("img/team.png").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("missing.html").path))
+        XCTAssertFalse(site.requested.contains("https://app.example.com/deeper.html"))
+        let index = try String(contentsOf: dir.appendingPathComponent("index.html"), encoding: .utf8)
+        XCTAssertTrue(index.contains(#"<a href="/about.html">"#))
+        XCTAssertTrue(index.contains(#"<a href="https://app.example.com/route">"#))
+    }
+
+    func testDownloadReportsNeverDecreasingProgress() throws {
+        let site = FakeSite()
+        let html = #"<script src="/a.js"></script><link rel=stylesheet href="/b.css">"#
+        site.put("https://app.example.com/a.js", "import('./c.js');import('./d.js')", "application/javascript")
+        site.put("https://app.example.com/b.css", ".a{}", "text/css")
+        site.put("https://app.example.com/c.js", "1", "text/javascript")
+        site.put("https://app.example.com/d.js", "2", "text/javascript")
+        var progress: [Int] = []
+        try makeUpdater(site).downloadWebsite(
+            entryHtml: Data(html.utf8),
+            websiteUrl: URL(string: "https://app.example.com/")!,
+            downloadBase: nil,
+            targetDir: tempRoot.appendingPathComponent("progress", isDirectory: true)
+        ) { progress.append($0) }
+        XCTAssertFalse(progress.isEmpty)
+        XCTAssertTrue(progress.allSatisfy { (5...95).contains($0) })
+        XCTAssertEqual(progress, progress.sorted())
+        XCTAssertEqual(Set(progress).count, progress.count)
+        XCTAssertEqual(WebsiteModeUpdater.crawlPercent(processed: 4, remaining: 0), 95)
+        XCTAssertEqual(WebsiteModeUpdater.crawlPercent(processed: 0, remaining: 0), 5)
+    }
+
+    func testSrcsetAcceptsAnyWhitespaceBeforeDescriptor() {
+        let root = URL(string: "https://app.example.com/")!
+        let html = "<img srcset=\"/a.png\t1x,\n/b.png\n2x\">"
+        let found = WebsiteModeUpdater.discoverMarkupAssets(html, baseUrl: root, rootUrl: root, fromEntryHtml: false).map(\.url.absoluteString)
+        XCTAssertEqual(found, ["https://app.example.com/a.png", "https://app.example.com/b.png"])
+    }
+
+    func testWebsiteModeKeepsUrlPathAfterReloadByDefault() {
+        XCTAssertTrue(WebsiteModeUpdater.defaultKeepUrlPathAfterReload(websiteMode: true))
+        XCTAssertFalse(WebsiteModeUpdater.defaultKeepUrlPathAfterReload(websiteMode: false))
+    }
 }

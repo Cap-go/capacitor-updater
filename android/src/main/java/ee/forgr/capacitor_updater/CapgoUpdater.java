@@ -1825,6 +1825,10 @@ public class CapgoUpdater {
      * registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
      */
     BundleInfo installWebsiteBundle(final File tempDir, final String version) throws IOException {
+        return this.installWebsiteBundle(tempDir, version, this.randomString());
+    }
+
+    BundleInfo installWebsiteBundle(final File tempDir, final String version, final String id) throws IOException {
         this.assertPathInsideDocumentsDir(tempDir);
         if (!new File(tempDir, "index.html").isFile()) {
             this.safeDelete(tempDir);
@@ -1834,7 +1838,6 @@ public class CapgoUpdater {
         if (existing != null && (existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting())) {
             this.delete(existing.getId(), true);
         }
-        final String id = this.randomString();
         final File target = this.getBundleDirectory(id);
         final File parent = target.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {

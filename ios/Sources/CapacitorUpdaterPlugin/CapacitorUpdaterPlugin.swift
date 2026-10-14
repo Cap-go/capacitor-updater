@@ -306,7 +306,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.versionBuild = getConfig().getString("version", Bundle.main.versionName)!
         autoDeleteFailed = getConfig().getBoolean("autoDeleteFailed", true)
         autoDeletePrevious = getConfig().getBoolean("autoDeletePrevious", true)
-        keepUrlPathAfterReload = getConfig().getBoolean("keepUrlPathAfterReload", false)
+        keepUrlPathAfterReload = getConfig().getBoolean(
+            "keepUrlPathAfterReload",
+            WebsiteModeUpdater.defaultKeepUrlPathAfterReload(websiteMode: getConfig().getBoolean("websiteMode", false))
+        )
         syncKeepUrlPathFlag(enabled: keepUrlPathAfterReload)
 
         autoSplashscreen = getConfig().getBoolean("autoSplashscreen", false)
@@ -4948,8 +4951,27 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("New website version found: \(version). Downloading from website.")
                 let temp = try self.implementation.createWebsiteTempDir()
                 tempDir = temp
-                let files = try updater.downloadWebsite(entryHtml: entryHtml, websiteUrl: websiteUrl, downloadBase: downloadBase, targetDir: temp)
-                target = try self.implementation.installWebsiteBundle(tempDir: temp, version: version)
+                // Same download events as a classic bundle: the id is reserved now so listeners
+                // see the bundle that is eventually installed.
+                let downloading = BundleInfo(
+                    id: self.implementation.newWebsiteBundleId(),
+                    version: version,
+                    status: BundleStatus.DOWNLOADING,
+                    downloaded: Date(),
+                    checksum: ""
+                )
+                self.notifyWebsiteDownload(downloading, percent: 0)
+                let files = try updater.downloadWebsite(
+                    entryHtml: entryHtml,
+                    websiteUrl: websiteUrl,
+                    downloadBase: downloadBase,
+                    targetDir: temp
+                ) { [weak self] percent in
+                    self?.notifyWebsiteDownload(downloading, percent: percent)
+                }
+                let installed = try self.implementation.installWebsiteBundle(tempDir: temp, version: version, id: downloading.getId())
+                target = installed
+                self.notifyWebsiteDownload(installed, percent: 100)
                 tempDir = nil
                 logger.info("Website version \(version) downloaded (\(files) files)")
             } else {
@@ -4973,6 +4995,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 plannedDirectUpdate: true
             )
         }
+    }
+
+    private func notifyWebsiteDownload(_ bundle: BundleInfo, percent: Int) {
+        self.notifyListenersOnMain("download", data: ["percent": percent, "bundle": bundle.toJSON()])
     }
 
     /// Website mode always applies updates directly, through the regular set/reload path.

@@ -3036,7 +3036,12 @@ import UIKit
 
     /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
     /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
-    func installWebsiteBundle(tempDir: URL, version: String) throws -> BundleInfo {
+    /// A fresh bundle id, reserved before a website download so its events name the installed bundle.
+    func newWebsiteBundleId() -> String {
+        randomString(length: 10)
+    }
+
+    func installWebsiteBundle(tempDir: URL, version: String, id: String? = nil) throws -> BundleInfo {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: tempDir.appendingPathComponent("index.html").path) else {
             discardWebsiteTempDir(tempDir)
@@ -3046,7 +3051,7 @@ import UIKit
            existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting() {
             _ = delete(id: existing.getId(), removeInfo: true)
         }
-        let id = randomString(length: 10)
+        let id = id ?? randomString(length: 10)
         let target = try getBundleDirectory(id: id)
         do {
             try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)

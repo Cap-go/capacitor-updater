@@ -21,6 +21,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -70,15 +71,17 @@ final class WebsiteModeUpdater {
     static final String MODE_CAPGO = "capgo";
 
     /**
-     * href is only taken from {@code <link>} elements (stylesheets, icons, manifest, preloads):
-     * {@code <a href>} is navigation, not an asset.
+     * href is only taken from {@code <link>} elements (stylesheets, icons, manifest, preloads) and SVG
+     * {@code <use>}/{@code <image>} (sprites, also {@code xlink:href}): {@code <a href>} is navigation,
+     * handled separately by {@link #PAGE_LINK_PATTERN}.
      */
     private static final String[] MARKUP_PATTERNS = new String[] {
         "src\\s*=\\s*[\"']([^\"']+)[\"']",
         "<link\\b[^>]*?\\bhref\\s*=\\s*[\"']([^\"']+)[\"']",
         "srcset\\s*=\\s*[\"']([^\"']+)[\"']",
         "url\\(\\s*[\"']?([^\"')]+)[\"']?\\s*\\)",
-        "@import\\s+[\"']([^\"']+)[\"']"
+        "@import\\s+[\"']([^\"']+)[\"']",
+        "<(?:use|image|feimage)\\b[^>]*?\\bhref\\s*=\\s*[\"']([^\"']+)[\"']"
     };
     private static final Pattern SRCSET_PATTERN = Pattern.compile(MARKUP_PATTERNS[2], Pattern.CASE_INSENSITIVE);
     private static final Pattern[] COMPILED_MARKUP_PATTERNS = new Pattern[] {
@@ -86,8 +89,18 @@ final class WebsiteModeUpdater {
         Pattern.compile(MARKUP_PATTERNS[1], Pattern.CASE_INSENSITIVE),
         SRCSET_PATTERN,
         Pattern.compile(MARKUP_PATTERNS[3], Pattern.CASE_INSENSITIVE),
-        Pattern.compile(MARKUP_PATTERNS[4], Pattern.CASE_INSENSITIVE)
+        Pattern.compile(MARKUP_PATTERNS[4], Pattern.CASE_INSENSITIVE),
+        Pattern.compile(MARKUP_PATTERNS[5], Pattern.CASE_INSENSITIVE)
     };
+    /**
+     * {@code <a href>}/{@code <area href>} of the entry HTML: same-origin static pages (.html/.htm) are
+     * bundled best effort so multi-page sites keep working offline. SPA routes (no extension) are not files.
+     */
+    static final Pattern PAGE_LINK_PATTERN = Pattern.compile(
+        "<a(?:rea)?\\b[^>]*?\\bhref\\s*=\\s*[\"']([^\"']+)[\"']",
+        Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern PAGE_EXTENSION = Pattern.compile("\\.html?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern SRCSET_ITEM = Pattern.compile("^(\\s*)(\\S+)(.*)$", Pattern.DOTALL);
     private static final Pattern JS_ASSET_PATTERN = Pattern.compile(
         "[\"'`]([^\"'`\\s]+\\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|txt)(?:\\?[^\"'`\\s]*)?)[\"'`]",
@@ -470,6 +483,14 @@ final class WebsiteModeUpdater {
         return result;
     }
 
+    /**
+     * keepUrlPathAfterReload default: a website is an SPA whose route must survive the reload that
+     * applies an update (as in the website updater), so website mode keeps the path unless configured.
+     */
+    static boolean defaultKeepUrlPathAfterReload(final boolean websiteMode) {
+        return websiteMode;
+    }
+
     static boolean isWebsiteVersion(final String version) {
         return version != null && version.startsWith(VERSION_PREFIX);
     }
@@ -626,6 +647,25 @@ final class WebsiteModeUpdater {
      * @return number of files written (entry included)
      */
     int downloadWebsite(final byte[] entryHtml, final URL websiteUrl, final URL downloadBase, final File targetDir) throws IOException {
+        return downloadWebsite(entryHtml, websiteUrl, downloadBase, targetDir, null);
+    }
+
+    /** Crawl progress, 5..95 and never decreasing (the queue grows while files are parsed). */
+    interface ProgressListener {
+        void onProgress(int percent);
+    }
+
+    static int crawlPercent(final int processed, final int remaining) {
+        return Math.min(95, 5 + (int) ((processed / (double) Math.max(processed + remaining, 1)) * 90));
+    }
+
+    int downloadWebsite(
+        final byte[] entryHtml,
+        final URL websiteUrl,
+        final URL downloadBase,
+        final File targetDir,
+        final ProgressListener progress
+    ) throws IOException {
         if (!targetDir.exists() && !targetDir.mkdirs()) {
             throw new IOException("Unable to create website download directory");
         }
@@ -648,10 +688,16 @@ final class WebsiteModeUpdater {
         }
 
         int processed = 0;
+        int lastPercent = 0;
         while (!queue.isEmpty()) {
             final Asset asset = queue.poll();
             if (++processed > MAX_ASSET_COUNT) {
                 throw new IOException("Website references more than " + MAX_ASSET_COUNT + " assets");
+            }
+            final int percent = crawlPercent(processed, queue.size());
+            if (progress != null && percent > lastPercent) {
+                lastPercent = percent;
+                progress.onProgress(percent);
             }
             final String relativePath;
             try {
@@ -684,6 +730,8 @@ final class WebsiteModeUpdater {
                     failure = "HTTP " + response.statusCode;
                 } else if (isHtmlFallback(asset.url, response)) {
                     failure = "HTML fallback page served instead of the file";
+                } else if (isPage(asset.url) && Arrays.equals(response.data, entryHtml)) {
+                    failure = "entry HTML served instead of the page";
                 }
             }
             if (failure != null) {
@@ -732,6 +780,12 @@ final class WebsiteModeUpdater {
                     if (!child.requiredCandidates.isEmpty()) {
                         requiredReferences.put(candidatesKey(child.requiredCandidates), child.requiredCandidates);
                     }
+                    enqueue(child, queue, queued);
+                }
+            } else if (isPage(asset.url)) {
+                textFiles.add(new TextFile(relativePath, asset.url, false));
+                final String text = new String(response.data, StandardCharsets.UTF_8);
+                for (Asset child : discoverMarkupAssets(text, asset.url, websiteUrl, false)) {
                     enqueue(child, queue, queued);
                 }
             }
@@ -826,6 +880,10 @@ final class WebsiteModeUpdater {
                 srcset ? rewriteSrcset(value, baseUrl, rootUrl, accept) : rewriteAbsoluteValue(value, baseUrl, rootUrl, accept)
             );
         }
+        // Links only point into the bundle for pages that were saved; other links stay as they are.
+        result = rewriteMatches(result, PAGE_LINK_PATTERN, (value) ->
+            rewriteAbsoluteValue(value, baseUrl, rootUrl, (url) -> isPage(url) && accept.test(url))
+        );
         return result;
     }
 
@@ -948,7 +1006,22 @@ final class WebsiteModeUpdater {
                 }
             }
         }
+        if (fromEntryHtml) {
+            // Linked static pages, one level deep (their own assets are crawled, their links are not).
+            final Matcher matcher = PAGE_LINK_PATTERN.matcher(text);
+            while (matcher.find()) {
+                final URL url = sameOriginUrl(matcher.group(1), baseUrl, rootUrl);
+                if (url != null && isPage(url)) {
+                    result.add(new Asset(url, false));
+                }
+            }
+        }
         return result;
+    }
+
+    /** A static HTML page (.html/.htm) other than the entry. */
+    static boolean isPage(final URL url) {
+        return PAGE_EXTENSION.matcher(url.getPath()).find();
     }
 
     /**

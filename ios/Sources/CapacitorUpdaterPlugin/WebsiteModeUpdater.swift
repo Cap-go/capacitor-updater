@@ -169,6 +169,12 @@ final class WebsiteModeUpdater {
         }
     }
 
+    /// keepUrlPathAfterReload default: a website is an SPA whose route must survive the reload that
+    /// applies an update (as in the website updater), so website mode keeps the path unless configured.
+    static func defaultKeepUrlPathAfterReload(websiteMode: Bool) -> Bool {
+        websiteMode
+    }
+
     static func isWebsiteVersion(_ version: String) -> Bool {
         version.hasPrefix(versionPrefix)
     }
@@ -310,8 +316,20 @@ final class WebsiteModeUpdater {
     /// Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
     /// missing; every other asset is skipped on any failure.
     /// - Returns: number of files written (entry included)
+    /// Crawl progress, 5...95 (the queue grows while files are parsed).
+    static func crawlPercent(processed: Int, remaining: Int) -> Int {
+        min(95, 5 + Int(Double(processed) / Double(max(processed + remaining, 1)) * 90))
+    }
+
+    /// - Parameter progress: called with a never decreasing percent (5...95) while files are fetched
     @discardableResult
-    func downloadWebsite(entryHtml: Data, websiteUrl: URL, downloadBase: URL?, targetDir: URL) throws -> Int {
+    func downloadWebsite(
+        entryHtml: Data,
+        websiteUrl: URL,
+        downloadBase: URL?,
+        targetDir: URL,
+        progress: ((Int) -> Void)? = nil
+    ) throws -> Int {
         try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
         try Self.save(entryHtml, relativePath: "index.html", root: targetDir)
         var crawl = Crawl()
@@ -331,15 +349,21 @@ final class WebsiteModeUpdater {
         enqueue(Self.discoverMarkupAssets(entryText, baseUrl: websiteUrl, rootUrl: websiteUrl, fromEntryHtml: true))
 
         var index = 0
+        var lastPercent = 0
         while index < queue.count {
             let asset = queue[index]
             index += 1
             if index > Self.maxAssetCount {
                 throw WebsiteModeError.failed("Website references more than \(Self.maxAssetCount) assets")
             }
+            let percent = Self.crawlPercent(processed: index, remaining: queue.count - index)
+            if let progress, percent > lastPercent {
+                lastPercent = percent
+                progress(percent)
+            }
             // The entry HTML is already saved; another URL mapping to it is ignored.
             guard let relativePath = try bundlePath(for: asset), relativePath.lowercased() != "index.html",
-                  let response = try fetchAsset(asset, downloadBase: downloadBase, crawl: &crawl),
+                  let response = try fetchAsset(asset, downloadBase: downloadBase, entryHtml: entryHtml, crawl: &crawl),
                   try saveAsset(asset, path: relativePath, response: response, root: targetDir, crawl: &crawl) else {
                 continue
             }
@@ -355,6 +379,10 @@ final class WebsiteModeUpdater {
                     crawl.addRequired(child.requiredCandidates)
                 }
                 enqueue(children)
+            } else if Self.isPage(asset.url) {
+                crawl.textFiles.append(TextFile(path: relativePath, baseUrl: asset.url, isJavaScript: false))
+                let html = Self.text(response.data)
+                enqueue(Self.discoverMarkupAssets(html, baseUrl: asset.url, rootUrl: websiteUrl, fromEntryHtml: false))
             }
         }
 
@@ -371,7 +399,7 @@ final class WebsiteModeUpdater {
     }
 
     /// Fetches one asset. Returns nil when an optional asset failed (logged and skipped).
-    private func fetchAsset(_ asset: Asset, downloadBase: URL?, crawl: inout Crawl) throws -> FetchResponse? {
+    private func fetchAsset(_ asset: Asset, downloadBase: URL?, entryHtml: Data, crawl: inout Crawl) throws -> FetchResponse? {
         var failure: String?
         var response: FetchResponse?
         do {
@@ -388,6 +416,8 @@ final class WebsiteModeUpdater {
                 failure = "HTTP \(response.statusCode)"
             } else if Self.isHtmlFallback(asset.url, response: response) {
                 failure = "HTML fallback page served instead of the file"
+            } else if Self.isPage(asset.url), response.data == entryHtml {
+                failure = "entry HTML served instead of the page"
             }
         }
         if let failure {
@@ -487,15 +517,25 @@ final class WebsiteModeUpdater {
 // MARK: - Asset discovery
 
 extension WebsiteModeUpdater {
-    /// href is only taken from `<link>` elements (stylesheets, icons, manifest, preloads):
-    /// `<a href>` is navigation, not an asset.
+    /// href is only taken from `<link>` elements (stylesheets, icons, manifest, preloads) and SVG
+    /// `<use>`/`<image>` (sprites, also `xlink:href`): `<a href>` is navigation, handled by `pageLinkPattern`.
     private static let markupPatterns: [(pattern: String, isSrcset: Bool)] = [
         (#"src\s*=\s*["']([^"']+)["']"#, false),
         (#"<link\b[^>]*?\bhref\s*=\s*["']([^"']+)["']"#, false),
         (#"srcset\s*=\s*["']([^"']+)["']"#, true),
         (#"url\(\s*["']?([^"')]+)["']?\s*\)"#, false),
-        (#"@import\s+["']([^"']+)["']"#, false)
+        (#"@import\s+["']([^"']+)["']"#, false),
+        (#"<(?:use|image|feimage)\b[^>]*?\bhref\s*=\s*["']([^"']+)["']"#, false)
     ]
+    /// `<a href>`/`<area href>` of the entry HTML: same-origin static pages (.html/.htm) are bundled
+    /// best effort so multi-page sites keep working offline. SPA routes (no extension) are not files.
+    private static let pageLinkPattern = #"<a(?:rea)?\b[^>]*?\bhref\s*=\s*["']([^"']+)["']"#
+    private static let pageExtensions: Set<String> = ["html", "htm"]
+
+    /// A static HTML page (.html/.htm) other than the entry.
+    static func isPage(_ url: URL) -> Bool {
+        pageExtensions.contains(url.pathExtension.lowercased())
+    }
     private static let javaScriptAssetPattern =
         #"["'`]([^"'`\s]+\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|txt)"#
             + #"(?:\?[^"'`\s]*)?)["'`]"#
@@ -522,6 +562,14 @@ extension WebsiteModeUpdater {
                         let required = fromEntryHtml && ["js", "mjs", "css"].contains(ext)
                         result.append(Asset(url: url, required: required))
                     }
+                }
+            }
+        }
+        if fromEntryHtml {
+            // Linked static pages, one level deep (their own assets are crawled, their links are not).
+            for value in regexCaptures(pattern: pageLinkPattern, text: text) {
+                if let url = sameOriginUrl(value, baseUrl: baseUrl, rootUrl: rootUrl), isPage(url) {
+                    result.append(Asset(url: url, required: false))
                 }
             }
         }
@@ -575,6 +623,10 @@ extension WebsiteModeUpdater {
                     ? rewriteSrcset(value, baseUrl: baseUrl, rootUrl: rootUrl, accept: accept)
                     : rewriteAbsoluteValue(value, baseUrl: baseUrl, rootUrl: rootUrl, accept: accept)
             }
+        }
+        // Links only point into the bundle for pages that were saved; other links stay as they are.
+        result = rewriteMatches(result, pattern: pageLinkPattern) { value in
+            rewriteAbsoluteValue(value, baseUrl: baseUrl, rootUrl: rootUrl) { isPage($0) && accept($0) }
         }
         return result
     }
@@ -773,8 +825,9 @@ extension WebsiteModeUpdater {
     }
 
     private static func srcsetCandidates(_ value: String) -> [String] {
+        // Any whitespace (tab, newline) separates a candidate URL from its descriptor.
         value.split(separator: ",").compactMap { item in
-            item.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").first.map(String.init)
+            item.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
         }
     }
 }
