@@ -2578,6 +2578,31 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(CapacitorUpdaterPlugin.updateCheckErrorMetadata(error: "", statusCode: 0), ["error": "unknown"])
     }
 
+    func testNativeStoreUpdateBlockDetection() {
+        let underNative = AppVersion()
+        underNative.error = "disable_auto_update_under_native"
+        XCTAssertTrue(NativeUpdatePromptCoordinator.isNativeStoreUpdateBlock(response: underNative))
+
+        let patch = AppVersion()
+        patch.error = "disable_auto_update_to_patch"
+        XCTAssertTrue(NativeUpdatePromptCoordinator.isNativeStoreUpdateBlock(response: patch))
+
+        let unrelated = AppVersion()
+        unrelated.error = "response_error"
+        XCTAssertFalse(NativeUpdatePromptCoordinator.isNativeStoreUpdateBlock(response: unrelated))
+    }
+
+    func testNativeUpdatePromptCooldownAndSession() {
+        NativeUpdatePromptCoordinator.resetSessionStateForTesting()
+        let coordinator = NativeUpdatePromptCoordinator(plugin: nil, cooldownHours: 24)
+        UserDefaults.standard.removeObject(forKey: NativeUpdatePromptCoordinator.lastNativeVersionDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: NativeUpdatePromptCoordinator.lastShownMsDefaultsKey)
+
+        XCTAssertTrue(coordinator.shouldShowForNativeVersion("100"))
+        coordinator.recordShown(nativeVersion: "100")
+        XCTAssertFalse(coordinator.shouldShowForNativeVersion("100"))
+    }
+
     func testHasNativeBuildVersionChangedFallsBackToLegacyStoredKey() {
         let nativeBuildKey = "LatestNativeBuildVersion"
         let legacyBuildKey = "LatestVersionNative"

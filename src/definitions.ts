@@ -474,6 +474,90 @@ declare module '@capacitor/cli' {
        * @since 8.43.0
        */
       allowShakeChannelSelector?: boolean;
+
+      /**
+       * When enabled, show a native dialog prompting the user to install a newer native app from the App Store or Play Store.
+       * The prompt appears when a live update is blocked because the device native app is too old, including backend
+       * `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` / `majorAvailable` flows.
+       *
+       * Only available for Android and iOS. No-op on web.
+       *
+       * @default false
+       * @since 8.53.0
+       */
+      nativeUpdatePrompt?: boolean;
+
+      /**
+       * Optional title for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Update available"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptTitle?: string;
+
+      /**
+       * Optional message body for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default A short message explaining that a newer native app is available in the store.
+       * @since 8.53.0
+       */
+      nativeUpdatePromptMessage?: string;
+
+      /**
+       * Optional label for the primary action button that opens the store or starts an in-app update on Android.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Update"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptUpdateButton?: string;
+
+      /**
+       * Optional label for the dismiss action on the native store update dialog.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Not now"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptLaterButton?: string;
+
+      /**
+       * Optional ISO 3166-1 alpha-2 country filter. When set, the prompt is shown only when the device region matches
+       * one of the comma-separated country codes (for example `"US"` or `"US,CA"`).
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined (show in all regions)
+       * @since 8.53.0
+       */
+      nativeUpdatePromptCountry?: string;
+
+      /**
+       * When {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled, also show the dialog when {@link CapacitorUpdaterPlugin.getAppUpdateInfo}
+       * reports that a store update is available.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.53.0
+       */
+      nativeUpdatePromptOnStoreCheck?: boolean;
+
+      /**
+       * Minimum hours between native update prompts for the same native app version. Also limited to once per app session.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 24
+       * @since 8.53.0
+       */
+      nativeUpdatePromptCooldownHours?: number;
     };
   }
 }

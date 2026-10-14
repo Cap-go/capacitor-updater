@@ -317,8 +317,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private AppUpdateManager appUpdateManager;
     private PluginCall pendingAppUpdateCall;
     private AppUpdateInfo cachedAppUpdateInfo;
-    private static final int APP_UPDATE_REQUEST_CODE = 9001;
+    static final int APP_UPDATE_REQUEST_CODE = 9001;
     private InstallStateUpdatedListener installStateUpdatedListener;
+    private NativeUpdatePrompt nativeUpdatePrompt;
 
     private PackageInfo getCurrentPackageInfo() throws PackageManager.NameNotFoundException {
         final PackageManager packageManager = this.getContext().getPackageManager();
@@ -345,22 +346,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean shouldNotifyBreakingEvents(final JSObject response) {
-        if (response == null) {
-            return false;
-        }
-
-        if (response.optBoolean("breaking", false)) {
-            return true;
-        }
-
-        final String error = response.optString("error", "");
-        final String message = response.optString("message", "");
-        return "disable_auto_update_to_major".equals(error) || "store_update_required".equals(message);
+        return NativeUpdatePrompt.isNativeStoreUpdateBlock(response);
     }
 
     private void notifyBreakingEventsIfNeeded(final JSObject response, final String version) {
         if (shouldNotifyBreakingEvents(response)) {
             notifyBreakingEvents(version);
+        }
+        if (this.nativeUpdatePrompt != null) {
+            this.nativeUpdatePrompt.maybeShowForUpdateBlock(response);
         }
     }
 
@@ -961,6 +955,42 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
+        this.nativeUpdatePrompt = new NativeUpdatePrompt(
+            this.getConfig(),
+            this.prefs,
+            this.logger,
+            new NativeUpdatePrompt.NativeUpdatePromptHost() {
+                @Override
+                public Activity getActivity() {
+                    return CapacitorUpdaterPlugin.this.getActivity();
+                }
+
+                @Override
+                public String getNativeBuildVersion() {
+                    return CapacitorUpdaterPlugin.this.currentBuildVersion;
+                }
+
+                @Override
+                public AppUpdateManager getAppUpdateManager() {
+                    return CapacitorUpdaterPlugin.this.getAppUpdateManager();
+                }
+
+                @Override
+                public AppUpdateInfo getCachedAppUpdateInfo() {
+                    return CapacitorUpdaterPlugin.this.cachedAppUpdateInfo;
+                }
+
+                @Override
+                public void setCachedAppUpdateInfo(final AppUpdateInfo info) {
+                    CapacitorUpdaterPlugin.this.cachedAppUpdateInfo = info;
+                }
+
+                @Override
+                public String getPackageNameForStore() {
+                    return CapacitorUpdaterPlugin.this.getContext().getPackageName();
+                }
+            }
+        );
         this.previewSessionEnabled = Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false);
         if (!Boolean.TRUE.equals(this.allowPreview) && this.prefs.getBoolean(PREVIEW_SESSION_PREF_KEY, false)) {
             this.clearPreviewSessionBecauseDisabled();
@@ -6001,6 +6031,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     result.put("installStatus", appUpdateInfo.installStatus());
 
                     call.resolve(result);
+                    if (
+                        appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                        CapacitorUpdaterPlugin.this.nativeUpdatePrompt != null
+                    ) {
+                        CapacitorUpdaterPlugin.this.nativeUpdatePrompt.maybeShowForStoreUpdateAvailable();
+                    }
                 })
                 .addOnFailureListener((e) -> {
                     logger.error("Failed to get app update info: " + e.getMessage());
