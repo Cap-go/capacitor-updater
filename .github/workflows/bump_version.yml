@@ -85,7 +85,7 @@ jobs:
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
       - name: Push generated doc to doc repo
         if: github.ref == 'refs/heads/main'
-        uses: nkoppel/push-files-to-another-repository@v1
+        uses: nkoppel/push-files-to-another-repository@82da78d76ccb187ccaf0b8fde044c4153ab5d3e1 # v1.1.4
         env:
           API_TOKEN_GITHUB: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
