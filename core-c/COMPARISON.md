@@ -31,18 +31,26 @@ with key types it cannot parse (e.g. Ed25519) before the host is asked.
 | Android download, arm64 device (bench app) | | about 1.06 MiB smaller |
 | iOS app executable (bench app, release) | 4.22 MiB | 1.48 MiB |
 
-## Speed (on-device benchmark, `scripts/bench`, median of 3, ratio C / Rust)
+## Speed
 
-- iOS zip bundles: C faster, up to 0.54 (encrypted 300 MB: 429 ms vs 232 ms);
-  30 MB zips 0.83 to 0.92.
-- Android manifest (delta) downloads: C faster on large manifests, 0.71 to 0.85
-  (2000 files / 200 MB: 1.42 s vs 1.04 s plain, 1.55 s vs 1.10 s encrypted
-  direct).
-- iOS manifests and Android zips: same speed (within noise, 0.93 to 1.08).
-- Network-shaped runs (80 ms latency, 40 Mbit/s): within 1%, the link is the
-  limit.
-- Host micro-benchmarks (100 MB, release): SHA-256 equal (~2.6 GB/s); AES-CBC
-  and unzip comparable, noisy on a loaded machine.
+Full tables (same session, both cores, every suite #937 measured): `BENCHMARK.md`.
+
+- **iOS simulator: parity.** 39 cells: C faster in 25, equal in 6, slower in 8
+  (each slower cell at most +3%, ranges overlap). Clearest wins on zips:
+  3 MB encrypted background 18 -> 12 ms, 30 MB background -15%. Manifests
+  -5% to +2%, reuse -9% to +3%, network-shaped identical.
+- **Android emulator: C faster on manifests.** 200 and 2000 files are 24-35%
+  faster in both modes (2000 files plain background 1.46 s -> 997 ms),
+  confirmed -21% to -32% on a second fresh emulator. Zips, small manifests,
+  reuse and shaped runs: same within noise.
+- **Android cold start: C slower.** First manifest case after launch
+  (20 files, background): 28 ms Rust vs 43 ms C (ranges do not overlap).
+  Warm: 33 vs 28 ms. The cold 2-file direct case is equal (27 vs 27 ms).
+- **Apply step** (`set()` until app ready): identical on both platforms.
+- **Host (release, through the C ABI):** SHA-256 -2%, AES-128-CBC +15%,
+  unzip -19% (platform zlib vs zlib-rs), RSA public operation 30.5 µs vs
+  24.2 µs per checksum (Mbed TLS bignum vs the hand-written Rust modexp:
+  about 12 ms over a 2000-file encrypted manifest if fully serial).
 
 ## Cost and safety
 
@@ -69,7 +77,9 @@ launch cleanup and a waiting download), fixed in both.
 
 ## Verdict
 
-C is smaller (3 to 4 times less code shipped) and at least as fast, on device.
+C is smaller (3 to 4 times less code shipped), on par on iOS and faster on
+large Android manifests, but slower on the Android cold-start case and on the
+RSA and unzip micro-benchmarks.
 It costs 65% more source lines to maintain, hand-written replacements for
 the HTTP client, URL parser, zip reader and JSON, and memory safety that has
 to be enforced by sanitizers and Valgrind in CI instead of by the compiler.
