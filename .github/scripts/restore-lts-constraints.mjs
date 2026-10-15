@@ -175,20 +175,24 @@ export function applyConstraints(repoRoot, target) {
   const gradlePath = join(repoRoot, 'android/build.gradle');
   writeText(gradlePath, patchAndroidBuildGradle(readText(gradlePath), target.android));
 
-  const exampleGradlePath = join(repoRoot, 'example-app/android/build.gradle');
-  if (existsSync(exampleGradlePath)) {
-    writeText(
-      exampleGradlePath,
-      readText(exampleGradlePath).replace(
-        /classpath 'com\.android\.tools\.build:gradle:[^']+'/,
-        `classpath 'com.android.tools.build:gradle:${target.android.agp}'`,
-      ),
-    );
-  }
+  // The example app keeps main's SDK and AGP: its androidx dependencies need compileSdk 36 and AGP 8.9.1+,
+  // and the LTS plugin library still builds inside it. Only pin it when a target sets exampleAndroid.
+  if (target.exampleAndroid) {
+    const exampleGradlePath = join(repoRoot, 'example-app/android/build.gradle');
+    if (existsSync(exampleGradlePath)) {
+      writeText(
+        exampleGradlePath,
+        readText(exampleGradlePath).replace(
+          /classpath 'com\.android\.tools\.build:gradle:[^']+'/,
+          `classpath 'com.android.tools.build:gradle:${target.exampleAndroid.agp}'`,
+        ),
+      );
+    }
 
-  const exampleVarsPath = join(repoRoot, 'example-app/android/variables.gradle');
-  if (existsSync(exampleVarsPath)) {
-    writeText(exampleVarsPath, patchExampleVariablesGradle(readText(exampleVarsPath), target.android));
+    const exampleVarsPath = join(repoRoot, 'example-app/android/variables.gradle');
+    if (existsSync(exampleVarsPath)) {
+      writeText(exampleVarsPath, patchExampleVariablesGradle(readText(exampleVarsPath), target.exampleAndroid));
+    }
   }
 
   const swiftPath = join(repoRoot, 'Package.swift');
@@ -287,6 +291,26 @@ function selfTest() {
   assert.equal(examplePinned.dependencies['@capacitor/core'], '^8.0.0');
   assert.equal(examplePinned.devDependencies['@capacitor/cli'], '^8.0.0');
   assert.equal(examplePinned.devDependencies.typescript, '^5.9.2');
+
+  const exampleRoot = join(tmpdir(), `lts-restore-example-${process.pid}`);
+  const exampleVars = 'ext {\n    minSdkVersion = 24\n    compileSdkVersion = 36\n    targetSdkVersion = 36\n}\n';
+  const exampleGradle = "classpath 'com.android.tools.build:gradle:8.13.0'\n";
+  mkdirSync(join(exampleRoot, 'android'), { recursive: true });
+  mkdirSync(join(exampleRoot, 'example-app/android'), { recursive: true });
+  try {
+    writeFileSync(join(exampleRoot, 'package.json'), JSON.stringify({ version: '8.52.1' }));
+    writeFileSync(join(exampleRoot, 'android/build.gradle'), exampleGradle);
+    writeFileSync(join(exampleRoot, 'Package.swift'), '');
+    writeFileSync(join(exampleRoot, 'CapgoCapacitorUpdater.podspec'), '');
+    writeFileSync(join(exampleRoot, 'example-app/android/build.gradle'), exampleGradle);
+    writeFileSync(join(exampleRoot, 'example-app/android/variables.gradle'), exampleVars);
+    applyConstraints(exampleRoot, loadConfig().targets.v5);
+    assert.equal(readText(join(exampleRoot, 'example-app/android/variables.gradle')), exampleVars);
+    assert.equal(readText(join(exampleRoot, 'example-app/android/build.gradle')), exampleGradle);
+    assert.match(readText(join(exampleRoot, 'android/build.gradle')), /gradle:8\.7\.2/);
+  } finally {
+    rmSync(exampleRoot, { recursive: true, force: true });
+  }
 
   const native = patchPluginVersion('private let pluginVersion: String = "8.51.15"', '8.51.15', '7.51.15');
   assert.equal(native, 'private let pluginVersion: String = "7.51.15"');
