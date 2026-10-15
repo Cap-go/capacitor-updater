@@ -59,6 +59,15 @@ if [ -n "$UNMERGED" ] || [ "$USED_PREFERRED_MERGE" != "true" ]; then
   exit 1
 fi
 
+# The example app builds against main's Android SDK and AGP. A merge keeps older LTS values when the branch
+# changed them, so take them from main before the restore (which leaves the example app alone).
+git checkout origin/main -- example-app/android/variables.gradle
+MAIN_EXAMPLE_AGP="$(git show origin/main:example-app/android/build.gradle | sed -n "s/.*classpath 'com\.android\.tools\.build:gradle:\([^']*\)'.*/\1/p" | head -1)"
+if [ -n "$MAIN_EXAMPLE_AGP" ]; then
+  sed -i.bak "s/classpath 'com\.android\.tools\.build:gradle:[^']*'/classpath 'com.android.tools.build:gradle:${MAIN_EXAMPLE_AGP}'/" example-app/android/build.gradle
+  rm -f example-app/android/build.gradle.bak
+fi
+
 node "$RESTORE" --target "$TARGET" --repo-root "$ROOT" --config "$SCRIPT_STASH/lts-backport.json"
 
 if command -v bun >/dev/null 2>&1; then
