@@ -65,6 +65,8 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Self-test constraint restore
         run: node .github/scripts/restore-lts-constraints.mjs --self-test
       - name: Configure Git

@@ -3,7 +3,7 @@ description: Install cached Bun and optionally install Bun dependencies.
 inputs:
   bun-version:
     description: Bun version to install.
-    default: 1.3.12
+    default: 1.4.2
   dependency-cache-key:
     description: Cache key for dependency directories.
     default: ''
