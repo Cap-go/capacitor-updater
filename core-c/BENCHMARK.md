@@ -6,13 +6,13 @@ Branch `riderx/capgo-c-core` @ 0d56b1c8 (PR #962, stacked on #937), built once i
 
 **iOS simulator: parity.** Of the 39 timed cells, C is faster in 25, equal in 6 and slower in 8. Every slower cell is at most +3%: ≤ 2 ms, except the 300 MB encrypted zip (+7 ms) and the 2000-file encrypted delta-cache cell (+8 ms). Every slower cell's range overlaps Rust's. The clearest C wins are on zips: 3 MB background −15% plain and −33% encrypted (13→11 ms, 18→12 ms), 30 MB background −15% and −14%, and 300 MB plain −13% background and −33% direct. The Rust 300 MB plain direct median is inflated by one run (423 ms) taken while Finder and syspolicyd were busy at the start of the session. Large manifests are within −5% to +2%. Reuse is within −9% to +3%, and shaped runs are identical (link-bound).
 
-**Android emulator: C wins on manifests, parity elsewhere, but slower on cold start.** Of the 39 timed cells, C is faster in 30, equal in 5 and slower in 4.
+**Android emulator: C wins on manifests, parity elsewhere. The cold-start loss below is fixed (see the follow-up after the cold/warm table).** Of the 39 timed cells, C is faster in 30, equal in 5 and slower in 4.
 - Manifest 200 and 2000 files: C is **24–35% faster** in both modes. Background 2000 files plain: 1.46 s → 997 ms (0.68×); with encryption: 1.47 s → 1.12 s (0.76×). Direct 200 files plain: 169 → 110 ms (0.65×). A confirmation run on a second, fresh emulator gave −21% to −32% (table below).
 - Zips: within −11% to +10%, and the ranges overlap.
 - Small manifests: within noise. 2 files encrypted background is 16 → 20 ms (+25%), but the ranges overlap (14–17 vs 13–24 ms).
 - Reuse: equal, except the builtin 2000 files plain cell (−10%) and the delta-cache 200 files plain cell (−16%).
 - Shaped runs: equal (−0% to −1%).
-- **Cold start is a C loss**: manifest 20 files background cold is 28 ms for Rust and 43 ms for C (+54%, ranges 27–34 vs 40–57 ms, no overlap). Warm is the same cell at 33 vs 28 ms. The cold 2-file direct cell is equal (27 vs 27 ms).
+- **Cold start was a C loss, now fixed**: manifest 20 files background cold was 28 ms for Rust and 43 ms for C (+54%, ranges 27–34 vs 40–57 ms, no overlap). Warm is the same cell at 33 vs 28 ms. The cold 2-file direct cell was equal (27 vs 27 ms). Cause and re-measurement after the fix: see the follow-up below the cold/warm table.
 
 **App size: C is much smaller.**
 - Android arm64 `.so`: 2.89 MiB → 872 KiB (−70%). APK with all ABIs: −8.34 MiB.
@@ -60,6 +60,23 @@ Cold: one fresh install + launch per sample (after the two zip warm-ups, which u
 |---|---|---|---|---|
 | manifest 20 files / 2 MB, background, plain | **28 ms** (27 ms–34 ms) n=5 | **33 ms** (25 ms–35 ms) n=5 | **43 ms** (40 ms–57 ms) n=5 | **28 ms** (25 ms–40 ms) n=5 |
 | manifest 2 files / 20 KB, direct, plain | **27 ms** (24 ms–49 ms) n=5 | **26 ms** (23 ms–34 ms) n=5 | **27 ms** (22 ms–43 ms) n=5 | **28 ms** (25 ms–35 ms) n=5 |
+
+#### Follow-up: cause of the cold-start loss and fix
+
+- **Cause: the process descriptor table grows during the download.** The bench app holds about 250 descriptors (`/proc/<pid>/fd`), and its table has 256 slots. Linux grows the table by powers of two, and each growth waits for an RCU grace period (`synchronize_rcu` in `expand_fdtable`). Meanwhile every thread that needs a descriptor past the old table sleeps.
+  - Timestamps buffered in memory (no logging in the hot path), C: the 20 manifest workers blocked in `socket()` for 10–16 ms each, all released at the same instant (one voluntary context switch, about 30 µs CPU). Forcing the growth by hand (`fcntl(F_DUPFD_CLOEXEC, 511)`) took 20.8 ms. Afterwards `socket()` took about 20 µs.
+  - `FDSize` in `/proc/self/status` after each core operation: Rust grows 256 → 512 during the first zip warm-up (its 4 extraction workers each open the archive), C during the first manifest download (its extraction workers share one descriptor). So Rust pays the same wait one case earlier. First zip warm-up: 75 ms Rust vs 59 ms C (n=22).
+  - Not the cause (measured): `getaddrinfo` on the IP literal (about 10 µs), the APK asset index (0.8 ms, once), thread creation, JNI callbacks.
+- **Fix (C only, Android only, `engine/engine.c`).** When the first engine is created, a detached thread grows the table once to at least 512 slots and to fit one manifest download at full concurrency (a socket and a partial file per worker). The grace period then passes during app start, off the download path. Threads that need a slot past the old table meanwhile wait for this growth instead of starting their own. Nothing observable by the host changes.
+- **Re-measured** on the shared `capgo_mem_api36` emulator (emulator-5554), 2026-10-16, interleaved per sample, same harness and cells. `c before` is the bench APK above. `c after` is the same APK with only the arm64 `.so` replaced.
+
+| Cell | Rust | C before | C after |
+|---|---|---|---|
+| manifest 20 files / 2 MB, background, plain, cold | **36 ms** (29–45) n=10 | **56 ms** (41–69) n=10 | **31 ms** (29–45) n=10 |
+| manifest 20 files / 2 MB, background, plain, warm (runs 2–6 of 4 launches) | **31.5 ms** (24–41) n=20 | **29.5 ms** (23–51) n=20 | **32 ms** (24–47) n=20 |
+| manifest 2 files / 20 KB, direct, plain, cold | **30 ms** (30–43) n=3 | **50 ms** (44–50) n=3 | **28 ms** (27–35) n=3 |
+
+The shared emulator was slower this time than the fresh one above, and the host load rose during the warm runs (a second emulator started), so compare columns, not this table with the one above. One warm round (all three builds) ran during a load spike and was dropped.
 
 ### iOS simulator (iPhone 18 Pro, iOS 27.0)
 
