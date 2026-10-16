@@ -126,6 +126,11 @@ declare module '@capacitor/cli' {
        * WebView renderer exits, unclean WebView restarts, app launch readiness timing,
        * and WebView load milestones when available.
        *
+       * Failed background update checks that never start a download (network errors, timeouts,
+       * non-2xx responses, unreadable payloads) are reported as `update_check_error` with
+       * `metadata.error` and optional `metadata.status_code`, not as `download_fail`.
+       * Self-hosted Capgo backends must allow the `update_check_error` stats action.
+       *
        * @default https://plugin.capgo.app/stats
        * @example https://example.com/api/stats
        */
@@ -521,6 +526,90 @@ declare module '@capacitor/cli' {
        * @since 8.43.0
        */
       allowShakeChannelSelector?: boolean;
+
+      /**
+       * When enabled, show a native dialog prompting the user to install a newer native app from the App Store or Play Store.
+       * The prompt appears when a live update is blocked because the device native app is too old, including backend
+       * `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` / `majorAvailable` flows.
+       *
+       * Only available for Android and iOS. No-op on web.
+       *
+       * @default false
+       * @since 8.53.0
+       */
+      nativeUpdatePrompt?: boolean;
+
+      /**
+       * Optional title for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Update available"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptTitle?: string;
+
+      /**
+       * Optional message body for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default A short message explaining that a newer native app is available in the store.
+       * @since 8.53.0
+       */
+      nativeUpdatePromptMessage?: string;
+
+      /**
+       * Optional label for the primary action button that opens the store or starts an in-app update on Android.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Update"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptUpdateButton?: string;
+
+      /**
+       * Optional label for the dismiss action on the native store update dialog.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default "Not now"
+       * @since 8.53.0
+       */
+      nativeUpdatePromptLaterButton?: string;
+
+      /**
+       * Optional ISO 3166-1 alpha-2 country filter. When set, the prompt is shown only when the device region matches
+       * one of the comma-separated country codes (for example `"US"` or `"US,CA"`).
+       *
+       * Only available for Android and iOS.
+       *
+       * @default undefined (show in all regions)
+       * @since 8.53.0
+       */
+      nativeUpdatePromptCountry?: string;
+
+      /**
+       * When {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled, also show the dialog when {@link CapacitorUpdaterPlugin.getAppUpdateInfo}
+       * reports that a store update is available.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.53.0
+       */
+      nativeUpdatePromptOnStoreCheck?: boolean;
+
+      /**
+       * Minimum hours between native update prompts for the same native app version. Also limited to once per app session.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default 24
+       * @since 8.53.0
+       */
+      nativeUpdatePromptCooldownHours?: number;
     };
   }
 }
@@ -1402,7 +1491,8 @@ export interface CapacitorUpdaterPlugin {
    *
    * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
    * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-   * `downloadFailed` event and keeps the existing failure stats behavior.
+   * `downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
+   * instead of `download_fail`, because no bundle download was attempted.
    *
    * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
    * @since 8.45.11

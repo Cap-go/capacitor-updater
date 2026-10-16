@@ -64,6 +64,7 @@ dependencies {
     testImplementation 'org.mockito:mockito-core:5.24.0'
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.17'
+    testImplementation 'androidx.arch.core:core-testing:2.2.0'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation 'org.brotli:dec:0.1.2'
