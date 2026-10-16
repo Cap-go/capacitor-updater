@@ -4943,7 +4943,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.endBackGroundTaskWithNotif(
                                 msg: "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
-                                current: current,
+                                current: self.implementation.getCurrentBundle(),
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )

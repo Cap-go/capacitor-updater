@@ -51,6 +51,7 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
 
     override func set(bundle: BundleInfo) -> Bool {
         setBundleCalls.append(bundle.getId())
+        currentBundleValue = bundle
         return true
     }
 
@@ -303,6 +304,9 @@ final class UpdateLifecycleTests: XCTestCase {
         plugin.runPeriodicUpdateCheck(url: updateUrl)
 
         XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "bundle-2")
+        let reported = plugin.payloads["noNeedUpdate"]?["bundle"] as? [String: Any]
+        XCTAssertEqual(reported?["id"] as? String, "bundle-2")
     }
 
     func testForegroundDownloadWaitsForTheNextBackground() {

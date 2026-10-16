@@ -149,6 +149,11 @@ public class CapgoUpdater {
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
+    // The live plugin instance owns the stats file. A headless worker hands its unsent events to it
+    // instead of writing the file; events handed over before the plugin claims ownership wait here.
+    private static final Object statsOwnerLock = new Object();
+    private static CapgoUpdater statsOwner = null;
+    private static final List<JSONObject> orphanedStats = new ArrayList<>();
 
     private static final class QueuedStatsEvent {
 
@@ -3447,6 +3452,76 @@ public class CapgoUpdater {
                 logger.debug("Error: " + e.getMessage());
             }
         }
+    }
+
+    /** Makes this instance the stats file owner and adopts events handed over before it loaded. */
+    public void claimStatsOwnership() {
+        final List<JSONObject> adopted;
+        synchronized (statsOwnerLock) {
+            statsOwner = this;
+            adopted = new ArrayList<>(orphanedStats);
+            orphanedStats.clear();
+        }
+        adoptPendingStats(adopted);
+    }
+
+    public void releaseStatsOwnership() {
+        synchronized (statsOwnerLock) {
+            if (statsOwner == this) {
+                statsOwner = null;
+            }
+        }
+    }
+
+    /** Moves this instance's unsent events to the stats file owner (or parks them until one claims). */
+    void handOverPendingStats() {
+        // Stop first so a flush finishing later cannot requeue or persist what we hand over.
+        statsStopped.set(true);
+        final List<JSONObject> events = new ArrayList<>();
+        synchronized (statsQueue) {
+            for (final QueuedStatsEvent queued : statsInFlight) {
+                events.add(queued.event);
+            }
+            for (final QueuedStatsEvent queued : statsQueue) {
+                events.add(queued.event);
+            }
+            statsInFlight.clear();
+            statsQueue.clear();
+        }
+        if (events.isEmpty()) {
+            return;
+        }
+        final CapgoUpdater owner;
+        synchronized (statsOwnerLock) {
+            owner = statsOwner;
+            if (owner == null || owner == this) {
+                orphanedStats.addAll(events);
+                while (orphanedStats.size() > MAX_PENDING_STATS) {
+                    orphanedStats.remove(0);
+                }
+                return;
+            }
+        }
+        owner.adoptPendingStats(events);
+    }
+
+    private void adoptPendingStats(final List<JSONObject> events) {
+        if (events.isEmpty()) {
+            return;
+        }
+        synchronized (statsQueue) {
+            if (statsStopped.get()) {
+                return;
+            }
+            for (final JSONObject event : events) {
+                while (statsQueue.size() >= MAX_PENDING_STATS) {
+                    statsQueue.remove(0);
+                }
+                statsQueue.add(new QueuedStatsEvent(event, null));
+            }
+        }
+        persistStatsQueue();
+        ensureStatsTimerStarted();
     }
 
     int pendingStatsCount() {
