@@ -5,7 +5,10 @@
  */
 
 /* Minimal RSA public-key support: PEM/DER parsing and the raw public operation. Only
- * public data is handled here, so the operation does not need to be constant time. */
+ * public data is handled here, so the operation does not need to be constant time: a
+ * small Montgomery modular exponentiation (as in Rust crypto/rsa.rs) replaces a general
+ * big-integer library. Limbs are 64-bit where the compiler has a 128-bit product (arm64,
+ * x86_64), 32-bit otherwise (armeabi-v7a, x86). */
 
 #include "crypto/rsa.h"
 
@@ -13,9 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "mbedtls/bignum.h"
-/* mbedtls_mpi_exp_mod_unsafe: the variable-time exponentiation for public exponents. */
-#include "bignum_internal.h"
 #include "rt/str.h"
 #include "text.h"
 
@@ -25,18 +25,30 @@
 #define MIN_MODULUS_BITS 1024
 #define MAX_MODULUS_BITS 8192
 
+#if defined(__SIZEOF_INT128__)
+typedef uint64_t limb;
+typedef unsigned __int128 dlimb;
+#else
+typedef uint32_t limb;
+typedef uint64_t dlimb;
+#endif
+#define LIMB_BITS (8 * sizeof(limb))
+#define MAX_LIMBS (MAX_MODULUS_BITS / LIMB_BITS)
+
 static const uint8_t RSA_ENCRYPTION_OID[] = {0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01};
 
 struct cg_rsa_public_key {
     atomic_int refs;
-    mbedtls_mpi n;
-    mbedtls_mpi rr; /* R^2 mod n, precomputed (read-only copy per operation) */
     /* Big-endian, without leading zero bytes. */
     uint8_t *exponent;
     size_t exponent_len;
-    mbedtls_mpi e;   /* the exponent, when it fits Mbed TLS limits */
-    bool e_is_mpi;
     size_t size_bytes;
+    /* Montgomery arithmetic modulo n, R = 2^(LIMB_BITS * limbs). */
+    size_t limbs;
+    limb n_prime;    /* -n^-1 mod 2^LIMB_BITS */
+    limb *n;         /* little-endian, no high zero limb */
+    limb *r_squared; /* R^2 mod n, to enter the Montgomery domain */
+    limb words[];    /* storage of n and r_squared */
 };
 
 static bool invalid_key(cg_error *err, const char *message) { return cg_err_set(err, "invalid_public_key", "%s", message); }
@@ -91,41 +103,133 @@ static size_t bit_length(bytes value) {
     return bits;
 }
 
-static void key_free(cg_rsa_public_key *key) {
-    mbedtls_mpi_free(&key->n);
-    mbedtls_mpi_free(&key->rr);
-    mbedtls_mpi_free(&key->e);
-    free(key->exponent);
-    free(key);
+/* ---- limbs */
+
+/* Little-endian limbs of a big-endian value, zero-extended to `count` limbs (the value fits). */
+static void limbs_from_be(const uint8_t *be, size_t len, limb *out, size_t count) {
+    memset(out, 0, count * sizeof(limb));
+    for (size_t i = 0; i < len; i++) out[i / sizeof(limb)] |= (limb)be[len - 1 - i] << (8 * (i % sizeof(limb)));
 }
 
+/* Big-endian bytes of `limbs`, left-padded to `len` (the value fits). */
+static void limbs_to_be(const limb *limbs, size_t count, uint8_t *out, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        size_t index = i / sizeof(limb);
+        out[len - 1 - i] = index < count ? (uint8_t)(limbs[index] >> (8 * (i % sizeof(limb)))) : 0;
+    }
+}
+
+/* -1, 0 or 1 for a, b of equal length. */
+static int compare(const limb *a, const limb *b, size_t count) {
+    for (size_t i = count; i-- > 0;) {
+        if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+    }
+    return 0;
+}
+
+/* a -= b over equal lengths; the final borrow cancels a carry the caller tracks. */
+static void sub_assign(limb *a, const limb *b, size_t count) {
+    limb borrow = 0;
+    for (size_t i = 0; i < count; i++) {
+        limb x = a[i], y = b[i];
+        a[i] = x - y - borrow;
+        borrow = (limb)((x < y) | ((x == y) & borrow));
+    }
+}
+
+/* ---- Montgomery arithmetic (inputs below n, outputs fully reduced) */
+
+/* out = a * b * R^-1 mod n (CIOS). out may alias a or b. */
+static void mont_mul(const cg_rsa_public_key *key, const limb *a, const limb *b, limb *out) {
+    const size_t k = key->limbs;
+    const limb *n = key->n;
+    limb t[MAX_LIMBS + 1];
+    memset(t, 0, (k + 1) * sizeof(limb));
+    for (size_t i = 0; i < k; i++) {
+        /* t = (t + a[i] * b + m * n) / 2^LIMB_BITS, with m making the low limb zero. The
+         * product and reduction carries are two independent chains in one pass. */
+        const limb a_i = a[i];
+        dlimb product = (dlimb)t[0] + (dlimb)a_i * b[0];
+        const limb m = (limb)product * key->n_prime;
+        dlimb reduced = (dlimb)(limb)product + (dlimb)m * n[0];
+        limb carry = (limb)(product >> LIMB_BITS), carry_n = (limb)(reduced >> LIMB_BITS);
+        for (size_t j = 1; j < k; j++) {
+            product = (dlimb)t[j] + (dlimb)a_i * b[j] + carry;
+            reduced = (dlimb)(limb)product + (dlimb)m * n[j] + carry_n;
+            carry = (limb)(product >> LIMB_BITS);
+            carry_n = (limb)(reduced >> LIMB_BITS);
+            t[j - 1] = (limb)reduced;
+        }
+        product = (dlimb)t[k] + carry + carry_n;
+        t[k - 1] = (limb)product;
+        t[k] = (limb)(product >> LIMB_BITS);
+    }
+    /* t < 2n: one conditional subtraction. */
+    if (t[k] != 0 || compare(t, n, k) >= 0) sub_assign(t, n, k);
+    memcpy(out, t, k * sizeof(limb));
+}
+
+/* out = base^exponent mod n, left-to-right binary; base < n, exponent odd and > 1. A
+ * dedicated squaring was slower than this fused multiplication on arm64. */
+static void mont_pow(const cg_rsa_public_key *key, const limb *base, limb *out) {
+    const size_t k = key->limbs;
+    limb base_m[MAX_LIMBS], acc[MAX_LIMBS];
+    mont_mul(key, base, key->r_squared, base_m);
+    bool started = false;
+    for (size_t i = 0; i < key->exponent_len; i++) {
+        for (int shift = 7; shift >= 0; shift--) {
+            if (started) mont_mul(key, acc, acc, acc);
+            if ((key->exponent[i] >> shift) & 1) {
+                if (started) {
+                    mont_mul(key, acc, base_m, acc);
+                } else {
+                    memcpy(acc, base_m, k * sizeof(limb));
+                    started = true;
+                }
+            }
+        }
+    }
+    /* Leave the Montgomery domain: acc * 1 * R^-1. */
+    limb one[MAX_LIMBS] = {1};
+    mont_mul(key, acc, one, out);
+}
+
+/* ---- keys */
+
 static cg_rsa_public_key *key_from_parts(bytes modulus, bytes exponent) {
-    cg_rsa_public_key *key = cg_calloc(1, sizeof(*key));
+    size_t limbs = (modulus.len + sizeof(limb) - 1) / sizeof(limb);
+    cg_rsa_public_key *key = cg_calloc(1, sizeof(*key) + 2 * limbs * sizeof(limb));
     atomic_init(&key->refs, 1);
-    mbedtls_mpi_init(&key->n);
-    mbedtls_mpi_init(&key->rr);
-    mbedtls_mpi_init(&key->e);
     key->size_bytes = (bit_length(modulus) + 7) / 8;
     key->exponent_len = exponent.len;
     key->exponent = cg_malloc(exponent.len);
     memcpy(key->exponent, exponent.ptr, exponent.len);
-    bool ok = mbedtls_mpi_read_binary(&key->n, modulus.ptr, modulus.len) == 0;
-    key->e_is_mpi = bit_length(exponent) <= MBEDTLS_MPI_MAX_BITS &&
-                    mbedtls_mpi_read_binary(&key->e, exponent.ptr, exponent.len) == 0;
-    if (ok && key->e_is_mpi) {
-        /* One operation fills R^2 mod n. */
-        mbedtls_mpi x, one;
-        mbedtls_mpi_init(&x);
-        mbedtls_mpi_init(&one);
-        ok = mbedtls_mpi_lset(&one, 1) == 0 && mbedtls_mpi_exp_mod_unsafe(&x, &one, &key->e, &key->n, &key->rr) == 0;
-        mbedtls_mpi_free(&x);
-        mbedtls_mpi_free(&one);
-    }
-    if (!ok) {
-        /* Allocation failure in Mbed TLS (sizes are already validated). */
-        abort();
+    key->limbs = limbs;
+    key->n = key->words;
+    key->r_squared = key->words + limbs;
+    limbs_from_be(modulus.ptr, modulus.len, key->n, limbs);
+    /* Newton iteration for n[0]^-1 mod 2^LIMB_BITS: n0 * n0 == 1 mod 8, then 3 -> 6 -> ... bits. */
+    limb inverse = key->n[0];
+    for (int i = 0; i < 5; i++) inverse *= (limb)2 - key->n[0] * inverse;
+    key->n_prime = (limb)0 - inverse;
+    /* R^2 mod n by doubling 1, reducing after each step (2x < 2n needs one subtraction). */
+    limb *r = key->r_squared;
+    r[0] = 1;
+    for (size_t step = 0; step < 2 * LIMB_BITS * limbs; step++) {
+        limb carry = 0;
+        for (size_t i = 0; i < limbs; i++) {
+            limb next = r[i] >> (LIMB_BITS - 1);
+            r[i] = (r[i] << 1) | carry;
+            carry = next;
+        }
+        if (carry != 0 || compare(r, key->n, limbs) >= 0) sub_assign(r, key->n, limbs);
     }
     return key;
+}
+
+static void key_free(cg_rsa_public_key *key) {
+    free(key->exponent);
+    free(key);
 }
 
 cg_rsa_public_key *cg_rsa_from_der(const uint8_t *der, size_t len, cg_error *err) {
@@ -220,58 +324,23 @@ void cg_rsa_release(cg_rsa_public_key *key) {
 
 size_t cg_rsa_size_bytes(const cg_rsa_public_key *key) { return key->size_bytes; }
 
-/* x = base^exponent mod n by square-and-multiply over the exponent bytes, for exponents
- * beyond Mbed TLS limits (Rust accepts any size). */
-static int pow_slow(const cg_rsa_public_key *key, mbedtls_mpi *x, const mbedtls_mpi *base) {
-    int ret = mbedtls_mpi_lset(x, 1);
-    mbedtls_mpi t;
-    mbedtls_mpi_init(&t);
-    for (size_t i = 0; ret == 0 && i < key->exponent_len; i++) {
-        for (int shift = 7; ret == 0 && shift >= 0; shift--) {
-            ret = mbedtls_mpi_mul_mpi(&t, x, x);
-            if (ret == 0) ret = mbedtls_mpi_mod_mpi(x, &t, &key->n);
-            if (ret == 0 && ((key->exponent[i] >> shift) & 1)) {
-                ret = mbedtls_mpi_mul_mpi(&t, x, base);
-                if (ret == 0) ret = mbedtls_mpi_mod_mpi(x, &t, &key->n);
-            }
-        }
-    }
-    mbedtls_mpi_free(&t);
-    return ret;
-}
-
 uint8_t *cg_rsa_public_op(const cg_rsa_public_key *key, const uint8_t *value, size_t len, size_t *out_len,
                           cg_error *err) {
     if (len != key->size_bytes) {
         cg_err_set(err, "decrypt_failed", "Ciphertext length does not match the RSA key size");
         return NULL;
     }
-    mbedtls_mpi base, x, rr;
-    mbedtls_mpi_init(&base);
-    mbedtls_mpi_init(&x);
-    mbedtls_mpi_init(&rr);
-    uint8_t *out = NULL;
-    if (mbedtls_mpi_read_binary(&base, value, len) != 0) abort();
-    if (mbedtls_mpi_cmp_mpi(&base, &key->n) >= 0) {
+    /* len * 8 <= LIMB_BITS * limbs: the value fits the modulus limb count. */
+    limb base[MAX_LIMBS], result[MAX_LIMBS];
+    limbs_from_be(value, len, base, key->limbs);
+    if (compare(base, key->n, key->limbs) >= 0) {
         cg_err_set(err, "decrypt_failed", "Ciphertext is out of range for the RSA key");
-        goto done;
+        return NULL;
     }
-    int ret;
-    if (key->e_is_mpi) {
-        /* A private copy of R^2 mod n keeps the shared key read-only. */
-        ret = mbedtls_mpi_copy(&rr, &key->rr);
-        if (ret == 0) ret = mbedtls_mpi_exp_mod_unsafe(&x, &base, &key->e, &key->n, &rr);
-    } else {
-        ret = pow_slow(key, &x, &base);
-    }
-    if (ret != 0) abort();
-    out = cg_malloc(key->size_bytes ? key->size_bytes : 1);
-    if (mbedtls_mpi_write_binary(&x, out, key->size_bytes) != 0) abort();
+    mont_pow(key, base, result);
+    uint8_t *out = cg_malloc(key->size_bytes ? key->size_bytes : 1);
+    limbs_to_be(result, key->limbs, out, key->size_bytes);
     if (out_len) *out_len = key->size_bytes;
-done:
-    mbedtls_mpi_free(&base);
-    mbedtls_mpi_free(&x);
-    mbedtls_mpi_free(&rr);
     return out;
 }
 

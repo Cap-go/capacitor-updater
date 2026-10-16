@@ -7,7 +7,8 @@
 /* Minimal RSA public-key support (Rust crypto/rsa.rs): PEM/DER parsing (PKCS#1
  * `RSA PUBLIC KEY` and SPKI `PUBLIC KEY`) and the raw public operation used to recover
  * data signed with Node's `privateEncrypt` (PKCS#1 v1.5 block type 1). The modular
- * exponentiation is Mbed TLS bignum; the validation rules are the Rust ones. */
+ * exponentiation is a Montgomery square-and-multiply like Rust's; the validation rules
+ * are the Rust ones. */
 #ifndef CG_RSA_H
 #define CG_RSA_H
 
