@@ -913,6 +913,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         this.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId(this.getContext(), this.prefs);
         this.implementation.restorePendingStats();
+        this.implementation.claimStatsOwnership();
 
         // Update User-Agent for shared OkHttpClient with OS version
         DownloadService.updateUserAgent(this.implementation.appId, this.pluginVersion, this.implementation.versionOs);
@@ -6269,6 +6270,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private void handleOnDestroyInternal() {
         instanceLoaded = false;
+        if (this.implementation != null) {
+            this.implementation.releaseStatsOwnership();
+        }
         // Original handleOnDestroy code
         try {
             logger.info("onActivityDestroyed " + getActivity().getClass().getName());

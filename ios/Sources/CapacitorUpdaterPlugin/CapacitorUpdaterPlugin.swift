@@ -4939,10 +4939,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         if self.queueBundleForNextBackgroundInstall(next) {
                             self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
+                            let installed = self.installNextIfInBackground()
                             self.endBackGroundTaskWithNotif(
-                                msg: "update downloaded, will install next background",
+                                msg: installed ? "update downloaded and installed in background" : "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
-                                current: current,
+                                current: self.implementation.getCurrentBundle(),
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
@@ -4992,29 +4993,53 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func installNext() {
+    /// A download that finishes while the app is in the background (silent push,
+    /// background fetch, cold background launch) would otherwise wait for the next
+    /// didEnterBackground, which a background launch never posts, so the user would
+    /// open the old bundle. Install now; the notifyAppReady check stays deferred
+    /// until the app reaches the foreground.
+    @discardableResult
+    func installNextIfInBackground() -> Bool {
+        let install = { self.appInBackground && self.installNext() }
+        if Thread.isMainThread {
+            return install()
+        }
+        return DispatchQueue.main.sync(execute: install)
+    }
+
+    /// Returns true when the next bundle became the active WebView bundle.
+    @discardableResult
+    private func installNext() -> Bool {
         if self.shouldBlockAutoUpdateForPreviewSession() {
-            return
+            return false
         }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
         if !delayConditionList.isEmpty {
             logger.info("Update delayed until delay conditions met")
-            return
+            return false
         }
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
 
         if next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName() {
             logger.info("Next bundle is: \(next!.toString())")
-            if self.implementation.set(bundle: next!) && self._reload() {
-                logger.info("Updated to bundle: \(next!.toString())")
-                self.notifyBundleSet(next!)
-                _ = self.implementation.setNextBundle(next: Optional<String>.none)
-            } else {
+            guard self.implementation.set(bundle: next!) else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")
+                return false
             }
+            guard self._reload() else {
+                // The WebView still runs the previous bundle: point back at it and keep next queued for a retry.
+                self.implementation.restoreCurrentBundle(current)
+                logger.error("Update to bundle: \(next!.toString()) Failed! Reload failed, keeping it as next")
+                return false
+            }
+            logger.info("Updated to bundle: \(next!.toString())")
+            self.notifyBundleSet(next!)
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            return true
         }
+        return false
     }
 
     @objc private func toJson(object: Any) -> String {
