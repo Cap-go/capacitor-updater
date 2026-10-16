@@ -64,12 +64,54 @@
 /* ---- CRC-32 */
 
 #ifdef CG_ARM_CRC
+/* a * b modulo the CRC-32 polynomial, bit-reflected (zlib multmodp). */
+static uint32_t crc32_multmodp(uint32_t a, uint32_t b) {
+    uint32_t m = (uint32_t)1 << 31, p = 0;
+    while (true) {
+        if (a & m) {
+            p ^= b;
+            if ((a & (m - 1)) == 0) break;
+        }
+        m >>= 1;
+        b = b & 1 ? (b >> 1) ^ 0xedb88320u : b >> 1;
+    }
+    return p;
+}
+
+/* One crc32d chain is latency bound: while three blocks of `lane` bytes remain, run three
+ * independent chains over consecutive blocks, then append the second and third registers
+ * to the first. `shift` is x^(8 * lane) mod P: it moves a register over `lane` zero bytes.
+ * p is 8-byte aligned and lane a multiple of 8. */
+CG_TARGET_CRC static uint32_t crc32_arm_lanes(uint32_t crc, const uint8_t **p, size_t *n, size_t lane,
+                                              uint32_t shift) {
+    while (*n >= 3 * lane) {
+        const uint8_t *a = *p, *b = a + lane, *c = b + lane;
+        uint32_t crc_b = 0, crc_c = 0;
+        for (size_t i = 0; i < lane; i += 8) {
+            uint64_t x, y, z;
+            memcpy(&x, a + i, 8);
+            memcpy(&y, b + i, 8);
+            memcpy(&z, c + i, 8);
+            crc = __crc32d(crc, x);
+            crc_b = __crc32d(crc_b, y);
+            crc_c = __crc32d(crc_c, z);
+        }
+        crc = crc32_multmodp(shift, crc32_multmodp(shift, crc) ^ crc_b) ^ crc_c;
+        *p += 3 * lane;
+        *n -= 3 * lane;
+    }
+    return crc;
+}
+
 CG_TARGET_CRC static uint32_t crc32_arm(uint32_t crc, const uint8_t *p, size_t n) {
     crc = ~crc;
     while (n && ((uintptr_t)p & 7)) {
         crc = __crc32b(crc, *p++);
         n--;
     }
+    /* x^65536 and x^8192 mod P (8192- and 1024-byte lanes). */
+    crc = crc32_arm_lanes(crc, &p, &n, 8192, 0x83852d0fu);
+    crc = crc32_arm_lanes(crc, &p, &n, 1024, 0x6427800eu);
     while (n >= 32) {
         uint64_t a, b, c, d;
         memcpy(&a, p, 8);
