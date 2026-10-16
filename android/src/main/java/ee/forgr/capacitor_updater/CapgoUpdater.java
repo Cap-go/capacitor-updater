@@ -3462,7 +3462,9 @@ public class CapgoUpdater {
             adopted = new ArrayList<>(orphanedStats);
             orphanedStats.clear();
         }
-        adoptPendingStats(adopted);
+        if (!adoptPendingStats(adopted)) {
+            parkOrphanedStats(adopted);
+        }
     }
 
     public void releaseStatsOwnership() {
@@ -3493,25 +3495,31 @@ public class CapgoUpdater {
         }
         final CapgoUpdater owner;
         synchronized (statsOwnerLock) {
-            owner = statsOwner;
-            if (owner == null || owner == this) {
-                orphanedStats.addAll(events);
-                while (orphanedStats.size() > MAX_PENDING_STATS) {
-                    orphanedStats.remove(0);
-                }
-                return;
-            }
+            owner = statsOwner == this ? null : statsOwner;
         }
-        owner.adoptPendingStats(events);
+        // A stopping owner rejects the events: park them for the next instance that claims ownership.
+        if (owner == null || !owner.adoptPendingStats(events)) {
+            parkOrphanedStats(events);
+        }
     }
 
-    private void adoptPendingStats(final List<JSONObject> events) {
+    private static void parkOrphanedStats(final List<JSONObject> events) {
+        synchronized (statsOwnerLock) {
+            orphanedStats.addAll(events);
+            while (orphanedStats.size() > MAX_PENDING_STATS) {
+                orphanedStats.remove(0);
+            }
+        }
+    }
+
+    /** Returns false (keeping nothing) when this instance has stopped and can no longer send the events. */
+    private boolean adoptPendingStats(final List<JSONObject> events) {
         if (events.isEmpty()) {
-            return;
+            return true;
         }
         synchronized (statsQueue) {
             if (statsStopped.get()) {
-                return;
+                return false;
             }
             for (final JSONObject event : events) {
                 while (statsQueue.size() >= MAX_PENDING_STATS) {
@@ -3522,6 +3530,7 @@ public class CapgoUpdater {
         }
         persistStatsQueue();
         ensureStatsTimerStarted();
+        return true;
     }
 
     int pendingStatsCount() {

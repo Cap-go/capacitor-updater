@@ -4671,6 +4671,30 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void statsHandedToAStoppedOwnerWaitForTheNextOwner() throws Exception {
+        final CapgoUpdater stopping = new CapgoUpdater(mock(Logger.class));
+        stopping.documentsDir = Files.createTempDirectory("capgo-pending-stats-stopping").toFile();
+        stopping.claimStatsOwnership();
+        stopping.shutdown(false);
+
+        final CapgoUpdater headless = headlessWithPendingStat("set_next");
+        headless.handOverPendingStats();
+        headless.shutdown(false);
+        stopping.releaseStatsOwnership();
+
+        final CapgoUpdater next = new CapgoUpdater(mock(Logger.class));
+        next.documentsDir = Files.createTempDirectory("capgo-pending-stats-next").toFile();
+        next.claimStatsOwnership();
+        try {
+            assertEquals(0, stopping.pendingStatsCount());
+            assertEquals(1, next.pendingStatsCount());
+        } finally {
+            next.releaseStatsOwnership();
+            next.shutdown(false);
+        }
+    }
+
+    @Test
     public void statsHandedOverBeforeThePluginLoadsAreAdoptedOnClaim() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-orphan");
 

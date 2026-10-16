@@ -55,6 +55,10 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         return true
     }
 
+    override func restoreCurrentBundle(_ bundle: BundleInfo) {
+        currentBundleValue = bundle
+    }
+
     override func getBundleInfo(id: String?) -> BundleInfo {
         currentBundleValue
     }
@@ -121,6 +125,12 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
     private(set) var events: [String] = []
     private(set) var payloads: [String: [String: Any]] = [:]
     private(set) var readyMessages: [String] = []
+    // Matches the real plugin without a bridge: reloads fail unless a test opts in.
+    var reloadResult = false
+
+    override func _reload() -> Bool {
+        reloadResult
+    }
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         events.append(eventName)
@@ -299,14 +309,33 @@ final class UpdateLifecycleTests: XCTestCase {
         plugin.setAutoUpdateModeForTesting("atBackground")
         updater.latestResponse = latest(version: "2.0.0")
         updater.downloadedBundleValue = pendingBundle()
+        plugin.reloadResult = true
         plugin.appMovedToBackground()
 
         plugin.runPeriodicUpdateCheck(url: updateUrl)
 
         XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
         XCTAssertEqual(updater.currentBundleValue.getId(), "bundle-2")
+        XCTAssertNil(updater.nextBundleValue)
         let reported = plugin.payloads["noNeedUpdate"]?["bundle"] as? [String: Any]
         XCTAssertEqual(reported?["id"] as? String, "bundle-2")
+        XCTAssertEqual(plugin.readyMessages.last, "update downloaded and installed in background")
+    }
+
+    func testFailedBackgroundReloadKeepsThePreviousBundleActive() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "current-id")
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+        let reported = plugin.payloads["noNeedUpdate"]?["bundle"] as? [String: Any]
+        XCTAssertEqual(reported?["id"] as? String, "current-id")
+        XCTAssertEqual(plugin.readyMessages.last, "update downloaded, will install next background")
     }
 
     func testForegroundDownloadWaitsForTheNextBackground() {
