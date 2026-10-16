@@ -11,6 +11,20 @@ import Foundation
 final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
     private let lock = NSLock()
     private var allowDowngrade = false
+    private var httpsOnlyEnabled = true
+    /// When true every redirect target must be https, whatever `allowHttpsToHttpRedirect` says.
+    var httpsOnly: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return httpsOnlyEnabled
+        }
+        set {
+            lock.lock()
+            httpsOnlyEnabled = newValue
+            lock.unlock()
+        }
+    }
     /// Called when a downgrade redirect is refused. Must not retain the updater strongly.
     var onBlockedRedirect: ((URL?, URL?) -> Void)?
 
@@ -42,6 +56,12 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
         let source = response.url ?? task.currentRequest?.url
+        if httpsOnly && request.url?.scheme?.lowercased() != "https" {
+            onBlockedRedirect?(source, request.url)
+            completionHandler(nil)
+            task.cancel()
+            return
+        }
         if !allowHttpsToHttpRedirect && Self.isHttpsToHttpDowngrade(from: source, to: request.url) {
             onBlockedRedirect?(source, request.url)
             completionHandler(nil)

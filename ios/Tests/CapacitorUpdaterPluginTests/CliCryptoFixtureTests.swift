@@ -116,6 +116,8 @@ final class CliCryptoFixtureTests: XCTestCase {
         for bundle in fixture.bundles {
             let updater = FixtureDownloadCapgoUpdater()
             updater.setLogger(Logger(withTag: "cli-fixture-tests", options: Logger.Options(level: .silent)))
+            // Payloads are served from file:// URLs.
+            updater.httpsOnly = false
             updater.setPublicKey(fixture.publicKey)
             updater.payload = bundle.encrypted
             defer { updater.shutdown() }

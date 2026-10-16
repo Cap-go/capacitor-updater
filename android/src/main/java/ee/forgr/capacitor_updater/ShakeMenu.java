@@ -832,6 +832,8 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
 
                                 String sessionKey = getString(latestRes, "sessionKey");
                                 String checksum = getString(latestRes, "checksum");
+                                final String signature = getString(latestRes, "signature");
+                                final String manifestSignature = getString(latestRes, "manifestSignature");
 
                                 // A manifest-only response has no zip URL; downloadManifest
                                 // tolerates the placeholder URL the plugin already uses.
@@ -847,14 +849,17 @@ public class ShakeMenu implements ShakeDetector.Listener, ThreeFingerPinchDetect
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
                                             checksum != null ? checksum : "",
-                                            manifestArray
+                                            manifestArray,
+                                            signature != null ? signature : "",
+                                            manifestSignature != null ? manifestSignature : ""
                                         );
                                     } else {
                                         bundle = updater.download(
                                             downloadUrl,
                                             versionForUi,
                                             sessionKey != null ? sessionKey : "",
-                                            checksum != null ? checksum : ""
+                                            checksum != null ? checksum : "",
+                                            signature != null ? signature : ""
                                         );
                                     }
 

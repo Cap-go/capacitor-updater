@@ -952,6 +952,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
         DownloadService.applyHttpTimeouts(this.implementation.timeout);
         DownloadService.setAllowHttpsToHttpRedirect(this.getConfig().getBoolean("allowHttpsToHttpRedirect", false));
+        // httpsOnly (default true) overrides allowHttpsToHttpRedirect: no hop may leave https while it is on.
+        final boolean httpsOnly = this.getConfig().getBoolean("httpsOnly", true);
+        this.implementation.httpsOnly = httpsOnly;
+        DownloadService.setHttpsOnly(httpsOnly);
+        this.implementation.builtinMinimum = this.getConfig().getBoolean("builtinMinimum", true);
+        // Do not crash at load: requests to a non-https URL fail later with the same message.
+        this.warnIfNotHttps("updateUrl", this.updateUrl);
+        this.warnIfNotHttps("statsUrl", this.implementation.statsUrl);
+        this.warnIfNotHttps("channelUrl", this.implementation.channelUrl);
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
@@ -2700,6 +2709,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
+        if (this.rejectIfNotHttps(call, url)) {
+            return;
+        }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(UPDATE_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
@@ -2725,6 +2737,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
+        if (this.rejectIfNotHttps(call, url)) {
+            return;
+        }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(STATS_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
@@ -2748,6 +2763,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (url == null) {
             logger.error("setChannelUrl called without url");
             call.reject("setChannelUrl called without url");
+            return;
+        }
+        if (this.rejectIfNotHttps(call, url)) {
             return;
         }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
@@ -3010,6 +3028,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String checksum,
         final JSONArray manifest
     ) throws IOException {
+        return this.downloadBundle(url, version, sessionKey, checksum, manifest, "", "");
+    }
+
+    private BundleInfo downloadBundle(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final String signature,
+        final String manifestSignature
+    ) throws IOException {
         if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
             logger.error("Public key present but no valid session key provided");
             this.implementation.sendStats("session_key_required");
@@ -3020,13 +3050,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.sendStats("checksum_required");
             throw new IOException("Checksum required");
         }
+        // https / builtinMinimum / signature gates run before any network IO and before waiting on cleanup.
+        this.implementation.runPreDownloadSecurityGates(url, version, checksum, manifest, signature, manifestSignature);
         // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
         waitForCleanupIfNeeded();
         if (manifest != null) {
-            return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest);
+            return this.implementation.downloadManifest(url, version, sessionKey, checksum, manifest, signature, manifestSignature);
         }
 
-        return this.implementation.download(url, version, sessionKey, checksum);
+        return this.implementation.download(url, version, sessionKey, checksum, signature);
     }
 
     @PluginMethod
@@ -3035,6 +3067,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String version = call.getString("version");
         final String sessionKey = call.getString("sessionKey", "");
         final String checksum = call.getString("checksum", "");
+        final String signature = call.getString("signature", "");
+        final String manifestSignature = call.getString("manifestSignature", "");
         final JSONArray manifest = call.getData().optJSONArray("manifest");
         if (url == null) {
             logger.error("Download called without url");
@@ -3050,7 +3084,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Downloading " + url);
             startNewThread(() -> {
                 try {
-                    final BundleInfo downloaded = this.downloadBundle(url, version, sessionKey, checksum, manifest);
+                    final BundleInfo downloaded = this.downloadBundle(
+                        url,
+                        version,
+                        sessionKey,
+                        checksum,
+                        manifest,
+                        signature,
+                        manifestSignature
+                    );
                     if (downloaded.isErrorStatus()) {
                         throw new RuntimeException("Download failed: " + downloaded.getStatus());
                     } else {
@@ -4097,7 +4139,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             version,
             payload.optString("sessionKey", ""),
             payload.optString("checksum", ""),
-            manifest
+            manifest,
+            payload.optString("signature", ""),
+            payload.optString("manifestSignature", "")
         );
     }
 
@@ -4943,10 +4987,31 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean isValidURL(String urlStr) {
         try {
             new URL(urlStr);
-            return true;
         } catch (MalformedURLException e) {
             return false;
         }
+        if (this.implementation.httpsOnly && !CapgoUpdater.isHttpsUrl(urlStr)) {
+            logger.error(CapgoUpdater.httpsOnlyMessage(urlStr));
+            return false;
+        }
+        return true;
+    }
+
+    private void warnIfNotHttps(final String name, final String url) {
+        if (this.implementation.httpsOnly && url != null && !url.isEmpty() && !CapgoUpdater.isHttpsUrl(url)) {
+            logger.error(CapgoUpdater.httpsOnlyMessage(url) + " (" + name + ")");
+        }
+    }
+
+    /** httpsOnly check for setUpdateUrl / setStatsUrl / setChannelUrl: rejects the call and returns false. */
+    private boolean rejectIfNotHttps(final PluginCall call, final String url) {
+        if (this.implementation.httpsOnly && !CapgoUpdater.isHttpsUrl(url)) {
+            final String message = CapgoUpdater.httpsOnlyMessage(url);
+            logger.error(message);
+            call.reject(message);
+            return true;
+        }
+        return false;
     }
 
     static String normalizedUpdateResponseKind(final String kind) {
@@ -5119,6 +5184,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.sendStats("checksum_required", latestVersionName);
             return "Checksum required";
         }
+        try {
+            this.implementation.runPreDownloadSecurityGates(
+                latest.getString("url", ""),
+                latestVersionName,
+                checksum,
+                latest.optJSONArray("manifest"),
+                latest.getString("signature", ""),
+                latest.getString("manifestSignature", "")
+            );
+        } catch (final IOException e) {
+            return e.getMessage() == null ? "Download blocked" : e.getMessage();
+        }
         return null;
     }
 
@@ -5283,6 +5360,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (
                             latestVersionName != null && !latestVersionName.isEmpty() && !current.getVersionName().equals(latestVersionName)
                         ) {
+                            // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                            try {
+                                CapacitorUpdaterPlugin.this.implementation.requireVersionNotBelowBuiltin(latestVersionName);
+                            } catch (final IOException e) {
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    e.getMessage() == null ? "Download blocked" : e.getMessage(),
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate
+                                );
+                                return;
+                            }
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest != null) {
                                 final JSObject ret = new JSObject();
@@ -5431,6 +5521,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String url = jsRes.getString("url");
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
+                                    final String signature = jsRes.getString("signature", "");
+                                    final String manifestSignature = jsRes.getString("manifestSignature", "");
 
                                     if (jsRes.has("manifest")) {
                                         // Handle manifest-based download
@@ -5441,7 +5533,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             sessionKey,
                                             checksum,
                                             manifest,
-                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()
+                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
+                                            signature,
+                                            manifestSignature
                                         );
                                     } else {
                                         // Handle single file download (existing code)
@@ -5451,7 +5545,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             sessionKey,
                                             checksum,
                                             null,
-                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()
+                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
+                                            signature,
+                                            manifestSignature
                                         );
                                     }
                                 } catch (final Exception e) {

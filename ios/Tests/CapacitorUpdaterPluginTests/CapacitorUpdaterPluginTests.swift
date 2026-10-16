@@ -142,7 +142,8 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         sessionKey _: String,
         expectedChecksum _: String,
         link _: String? = nil,
-        comment _: String? = nil
+        comment _: String? = nil,
+        signature _: String = ""
     ) throws -> BundleInfo {
         downloadCalls += 1
         onDownloadStart?()

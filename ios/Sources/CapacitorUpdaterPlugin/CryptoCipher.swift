@@ -33,7 +33,7 @@ public struct CryptoCipher {
 
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
-            logger.info("No encryption set (public key) ignored")
+            logger?.info("No encryption set (public key) ignored")
             return checksum
         }
         do {
@@ -303,6 +303,60 @@ public struct CryptoCipher {
             logger.error("File decryption failed")
             throw CustomError.cannotDecode
         }
+    }
+
+    // MARK: - Signed bundle metadata (capgo-bundle-v1 / capgo-manifest-v1)
+
+    /// Payload signed by the CLI for a zip bundle: binds the version name to the plain SHA-256 of the zip.
+    public static func buildBundleSignaturePayload(version: String, checksumHex: String) -> String {
+        return "capgo-bundle-v1\nversion:\(version)\nchecksum:\(checksumHex.lowercased())\n"
+    }
+
+    /// Payload signed by the CLI for a manifest: binds the version name to every `file_name` and its plain SHA-256.
+    /// Entries are sorted by `file_name` as UTF-8 bytes so every platform builds the same bytes.
+    public static func buildManifestSignaturePayload(version: String, entries: [(fileName: String, hashHex: String)]) -> String {
+        let sorted = entries.sorted { lhs, rhs in
+            lhs.fileName.utf8.lexicographicallyPrecedes(rhs.fileName.utf8)
+        }
+        var payload = "capgo-manifest-v1\nversion:\(version)\n"
+        for entry in sorted {
+            payload += "\(entry.fileName):\(entry.hashHex.lowercased())\n"
+        }
+        return payload
+    }
+
+    public static func sha256Hex(_ text: String) -> String {
+        var sha256 = SHA256()
+        sha256.update(data: Data(text.utf8))
+        return hexString(from: sha256)
+    }
+
+    /// Verifies a CLI signature (hex of `privateEncrypt(sha256(payload))`, 256 bytes) against the public key.
+    /// Returns false on any decoding, size, or RSA failure. Never throws so callers can fail closed.
+    public static func verifySignature(signatureHex: String, payload: String, publicKey: String) -> Bool {
+        if publicKey.isEmpty || signatureHex.isEmpty {
+            return false
+        }
+        guard isHexString(signatureHex), signatureHex.count == 512 else {
+            logger?.error("Bundle signature has invalid format")
+            logger?.debug("Signature length: \(signatureHex.count) chars, expected 512 hex chars")
+            return false
+        }
+        guard let recovered = try? decryptChecksum(checksum: signatureHex, publicKey: publicKey) else {
+            return false
+        }
+        let expected = sha256Hex(payload)
+        // Constant-time compare: both are fixed-length hex strings.
+        let recoveredBytes = Array(recovered.utf8)
+        let expectedBytes = Array(expected.utf8)
+        guard recoveredBytes.count == expectedBytes.count else {
+            return false
+        }
+        var diff: UInt8 = 0
+        for index in 0..<recoveredBytes.count {
+            diff |= recoveredBytes[index] ^ expectedBytes[index]
+        }
+        return diff == 0
     }
 
     /// Get first 20 characters of the public key for identification

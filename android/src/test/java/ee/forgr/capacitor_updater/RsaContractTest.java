@@ -1,15 +1,21 @@
 package ee.forgr.capacitor_updater;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.PublicKey;
+import java.util.ArrayList;
+import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.BeforeClass;
@@ -141,6 +147,104 @@ public class RsaContractTest {
             String expectedKeyId = testCase.getJSONObject("expect").getString("keyId");
 
             assertEquals(id, expectedKeyId, CryptoCipher.calcKeyId(publicKeyPem));
+        }
+    }
+
+    /** CapgoUpdater with a fixture key whose stats are captured instead of sent. */
+    private static final class StatsCapturingUpdater extends CapgoUpdater {
+
+        final List<String> stats = new ArrayList<>();
+
+        StatsCapturingUpdater(final String publicKeyPem) {
+            super(mock(Logger.class));
+            this.publicKey = publicKeyPem;
+        }
+
+        @Override
+        public void sendStats(final String action, final String versionName) {
+            this.stats.add(action);
+        }
+    }
+
+    @Test
+    public void bundleSignatureMatchesNativeContract() throws Exception {
+        String publicKeyPem = fixturePublicKey();
+        JSONArray cases = contract().getJSONArray("bundleSignature");
+
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            JSONObject input = testCase.getJSONObject("input");
+            JSONObject expect = testCase.getJSONObject("expect");
+
+            String payload = CryptoCipher.buildBundleSignaturePayload(input.getString("version"), input.getString("checksumHex"));
+            assertEquals(id, expect.getString("payload"), payload);
+            assertArrayEquals(id, expect.getString("payload").getBytes(StandardCharsets.UTF_8), payload.getBytes(StandardCharsets.UTF_8));
+            assertEquals(
+                id,
+                expect.getBoolean("valid"),
+                CryptoCipher.verifySignature(input.getString("signatureHex"), payload, publicKeyPem)
+            );
+
+            // Full gate: the server sends the RSA-encrypted checksum, the plugin decrypts it before building the payload.
+            StatsCapturingUpdater updater = new StatsCapturingUpdater(publicKeyPem);
+            try {
+                updater.verifyBundleSignature(
+                    input.getString("version"),
+                    input.getString("encryptedChecksumHex"),
+                    input.getString("signatureHex")
+                );
+                assertTrue(id + ": expected the gate to reject", expect.getBoolean("valid"));
+                assertTrue(id, updater.stats.isEmpty());
+            } catch (IOException error) {
+                assertFalse(id + ": expected the gate to accept", expect.getBoolean("valid"));
+                assertEquals(id, "Bundle signature verification failed", error.getMessage());
+                assertEquals(id, List.of("signature_fail"), updater.stats);
+            }
+        }
+    }
+
+    @Test
+    public void manifestSignatureMatchesNativeContract() throws Exception {
+        String publicKeyPem = fixturePublicKey();
+        JSONArray cases = contract().getJSONArray("manifestSignature");
+
+        for (int index = 0; index < cases.length(); index++) {
+            JSONObject testCase = cases.getJSONObject(index);
+            String id = testCase.getString("id");
+            JSONObject input = testCase.getJSONObject("input");
+            JSONObject expect = testCase.getJSONObject("expect");
+
+            List<CryptoCipher.ManifestSignatureEntry> entries = new ArrayList<>();
+            JSONArray plainEntries = input.getJSONArray("entries");
+            for (int i = 0; i < plainEntries.length(); i++) {
+                JSONObject entry = plainEntries.getJSONObject(i);
+                entries.add(new CryptoCipher.ManifestSignatureEntry(entry.getString("file_name"), entry.getString("hashHex")));
+            }
+            String payload = CryptoCipher.buildManifestSignaturePayload(input.getString("version"), entries);
+            assertEquals(id, expect.getString("payload"), payload);
+            assertArrayEquals(id, expect.getString("payload").getBytes(StandardCharsets.UTF_8), payload.getBytes(StandardCharsets.UTF_8));
+            assertEquals(
+                id,
+                expect.getBoolean("valid"),
+                CryptoCipher.verifySignature(input.getString("signatureHex"), payload, publicKeyPem)
+            );
+
+            // Full gate with the manifest as the server sends it (encrypted file_hash values).
+            StatsCapturingUpdater updater = new StatsCapturingUpdater(publicKeyPem);
+            try {
+                updater.verifyManifestSignature(
+                    input.getString("version"),
+                    input.getJSONArray("encryptedEntries"),
+                    input.getString("signatureHex")
+                );
+                assertTrue(id + ": expected the gate to reject", expect.getBoolean("valid"));
+                assertTrue(id, updater.stats.isEmpty());
+            } catch (IOException error) {
+                assertFalse(id + ": expected the gate to accept", expect.getBoolean("valid"));
+                assertEquals(id, "Bundle signature verification failed", error.getMessage());
+                assertEquals(id, List.of("signature_fail"), updater.stats);
+            }
         }
     }
 

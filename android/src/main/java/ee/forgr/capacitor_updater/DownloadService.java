@@ -137,6 +137,9 @@ public class DownloadService extends Worker {
     private static volatile int httpTimeoutMs = 20_000;
     // Off by default: a redirect must never downgrade updater traffic from HTTPS to plain HTTP.
     private static volatile boolean allowHttpsToHttpRedirect = false;
+    // Config httpsOnly (default true): every request and every redirect hop through sharedClient must be https.
+    // When true it overrides allowHttpsToHttpRedirect: an https -> http redirect is rejected even if that flag is set.
+    static volatile boolean httpsOnly = true;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
     private static String currentVersionOs = "unknown";
@@ -157,15 +160,26 @@ public class DownloadService extends Worker {
             .writeTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
+                // Reject plain http before OkHttp opens a connection (the network interceptor below covers redirect hops).
+                assertHttpsAllowed(originalRequest);
                 String userAgent = buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs);
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
             .addNetworkInterceptor((chain) -> {
+                // Network interceptor: runs once per hop, so a redirect to http is rejected here too.
+                assertHttpsAllowed(chain.request());
                 Response response = chain.proceed(chain.request());
-                if (!allowHttpsToHttpRedirect && isHttpsToHttpRedirect(response)) {
-                    response.close();
-                    throw new BlockedRedirectException();
+                if (isHttpsToHttpRedirect(response)) {
+                    if (httpsOnly) {
+                        String location = response.header("Location");
+                        response.close();
+                        throw new IOException(CapgoUpdater.httpsOnlyMessage(location));
+                    }
+                    if (!allowHttpsToHttpRedirect) {
+                        response.close();
+                        throw new BlockedRedirectException();
+                    }
                 }
                 return response;
             })
@@ -174,6 +188,21 @@ public class DownloadService extends Worker {
 
     static void setAllowHttpsToHttpRedirect(boolean allow) {
         allowHttpsToHttpRedirect = allow;
+    }
+
+    static void setHttpsOnly(boolean enabled) {
+        httpsOnly = enabled;
+    }
+
+    /** httpsOnly gate shared by both interceptors; throws for any non-https request when enabled. */
+    static void assertHttpsAllowed(Request request) throws IOException {
+        if (httpsOnly && !request.isHttps()) {
+            String message = CapgoUpdater.httpsOnlyMessage(request.url().toString());
+            if (logger != null) {
+                logger.error(message);
+            }
+            throw new IOException(message);
+        }
     }
 
     static boolean isHttpsToHttpRedirect(Response response) {

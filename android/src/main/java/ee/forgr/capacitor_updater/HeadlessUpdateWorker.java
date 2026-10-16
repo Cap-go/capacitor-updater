@@ -168,6 +168,9 @@ public class HeadlessUpdateWorker extends Worker {
             }
             final String sessionKey = latest.get("sessionKey") instanceof String ? (String) latest.get("sessionKey") : "";
             final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
+            final String signature = latest.get("signature") instanceof String ? (String) latest.get("signature") : "";
+            final String manifestSignature =
+                latest.get("manifestSignature") instanceof String ? (String) latest.get("manifestSignature") : "";
 
             final BundleInfo existing = updater.getBundleInfoByName(version);
             if (existing != null && existing.isErrorStatus()) {
@@ -182,7 +185,16 @@ public class HeadlessUpdateWorker extends Worker {
 
             // downloadBackground returns null when it refuses the download (blocked encryption, gate,
             // version already downloading): only wait for a download it started.
-            final String startedId = updater.downloadBackground((String) url, version, sessionKey, checksum, manifestOf(latest), setNext);
+            final String startedId = updater.downloadBackground(
+                (String) url,
+                version,
+                sessionKey,
+                checksum,
+                manifestOf(latest),
+                setNext,
+                signature,
+                manifestSignature
+            );
             if (startedId == null) {
                 return "skipped";
             }
