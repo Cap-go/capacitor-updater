@@ -205,7 +205,8 @@ public class HeadlessUpdateWorker extends Worker {
             }
             return result.get();
         } finally {
-            updater.shutdown();
+            // Once the plugin instance is up it owns the stats file; do not overwrite it.
+            updater.shutdown(!CapacitorUpdaterPlugin.instanceLoaded);
         }
     }
 

@@ -4619,6 +4619,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void shutdownWithoutPersistKeepsAnotherInstanceStatsFile() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-handover");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final String liveQueue = "[{\"action\":\"app_moved_to_foreground\",\"timestamp\":1}]";
+        Files.write(queueFile.toPath(), liveQueue.getBytes(StandardCharsets.UTF_8));
+
+        // A headless updater with an empty queue handing over to the live plugin.
+        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        headless.documentsDir = tempDir.toFile();
+        headless.shutdown(false);
+
+        assertEquals(liveQueue, new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void restorePendingStatsRecoversBackupWhenQueueFileMissing() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-bak");
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();

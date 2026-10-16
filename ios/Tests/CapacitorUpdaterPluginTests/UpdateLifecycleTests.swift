@@ -38,10 +38,19 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         nextBundleValue
     }
 
+    var setBundleCalls: [String] = []
+
     override func setNextBundle(next: String?) -> Bool {
         if next == nil {
             nextBundleValue = nil
+        } else if let downloadedBundleValue, downloadedBundleValue.getId() == next {
+            nextBundleValue = downloadedBundleValue
         }
+        return true
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        setBundleCalls.append(bundle.getId())
         return true
     }
 
@@ -280,6 +289,31 @@ final class UpdateLifecycleTests: XCTestCase {
 
         XCTAssertEqual(updater.getLatestCalls, 2)
         XCTAssertEqual(updater.downloadCalls, 1)
+    }
+
+    // A silent push downloaded the update in the background but only queued it, so the
+    // user opened the old bundle: the install waited for a didEnterBackground that a
+    // background launch never posts.
+    func testBackgroundDownloadInstallsRightAwayWhileInBackground() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+    }
+
+    func testForegroundDownloadWaitsForTheNextBackground() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, [])
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
     }
 
     // triggerUpdateCheck returned "preview_session" (not in the TS union) and never "unavailable".

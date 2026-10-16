@@ -4939,6 +4939,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         if self.queueBundleForNextBackgroundInstall(next) {
                             self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
+                            self.installNextIfInBackground()
                             self.endBackGroundTaskWithNotif(
                                 msg: "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
@@ -4989,6 +4990,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return
             }
+        }
+    }
+
+    /// A download that finishes while the app is in the background (silent push,
+    /// background fetch, cold background launch) would otherwise wait for the next
+    /// didEnterBackground, which a background launch never posts, so the user would
+    /// open the old bundle. Install now; the notifyAppReady check stays deferred
+    /// until the app reaches the foreground.
+    func installNextIfInBackground() {
+        let install = {
+            if self.appInBackground {
+                self.installNext()
+            }
+        }
+        if Thread.isMainThread {
+            install()
+        } else {
+            DispatchQueue.main.sync(execute: install)
         }
     }
 

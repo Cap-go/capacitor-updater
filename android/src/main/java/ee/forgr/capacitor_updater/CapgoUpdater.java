@@ -3923,6 +3923,14 @@ public class CapgoUpdater {
      * Should be called when the plugin is destroyed to prevent resource leaks.
      */
     public void shutdown() {
+        shutdown(true);
+    }
+
+    /**
+     * @param persistStats false when another live instance owns the stats file (headless worker
+     *     handing over to the plugin): writing this instance's queue would replace the newer file.
+     */
+    public void shutdown(final boolean persistStats) {
         statsStopped.set(true);
         // Cancel the scheduled task
         if (statsFlushTask != null) {
@@ -3931,7 +3939,9 @@ public class CapgoUpdater {
         }
 
         // Write once, then ignore later callbacks so they cannot delete a newer instance's file.
-        persistStatsQueue(true);
+        if (persistStats) {
+            persistStatsQueue(true);
+        }
 
         // Shutdown the scheduler
         statsScheduler.shutdown();
