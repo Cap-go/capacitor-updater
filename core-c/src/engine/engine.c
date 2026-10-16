@@ -11,10 +11,16 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __ANDROID__
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 #include "api.h"
 #include "engine/ops.h"
 #include "http.h"
+#include "policy.h"
 #ifdef CAPGO_TEST_SUPPORT
 #include "testing.h"
 #endif
@@ -24,6 +30,43 @@
 static void http_settings(const cg_engine_config *config, char **user_agent) {
     *user_agent = cg_http_user_agent(config->app_id, config->plugin_version, config->version_os, config->platform);
 }
+
+#ifdef __ANDROID__
+/*
+ * C-only (no Rust counterpart, nothing observable by the host). Linux grows a process's
+ * descriptor table by powers of two, and each growth waits for an RCU grace period
+ * (synchronize_rcu, 15-20 ms on the emulator) during which every thread that needs a
+ * descriptor past the old table sleeps. A WebView app settles at about 250 descriptors, so
+ * the first parallel manifest download crossed 256 with all its workers opening sockets and
+ * partial files at once, and each of them waited for the grace period (Rust pays the same
+ * wait in whichever download first crosses 256: in the bench app, the first zip, whose
+ * extraction workers each open the archive while C shares one descriptor). This grows the table
+ * once per process, on its own thread right after the first engine is created (the app is
+ * still starting, so it is usually below 256 then), to at least 512 slots and to fit one
+ * manifest download at full concurrency (a socket and a partial file per worker) above the
+ * descriptors already open. A thread that needs a slot past the old table meanwhile waits
+ * for this growth instead of starting its own.
+ */
+static void reserve_descriptors(void *arg) {
+    (void)arg;
+    int probe = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (probe < 0) return;
+    /* The lowest free descriptor: about the number already open. */
+    int64_t target = probe + 2 * cg_policy_manifest_max_concurrent_files(cg_cpu_count()) + 16;
+    if (target < 511) target = 511;
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur != RLIM_INFINITY &&
+        (uint64_t)target >= (uint64_t)limit.rlim_cur)
+        target = (int64_t)limit.rlim_cur - 1;
+    if (target > probe) {
+        int high = fcntl(probe, F_DUPFD_CLOEXEC, (int)target);
+        if (high >= 0) close(high);
+    }
+    close(probe);
+}
+
+static atomic_bool descriptors_reserved;
+#endif
 
 cg_engine *cg_engine_create(const char *config_json, const CapgoHostCallbacks *callbacks, cg_error *err) {
     size_t start, len;
@@ -61,6 +104,9 @@ cg_engine *cg_engine_create(const char *config_json, const CapgoHostCallbacks *c
     cg_download_map_init(&engine->downloads);
     cg_plugin_init(&engine->plugin);
     atomic_init(&engine->downloads_detached, false);
+#ifdef __ANDROID__
+    if (!atomic_exchange(&descriptors_reserved, true)) cg_spawn("fdtable", reserve_descriptors, NULL);
+#endif
     return engine;
 }
 
