@@ -84,4 +84,4 @@ Test-only operations (`test.<name>`, Rust `src/testing.rs`) are compiled only
 with `CAPGO_TEST_SUPPORT`.
 
 Dependencies (fetched by CMake, pinned): Mbed TLS 3.6 (TLS client, AES,
-SHA-256, big numbers), the Brotli decoder, and the platform zlib.
+SHA-256), the Brotli decoder, and the platform zlib.

@@ -25,6 +25,9 @@ Branch `riderx/capgo-c-core` @ 0d56b1c8 (PR #962, stacked on #937), built once i
 - unzip (inflate + CRC + write): C is **19% slower** (platform zlib vs zlib-rs).
 - RSA public operation per checksum: C is **about 25% slower** (30.5 µs vs 24.2 µs).
 
+Both slower cells were fixed afterwards (see "After the RSA and CRC-32 changes" below):
+unzip is now **17% faster** than Rust and the RSA checksum **29% faster**.
+
 ## Method and conditions
 
 - Matrix and harness as in #937 (`scripts/bench`), unchanged.
@@ -341,6 +344,23 @@ The time includes the ABI and JSON envelope, which is measured separately with `
 | C (Mbed TLS 3.6 bignum) | **30.5 µs** (29.4–33.0) | ~28.7 µs |
 
 C is about 1.26× slower per checksum. That adds about 6 µs per encrypted file: about 12 ms over the 2000 files of the largest encrypted manifest, if all of it is serial.
+
+### After the RSA and CRC-32 changes
+
+- **RSA:** the Mbed TLS bignum exponentiation was replaced by a fused CIOS Montgomery multiplication (64-bit limbs with a 128-bit product, 32-bit limbs on armeabi-v7a and x86), precomputed per parsed key, without allocation.
+- **unzip:** profiling showed the gap was the CRC-32 check, not inflate. On this payload the platform zlib inflates at 30–40 GB/s, while a single `crc32d` chain is latency bound at about 10 GB/s. Large buffers now run three interleaved `crc32d` chains, joined with the zlib `multmodp` shift (about 29 GB/s). Inflate and write sizes are unchanged.
+- The RSA benchmark is now committed as `perf.rs` `rsa_checksum_throughput` (same method as above).
+- Runs used `cargo test --release --test perf -- --ignored --nocapture` with rust / C before / C after alternated. Set A: 8 runs of `hot_path_throughput` and 6 runs × 5 loops of RSA, load average about 4 on 18 cores. Set B repeated both later under load 6–8.
+
+| Set A | Rust | C before | C after | C after vs Rust |
+|---|---|---|---|---|
+| RSA µs per checksum (n=30) | 26.2 (25.7–31.5) | 31.6 (31.1–41.4) | **18.5** (18.3–24.0) | -29% |
+| unzip MB/s (n=8) | 6268 (6041–6404) | 5066 (4813–5124) | **7348** (6494–7583) | +17% |
+| sha256 MB/s (n=8) | 2674 (2268–2753) | 2580 (1612–2722) | 2622 (303–2695) | -2% |
+
+Set B medians (Rust / C before / C after): RSA 29.5 / 35.4 / 20.7 µs, unzip 4601 / 3921 / 5419 MB/s, sha256 2357 / 2323 / 2381 MB/s.
+
+Size cost of both changes (stripped `.so`): arm64-v8a +1.2 KB, armeabi-v7a +0.6 KB, x86 +2.8 KB, x86_64 +2.2 KB.
 
 ### Caveats
 

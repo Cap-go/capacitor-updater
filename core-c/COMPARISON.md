@@ -48,9 +48,9 @@ Full tables (same session, both cores, every suite #937 measured): `BENCHMARK.md
   Warm: 33 vs 28 ms. The cold 2-file direct case is equal (27 vs 27 ms).
 - **Apply step** (`set()` until app ready): identical on both platforms.
 - **Host (release, through the C ABI):** SHA-256 -2%, AES-128-CBC +15%,
-  unzip -19% (platform zlib vs zlib-rs), RSA public operation 30.5 µs vs
-  24.2 µs per checksum (Mbed TLS bignum vs the hand-written Rust modexp:
-  about 12 ms over a 2000-file encrypted manifest if fully serial).
+  unzip +17% (three-lane hardware CRC-32; it was -19% with a single CRC
+  chain), RSA public operation 18.5 µs vs 26.2 µs per checksum (Montgomery
+  modexp; it was 30.5 µs with Mbed TLS bignum).
 
 ## Cost and safety
 
@@ -77,9 +77,9 @@ launch cleanup and a waiting download), fixed in both.
 
 ## Verdict
 
-C is smaller (3 to 4 times less code shipped), on par on iOS and faster on
-large Android manifests, but slower on the Android cold-start case and on the
-RSA and unzip micro-benchmarks.
+C is smaller (3 to 4 times less code shipped), on par on iOS, faster on
+large Android manifests and on the RSA and unzip micro-benchmarks, but slower
+on the Android cold-start case.
 It costs 65% more source lines to maintain, hand-written replacements for
 the HTTP client, URL parser, zip reader and JSON, and memory safety that has
 to be enforced by sanitizers and Valgrind in CI instead of by the compiler.
