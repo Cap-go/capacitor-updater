@@ -67,3 +67,28 @@ fn hot_path_throughput() {
         mb / start.elapsed().as_secs_f64()
     );
 }
+
+/// RSA-2048 public operation per encrypted checksum (`decryptChecksum`, cached key),
+/// including the ABI and JSON envelope: 200 warm-up calls, then 5 loops of 5000.
+#[test]
+#[ignore]
+fn rsa_checksum_throughput() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../native-contract-tests/crypto-rsa.json");
+    let fixture: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let case = &fixture["decryptChecksum"][0];
+    let input = json!({
+        "checksum": case["input"]["checksumHex"],
+        "publicKey": fixture["publicKeyPem"],
+    });
+    let expected = case["expect"]["decryptedHex"].as_str().unwrap();
+    for _ in 0..200 {
+        assert_eq!(core().test("decryptChecksum", input.clone())["checksum"], expected);
+    }
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..5000 {
+            core().test("decryptChecksum", input.clone());
+        }
+        println!("rsa decryptChecksum: {:.2} us", start.elapsed().as_secs_f64() * 1e6 / 5000.0);
+    }
+}
