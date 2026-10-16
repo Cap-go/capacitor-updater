@@ -89,6 +89,9 @@ fn rsa_checksum_throughput() {
         for _ in 0..5000 {
             core().test("decryptChecksum", input.clone());
         }
-        println!("rsa decryptChecksum: {:.2} us", start.elapsed().as_secs_f64() * 1e6 / 5000.0);
+        println!(
+            "rsa decryptChecksum: {:.2} us",
+            start.elapsed().as_secs_f64() * 1e6 / 5000.0
+        );
     }
 }
