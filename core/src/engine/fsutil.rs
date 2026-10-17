@@ -277,3 +277,14 @@ impl BlockWriter {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The `statvfs` call. Miri has no `statvfs` shim.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn available_space_of_a_missing_path_uses_its_existing_parent() {
+        let dir = std::env::temp_dir().join("capgo-available-space-probe").join("missing");
+        assert!(super::available_space(&dir).is_some_and(|bytes| bytes > 0));
+    }
+}
