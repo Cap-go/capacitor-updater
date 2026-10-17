@@ -98,6 +98,31 @@ Bugs the tools found while porting to C, all fixed:
 The port also found one race present in both cores (a log ordering between the
 launch cleanup and a waiting download), fixed in both.
 
+## Platform network stack (HTTP/3)
+
+Both cores can send their requests through the host's `http_request` transport:
+URLSession on iOS, and `HttpEngine` on Android 14 and later. The C code is a direct port
+of the Rust code. The Rust suite passes on both cores in two ways: through the host
+transport, with the platform-stack stand-in (`CAPGO_TEST_HOST_TRANSPORT=1`), and through
+the core's own client. The C core also passes it under ASan + UBSan.
+
+Measured results are in `BENCHMARK-HTTP3.md`.
+
+- **Protocol.** Caddy logged HTTP/3 for every host-transport request on both devices.
+  Android needs the server certificate to chain to a system root for QUIC.
+- **Where both cores behave the same.**
+  - Loopback: HTTP/3 is slower than the core's own HTTP/1.1 client.
+  - Shaped link (40 Mbit/s): parity.
+  - Lossy link (150 ms RTT, about 1% loss each way, Android): a single zip is about 3×
+    faster, and manifests with many files are up to about 7× slower, since they share one
+    QUIC connection instead of 32 TCP connections.
+- **Where they differ.** The cores differ only where their own client already differed.
+  Through HTTP/2 on the iOS simulator, the C core was at parity or faster on manifests;
+  the Rust core was up to 62% slower (+87% on the 300 MB direct zip).
+- **Size.**
+  - Android `.so`: +11 KB for C and +30 KB for Rust (arm64-v8a).
+  - iOS app executable: +61 KB for C and +81 KB for Rust, Swift transport included.
+
 ## Verdict
 
 C ships 3 to 4 times less code. It is on par on iOS and on Android cold start
