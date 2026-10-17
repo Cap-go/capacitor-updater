@@ -380,11 +380,24 @@ jobs:
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    name: Fuzz smoke (${{ matrix.core }} core, every target)
+    name: Fuzz smoke (${{ matrix.core }} core, ${{ matrix.name }})
+    # Rust: an unoptimized build (debug assertions off, overflow checks on) split in two jobs
+    # to fit the 10-minute cap; the release build is for longer local runs (scripts/fuzz.sh).
     strategy:
       fail-fast: false
       matrix:
-        core: [rust, c]
+        include:
+          - core: rust
+            name: targets 1-6
+            targets: aes_cbc brotli http_response inflate json manifest
+          - core: rust
+            name: targets 7-11
+            targets: path_guard rsa_checksum rsa_key update_response zip
+          - core: c
+            name: every target
+            targets: ''
+    env:
+      CAPGO_FUZZ_RUST_PROFILE: dev
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -417,13 +430,13 @@ jobs:
           key: core-c-deps-${{ hashFiles('core-c/CMakeLists.txt') }}
       - name: Build the fuzz targets
         run: ./scripts/fuzz.sh build ${{ matrix.core }}
-      - name: Run every target for 20 s from the shared seed corpus
-        run: ./scripts/fuzz.sh smoke ${{ matrix.core }} 20
+      - name: Run each target for 20 s from the shared seed corpus
+        run: ./scripts/fuzz.sh smoke ${{ matrix.core }} 20 ${{ matrix.targets }}
       - name: Upload crashes
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: fuzz-artifacts-${{ matrix.core }}
+          name: fuzz-artifacts-${{ matrix.core }}-${{ strategy.job-index }}
           path: fuzz/artifacts
           if-no-files-found: ignore
 

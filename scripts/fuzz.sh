@@ -6,20 +6,22 @@
 #   scripts/fuzz.sh build rust|c|all              -> core/fuzz (cargo-fuzz, nightly, ASan, release + overflow checks)
 #                                                    core-c/build-fuzz (clang, ASan + UBSan)
 #   scripts/fuzz.sh run rust|c <target> <seconds> [libFuzzer flags...]
-#   scripts/fuzz.sh smoke rust|c <seconds>        -> every target for <seconds> (CI)
+#   scripts/fuzz.sh smoke rust|c <seconds> [targets...] -> each target (default: all) for <seconds> (CI)
 #
 # New inputs go to fuzz/work/<core>/<target> and crashes to fuzz/artifacts/<core>/<target>
 # (both git-ignored); the committed seeds are only read. A crash, leak, sanitizer report or
 # timeout exits non-zero.
 #
 # Rust needs rustup with a nightly toolchain (CAPGO_FUZZ_TOOLCHAIN, default nightly) and
-# cargo-fuzz. C needs a clang with libFuzzer (CAPGO_FUZZ_CC; on macOS Homebrew's llvm, since
+# cargo-fuzz. CAPGO_FUZZ_RUST_PROFILE=dev builds unoptimized (much faster to build: the CI
+# smoke run), still without debug assertions and with overflow checks. C needs a clang with libFuzzer (CAPGO_FUZZ_CC; on macOS Homebrew's llvm, since
 # Apple clang ships without it).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORPUS_DIR="$ROOT_DIR/fuzz/corpus"
 TOOLCHAIN="${CAPGO_FUZZ_TOOLCHAIN:-nightly}"
+RUST_PROFILE="${CAPGO_FUZZ_RUST_PROFILE:-release}"
 C_BUILD_DIR="$ROOT_DIR/core-c/build-fuzz"
 
 if [[ -d "$HOME/.cargo/bin" ]]; then
@@ -43,13 +45,22 @@ fuzz_cc() {
 rust_target_dir() {
   local triple
   triple="$(rustc +"$TOOLCHAIN" -vV | sed -n 's/^host: //p')"
-  echo "$ROOT_DIR/core/fuzz/target/$triple/release"
+  if [[ "$RUST_PROFILE" == "dev" ]]; then
+    echo "$ROOT_DIR/core/fuzz/target/$triple/debug"
+  else
+    echo "$ROOT_DIR/core/fuzz/target/$triple/release"
+  fi
 }
 
 # Release code as it ships (overflow checks on, debug assertions off: dependencies keep
 # debug_assert!s that are not checks of untrusted input).
 build_rust() {
-  (cd "$ROOT_DIR/core/fuzz" && RUSTFLAGS="${RUSTFLAGS:-} -C overflow-checks=on" cargo +"$TOOLCHAIN" fuzz build -O)
+  if [[ "$RUST_PROFILE" == "dev" ]]; then
+    (cd "$ROOT_DIR/core/fuzz" &&
+      RUSTFLAGS="${RUSTFLAGS:-} -C overflow-checks=on -C debug-assertions=off" cargo +"$TOOLCHAIN" fuzz build --dev)
+  else
+    (cd "$ROOT_DIR/core/fuzz" && RUSTFLAGS="${RUSTFLAGS:-} -C overflow-checks=on" cargo +"$TOOLCHAIN" fuzz build -O)
+  fi
 }
 
 build_c() {
@@ -119,25 +130,29 @@ case "${1:-}" in
     run "$@"
     ;;
   smoke)
-    if [[ $# -ne 3 ]]; then
-      echo "Usage: $0 smoke rust|c <seconds>" >&2
+    if [[ $# -lt 3 ]]; then
+      echo "Usage: $0 smoke rust|c <seconds> [targets...]" >&2
       exit 2
     fi
+    core="$2"
+    seconds="$3"
+    shift 3
+    selected="${*:-$(targets)}"
     failed=0
-    for target in $(targets); do
-      echo "::group::$2 $target"
-      if ! run "$2" "$target" "$3" 2>&1 | tail -n 40; then
+    for target in $selected; do
+      echo "::group::$core $target"
+      if ! run "$core" "$target" "$seconds" 2>&1 | tail -n 40; then
         failed=1
       fi
       echo "::endgroup::"
       if [[ $failed -ne 0 ]]; then
-        echo "Fuzz target $target ($2 core) failed: see fuzz/artifacts/$2/$target" >&2
+        echo "Fuzz target $target ($core core) failed: see fuzz/artifacts/$core/$target" >&2
         exit 1
       fi
     done
     ;;
   *)
-    sed -n '2,19p' "$0" >&2
+    sed -n '2,21p' "$0" >&2
     exit 2
     ;;
 esac

@@ -146,7 +146,7 @@ Campaign on the Mac above, 6 runs of 9 minutes per target
 and core (54 minutes each), all 22 fuzzers at once: about 20 fuzzer-hours. The
 host has 18 cores and ran at load 40 to 60, so the CPU time is lower (about 16
 CPU-hours). CI (`fuzz_smoke`) runs every target for 20 s per core on each pull
-request.
+request (the Rust targets unoptimized there, to build within the time cap).
 
 | Target | Rust executions | C executions |
 | --- | --- | --- |
@@ -204,8 +204,11 @@ got a defensive change: zero-initialized
 buffers in `crypto/rsa.c` (Montgomery accumulator), `engine/archive.c`
 (end-record search window) and `rt/json.c` (float digits, and `strtol` instead
 of `atoi`), NULL checks in `engine/archive.c`, `rt/str.c` and `net_url.c`.
-The bugprone checks found nothing beyond style patterns, which
-`core-c/.clang-tidy` disables with the reason.
+clang-tidy 18 (the CI version) found one more, real: `engine/apk.c` passed a
+NULL array to `qsort` for an APK without entries, undefined behavior even with
+a count of zero. It now sorts only two entries or more. The bugprone checks
+found nothing else beyond style patterns, which `core-c/.clang-tidy` disables
+with the reason.
 
 ### Hardening of the shipped libraries
 
