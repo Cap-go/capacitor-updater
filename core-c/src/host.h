@@ -76,6 +76,46 @@ bool cg_host_send_stats(const cg_host *host, const char *action, const char *ver
 int cg_host_verify_certificate(const cg_host *host, const uint8_t *const *chain, const size_t *lengths, size_t count,
                                const char *server_name, char **error);
 
+/* ---- host HTTP transport (Rust Host::http_request through the C ABI http_request) */
+
+typedef enum { CG_HTTP_EVENT_HEAD = 0, CG_HTTP_EVENT_DATA, CG_HTTP_EVENT_WRITTEN } cg_http_event_kind;
+
+typedef struct {
+    cg_http_event_kind kind;
+    uint16_t status;             /* HEAD */
+    const char *const *names;    /* HEAD: response headers as the host gave them */
+    const char *const *values;
+    size_t header_count;
+    const uint8_t *data;         /* DATA */
+    size_t len;
+    uint64_t written;            /* WRITTEN: total bytes appended to body_path */
+} cg_http_event;
+
+/* Returns false to cancel the request. */
+typedef bool (*cg_http_sink)(void *context, const cg_http_event *event);
+
+typedef enum {
+    CG_HTTP_TRANSPORT_UNAVAILABLE = 0,
+    CG_HTTP_TRANSPORT_COMPLETED,
+    CG_HTTP_TRANSPORT_FAILED,
+} cg_http_transport_result;
+
+typedef struct {
+    cg_http_transport_result result;
+    char *protocol; /* COMPLETED, NULL when not reported */
+    char *kind;     /* FAILED */
+    char *message;  /* FAILED */
+} cg_http_transport_outcome;
+
+void cg_http_transport_outcome_clear(cg_http_transport_outcome *outcome);
+
+/* One request through the host network stack. headers_json: JSON array of [name, value]
+ * pairs; body NULL = none; body_path NULL = body to the sink. *outcome is always filled
+ * (UNAVAILABLE without a transport). */
+void cg_host_http_request(const cg_host *host, const char *method, const char *url, const char *headers_json,
+                          const uint8_t *body, size_t body_len, uint64_t timeout_ms, const char *body_path,
+                          cg_http_sink sink, void *sink_context, cg_http_transport_outcome *outcome);
+
 /* ---- method lane (thread-local; see Rust host::MethodLaneHold) */
 void cg_method_lane_hold(const cg_host *host);
 void cg_method_lane_drop(void);

@@ -147,7 +147,8 @@ pub struct CapgoHttpSink {
 
 type SinkFn<'a> = &'a mut dyn FnMut(HttpTransportEvent<'_>) -> bool;
 
-/// `[["name","value"], ...]` from a host; anything else is skipped.
+/// `[["name","value"], ...]` from a host; anything else is skipped, and so are strings with
+/// a NUL byte (HTTP forbids them; C hosts would cut them short).
 fn header_pairs(json: &str) -> Vec<(String, String)> {
     let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
@@ -155,6 +156,7 @@ fn header_pairs(json: &str) -> Vec<(String, String)> {
     items
         .iter()
         .filter_map(|pair| Some((pair.get(0)?.as_str()?.to_string(), pair.get(1)?.as_str()?.to_string())))
+        .filter(|(name, value)| !name.contains('\0') && !value.contains('\0'))
         .collect()
 }
 

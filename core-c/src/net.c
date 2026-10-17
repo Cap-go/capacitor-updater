@@ -220,6 +220,7 @@ cj *cg_net_response_json(const cg_net_response *response) {
 void cg_net_response_clear(cg_net_response *response) {
     cg_net_headers_clear(&response->headers);
     free(response->body);
+    free(response->protocol);
     memset(response, 0, sizeof *response);
 }
 
@@ -229,6 +230,7 @@ const char *cg_net_stream_head_header(const cg_net_stream_head *head, const char
 
 void cg_net_stream_head_clear(cg_net_stream_head *head) {
     cg_net_headers_clear(&head->headers);
+    free(head->protocol);
     memset(head, 0, sizeof *head);
 }
 
@@ -354,6 +356,10 @@ struct cg_http {
     cg_strs proxies_seen;
     net_conn **pool; /* idle connections, oldest first */
     size_t pool_len, pool_cap;
+    /* Send through the host network stack when it has one (systemHttp). */
+    atomic_bool system_http;
+    /* Last protocol the host transport reported per host name (logged when it changes). */
+    cg_strs protocol_hosts, protocol_names;
 };
 
 static void conn_close(net_conn *conn) {
@@ -448,6 +454,7 @@ cg_http *cg_http_new(const cg_host *host, const char *user_agent, uint64_t timeo
     http->user_agent = cg_strdup(cg_or_empty(user_agent));
     http->timeout_ms = timeout_ms ? timeout_ms : DEFAULT_TIMEOUT_MS;
     atomic_init(&http->allow_downgrade, false);
+    atomic_init(&http->system_http, true);
     load_env_proxy(http);
     return http;
 }
@@ -463,6 +470,8 @@ void cg_http_free(cg_http *http) {
     for (size_t i = 0; i < http->cleartext_len; i++) free(http->cleartext[i].host);
     free(http->cleartext);
     cg_strs_free(&http->proxies_seen);
+    cg_strs_free(&http->protocol_hosts);
+    cg_strs_free(&http->protocol_names);
     cg_mutex_destroy(&http->lock);
     free(http);
 }
@@ -500,6 +509,8 @@ void cg_http_set_timeout(cg_http *http, uint64_t timeout_ms) {
 void cg_http_set_allow_https_to_http_redirect(cg_http *http, bool allow) {
     atomic_store(&http->allow_downgrade, allow);
 }
+
+void cg_http_set_system_http(cg_http *http, bool enabled) { atomic_store(&http->system_http, enabled); }
 
 /* ---- idle pool (ureq ConnectionPool) */
 
@@ -1509,10 +1520,250 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
     return ok;
 }
 
-/* net.rs execute: up to 5 redirects; HTTPS -> HTTP refused unless allowed. */
-static bool execute(cg_http *http, bool download, const char *method_in, const char *url,
-                    const cg_net_header *headers, size_t header_count, const uint8_t *body_in, size_t body_len,
-                    net_response *response, cg_net_error *err) {
+/* ======================================================================================
+ * host transport (net.rs host_hop): the host network stack carries one hop
+ * ==================================================================================== */
+
+/* This client speaks HTTP/1.1 only. */
+#define OWN_PROTOCOL "http/1.1"
+
+static uint64_t timeout_for(cg_http *http, bool download) {
+    cg_lock(&http->lock);
+    uint64_t timeout_ms = http->timeout_ms;
+    cg_unlock(&http->lock);
+    if (download && timeout_ms < DOWNLOAD_MIN_TIMEOUT_MS) timeout_ms = DOWNLOAD_MIN_TIMEOUT_MS;
+    return timeout_ms;
+}
+
+/* net.rs host_transport_url: any other URL keeps the exact error of this client. */
+static bool host_transport_url(const char *url_text) {
+    cg_url url;
+    if (cg_url_parse(url_text, NULL, &url) != CG_URL_OK) return false;
+    bool web = cg_url_scheme_is(&url, "http") || cg_url_scheme_is(&url, "https");
+    char *host = cg_url_host_str(&url);
+    bool has_host = host && *host;
+    free(host);
+    cg_url_clear(&url);
+    return web && has_host;
+}
+
+/* net.rs note_protocol: logs the protocol the host negotiated with a host when it changes. */
+static void note_protocol(cg_http *http, const char *url_text, const char *protocol) {
+    if (!protocol || !*protocol) return;
+    char *host = NULL;
+    cg_url url;
+    if (cg_url_parse(url_text, NULL, &url) == CG_URL_OK) {
+        char *raw = cg_url_host_str(&url);
+        if (raw) host = cg_lower(raw);
+        free(raw);
+        cg_url_clear(&url);
+    }
+    if (!host) host = cg_strdup("");
+    bool changed = true;
+    size_t index = 0;
+    cg_lock(&http->lock);
+    while (index < http->protocol_hosts.len && strcmp(http->protocol_hosts.items[index], host) != 0) index++;
+    if (index == http->protocol_hosts.len) {
+        cg_strs_push_copy(&http->protocol_hosts, host);
+        cg_strs_push_copy(&http->protocol_names, protocol);
+    } else if (strcmp(http->protocol_names.items[index], protocol) == 0) {
+        changed = false;
+    } else {
+        cg_replace(&http->protocol_names.items[index], cg_strdup(protocol));
+    }
+    cg_unlock(&http->lock);
+    if (changed) cg_debug(http->host, "System HTTP transport: %s with %s", protocol, host);
+    free(host);
+}
+
+/* net.rs normalize_headers: lower-case names, each with the first value of that name. */
+static void normalize_headers(const cg_http_event *event, cg_net_headers *out) {
+    for (size_t i = 0; i < event->header_count; i++) {
+        const char *value = "";
+        for (size_t j = 0; j < event->header_count; j++)
+            if (strcasecmp(event->names[j], event->names[i]) == 0) {
+                value = event->values[j];
+                break;
+            }
+        char *name = cg_lower(event->names[i]);
+        cg_net_headers_push(out, name, value);
+        free(name);
+    }
+}
+
+static bool headers_gzip(const cg_net_headers *headers) {
+    const char *encoding = cg_net_headers_get(headers, "Content-Encoding");
+    if (!encoding) return false;
+    char *trimmed = cg_trim(encoding);
+    bool gzip = strcasecmp(trimmed, "gzip") == 0 || strcasecmp(trimmed, "x-gzip") == 0;
+    free(trimmed);
+    return gzip;
+}
+
+/* Drops the headers of a content coding that was removed from the body. */
+static void strip_content_coding(cg_net_headers *headers) {
+    size_t kept = 0;
+    for (size_t i = 0; i < headers->len; i++) {
+        cg_net_header_own *header = &headers->items[i];
+        if (strcasecmp(header->name, "Content-Encoding") == 0 || strcasecmp(header->name, "Content-Length") == 0) {
+            free(header->name);
+            free(header->value);
+        } else {
+            headers->items[kept++] = *header;
+        }
+    }
+    headers->len = kept;
+}
+
+/* net.rs transport_error_kind */
+static cg_net_error_kind transport_error_kind(const char *kind) {
+    if (strcmp(kind, "timeout") == 0) return CG_NET_TIMEOUT;
+    if (strcmp(kind, "tls") == 0) return CG_NET_TLS;
+    if (strcmp(kind, "invalid_url") == 0) return CG_NET_INVALID_URL;
+    if (strcmp(kind, "io") == 0) return CG_NET_IO;
+    return CG_NET_NETWORK;
+}
+
+typedef enum { HOP_ERROR = 0, HOP_UNAVAILABLE, HOP_REDIRECT, HOP_FINAL } hop_result;
+
+typedef struct {
+    const char *body_path;
+    cg_net_stream_handler handler;
+    void *context;
+    bool have_head;
+    cg_net_stream_head head;
+    bool redirect;
+    uint16_t redirect_status;
+    char *location;
+    bool failed;
+    cg_net_error failure;
+} hop_state;
+
+static bool hop_violation(hop_state *s, const char *problem) {
+    s->failed = true;
+    return cg_net_error_set(&s->failure, CG_NET_NETWORK, "Invalid response from the system HTTP transport: %s",
+                            problem);
+}
+
+static bool hop_sink(void *context, const cg_http_event *event) {
+    hop_state *s = context;
+    cg_net_stream stream;
+    switch (event->kind) {
+    case CG_HTTP_EVENT_HEAD: {
+        if (s->have_head) return hop_violation(s, "second response head");
+        cg_net_headers headers = {0};
+        normalize_headers(event, &headers);
+        const char *location = cg_net_headers_get(&headers, "location");
+        /* The engine follows redirects itself: no body needed. */
+        if (location && event->status >= 300 && event->status < 400 && event->status != 304) {
+            s->redirect = true;
+            s->redirect_status = event->status;
+            s->location = cg_strdup(location);
+            cg_net_headers_clear(&headers);
+            return false;
+        }
+        memset(&s->head, 0, sizeof s->head);
+        s->head.status = event->status;
+        const char *length = cg_net_headers_get(&headers, "content-length");
+        if (length) {
+            char *trimmed = cg_trim(length);
+            s->head.has_content_length = cg_parse_u64(trimmed, &s->head.content_length);
+            free(trimmed);
+        }
+        s->head.headers = headers;
+        s->head.body_in_file = s->body_path != NULL;
+        s->have_head = true;
+        stream = (cg_net_stream){.kind = CG_NET_STREAM_HEAD, .head = &s->head};
+        break;
+    }
+    case CG_HTTP_EVENT_DATA:
+        if (!s->have_head) return hop_violation(s, "body before the response head");
+        stream = (cg_net_stream){.kind = CG_NET_STREAM_CHUNK, .data = event->data, .len = event->len};
+        break;
+    case CG_HTTP_EVENT_WRITTEN:
+        if (!s->have_head) return hop_violation(s, "body before the response head");
+        stream = (cg_net_stream){.kind = CG_NET_STREAM_WRITTEN, .written = event->written};
+        break;
+    default:
+        return hop_violation(s, "unknown event");
+    }
+    if (s->handler(s->context, &stream, &s->failure)) return true;
+    s->failed = true;
+    return false;
+}
+
+/* net.rs host_hop: one hop through the host transport. HOP_FINAL fills *head (its body went to
+ * the handler), HOP_REDIRECT *status and *location (malloc'd). */
+static hop_result host_hop(cg_http *http, bool download, const char *method, const char *url,
+                           const cg_net_header *headers, size_t header_count, const uint8_t *body, size_t body_len,
+                           const char *body_path, cg_net_stream_handler handler, void *context,
+                           cg_net_stream_head *head, uint16_t *status, char **location, cg_net_error *err) {
+    if (!atomic_load(&http->system_http) || !host_transport_url(url)) return HOP_UNAVAILABLE;
+    /* What this client sends: its User-Agent first, an Accept of any type by default. */
+    char *user_agent = cg_http_get_user_agent(http);
+    cj *list = cj_arrv(cj_arrv(cj_str("User-Agent"), cj_str_own(user_agent), CJ_END), CJ_END);
+    bool accept = false;
+    for (size_t i = 0; i < header_count; i++) {
+        cj_push(list, cj_arrv(cj_str(headers[i].name), cj_str(headers[i].value), CJ_END));
+        if (strcasecmp(headers[i].name, "Accept") == 0) accept = true;
+    }
+    if (!accept) cj_push(list, cj_arrv(cj_str("Accept"), cj_str("*/*"), CJ_END));
+    char *headers_json = cj_print(list);
+    cj_free(list);
+    hop_state s = {.body_path = body_path, .handler = handler, .context = context, .failure = CG_NET_ERROR_INIT};
+    cg_http_transport_outcome outcome;
+    cg_host_http_request(http->host, method, url, headers_json, body, body_len, timeout_for(http, download),
+                         body_path, hop_sink, &s, &outcome);
+    free(headers_json);
+    hop_result result = HOP_ERROR;
+    if (s.failed) {
+        cg_net_error_set_own(err, s.failure.kind, s.failure.message ? s.failure.message : cg_strdup(""));
+        s.failure.message = NULL;
+    } else if (s.redirect) {
+        *status = s.redirect_status;
+        *location = s.location;
+        s.location = NULL;
+        result = HOP_REDIRECT;
+    } else if (outcome.result == CG_HTTP_TRANSPORT_UNAVAILABLE && !s.have_head) {
+        result = HOP_UNAVAILABLE;
+    } else if (outcome.result == CG_HTTP_TRANSPORT_COMPLETED && s.have_head) {
+        note_protocol(http, url, outcome.protocol);
+        s.head.protocol = outcome.protocol;
+        outcome.protocol = NULL;
+        *head = s.head;
+        memset(&s.head, 0, sizeof s.head);
+        s.have_head = false;
+        result = HOP_FINAL;
+    } else if (outcome.result == CG_HTTP_TRANSPORT_FAILED) {
+        cg_net_error_set_own(err, transport_error_kind(outcome.kind), outcome.message);
+        outcome.message = NULL;
+    } else {
+        hop_violation(&s, outcome.result == CG_HTTP_TRANSPORT_COMPLETED ? "no response head"
+                                                                         : "unavailable after the response head");
+        cg_net_error_set_own(err, s.failure.kind, s.failure.message);
+        s.failure.message = NULL;
+    }
+    cg_http_transport_outcome_clear(&outcome);
+    cg_net_error_clear(&s.failure);
+    free(s.location);
+    cg_net_stream_head_clear(&s.head);
+    return result;
+}
+
+/* Who answered a request (net.rs Exchange). */
+typedef struct {
+    bool by_host;
+    cg_net_stream_head head; /* by_host: the final head, body already handed over */
+    net_response response;   /* else: this client's response, body still to read */
+} exchange_out;
+
+/* net.rs exchange: up to 5 redirects; HTTPS -> HTTP refused unless allowed. Each hop goes
+ * through the host transport when it takes it, else through this client. */
+static bool exchange(cg_http *http, bool download, const char *method_in, const char *url,
+                     const cg_net_header *headers, size_t header_count, const uint8_t *body_in, size_t body_len,
+                     const char *body_path, cg_net_stream_handler handler, void *context, exchange_out *out,
+                     cg_net_error *err) {
+    memset(out, 0, sizeof *out);
     cg_release_method_lane();
     char *current = cg_strdup(url);
     char *method = cg_strdup(method_in);
@@ -1520,20 +1771,36 @@ static bool execute(cg_http *http, bool download, const char *method_in, const c
     bool ok = false;
     for (int hop = 0; hop <= CG_NET_MAX_REDIRECTS; hop++) {
         if (!check_cleartext(http, current, err)) goto done;
-        net_route route;
-        route_for(http, download, current, &route);
-        bool sent = request_once(http, &route, method, current, headers, header_count, body, body_len, response, err);
-        route_clear(&route);
-        if (!sent) goto done;
-        uint16_t status = response->status;
-        if (status < 300 || status >= 400 || status == 304) {
+        uint16_t status = 0;
+        char *location = NULL;
+        hop_result via_host = host_hop(http, download, method, current, headers, header_count, body, body_len,
+                                       body_path, handler, context, &out->head, &status, &location, err);
+        if (via_host == HOP_ERROR) goto done;
+        if (via_host == HOP_FINAL) {
+            out->by_host = true;
             ok = true;
             goto done;
         }
-        const char *location = response_header(response, "Location");
-        if (!location) {
-            ok = true;
-            goto done;
+        if (via_host == HOP_UNAVAILABLE) {
+            net_route route;
+            route_for(http, download, current, &route);
+            bool sent = request_once(http, &route, method, current, headers, header_count, body, body_len,
+                                     &out->response, err);
+            route_clear(&route);
+            if (!sent) goto done;
+            status = out->response.status;
+            if (status < 300 || status >= 400 || status == 304) {
+                ok = true;
+                goto done;
+            }
+            const char *found = response_header(&out->response, "Location");
+            if (!found) {
+                ok = true;
+                goto done;
+            }
+            location = cg_strdup(found);
+            response_free(&out->response);
+            memset(&out->response, 0, sizeof out->response);
         }
         cg_url base, next;
         cg_url_error error = cg_url_parse(current, NULL, &base);
@@ -1541,9 +1808,9 @@ static bool execute(cg_http *http, bool download, const char *method_in, const c
             error = cg_url_parse(location, &base, &next);
             if (error != CG_URL_OK) cg_url_clear(&base);
         }
+        free(location);
         if (error != CG_URL_OK) {
             cg_net_error_set(err, CG_NET_INVALID_URL, "%s", cg_url_error_text(error));
-            response_free(response);
             goto done;
         }
         char *from = cg_url_scheme(&base), *to = cg_url_scheme(&next);
@@ -1555,7 +1822,6 @@ static bool execute(cg_http *http, bool download, const char *method_in, const c
             cg_net_error_set(err, CG_NET_INSECURE_REDIRECT, "Refused redirect from HTTPS to HTTP: %s",
                              next.serialization);
             cg_url_clear(&next);
-            response_free(response);
             goto done;
         }
         /* 303 (and 301/302 for POST, like browsers) switch to GET without a body. */
@@ -1568,7 +1834,6 @@ static bool execute(cg_http *http, bool download, const char *method_in, const c
         cg_replace(&current, next.serialization);
         next.serialization = NULL;
         cg_url_clear(&next);
-        response_free(response);
     }
     cg_net_error_set(err, CG_NET_NETWORK, "Too many redirects");
 done:
@@ -1704,6 +1969,52 @@ static bool gunzip(const uint8_t *in, size_t len, size_t cap, cg_buf *out, net_i
  * public requests
  * ==================================================================================== */
 
+/* cg_http_send through the host transport: the decoded body arrives in chunks; the cap ends it
+ * (like Read::take). */
+typedef struct {
+    bool have_head;
+    cg_net_stream_head head; /* copy of the final head */
+    cg_buf buffer;
+    bool capped;
+} send_state;
+
+static bool send_sink(void *context, const cg_net_stream *event, cg_net_error *err) {
+    send_state *s = context;
+    if (event->kind == CG_NET_STREAM_HEAD) {
+        cg_net_stream_head_clear(&s->head);
+        s->head.status = event->head->status;
+        s->head.has_content_length = event->head->has_content_length;
+        s->head.content_length = event->head->content_length;
+        s->head.body_in_file = event->head->body_in_file;
+        for (size_t i = 0; i < event->head->headers.len; i++)
+            cg_net_headers_push(&s->head.headers, event->head->headers.items[i].name,
+                                event->head->headers.items[i].value);
+        s->have_head = true;
+    } else if (event->kind == CG_NET_STREAM_CHUNK) {
+        size_t room = CG_NET_MAX_API_BODY_BYTES - s->buffer.len;
+        if (event->len >= room) {
+            cg_buf_put(&s->buffer, event->data, room);
+            s->capped = true;
+            return cg_net_error_set(err, CG_NET_IO, "Response body cap reached");
+        }
+        cg_buf_put(&s->buffer, event->data, event->len);
+    }
+    return true;
+}
+
+/* net.rs host_response: the platform stacks remove the content coding, so its headers go, as
+ * after this client's own gzip decoding. Takes the head and the buffer. */
+static void host_response(cg_net_stream_head *head, cg_buf *buffer, cg_net_response *out) {
+    out->status = head->status;
+    out->headers = head->headers;
+    if (headers_gzip(&out->headers)) strip_content_coding(&out->headers);
+    out->protocol = head->protocol;
+    memset(head, 0, sizeof *head);
+    out->body_len = buffer->len;
+    out->body = buffer->data ? (uint8_t *)buffer->data : (uint8_t *)cg_calloc(1, 1);
+    memset(buffer, 0, sizeof *buffer);
+}
+
 bool cg_http_send(cg_http *http, const char *method, const char *url, const cg_net_header *headers,
                   size_t header_count, const uint8_t *body, size_t body_len, cg_net_response *out,
                   cg_net_error *err) {
@@ -1711,10 +2022,25 @@ bool cg_http_send(cg_http *http, const char *method, const char *url, const cg_n
     /* Transparent gzip, as OkHttp and URLSession did for API calls. */
     size_t count;
     cg_net_header *all = with_accept_encoding(headers, header_count, "gzip", &count);
-    net_response response = {0};
-    bool ok = execute(http, false, method, url, all, count, body, body_len, &response, err);
+    send_state state = {0};
+    exchange_out ex;
+    bool ok = exchange(http, false, method, url, all, count, body, body_len, NULL, send_sink, &state, &ex, err);
     free(all);
-    if (!ok) return false;
+    if (!ok || ex.by_host) {
+        if (ok) {
+            host_response(&ex.head, &state.buffer, out);
+        } else if (state.have_head && state.capped) {
+            cg_net_error_clear(err);
+            host_response(&state.head, &state.buffer, out);
+            ok = true;
+        }
+        cg_net_stream_head_clear(&state.head);
+        cg_buf_free(&state.buffer);
+        return ok;
+    }
+    cg_net_stream_head_clear(&state.head);
+    cg_buf_free(&state.buffer);
+    net_response response = ex.response;
     out->status = response.status;
     headers_of(&response, &out->headers);
     const char *encoding = response_header(&response, "Content-Encoding");
@@ -1758,21 +2084,11 @@ bool cg_http_send(cg_http *http, const char *method, const char *url, const cg_n
         }
         cg_buf_free(&buffer);
         buffer = decoded;
-        size_t kept = 0;
-        for (size_t i = 0; i < out->headers.len; i++) {
-            cg_net_header_own *header = &out->headers.items[i];
-            if (strcasecmp(header->name, "Content-Encoding") == 0 ||
-                strcasecmp(header->name, "Content-Length") == 0) {
-                free(header->name);
-                free(header->value);
-            } else {
-                out->headers.items[kept++] = *header;
-            }
-        }
-        out->headers.len = kept;
+        strip_content_coding(&out->headers);
     }
     out->body_len = buffer.len;
     out->body = buffer.data ? (uint8_t *)buffer.data : (uint8_t *)cg_calloc(1, 1);
+    out->protocol = cg_strdup(OWN_PROTOCOL);
     return true;
 }
 
@@ -1799,14 +2115,26 @@ bool cg_http_send_json(cg_http *http, const char *method, const char *url, const
 bool cg_http_download(cg_http *http, const char *url, const cg_net_header *headers, size_t header_count,
                       cg_net_stream_handler handler, void *context, cg_net_stream_head *head_out,
                       cg_net_error *err) {
+    return cg_http_download_to(http, url, headers, header_count, NULL, handler, context, head_out, err);
+}
+
+bool cg_http_download_to(cg_http *http, const char *url, const cg_net_header *headers, size_t header_count,
+                         const char *body_path, cg_net_stream_handler handler, void *context,
+                         cg_net_stream_head *head_out, cg_net_error *err) {
     if (head_out) memset(head_out, 0, sizeof *head_out);
     /* Bundle files are stored byte for byte (checksums, Range resume): no content coding. */
     size_t count;
     cg_net_header *all = with_accept_encoding(headers, header_count, "identity", &count);
-    net_response response = {0};
-    bool ok = execute(http, true, "GET", url, all, count, NULL, 0, &response, err);
+    exchange_out ex;
+    bool ok = exchange(http, true, "GET", url, all, count, NULL, 0, body_path, handler, context, &ex, err);
     free(all);
     if (!ok) return false;
+    if (ex.by_host) {
+        if (head_out) *head_out = ex.head;
+        else cg_net_stream_head_clear(&ex.head);
+        return true;
+    }
+    net_response response = ex.response;
     cg_net_stream_head head = {0};
     head.status = response.status;
     headers_of(&response, &head.headers);
@@ -1816,6 +2144,7 @@ bool cg_http_download(cg_http *http, const char *url, const cg_net_header *heade
         head.has_content_length = cg_parse_u64(trimmed, &head.content_length);
         free(trimmed);
     }
+    head.protocol = cg_strdup(OWN_PROTOCOL);
     cg_net_stream event = {.kind = CG_NET_STREAM_HEAD, .head = &head};
     if (!handler(context, &event, err)) {
         response_free(&response);

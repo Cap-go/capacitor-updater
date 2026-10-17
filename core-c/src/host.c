@@ -220,6 +220,117 @@ int cg_host_verify_certificate(const cg_host *host, const uint8_t *const *chain,
     return 0;
 }
 
+/* ---- host HTTP transport (Rust ffi.rs CHost::http_request) */
+
+void cg_http_transport_outcome_clear(cg_http_transport_outcome *outcome) {
+    free(outcome->protocol);
+    free(outcome->kind);
+    free(outcome->message);
+    memset(outcome, 0, sizeof *outcome);
+}
+
+typedef struct {
+    cg_http_sink sink;
+    void *context;
+} sink_box;
+
+static int32_t sink_event(void *handle, const cg_http_event *event) {
+    sink_box *box = handle;
+    if (!box) return 1;
+    return box->sink(box->context, event) ? 0 : 1;
+}
+
+/* ffi.rs header_pairs: `[["name","value"], ...]` (lossy UTF-8); anything else is skipped, and
+ * so are strings with a NUL byte. */
+static int32_t sink_on_head(void *handle, int32_t status, const char *headers_json) {
+    cg_strs names = {0}, values = {0};
+    if (headers_json) {
+        char *text = cg_utf8_lossy((const uint8_t *)headers_json, strlen(headers_json));
+        cj *items = cj_parse(text, NULL);
+        free(text);
+        for (size_t i = 0; cj_is_arr(items) && i < cj_len(items); i++) {
+            const cj *pair = cj_at(items, i);
+            const cj *name = cj_is_arr(pair) ? cj_at(pair, 0) : NULL;
+            const cj *value = cj_is_arr(pair) ? cj_at(pair, 1) : NULL;
+            if (!cj_is_str(name) || !cj_is_str(value) || cj_str_has_nul(name) || cj_str_has_nul(value)) continue;
+            cg_strs_push_copy(&names, cj_as_str(name));
+            cg_strs_push_copy(&values, cj_as_str(value));
+        }
+        cj_free(items);
+    }
+    cg_http_event event = {
+        .kind = CG_HTTP_EVENT_HEAD,
+        .status = status >= 0 && status <= UINT16_MAX ? (uint16_t)status : 0,
+        .names = (const char *const *)names.items,
+        .values = (const char *const *)values.items,
+        .header_count = names.len,
+    };
+    int32_t result = sink_event(handle, &event);
+    cg_strs_free(&names);
+    cg_strs_free(&values);
+    return result;
+}
+
+static int32_t sink_on_data(void *handle, const uint8_t *data, size_t length) {
+    if (length == 0) return 0;
+    if (!data) return 1;
+    cg_http_event event = {.kind = CG_HTTP_EVENT_DATA, .data = data, .len = length};
+    return sink_event(handle, &event);
+}
+
+static int32_t sink_on_progress(void *handle, uint64_t written) {
+    cg_http_event event = {.kind = CG_HTTP_EVENT_WRITTEN, .written = written};
+    return sink_event(handle, &event);
+}
+
+void cg_host_http_request(const cg_host *host, const char *method, const char *url, const char *headers_json,
+                          const uint8_t *body, size_t body_len, uint64_t timeout_ms, const char *body_path,
+                          cg_http_sink sink, void *sink_context, cg_http_transport_outcome *outcome) {
+    memset(outcome, 0, sizeof *outcome);
+    if (!host || !host->cb.http_request) return;
+    CapgoHttpRequest request = {
+        .method = method,
+        .url = url,
+        .headers_json = headers_json,
+        .body = body,
+        .body_length = body ? body_len : 0,
+        .timeout_ms = timeout_ms,
+        .body_path = body_path,
+    };
+    sink_box box = {sink, sink_context};
+    CapgoHttpSink c_sink = {
+        .handle = &box,
+        .on_head = sink_on_head,
+        .on_data = sink_on_data,
+        .on_progress = sink_on_progress,
+    };
+    char *raw = NULL;
+    int32_t code = host->cb.http_request(host->cb.context, &request, &c_sink, &raw);
+    char *reply_text = take_string(host, raw);
+    /* ffi.rs transport_outcome: the result JSON, or nothing. */
+    cj *reply = NULL;
+    if (reply_text) {
+        char *text = cg_utf8_lossy((const uint8_t *)reply_text, strlen(reply_text));
+        reply = cj_parse(text, NULL);
+        free(text);
+        free(reply_text);
+    }
+    const cj *protocol = cj_is_obj(reply) ? cj_get(reply, "protocol") : NULL;
+    const cj *kind = cj_is_obj(reply) ? cj_get(reply, "error") : NULL;
+    const cj *message = cj_is_obj(reply) ? cj_get(reply, "message") : NULL;
+    if (code == CAPGO_HTTP_UNAVAILABLE) {
+        outcome->result = CG_HTTP_TRANSPORT_UNAVAILABLE;
+    } else if (code == CAPGO_HTTP_COMPLETED) {
+        outcome->result = CG_HTTP_TRANSPORT_COMPLETED;
+        outcome->protocol = cj_is_str(protocol) ? cg_strdup(cj_as_str(protocol)) : NULL;
+    } else {
+        outcome->result = CG_HTTP_TRANSPORT_FAILED;
+        outcome->kind = cg_strdup(cj_is_str(kind) ? cj_as_str(kind) : "network");
+        outcome->message = cg_strdup(cj_is_str(message) ? cj_as_str(message) : "HTTP request failed in the host");
+    }
+    cj_free(reply);
+}
+
 static _Thread_local const cg_host *method_lane;
 
 void cg_method_lane_hold(const cg_host *host) { method_lane = host; }

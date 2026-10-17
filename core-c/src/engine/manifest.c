@@ -581,7 +581,11 @@ typedef struct {
     size_t buffered;
     bool hashing;
     cg_sha256 hasher;
+    bool host_whole_body; /* the host appended a whole body to the partial: hashed afterwards */
 } file_transfer;
+
+/* Stops a host transport from appending a 416 answer to a complete partial file. */
+#define RANGE_SATISFIED "range_satisfied"
 
 /* BufWriter::flush of the buffered bytes. false with errno. */
 static bool flush_buffer(file_transfer *t) {
@@ -595,13 +599,21 @@ static bool file_handler(void *context, const cg_net_stream *event, cg_net_error
     file_transfer *t = context;
     if (event->kind == CG_NET_STREAM_HEAD) {
         const cg_net_stream_head *head = event->head;
-        /* The partial already holds the whole file. */
-        if (head->status == 416 && t->existing > 0) return true;
+        /* The partial already holds the whole file. A host transport would append this answer's
+         * body: stop it. */
+        if (head->status == 416 && t->existing > 0)
+            return head->body_in_file ? cg_net_error_set(err, CG_NET_IO, RANGE_SATISFIED) : true;
         if (head->status != 200 && head->status != 206)
             return cg_net_error_set(err, CG_NET_NETWORK, "Unexpected response code: %u", (unsigned)head->status);
         bool append = cg_http_should_append_http_body(head->status, (int64_t)t->existing);
         int fd = cg_fsutil_open(t->partial, O_CREAT | O_WRONLY | (append ? O_APPEND : O_TRUNC), 0666);
         if (fd < 0) return cg_net_error_set_own(err, CG_NET_IO, cg_io_message(errno));
+        if (head->body_in_file) {
+            /* The partial is ready (truncated or kept for the append): the host writes. */
+            close(fd);
+            t->host_whole_body = !append;
+            return true;
+        }
         if (t->fd >= 0) close(t->fd);
         t->fd = fd;
         if (!t->buffer) t->buffer = cg_malloc(PARTIAL_BUFFER_BYTES);
@@ -612,6 +624,7 @@ static bool file_handler(void *context, const cg_net_stream *event, cg_net_error
         return true;
     }
     if (cg_cancel_is_cancelled(t->cancel)) return cg_net_error_set(err, CG_NET_IO, "download_stopped");
+    if (event->kind == CG_NET_STREAM_WRITTEN) return true;
     if (t->hashing) cg_sha256_update(&t->hasher, event->data, event->len);
     if (t->fd < 0) return true;
     /* BufWriter::write_all: small writes are batched, large ones go straight through. */
@@ -676,13 +689,20 @@ static bool cached_copy(const char *cached, const char *hash, const char *target
  * 0 (Ok(None): checksum mismatch) or -1 (Err: *io set); -2 when a decrypt failure already set
  * *err (the function returned). */
 static int write_target(pool *p, const task *t, const char *partial, const char *partial_dir, char *streamed_hash,
-                        cg_error *io, cg_error *err) {
+                        bool host_whole_body, cg_error *io, cg_error *err) {
     const cg_session_key *session = NULL;
     const char *session_error = NULL;
     if (!lazy_session_get(p->session, &session, &session_error)) {
         free(streamed_hash);
         decrypt_failed(p, t, partial, cg_or_empty(session_error), err);
         return -2;
+    }
+    if (host_whole_body && !session && !t->brotli) {
+        /* Written by the host: hashed now, then moved in place like a streamed file. */
+        cg_error ignored = CG_ERROR_INIT;
+        free(streamed_hash);
+        streamed_hash = cg_checksum_sha256_file(partial, &ignored);
+        cg_err_clear(&ignored);
     }
     char *written = NULL;
     bool ok;
@@ -781,8 +801,12 @@ static bool download_manifest_file(pool *p, const task *t, cg_error *err) {
     snprintf(range, sizeof range, "bytes=%" PRIu64 "-", transfer.existing);
     cg_net_header headers[1] = {{"Range", range}};
     cg_net_error net = CG_NET_ERROR_INIT;
-    bool transferred = cg_http_download(engine->http, t->download_url, headers, transfer.existing > 0 ? 1 : 0,
-                                        file_handler, &transfer, NULL, &net);
+    bool transferred = cg_http_download_to(engine->http, t->download_url, headers, transfer.existing > 0 ? 1 : 0,
+                                           partial, file_handler, &transfer, NULL, &net);
+    if (!transferred && net.message && strcmp(net.message, RANGE_SATISFIED) == 0) {
+        transferred = true;
+        cg_net_error_clear(&net);
+    }
     if (transfer.fd >= 0) {
         bool flushed = flush_buffer(&transfer);
         int flush_errno = errno;
@@ -830,7 +854,7 @@ static bool download_manifest_file(pool *p, const task *t, cg_error *err) {
     cg_net_error_clear(&net);
     /* The partial stays encrypted (resumable, reusable): decrypt while reading it. */
     cg_error io = CG_ERROR_INIT;
-    int written = write_target(p, t, partial, partial_dir, streamed_hash, &io, err);
+    int written = write_target(p, t, partial, partial_dir, streamed_hash, transfer.host_whole_body, &io, err);
     if (written == -2) goto done;
     size_t target_len = 0;
     const char *target_name = cg_paths_manifest_target_name(t->file_name, &target_len);

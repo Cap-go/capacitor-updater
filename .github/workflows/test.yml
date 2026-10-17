@@ -70,6 +70,9 @@ jobs:
       - name: Test (shared native contract fixtures)
         working-directory: core
         run: cargo test --locked
+      - name: Test through the host HTTP transport (platform-stack stand-in)
+        working-directory: core
+        run: CAPGO_TEST_HOST_TRANSPORT=1 cargo test --locked --tests
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -113,6 +116,9 @@ jobs:
       - name: Test C core (the Rust core's suite, through the C ABI)
         working-directory: core
         run: CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build/libcapgo_updater_core.so" cargo test --locked
+      - name: Test C core through the host HTTP transport (platform-stack stand-in)
+        working-directory: core
+        run: CAPGO_TEST_HOST_TRANSPORT=1 CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build/libcapgo_updater_core.so" cargo test --locked --tests
 
   c_core_memcheck:
     permissions:

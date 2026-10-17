@@ -312,6 +312,59 @@ static int32_t cb_verify(void *context, const char *server_name, const uint8_t *
     return verdict;
 }
 
+/* jni.rs JniHost::http_request: `String httpRequest(String method, String url, String headersJson,
+ * byte[] body, long timeoutMs, String bodyPath, long sink)`, null when the host has no transport,
+ * else the result JSON. Java reports the response through CapgoCoreNative.httpHead / httpData /
+ * httpProgress with `sink`, on this thread. */
+static int32_t cb_http_request(void *context, const CapgoHttpRequest *request, const CapgoHttpSink *sink,
+                               char **result_json) {
+    jni_host *h = context;
+    static const char failed[] = "{\"error\":\"network\",\"message\":\"HTTP request failed in host\"}";
+    env_scope s;
+    if (!enter(h, &s)) {
+        *result_json = cg_strdup(failed);
+        return CAPGO_HTTP_FAILED;
+    }
+    bool called = false;
+    char *reply = NULL;
+    jmethodID m = method(s.env, h->host, "httpRequest",
+                         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BJLjava/lang/String;J)Ljava/lang/"
+                         "String;");
+    jstring method_name = m ? jstr(s.env, request->method) : NULL;
+    jstring url = method_name ? jstr(s.env, request->url) : NULL;
+    jstring headers = url ? jstr(s.env, request->headers_json) : NULL;
+    bool ready = headers != NULL;
+    jbyteArray body = NULL;
+    if (ready && request->body) {
+        body = (*s.env)->NewByteArray(s.env, (jsize)request->body_length);
+        if (body) (*s.env)->SetByteArrayRegion(s.env, body, 0, (jsize)request->body_length, (const jbyte *)request->body);
+        ready = body && !(*s.env)->ExceptionCheck(s.env);
+    }
+    jstring path = NULL;
+    if (ready && request->body_path) {
+        path = jstr(s.env, request->body_path);
+        ready = path != NULL;
+    }
+    if (ready) {
+        jlong timeout = request->timeout_ms > (uint64_t)INT64_MAX ? INT64_MAX : (jlong)request->timeout_ms;
+        jobject value = (*s.env)->CallObjectMethod(s.env, h->host, m, method_name, url, headers, body, timeout, path,
+                                                   (jlong)(intptr_t)sink);
+        called = !(*s.env)->ExceptionCheck(s.env);
+        if (called) reply = string_result(s.env, value);
+    }
+    if (!leave(h, &s) || !called) {
+        free(reply);
+        *result_json = cg_strdup(failed);
+        return CAPGO_HTTP_FAILED;
+    }
+    if (!reply) return CAPGO_HTTP_UNAVAILABLE;
+    cj *parsed = cj_parse(reply, NULL);
+    bool error = !parsed || cj_get(parsed, "error") != NULL;
+    cj_free(parsed);
+    *result_json = reply;
+    return error ? CAPGO_HTTP_FAILED : CAPGO_HTTP_COMPLETED;
+}
+
 static void cb_release(void *context) {
     jni_host *h = context;
     JNIEnv *env = NULL;
@@ -347,6 +400,7 @@ CG_JNI_EXPORT jlong JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_eng
         .hook = cb_hook,
         .release = cb_release,
         .verify_server_certificate = cb_verify,
+        .http_request = cb_http_request,
     };
     cg_error err = CG_ERROR_INIT;
     cg_engine *engine = NULL;
@@ -390,4 +444,41 @@ CG_JNI_EXPORT jstring JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_e
 CG_JNI_EXPORT void JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_engineDestroy(JNIEnv *env, jclass cls,
                                                                                          jlong engine) {
     if (engine) cg_engine_free_handle((cg_engine *)(intptr_t)engine);
+}
+
+/* ---------------------------------------------------------------------------- transport sink */
+
+/* `static native int httpHead(long sink, int status, String headersJson)`: 1 (cancel) for a 0 sink. */
+CG_JNI_EXPORT jint JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpHead(JNIEnv *env, jclass cls,
+                                                                                    jlong sink, jint status,
+                                                                                    jstring headers_json) {
+    cg_error err = CG_ERROR_INIT;
+    char *headers = read_string(env, headers_json, &err);
+    cg_err_clear(&err);
+    if (!headers) return 1;
+    const CapgoHttpSink *target = (const CapgoHttpSink *)(intptr_t)sink;
+    jint result = target && target->on_head ? target->on_head(target->handle, status, headers) : 1;
+    free(headers);
+    return result;
+}
+
+/* `static native int httpData(long sink, ByteBuffer buffer, int offset, int length)`; the buffer
+ * must be direct. */
+CG_JNI_EXPORT jint JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpData(JNIEnv *env, jclass cls,
+                                                                                    jlong sink, jobject buffer,
+                                                                                    jint offset, jint length) {
+    if (offset < 0 || length < 0 || !buffer) return 1;
+    uint8_t *address = (*env)->GetDirectBufferAddress(env, buffer);
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (!address || capacity < 0 || (jlong)offset + (jlong)length > capacity) return 1;
+    const CapgoHttpSink *target = (const CapgoHttpSink *)(intptr_t)sink;
+    return target && target->on_data ? target->on_data(target->handle, address + offset, (size_t)length) : 1;
+}
+
+/* `static native int httpProgress(long sink, long written)` */
+CG_JNI_EXPORT jint JNICALL Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpProgress(JNIEnv *env, jclass cls,
+                                                                                        jlong sink, jlong written) {
+    if (written < 0) return 1;
+    const CapgoHttpSink *target = (const CapgoHttpSink *)(intptr_t)sink;
+    return target && target->on_progress ? target->on_progress(target->handle, (uint64_t)written) : 1;
 }

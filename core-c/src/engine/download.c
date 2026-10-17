@@ -408,6 +408,7 @@ typedef struct {
     uint64_t existing;
     cg_block_writer *file;
     uint64_t written;
+    uint64_t base; /* bytes already in the file when the body started (host-written bodies) */
     bool has_expected_total;
     uint64_t expected_total;
     uint64_t offset;
@@ -444,11 +445,28 @@ static bool zip_head(zip_transfer *t, const cg_net_stream_head *head, cg_net_err
     int fd = cg_fsutil_open(t->temp, O_CREAT | O_WRONLY | (append ? O_APPEND : O_TRUNC), 0666);
     if (fd < 0) return cg_net_error_set_own(err, CG_NET_IO, cg_io_message(errno));
     t->written = append ? t->existing : 0;
+    t->base = t->written;
+    if (head->body_in_file) {
+        /* The file is ready (truncated or kept for the append): the host writes. */
+        close(fd);
+        return true;
+    }
     /* A resumed body only covers the tail: no streamed result. */
     cg_stream_sink none = {.kind = CG_SINK_NONE};
     if (t->file) cg_block_writer_free(t->file);
     t->file = cg_block_writer_new(fd, append ? &none : t->sink);
     return true;
+}
+
+/* download.rs zip_progress_step: 10..=70 %, in steps of 10. */
+static void zip_progress_step(zip_transfer *t) {
+    if (!t->has_expected_total || t->expected_total == 0) return;
+    int64_t percent = f64_to_i64(((double)t->written / (double)t->expected_total) * 100.0);
+    percent = percent < 10 ? 10 : percent > 70 ? 70 : percent;
+    if (percent >= t->last_percent + 10) {
+        t->last_percent = (percent / 10) * 10;
+        cg_download_progress(t->engine, t->id, t->last_percent);
+    }
 }
 
 static bool zip_chunk(zip_transfer *t, const uint8_t *data, size_t len, cg_net_error *err) {
@@ -461,20 +479,22 @@ static bool zip_chunk(zip_transfer *t, const uint8_t *data, size_t len, cg_net_e
         return false;
     }
     t->written += len;
-    if (t->has_expected_total && t->expected_total > 0) {
-        int64_t percent = f64_to_i64(((double)t->written / (double)t->expected_total) * 100.0);
-        percent = percent < 10 ? 10 : percent > 70 ? 70 : percent;
-        if (percent >= t->last_percent + 10) {
-            t->last_percent = (percent / 10) * 10;
-            cg_download_progress(t->engine, t->id, t->last_percent);
-        }
-    }
+    zip_progress_step(t);
+    return true;
+}
+
+/* The host appended the body to the file itself: `written` bytes so far. */
+static bool zip_written(zip_transfer *t, uint64_t written, cg_net_error *err) {
+    if (cg_cancel_is_cancelled(t->cancel)) return stopped(err);
+    t->written = t->base + written;
+    zip_progress_step(t);
     return true;
 }
 
 static bool zip_handler(void *context, const cg_net_stream *event, cg_net_error *err) {
     zip_transfer *t = context;
     if (event->kind == CG_NET_STREAM_HEAD) return zip_head(t, event->head, err);
+    if (event->kind == CG_NET_STREAM_WRITTEN) return zip_written(t, event->written, err);
     return zip_chunk(t, event->data, event->len, err);
 }
 
@@ -494,7 +514,8 @@ static bool transfer_zip_once(cg_engine *engine, const char *url, const char *ve
     snprintf(range, sizeof range, "bytes=%" PRIu64 "-", t.existing);
     cg_net_header headers[1] = {{"Range", range}};
     cg_net_error net = CG_NET_ERROR_INIT;
-    bool ok = cg_http_download(engine->http, url, headers, t.existing > 0 ? 1 : 0, zip_handler, &t, NULL, &net);
+    bool ok = cg_http_download_to(engine->http, url, headers, t.existing > 0 ? 1 : 0, temp, zip_handler, &t, NULL,
+                                  &net);
     char *streamed_hash = NULL;
     if (t.file) {
         cg_error io = CG_ERROR_INIT;

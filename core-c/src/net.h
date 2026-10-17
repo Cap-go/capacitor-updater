@@ -6,7 +6,9 @@
 
 /*
  * HTTP client used by the engine (Rust net.rs: update checks, channels, stats,
- * bundle downloads). Plain HTTP/1.1 over POSIX sockets and Mbed TLS; the
+ * bundle downloads). Requests go through the host network stack when it has one
+ * (cg_host_http_request: URLSession, Android HttpEngine), with the redirect policy,
+ * cleartext check, body cap and length checks applied here. Otherwise plain HTTP/1.1 over POSIX sockets and Mbed TLS; the
  * certificate chain is verified by the host trust store (cg_host_verify_certificate),
  * the host name by this client. Behaves like the Rust client (ureq 2 + rustls):
  * same headers, redirects, proxies, cleartext policy, timeouts, connection pool,
@@ -83,6 +85,7 @@ typedef struct {
     cg_net_headers headers;
     uint8_t *body; /* malloc'd, NUL-terminated (not counted in body_len); never NULL after success */
     size_t body_len;
+    char *protocol; /* negotiated protocol (malloc'd), NULL when unknown; "http/1.1" for this client */
 } cg_net_response;
 
 const char *cg_net_response_header(const cg_net_response *response, const char *name);
@@ -99,18 +102,23 @@ typedef struct {
     cg_net_headers headers;
     bool has_content_length;
     uint64_t content_length;
+    /* The host transport appends the body to the file given to cg_http_download_to itself
+     * (CG_NET_STREAM_WRITTEN events): the head handler only prepares that file. */
+    bool body_in_file;
+    char *protocol; /* malloc'd, NULL until the transfer ended or unknown */
 } cg_net_stream_head;
 
 const char *cg_net_stream_head_header(const cg_net_stream_head *head, const char *name);
 void cg_net_stream_head_clear(cg_net_stream_head *head);
 
-typedef enum { CG_NET_STREAM_HEAD = 0, CG_NET_STREAM_CHUNK } cg_net_stream_kind;
+typedef enum { CG_NET_STREAM_HEAD = 0, CG_NET_STREAM_CHUNK, CG_NET_STREAM_WRITTEN } cg_net_stream_kind;
 
 typedef struct {
     cg_net_stream_kind kind;
     const cg_net_stream_head *head; /* CG_NET_STREAM_HEAD */
     const uint8_t *data;            /* CG_NET_STREAM_CHUNK */
     size_t len;
+    uint64_t written; /* CG_NET_STREAM_WRITTEN: total body bytes the host appended so far */
 } cg_net_stream;
 
 /* Download event handler: return false with *err set to abort the transfer (the error is
@@ -131,6 +139,8 @@ char *cg_http_get_user_agent(cg_http *http);
 /* Connect/read/write timeout (0 keeps the 20 s default). Downloads use at least 60 s. */
 void cg_http_set_timeout(cg_http *http, uint64_t timeout_ms);
 void cg_http_set_allow_https_to_http_redirect(cg_http *http, bool allow);
+/* Send through the host network stack when it has one (default), else always this client. */
+void cg_http_set_system_http(cg_http *http, bool enabled);
 
 /* Sends a request (follows up to 5 redirects) and buffers the (API sized, gzip decoded) body.
  * `body` NULL = no body (no Content-Length). Non-2xx statuses are responses, not errors.
@@ -148,6 +158,13 @@ bool cg_http_send_json(cg_http *http, const char *method, const char *url, const
 bool cg_http_download(cg_http *http, const char *url, const cg_net_header *headers, size_t header_count,
                       cg_net_stream_handler handler, void *context, cg_net_stream_head *head_out,
                       cg_net_error *err);
+/* cg_http_download whose body may go straight to `body_path` (NULL: none): when the host
+ * transport carries the request, the head has body_in_file set, the handler prepares the file
+ * (truncate, or keep it for an append) and the host appends the body (CG_NET_STREAM_WRITTEN
+ * events). This client still hands every CG_NET_STREAM_CHUNK to the handler. */
+bool cg_http_download_to(cg_http *http, const char *url, const cg_net_header *headers, size_t header_count,
+                         const char *body_path, cg_net_stream_handler handler, void *context,
+                         cg_net_stream_head *head_out, cg_net_error *err);
 
 /* A redirect may never downgrade HTTPS to plain HTTP unless explicitly allowed. */
 bool cg_net_redirect_allowed(const char *from_scheme, const char *to_scheme, bool allow_downgrade);

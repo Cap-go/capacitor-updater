@@ -111,7 +111,8 @@ static bool http_request(struct cg_engine *engine, const cj *input, cj **result,
             return net_error(&net, err);
         }
         *result = cj_objv("status", cj_u64(head.status), "headers", headers_json(&head.headers), "bodyHex",
-                          cj_str_own(cg_text_hex_encode((const uint8_t *)body.data, body.len)), NULL);
+                          cj_str_own(cg_text_hex_encode((const uint8_t *)body.data, body.len)), "protocol",
+                          head.protocol ? cj_str(head.protocol) : cj_null(), NULL);
         cg_net_stream_head_clear(&head);
         cg_buf_free(&body);
         cg_http_free(client);
@@ -130,7 +131,8 @@ static bool http_request(struct cg_engine *engine, const cj *input, cj **result,
     cg_http_free(client);
     if (!ok) return net_error(&net, err);
     *result = cj_objv("status", cj_u64(response.status), "headers", headers_json(&response.headers), "bodyHex",
-                      cj_str_own(cg_text_hex_encode(response.body, response.body_len)), NULL);
+                      cj_str_own(cg_text_hex_encode(response.body, response.body_len)), "protocol",
+                      response.protocol ? cj_str(response.protocol) : cj_null(), NULL);
     cg_net_response_clear(&response);
     return true;
 }

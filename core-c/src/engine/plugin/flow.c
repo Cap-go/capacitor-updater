@@ -145,6 +145,7 @@ cj *cg_flow_load_plugin(cg_engine *engine, const cj *input, cg_error *err) {
     cj_set(runtime, "timeoutMs", cj_u64(timeout_ms));
     cj_set(runtime, "allowHttpsToHttpRedirect",
            cj_bool(cg_plugin_object_bool(object, "allowHttpsToHttpRedirect", false)));
+    cj_set(runtime, "systemHttp", cj_bool(cg_plugin_object_bool(object, "systemHttp", true)));
     char *version_build = CG_CONFIG_DUP(engine, version_build);
     if (*config.native_version && !*version_build) cj_set(runtime, "versionBuild", cj_str(config.native_version));
     free(version_build);

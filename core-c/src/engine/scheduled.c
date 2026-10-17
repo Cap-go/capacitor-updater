@@ -244,6 +244,7 @@ static cj *job_settings(cg_engine *engine) {
         "isProd", cj_bool(config->is_prod),                               //
         "previewSession", cj_bool(config->preview_session),               //
         "allowHttpsToHttpRedirect", cj_bool(config->allow_https_to_http_redirect), //
+        "systemHttp", cj_bool(config->system_http),                       //
         "timeoutMs", cj_u64(config->timeout_ms),                          //
         "publicKey", cj_str(config->public_key),                          //
         NULL);

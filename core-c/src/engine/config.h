@@ -62,6 +62,8 @@ typedef struct cg_engine_config {
     bool preview_session;
     /* Follow redirects that downgrade HTTPS to HTTP (off by default). */
     bool allow_https_to_http_redirect;
+    /* Send through the host network stack when it has one (systemHttp, default on). */
+    bool system_http;
     uint64_t timeout_ms;
     /* Directory holding one sub-directory per downloaded bundle id. */
     char *bundle_root;
