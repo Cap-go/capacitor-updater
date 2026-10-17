@@ -130,6 +130,18 @@ impl Engine {
             "allowHttpsToHttpRedirect".into(),
             json!(super::object_bool(&object, "allowHttpsToHttpRedirect", false)),
         );
+        runtime.insert(
+            "http3".into(),
+            json!(super::object_bool(
+                &object,
+                "http3",
+                crate::engine::config::DEFAULT_HTTP3
+            )),
+        );
+        runtime.insert(
+            "http3Connections".into(),
+            json!(super::object_i64(&object, "http3Connections", 0).max(0)),
+        );
         if !config.native_version.is_empty() && self.config().version_build.is_empty() {
             runtime.insert("versionBuild".into(), json!(config.native_version));
         }

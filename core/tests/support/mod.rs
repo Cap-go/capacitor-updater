@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod abi;
+pub mod h3server;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -219,6 +220,22 @@ impl TestHttp {
             timeout,
             _dir: dir,
         }
+    }
+
+    /// The engine behind this client (its host storage keeps `Alt-Svc` announcements).
+    pub fn engine(&self) -> &Arc<AbiEngine> {
+        &self.engine
+    }
+
+    /// `test.<op>` with this client's user agent and timeout unless `input` sets them.
+    pub fn call(&self, op: &str, mut input: Value) -> AbiResult<Value> {
+        if input.get("userAgent").is_none() {
+            input["userAgent"] = json!(self.user_agent);
+        }
+        if input.get("timeoutMs").is_none() {
+            input["timeoutMs"] = json!(self.timeout.as_millis() as u64);
+        }
+        self.engine.call(&format!("test.{op}"), &input)
     }
 
     fn request(&self, mut input: Value) -> AbiResult<HttpResponse> {

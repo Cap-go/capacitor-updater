@@ -148,6 +148,8 @@ impl Engine {
             "previewSession": config.preview_session,
             "allowHttpsToHttpRedirect": config.allow_https_to_http_redirect,
             "timeoutMs": config.timeout_ms,
+            "http3": config.http3,
+            "http3Connections": config.http3_connections,
             "publicKey": config.public_key,
         })
     }

@@ -46,6 +46,15 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 
 rustls-platform-verifier = { version = "0.5", optional = true }
 
+# HTTP/3 (QUIC) client, used for origins that announce `Alt-Svc: h3` (net/h3.rs). quinn on the
+# same rustls 0.23 + ring provider as the HTTP/1.1 client; tokio drives it on two threads.
+quinn = { version = "0.11", default-features = false, features = ["rustls-ring", "runtime-tokio", "log"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "time", "net", "sync"] }
+bytes = "1"
+http = "1"
+
 [dev-dependencies]
 capgo-updater-core = { path = ".", features = ["test-support"] }
 brotli = "7"

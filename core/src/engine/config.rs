@@ -36,6 +36,9 @@ impl Default for Keys {
     }
 }
 
+/// HTTP/3 when the configuration does not say (plugin option `http3`).
+pub const DEFAULT_HTTP3: bool = true;
+
 #[derive(Debug, Clone, Default)]
 pub struct EngineConfig {
     /// `android`, `ios`, or another host name; sent as `platform` to the backend.
@@ -61,6 +64,10 @@ pub struct EngineConfig {
     /// Follow redirects that downgrade HTTPS to HTTP (off by default).
     pub allow_https_to_http_redirect: bool,
     pub timeout_ms: u64,
+    /// HTTP/3 for origins that announce it (`Alt-Svc: h3`); HTTP/1.1 otherwise.
+    pub http3: bool,
+    /// QUIC connections per origin (manifest downloads spread over them; 0: the default).
+    pub http3_connections: u64,
     /// Directory holding one sub-directory per downloaded bundle id.
     pub bundle_root: PathBuf,
     /// Updater-owned storage root (temp unzip folders, download temp files).
@@ -94,6 +101,7 @@ impl EngineConfig {
         let mut config = Self {
             platform: text(object, "platform"),
             timeout_ms: object.get("timeoutMs").and_then(Value::as_u64).unwrap_or(20_000),
+            http3: DEFAULT_HTTP3,
             is_prod: flag(object, "isProd", true),
             bundle_root: path("bundleRoot"),
             storage_root: path("storageRoot"),
@@ -166,6 +174,12 @@ impl EngineConfig {
         }
         if let Some(value) = object.get("timeoutMs").and_then(Value::as_u64) {
             self.timeout_ms = value;
+        }
+        if let Some(value) = object.get("http3").and_then(Value::as_bool) {
+            self.http3 = value;
+        }
+        if let Some(value) = object.get("http3Connections").and_then(Value::as_u64) {
+            self.http3_connections = value;
         }
         if let Some(public_key) = object.get("publicKey") {
             let public_key = public_key.as_str().unwrap_or_default();

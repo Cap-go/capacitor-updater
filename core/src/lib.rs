@@ -14,12 +14,14 @@
 //! [`api::call`] only exposes the bundle path guard. The pure rules are pinned
 //! by the shared fixtures in `native-contract-tests/` (`tests/contract.rs`).
 
+pub mod altsvc;
 pub mod api;
 pub mod bundle;
 pub mod crypto;
 pub mod engine;
 pub mod error;
 pub mod ffi;
+pub mod h3;
 pub mod host;
 pub mod http;
 #[cfg(feature = "jni")]

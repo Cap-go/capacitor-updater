@@ -631,6 +631,7 @@ impl Engine {
         let response = Response {
             status: head.status,
             headers: head.headers,
+            protocol: head.protocol,
             body,
         };
         let json = response.json().unwrap_or(Value::Null);

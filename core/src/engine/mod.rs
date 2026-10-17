@@ -87,6 +87,10 @@ impl Engine {
             weak: weak.clone(),
         });
         engine.http.set_allow_https_to_http_redirect(allow_downgrade);
+        let config = engine.config();
+        engine
+            .http
+            .set_http3(config.http3, config.http3_connections.min(usize::MAX as u64) as usize);
         Ok(engine)
     }
 
@@ -119,7 +123,7 @@ impl Engine {
 
     /// Applies runtime settings (endpoints, ids, public key, preview session, timeout).
     pub fn configure(&self, value: &Value) -> CoreResult<()> {
-        let (user_agent, timeout, allow_downgrade) = {
+        let (user_agent, timeout, allow_downgrade, http3) = {
             let mut config = self.config_mut();
             // All or nothing: an invalid public key must not leave half the settings applied.
             let mut updated = config.clone();
@@ -135,11 +139,13 @@ impl Engine {
                 ),
                 Duration::from_millis(config.timeout_ms),
                 allow_downgrade,
+                (config.http3, config.http3_connections.min(usize::MAX as u64) as usize),
             )
         };
         self.http.set_user_agent(user_agent);
         self.http.set_timeout(timeout);
         self.http.set_allow_https_to_http_redirect(allow_downgrade);
+        self.http.set_http3(http3.0, http3.1);
         Ok(())
     }
 

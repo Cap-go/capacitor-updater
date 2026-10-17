@@ -1,12 +1,21 @@
 //! HTTP client used by the engine (update checks, channels, stats, bundle
-//! downloads). Plain HTTP/1.1 over rustls; certificate chains are verified by
+//! downloads). HTTP/1.1 over rustls, and HTTP/3 (QUIC, `h3.rs`) for origins that
+//! announced it with `Alt-Svc` (`altsvc.rs`); certificate chains are verified by
 //! the operating system trust store through the host (Android
-//! `X509TrustManager`, iOS `SecTrust`), host names by rustls.
+//! `X509TrustManager`, iOS `SecTrust`), host names by rustls, on both.
+//!
+//! HTTP/3 is used for an https origin when it is enabled (`http3`), no proxy applies,
+//! the URL has no user info, and a fresh `Alt-Svc: h3` announcement for the same host is
+//! known. A QUIC failure (no connection, or a request that failed before its response
+//! head) sends the request over HTTP/1.1 and keeps the origin on HTTP/1.1 for 5 minutes,
+//! doubling up to 80 minutes while it keeps failing.
 
 use crate::sync::{LockRecover, RwLockRecover};
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::CryptoProvider;
@@ -14,11 +23,24 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
 use serde_json::Value;
 
-use crate::host::{Host, HttpProxy};
+use crate::altsvc::{self, AltSvcCache};
+use crate::h3::{H3Client, H3Error, H3Request};
+use crate::host::{Host, HttpProxy, LogLevel};
 
 /// Largest non-download response body accepted (JSON API responses).
 const MAX_API_BODY_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
+/// QUIC connections per origin when the configuration does not say.
+pub const DEFAULT_HTTP3_CONNECTIONS: usize = 4;
+/// Most QUIC connections per origin a configuration can ask for.
+pub const MAX_HTTP3_CONNECTIONS: usize = 16;
+/// An origin whose QUIC attempt failed stays on HTTP/1.1 for this long, doubled for each
+/// further failure in a row (at most 16 times).
+const BROKEN_BASE: Duration = Duration::from_secs(300);
+const BROKEN_MAX_DOUBLINGS: u32 = 4;
+/// Protocol names (logs, `test.http`).
+pub const PROTOCOL_HTTP1: &str = "http/1.1";
+pub const PROTOCOL_H3: &str = "h3";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetErrorKind {
@@ -53,6 +75,8 @@ pub struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    /// [`PROTOCOL_HTTP1`] or [`PROTOCOL_H3`] (the last hop).
+    pub protocol: &'static str,
 }
 
 impl Response {
@@ -82,6 +106,38 @@ pub struct StreamHead {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub content_length: Option<u64>,
+    /// [`PROTOCOL_HTTP1`] or [`PROTOCOL_H3`] (the last hop).
+    pub protocol: &'static str,
+}
+
+/// A response head with its body reader, from either protocol.
+struct RawResponse {
+    status: u16,
+    /// As [`headers_of`]: lowercase names, each with the first valid value of that name.
+    headers: Vec<(String, String)>,
+    body: Box<dyn Read + Send>,
+    protocol: &'static str,
+}
+
+impl RawResponse {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+/// HTTP/3 settings and state shared by the requests of one client.
+struct Http3State {
+    enabled: AtomicBool,
+    connections: AtomicUsize,
+    client: H3Client,
+    alt_svc: AltSvcCache,
+    /// Origins kept on HTTP/1.1 after a QUIC failure: until when, failures in a row.
+    broken: Mutex<HashMap<String, (Instant, u32)>>,
+    /// Last protocol used per origin (logged when it changes).
+    protocols: Mutex<BTreeMap<String, &'static str>>,
 }
 
 impl StreamHead {
@@ -107,6 +163,7 @@ pub struct Http {
     /// Agents for system HTTP proxies (ureq sets the proxy per agent), keyed
     /// by (download agent, proxy). Rebuilt when the timeout changes.
     proxied: Mutex<std::collections::HashMap<(bool, HttpProxy), ureq::Agent>>,
+    http3: Http3State,
 }
 
 fn classify_io(error: &std::io::Error) -> NetErrorKind {
@@ -172,7 +229,12 @@ impl Http {
         } else {
             timeout
         };
-        let tls = Arc::new(tls_config(host.clone()));
+        let provider = provider();
+        let verifier: Arc<dyn ServerCertVerifier> = Arc::new(HostVerifier {
+            host: host.clone(),
+            provider: provider.clone(),
+        });
+        let tls = Arc::new(tls_config(verifier.clone(), provider.clone()));
         let agent = build_agent(tls.clone(), timeout);
         let download_agent = build_agent(tls.clone(), timeout.max(Duration::from_secs(60)));
         Self {
@@ -185,12 +247,47 @@ impl Http {
             host,
             cleartext: Mutex::new(std::collections::HashMap::new()),
             proxied: Mutex::new(std::collections::HashMap::new()),
+            http3: Http3State {
+                enabled: AtomicBool::new(false),
+                connections: AtomicUsize::new(DEFAULT_HTTP3_CONNECTIONS),
+                client: H3Client::new(verifier, provider),
+                alt_svc: AltSvcCache::default(),
+                broken: Mutex::new(HashMap::new()),
+                protocols: Mutex::new(BTreeMap::new()),
+            },
         }
     }
 
+    /// Turns HTTP/3 on or off and sets the QUIC connections per origin (0: the default,
+    /// at most [`MAX_HTTP3_CONNECTIONS`]).
+    pub fn set_http3(&self, enabled: bool, connections: usize) {
+        let connections = if connections == 0 {
+            DEFAULT_HTTP3_CONNECTIONS
+        } else {
+            connections.min(MAX_HTTP3_CONNECTIONS)
+        };
+        self.http3.enabled.store(enabled, Ordering::SeqCst);
+        self.http3.connections.store(connections, Ordering::SeqCst);
+    }
+
+    /// The protocol last used per origin (`https://host:port`).
+    pub fn protocols(&self) -> BTreeMap<String, String> {
+        self.http3
+            .protocols
+            .lock_or_recover()
+            .iter()
+            .map(|(origin, protocol)| (origin.clone(), protocol.to_string()))
+            .collect()
+    }
+
+    /// QUIC connections opened by this client.
+    pub fn http3_connections_opened(&self) -> usize {
+        self.http3.client.opened_connections()
+    }
+
     /// The agent for `url`: through the system HTTP proxy the host reports
-    /// (Android `ProxySelector`, iOS system proxy settings), else direct.
-    fn agent_for(&self, download: bool, url: &str) -> ureq::Agent {
+    /// (Android `ProxySelector`, iOS system proxy settings, `proxy`), else direct.
+    fn agent_for(&self, download: bool, proxy: Option<HttpProxy>) -> ureq::Agent {
         let direct = || {
             if download {
                 self.download_agent.read_or_recover().clone()
@@ -198,7 +295,7 @@ impl Http {
                 self.agent.read_or_recover().clone()
             }
         };
-        let Some(proxy) = self.host.proxy_for_url(url) else {
+        let Some(proxy) = proxy else {
             return direct();
         };
         let mut proxied = self.proxied.lock_or_recover();
@@ -299,7 +396,8 @@ impl Http {
     }
 
     /// Sends a request, following up to 5 redirects. A redirect from HTTPS to
-    /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set.
+    /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set. Each hop goes over
+    /// HTTP/3 when its origin qualifies (see the module comment), else HTTP/1.1.
     fn execute(
         &self,
         download: bool,
@@ -307,19 +405,16 @@ impl Http {
         url: &str,
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
-    ) -> Result<ureq::Response, NetError> {
+    ) -> Result<RawResponse, NetError> {
         crate::host::release_method_lane();
         let mut current = url.to_string();
         let mut method = method.to_string();
         let mut body = body;
         for _ in 0..=MAX_REDIRECTS {
             self.check_cleartext(&current)?;
-            let request = self.prepare(self.agent_for(download, &current), &method, &current, headers);
-            let response = Self::finish(match body {
-                Some(body) => request.send_bytes(body),
-                None => request.call(),
-            })?;
-            let status = response.status();
+            let response = self.send_hop(download, &method, &current, headers, body)?;
+            self.note_alt_svc(&current, &response);
+            let status = response.status;
             if !(300..400).contains(&status) || status == 304 {
                 return Ok(response);
             }
@@ -358,6 +453,180 @@ impl Http {
         })
     }
 
+    /// One hop: HTTP/3 when the origin qualifies, HTTP/1.1 otherwise or after a QUIC failure.
+    fn send_hop(
+        &self,
+        download: bool,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<&[u8]>,
+    ) -> Result<RawResponse, NetError> {
+        let proxy = self.host.proxy_for_url(url);
+        if let Some(target) = self.h3_target(url, proxy.is_some()) {
+            if let Some(fields) = self.h3_fields(headers, body) {
+                let timeout = self.request_timeout(download);
+                let request = H3Request {
+                    method,
+                    url: target.url.as_str(),
+                    host: &target.host,
+                    port: target.port,
+                    headers: &fields,
+                    body,
+                    timeout,
+                    idempotent: idempotent(method),
+                };
+                let connections = self.http3.connections.load(Ordering::SeqCst);
+                match self.http3.client.request(&request, connections) {
+                    Ok(response) => {
+                        self.http3.broken.lock_or_recover().remove(&target.origin);
+                        self.note_protocol(&target.origin, PROTOCOL_H3);
+                        return Ok(RawResponse {
+                            status: response.status,
+                            headers: h3_headers(&response.fields),
+                            body: response.body,
+                            protocol: PROTOCOL_H3,
+                        });
+                    }
+                    Err(H3Error::Fail(error)) => return Err(error),
+                    Err(H3Error::Fallback(reason)) => self.h3_failed(&target.origin, &reason),
+                }
+            }
+        }
+        let request = self.prepare(self.agent_for(download, proxy), method, url, headers);
+        let response = Self::finish(match body {
+            Some(body) => request.send_bytes(body),
+            None => request.call(),
+        })?;
+        self.note_protocol(&origin_of(url), PROTOCOL_HTTP1);
+        Ok(RawResponse {
+            status: response.status(),
+            headers: headers_of(&response),
+            body: Box::new(response.into_reader()),
+            protocol: PROTOCOL_HTTP1,
+        })
+    }
+
+    /// Read timeout of a request (downloads: at least 60 s).
+    fn request_timeout(&self, download: bool) -> Duration {
+        let timeout = *self.timeout.read_or_recover();
+        if download {
+            timeout.max(Duration::from_secs(60))
+        } else {
+            timeout
+        }
+    }
+
+    /// The HTTP/3 target of `url`, when HTTP/3 is on, no proxy applies, the URL is https
+    /// without user info, the origin is not broken and announced `h3` on its own host.
+    fn h3_target(&self, url: &str, proxied: bool) -> Option<H3Target> {
+        if !self.http3.enabled.load(Ordering::SeqCst) || proxied || env_proxy_configured() {
+            return None;
+        }
+        let parsed = url::Url::parse(url).ok()?;
+        if parsed.scheme() != "https" || !parsed.username().is_empty() || parsed.password().is_some() {
+            return None;
+        }
+        let host = parsed.host_str()?.to_ascii_lowercase();
+        let origin = format!("https://{host}:{}", parsed.port_or_known_default()?);
+        if let Some((until, _)) = self.http3.broken.lock_or_recover().get(&origin) {
+            if Instant::now() < *until {
+                return None;
+            }
+        }
+        let port = self.http3.alt_svc.lookup(self.host.as_ref(), &origin, now_ms())?;
+        Some(H3Target {
+            url: parsed,
+            host,
+            port,
+            origin,
+        })
+    }
+
+    /// The HTTP/3 field lines of a request, as the HTTP/1.1 client would send them; `None`
+    /// when a header is not valid (the HTTP/1.1 client then reports it).
+    fn h3_fields(&self, headers: &[(&str, &str)], body: Option<&[u8]>) -> Option<Vec<(String, String)>> {
+        let user_agent = self.user_agent();
+        let mut fields: Vec<(String, String)> = vec![("user-agent".into(), user_agent)];
+        for (name, value) in headers {
+            if name.is_empty() || !name.bytes().all(is_tchar) || !value.bytes().all(is_field_char) {
+                return None;
+            }
+            let name = name.to_ascii_lowercase();
+            // Connection-specific fields do not exist in HTTP/3; :authority replaces Host.
+            if CONNECTION_FIELDS.contains(&name.as_str()) {
+                continue;
+            }
+            if !name.starts_with("x-") {
+                fields.retain(|(existing, _)| *existing != name);
+            }
+            fields.push((name, value.trim().to_string()));
+        }
+        if !fields.iter().any(|(name, _)| name == "accept") {
+            fields.push(("accept".into(), "*/*".into()));
+        }
+        if let Some(body) = body {
+            if !fields.iter().any(|(name, _)| name == "content-length") {
+                fields.push(("content-length".into(), body.len().to_string()));
+            }
+        }
+        Some(fields)
+    }
+
+    /// A QUIC failure: the origin stays on HTTP/1.1 for a while.
+    fn h3_failed(&self, origin: &str, reason: &str) {
+        let mut broken = self.http3.broken.lock_or_recover();
+        let failures = broken.get(origin).map_or(0, |(_, failures)| *failures) + 1;
+        let period = BROKEN_BASE * (1u32 << (failures - 1).min(BROKEN_MAX_DOUBLINGS));
+        broken.insert(origin.to_string(), (Instant::now() + period, failures));
+        drop(broken);
+        self.host.log(
+            LogLevel::Debug,
+            &format!(
+                "HTTP/3 to {origin} failed ({reason}), using HTTP/1.1 for {} s",
+                period.as_secs()
+            ),
+        );
+    }
+
+    /// Logs the protocol of `origin` when it changes.
+    fn note_protocol(&self, origin: &str, protocol: &'static str) {
+        let previous = self
+            .http3
+            .protocols
+            .lock_or_recover()
+            .insert(origin.to_string(), protocol);
+        if previous != Some(protocol) {
+            self.host
+                .log(LogLevel::Debug, &format!("HTTP protocol for {origin}: {protocol}"));
+        }
+    }
+
+    /// Records the `Alt-Svc` announcement of an https response (HTTP/3 on only).
+    fn note_alt_svc(&self, url: &str, response: &RawResponse) {
+        if !self.http3.enabled.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(value) = response.header("alt-svc") else {
+            return;
+        };
+        let Ok(parsed) = url::Url::parse(url) else {
+            return;
+        };
+        if parsed.scheme() != "https" {
+            return;
+        }
+        let (Some(host), Some(port)) = (parsed.host_str(), parsed.port_or_known_default()) else {
+            return;
+        };
+        let host = host.to_ascii_lowercase();
+        let origin = format!("https://{host}:{port}");
+        let announcement = altsvc::parse(value, &host);
+        self.http3
+            .alt_svc
+            .update(self.host.as_ref(), &origin, announcement, now_ms());
+    }
+
     pub fn set_allow_https_to_http_redirect(&self, allow: bool) {
         self.allow_https_to_http_redirect
             .store(allow, std::sync::atomic::Ordering::SeqCst);
@@ -386,20 +655,21 @@ impl Http {
             kind: classify_io(&error),
             message: error.to_string(),
         };
-        let (status, mut headers, gzip, mut buffer) = contain_ureq_panic(|| {
+        let (status, mut headers, gzip, mut buffer, protocol) = contain_ureq_panic(|| {
             let response = self.execute(false, method, url, &headers, body)?;
-            let status = response.status();
-            let headers = headers_of(&response);
+            let status = response.status;
             let gzip = response.header("Content-Encoding").is_some_and(|value| {
                 value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip")
             });
+            let protocol = response.protocol;
+            let headers = response.headers;
             let mut buffer = Vec::new();
             response
-                .into_reader()
+                .body
                 .take(MAX_API_BODY_BYTES)
                 .read_to_end(&mut buffer)
                 .map_err(read_error)?;
-            Ok((status, headers, gzip, buffer))
+            Ok((status, headers, gzip, buffer, protocol))
         })?;
         if gzip {
             // The decoded size is capped too (gzip bomb).
@@ -419,6 +689,7 @@ impl Http {
             status,
             headers,
             body: buffer,
+            protocol,
         })
     }
 
@@ -456,13 +727,14 @@ impl Http {
         let (head, mut reader) = contain_ureq_panic(|| {
             let response = self.execute(true, "GET", url, &headers, None)?;
             let head = StreamHead {
-                status: response.status(),
-                headers: headers_of(&response),
+                status: response.status,
                 content_length: response
                     .header("Content-Length")
                     .and_then(|value| value.trim().parse().ok()),
+                headers: response.headers,
+                protocol: response.protocol,
             };
-            Ok((head, response.into_reader()))
+            Ok((head, response.body))
         })?;
         handler(Stream::Head(&head))?;
         let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
@@ -478,6 +750,99 @@ impl Http {
         }
         Ok(head)
     }
+}
+
+/// Where an HTTP/3 request goes.
+struct H3Target {
+    url: url::Url,
+    /// URL host, lowercase (IPv6 in brackets).
+    host: String,
+    /// Announced HTTP/3 port.
+    port: u16,
+    /// `https://host:port` of the URL.
+    origin: String,
+}
+
+/// Fields HTTP/3 forbids or replaces (RFC 9114 4.2).
+const CONNECTION_FIELDS: [&str; 7] = [
+    "host",
+    "connection",
+    "keep-alive",
+    "proxy-connection",
+    "transfer-encoding",
+    "upgrade",
+    "te",
+];
+
+fn is_tchar(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
+fn is_field_char(byte: u8) -> bool {
+    byte == b' ' || byte == b'\t' || (0x21..=0x7e).contains(&byte)
+}
+
+/// Methods a QUIC failure may resend over HTTP/1.1 once something was sent (ureq's list).
+fn idempotent(method: &str) -> bool {
+    matches!(method, "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PUT" | "TRACE")
+}
+
+/// `scheme://host:port` of a URL (empty when it does not parse).
+fn origin_of(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(parsed) => format!(
+            "{}://{}:{}",
+            parsed.scheme(),
+            parsed.host_str().unwrap_or_default().to_ascii_lowercase(),
+            parsed.port_or_known_default().unwrap_or(0)
+        ),
+        Err(_) => String::new(),
+    }
+}
+
+/// An HTTP proxy from the environment (`ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, any case):
+/// such traffic stays on the proxied HTTP/1.1 path.
+fn env_proxy_configured() -> bool {
+    [
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
+}
+
+/// HTTP/3 field lines as [`headers_of`] gives HTTP/1.1 ones (ureq semantics): each name
+/// with the first value of that name, when that value is valid (UTF-8, no NUL, visible
+/// ASCII, spaces and tabs after trimming).
+pub fn h3_headers(fields: &[(String, Vec<u8>)]) -> Vec<(String, String)> {
+    let raw: Vec<(String, Option<String>)> = fields
+        .iter()
+        .map(|(name, value)| {
+            let text = std::str::from_utf8(value)
+                .ok()
+                .filter(|text| !text.contains('\0'))
+                .map(str::trim)
+                .filter(|text| text.bytes().all(is_field_char))
+                .map(str::to_string);
+            (name.to_ascii_lowercase(), text)
+        })
+        .collect();
+    raw.iter()
+        .filter_map(|(name, _)| {
+            let (_, first) = raw.iter().find(|(other, _)| other == name)?;
+            first.as_ref().map(|value| (name.clone(), value.clone()))
+        })
+        .collect()
 }
 
 /// `headers` plus `Accept-Encoding: <value>` unless the caller set one.
@@ -543,12 +908,10 @@ fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
-fn tls_config(host: Arc<dyn Host>) -> ClientConfig {
-    let provider = provider();
-    let builder = ClientConfig::builder_with_provider(provider.clone())
+fn tls_config(verifier: Arc<dyn ServerCertVerifier>, provider: Arc<CryptoProvider>) -> ClientConfig {
+    let builder = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("ring supports the default TLS versions");
-    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(HostVerifier { host, provider });
     builder
         .dangerous()
         .with_custom_certificate_verifier(verifier)
@@ -782,7 +1145,8 @@ mod tests {
                     if worker == 0 {
                         http.set_timeout(Duration::from_secs(1 + round % 2));
                     } else {
-                        let _ = http.agent_for(round % 2 == 0, "http://updates.invalid/");
+                        let proxy = http.host.proxy_for_url("http://updates.invalid/");
+                        let _ = http.agent_for(round % 2 == 0, proxy);
                     }
                 }
                 let _ = done.send(());

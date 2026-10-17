@@ -363,45 +363,146 @@ pub(crate) fn engine_call(engine: &Engine, name: &str, input: &Value) -> Option<
         }
         // One request with a fresh client (no pooled connection or TLS session).
         "http" => http_request(engine, input),
+        // Several requests at once through one fresh client.
+        "httpBatch" => http_batch(engine, input),
+        // The protocol last used per origin by the engine's own client.
+        "httpProtocols" => Ok(json!({
+            "protocols": engine.http.protocols(),
+            "quicConnections": engine.http.http3_connections_opened(),
+        })),
         _ => return None,
     })
 }
 
-fn http_request(engine: &Engine, input: &Value) -> CoreResult<Value> {
+/// A fresh client for `test.http` / `test.httpBatch`: `userAgent`, `timeoutMs` (10 s),
+/// `http3` (the engine's setting), `http3Connections` (the engine's setting).
+fn test_client(engine: &Engine, input: &Value) -> CoreResult<Http> {
     let user_agent = match opt_str(input, "userAgent")? {
         Some(user_agent) => user_agent.to_string(),
         None => engine.http.user_agent(),
     };
     let timeout = Duration::from_millis(opt_i64(input, "timeoutMs")?.unwrap_or(10_000).max(1) as u64);
     let client = Http::new(Arc::clone(&engine.host), user_agent, timeout);
+    let config = engine.config();
+    let http3 = input["http3"].as_bool().unwrap_or(config.http3);
+    let connections = opt_i64(input, "http3Connections")?.map_or(config.http3_connections, |value| value.max(0) as u64);
+    client.set_http3(http3, connections.min(usize::MAX as u64) as usize);
+    Ok(client)
+}
+
+/// `headers`: `[[name, value], ...]`.
+fn request_headers(input: &Value) -> CoreResult<Vec<(String, String)>> {
+    let Some(list) = input.get("headers").filter(|value| !value.is_null()) else {
+        return Ok(Vec::new());
+    };
+    list.as_array()
+        .ok_or_else(|| bad("`headers` must be an array"))?
+        .iter()
+        .map(|pair| match (pair[0].as_str(), pair[1].as_str()) {
+            (Some(name), Some(value)) => Ok((name.to_string(), value.to_string())),
+            _ => Err(bad("`headers` entries must be [name, value]")),
+        })
+        .collect()
+}
+
+fn headers_json(headers: &[(String, String)]) -> Value {
+    headers.iter().map(|(name, value)| json!([name, value])).collect()
+}
+
+/// One request (`url`, `method`, `json`, `headers`, `download`, `cancelAfterBytes`) with
+/// `client`: `{status, headers, bodyHex, protocol}`.
+fn run_request(client: &Http, input: &Value) -> CoreResult<Value> {
     let url = req_str(input, "url")?;
-    let headers_of =
-        |headers: &[(String, String)]| -> Value { headers.iter().map(|(name, value)| json!([name, value])).collect() };
+    let headers = request_headers(input)?;
+    let headers: Vec<(&str, &str)> = headers
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
     if input["download"].as_bool().unwrap_or(false) {
+        let cancel_after = opt_i64(input, "cancelAfterBytes")?;
         let mut body = Vec::new();
         let head = client
-            .download(url, &[], &mut |event| {
+            .download(url, &headers, &mut |event| {
                 if let Stream::Chunk(chunk) = event {
                     body.extend_from_slice(chunk);
+                    if cancel_after.is_some_and(|limit| body.len() as i64 >= limit) {
+                        return Err(NetError {
+                            kind: NetErrorKind::Io,
+                            message: "download_stopped".into(),
+                        });
+                    }
                 }
                 Ok(())
             })
             .map_err(net_error)?;
         return Ok(json!({
             "status": head.status,
-            "headers": headers_of(&head.headers),
+            "headers": headers_json(&head.headers),
             "bodyHex": hex_encode(&body),
+            "protocol": head.protocol,
         }));
     }
     let method = opt_str(input, "method")?.unwrap_or("GET");
     let response = match input.get("json") {
         Some(body) if !body.is_null() => client.send_json(method, url, body),
-        _ => client.send(method, url, &[], None),
+        _ => client.send(method, url, &headers, None),
     }
     .map_err(net_error)?;
     Ok(json!({
         "status": response.status,
-        "headers": headers_of(&response.headers),
+        "headers": headers_json(&response.headers),
         "bodyHex": hex_encode(&response.body),
+        "protocol": response.protocol,
+    }))
+}
+
+fn http_request(engine: &Engine, input: &Value) -> CoreResult<Value> {
+    let client = test_client(engine, input)?;
+    run_request(&client, input)
+}
+
+/// `requests` (each like `test.http`) run `parallel` at a time (default all) through one
+/// fresh client: `{results: [{status, protocol, bodyLength, bodySha256} | {error: {code,
+/// message}}], quicConnections}`.
+fn http_batch(engine: &Engine, input: &Value) -> CoreResult<Value> {
+    let client = test_client(engine, input)?;
+    let requests = input["requests"]
+        .as_array()
+        .ok_or_else(|| bad("`requests` must be an array"))?
+        .clone();
+    let parallel = opt_i64(input, "parallel")?
+        .map_or(requests.len(), |value| value.max(1) as usize)
+        .max(1);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results: Vec<std::sync::Mutex<Value>> = requests.iter().map(|_| std::sync::Mutex::new(Value::Null)).collect();
+    std::thread::scope(|scope| {
+        for _ in 0..parallel.min(requests.len()) {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(request) = requests.get(index) else {
+                    break;
+                };
+                let result = match run_request(&client, request) {
+                    Ok(reply) => {
+                        let body = hex_decode(reply["bodyHex"].as_str().unwrap_or_default()).unwrap_or_default();
+                        json!({
+                            "status": reply["status"],
+                            "protocol": reply["protocol"],
+                            "bodyLength": body.len(),
+                            "bodySha256": crypto::checksum::sha256_hex(&body),
+                        })
+                    }
+                    Err(error) => json!({ "error": { "code": error.code, "message": error.message } }),
+                };
+                *results[index].lock().unwrap_or_else(|poison| poison.into_inner()) = result;
+            });
+        }
+    });
+    Ok(json!({
+        "results": results
+            .into_iter()
+            .map(|result| result.into_inner().unwrap_or_else(|poison| poison.into_inner()))
+            .collect::<Vec<_>>(),
+        "quicConnections": client.http3_connections_opened(),
     }))
 }
