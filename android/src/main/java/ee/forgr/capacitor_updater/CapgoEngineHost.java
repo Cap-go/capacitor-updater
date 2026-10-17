@@ -58,6 +58,29 @@ abstract class CapgoEngineHost {
     void cancelAllDownloads() {}
 
     /**
+     * Sends one engine request through the platform network stack ({@code http_request} in
+     * {@code core/include/capgo_updater_core.h}). {@code headersJson} is a JSON array of {@code [name, value]} pairs,
+     * {@code body} may be null, {@code timeoutMs} is an idle timeout. With {@code bodyPath == null} the body goes to
+     * {@link CapgoCoreNative#httpData}; otherwise, once {@link CapgoCoreNative#httpHead} accepted the head, it is
+     * appended to that file and reported with {@link CapgoCoreNative#httpProgress}. Every sink call happens on the
+     * calling thread before this returns; redirects are reported, never followed.
+     *
+     * @return {@code {"protocol": ...}} when the response was delivered, {@code {"error": kind, "message": ...}} when
+     *     it failed, or {@code null} when nothing was sent (the engine then uses its own HTTP/1.1 client).
+     */
+    String httpRequest(
+        final String method,
+        final String url,
+        final String headersJson,
+        final byte[] body,
+        final long timeoutMs,
+        final String bodyPath,
+        final long sink
+    ) {
+        return null;
+    }
+
+    /**
      * Verifies a server chain (DER, leaf first) with the platform trust store (network security config, user CAs).
      * The engine verifies the host name. Returns {@code null} when trusted, else the reason.
      */

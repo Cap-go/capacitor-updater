@@ -281,6 +281,20 @@ public class CapgoUpdater {
         void cancelAllDownloads() {
             CapgoDownloadWorker.cancelAll(context);
         }
+
+        @Override
+        String httpRequest(
+            final String method,
+            final String url,
+            final String headersJson,
+            final byte[] body,
+            final long timeoutMs,
+            final String bodyPath,
+            final long sink
+        ) {
+            // HttpEngine (HTTP/2, HTTP/3) on Android 14+; null below: the engine's own HTTP/1.1 client.
+            return CapgoHttpTransport.request(context, method, url, headersJson, body, timeoutMs, bodyPath, sink);
+        }
     };
 
     /**

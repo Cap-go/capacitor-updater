@@ -74,6 +74,20 @@ final class CapgoCoreNative {
     static native void engineDestroy(long engine);
 
     /**
+     * Host transport sink ({@code CapgoHttpSink} of {@code core/include/capgo_updater_core.h}): the response status and
+     * headers (JSON array of {@code [name, value]} pairs), once, before the body. Called on the thread running
+     * {@link CapgoEngineHost#httpRequest}, with the {@code sink} it received. Returns 0 to continue, anything else
+     * cancels the request (also for a 0 sink).
+     */
+    static native int httpHead(long sink, int status, String headersJson);
+
+    /** Body bytes {@code [offset, offset + length)} of a direct buffer (requests without a body path). */
+    static native int httpData(long sink, java.nio.ByteBuffer buffer, int offset, int length);
+
+    /** Total body bytes appended to the body path so far. */
+    static native int httpProgress(long sink, long written);
+
+    /**
      * Robolectric runs each SDK sandbox in its own class loader, and the JVM refuses to bind one native library to
      * two class loaders, so every loader gets its own copy. Plain streams: this class also loads on API 24-25, which
      * have no java.nio.file.
