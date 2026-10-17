@@ -30,7 +30,9 @@ libc = "0.2"
 jni = { version = "0.21", default-features = false, optional = true }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-serde_json = "1"
+# float_roundtrip: correctly rounded float parsing, like the C core (strtod); the default
+# parser can be one bit off (found by the json fuzz target).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 url = "2"
 # Pinned to the ASCII-only adapter so url/idna skip the ICU normalization tables (~200 KiB):
 # Unicode (IDN) host names are rejected, punycode (xn--) host names still work.
