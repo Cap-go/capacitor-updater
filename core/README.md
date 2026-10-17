@@ -14,7 +14,7 @@ implements a handful of platform hooks.
 | `engine::store` | Bundle registry (`<id>_info`), current / next / fallback bundles, set / reset / delete, cleanup |
 | `engine::download`, `engine::manifest`, `engine::archive` | Zip and manifest downloads: resume, retries, checksum before extraction, decryption, brotli, delta cache, zip-slip / symlink guards |
 | `engine::backend`, `engine::stats` | Update, channel and stats endpoints, 429 handling, batched and persisted stats |
-| `net` | HTTP client (rustls, no cookies, HTTPS -> HTTP redirect guard) |
+| `net` | HTTP client: the host's network stack when it has one (`http_request`), else HTTP/1.1 over rustls (no cookies); redirect policy and HTTPS -> HTTP guard in both cases |
 | `policy`, `http`, `paths`, `crypto` | Pure rules used by the engine, pinned by the contract fixtures |
 
 Hosts keep only what needs the platform: the Capacitor bridge (method
@@ -60,6 +60,28 @@ backoff and survives the process). The engine then stores the job under
 `stopScheduledDownload {id}` when the scheduler stops it. `detachScheduledDownloads` releases
 waiting callers before the host frees the engine; the job still records the bundle.
 
+### Host network stack (`http_request`)
+
+The optional `http_request` callback sends the engine's requests through the platform
+stack: URLSession on iOS (HTTP/3 tried first, then HTTP/2 / HTTP/1.1), `HttpEngine` on
+Android 14+ (QUIC and HTTP/2). The engine passes method, URL, headers (its User-Agent,
+`Accept-Encoding: gzip` for API calls and `identity` for bundle files, `Range` when a
+download resumes), the body and an idle timeout, and gets the response through a sink
+(`CapgoHttpSink`) on the calling thread: the head, then the body in memory (API calls) or
+appended by the host straight to the download file (zips and manifest files, hashed and
+decrypted after the transfer). The host never follows redirects; the engine keeps its
+rules on top: redirect count and HTTPS -> HTTP guard, cleartext policy, API body cap,
+Content-Length / Content-Range checks, Range resume, retries, cancellation (a sink
+returning non-zero), checksums and encryption. Trust, pinning (ATS `NSPinnedDomains`,
+Android network security config) and the system proxy are the platform's.
+
+A host without the callback, or one answering `CAPGO_HTTP_UNAVAILABLE` (Android 13 and
+older), keeps the engine's HTTP/1.1 client; the plugin option `systemHttp: false` forces
+it. The negotiated protocol is logged at debug level when it changes
+(`System HTTP transport: h3 with <host>`) and returned by `test.http`. The test suite runs
+through a stand-in for the platform stacks with `CAPGO_TEST_HOST_TRANSPORT=1`
+(`src/test_transport.rs`); `tests/host_transport.rs` covers the hook itself.
+
 `capgo_core_call(operation, json)` exposes one stateless rule to the hosts:
 `resolvePathInside {base, path}` (bundle ids stay under the bundle root).
 
@@ -97,7 +119,8 @@ library automatically (`buildCapgoCoreHost` Gradle task).
    functions (header: `include/capgo_updater_core.h`).
 2. Implement the host callbacks: storage, events, logging, the hooks above and
    TLS verification (`verify_server_certificate`). There is no built-in
-   verifier: without it every HTTPS request fails.
+   verifier: without it every HTTPS request fails (unless every request goes
+   through `http_request`, the optional platform network stack).
 3. Forward the framework's plugin methods to `pluginMethod` and its lifecycle
    events to `appForeground` / `appBackground`.
 4. Add a binding smoke test: one core call and one engine call (see
