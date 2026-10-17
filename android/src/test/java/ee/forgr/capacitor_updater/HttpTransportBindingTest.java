@@ -260,6 +260,30 @@ public class HttpTransportBindingTest {
         assertEquals("network", CapgoHttpTransport.errorKind(-1, null));
     }
 
+    /** An HTTPS origin announcing HTTP/3 on the same host gets a QUIC hint for the next HttpEngine. */
+    @Test
+    public void altSvcHttp3BecomesAQuicHint() {
+        assertArrayEquals(
+            new Object[] { "cdn.test", 443, 443 },
+            CapgoHttpTransport.quicHint("https://cdn.test/b.zip", "h3=\":443\"; ma=86400, h3-29=\":443\"")
+        );
+        assertArrayEquals(
+            new Object[] { "10.0.2.2", 9443, 9443 },
+            CapgoHttpTransport.quicHint("https://10.0.2.2:9443/z/a.zip", "h3=\":9443\"; ma=2592000")
+        );
+        assertArrayEquals(
+            new Object[] { "cdn.test", 443, 8443 },
+            CapgoHttpTransport.quicHint("https://cdn.test/", "h2=\":443\", h3=\"cdn.test:8443\"")
+        );
+        // Only h3 on the same host, only for HTTPS.
+        assertNull(CapgoHttpTransport.quicHint("https://cdn.test/", "h3-29=\":443\""));
+        assertNull(CapgoHttpTransport.quicHint("https://cdn.test/", "h3=\"other.test:443\""));
+        assertNull(CapgoHttpTransport.quicHint("http://cdn.test/", "h3=\":443\""));
+        assertNull(CapgoHttpTransport.quicHint("https://cdn.test/", "clear"));
+        assertNull(CapgoHttpTransport.quicHint("https://cdn.test/", "h3=\":nope\""));
+        assertNull(CapgoHttpTransport.quicHint("https://cdn.test/", null));
+    }
+
     @Test
     public void theDefaultHostHasNoTransport() {
         final CapgoEngineHost host = new TransportHost() {

@@ -174,36 +174,237 @@ final class CapgoHttpTransport {
 
     // ------------------------------------------------------------------------------------------------ HttpEngine
 
+    /** Most origins given a QUIC hint in one process (each new one rebuilds the engine once). */
+    static final int MAX_QUIC_HINTS = 16;
+
+    /**
+     * The HTTP/3 alternative an {@code Alt-Svc} header announces for an HTTPS origin, as {@code [host, port, altPort]}
+     * of {@code HttpEngine.Builder.addQuicHint}, or {@code null}. Only {@code h3} on the same host counts.
+     */
+    static Object[] quicHint(final String url, final String altSvc) {
+        if (altSvc == null || url == null) {
+            return null;
+        }
+        final java.net.URI uri;
+        try {
+            uri = new java.net.URI(url);
+        } catch (final java.net.URISyntaxException e) {
+            return null;
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+            return null;
+        }
+        final int port = uri.getPort() > 0 ? uri.getPort() : 443;
+        for (final String entry : altSvc.split(",")) {
+            final String value = entry.trim();
+            if (!value.startsWith("h3=\"")) {
+                continue;
+            }
+            final int end = value.indexOf('"', 4);
+            if (end < 0) {
+                continue;
+            }
+            final String authority = value.substring(4, end);
+            final int colon = authority.lastIndexOf(':');
+            if (colon < 0 || (colon > 0 && !authority.substring(0, colon).equalsIgnoreCase(uri.getHost()))) {
+                continue;
+            }
+            try {
+                final int altPort = Integer.parseInt(authority.substring(colon + 1));
+                if (altPort > 0 && altPort <= 65535) {
+                    return new Object[] { uri.getHost(), port, altPort };
+                }
+            } catch (final NumberFormatException ignored) {
+                // Not a port: skip this entry.
+            }
+        }
+        return null;
+    }
+
+    /** {@code host:port} of an HTTPS URL (the key of a QUIC hint), or {@code null}. */
+    static String httpsOrigin(final String url) {
+        try {
+            final java.net.URI uri = new java.net.URI(url);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+                return null;
+            }
+            return uri.getHost() + ":" + (uri.getPort() > 0 ? uri.getPort() : 443);
+        } catch (final java.net.URISyntaxException e) {
+            return null;
+        }
+    }
+
     /** Everything that touches {@code android.net.http}: loaded only on devices that have it. */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private static final class Api34 {
 
+        /** One built HttpEngine, the origins it was given a QUIC hint for, and the requests it still carries. */
+        static final class Lease {
+
+            final HttpEngine engine;
+            final java.util.Set<String> hinted;
+            int inFlight;
+            boolean retired;
+
+            Lease(final HttpEngine engine, final java.util.Set<String> hinted) {
+                this.engine = engine;
+                this.hinted = hinted;
+            }
+        }
+
+        /** Learned QUIC hints, kept across launches: one {@code host port altPort} line each. */
+        private static final String HINTS_FILE = "capgo_quic_hints";
         private static final Object LOCK = new Object();
-        private static HttpEngine engine;
+        private static Lease current;
         private static boolean unavailable;
+        private static boolean loaded;
+        /** Origin ({@code host:port}) to its hint {@code [host, port, altPort]}. */
+        private static final java.util.LinkedHashMap<String, Object[]> hints = new java.util.LinkedHashMap<>();
+        private static boolean rebuild;
 
         private Api34() {}
 
-        /** The process-wide HttpEngine, built on first use; {@code null} when it cannot be built. */
-        static HttpEngine engine(final Context context) {
-            synchronized (LOCK) {
-                if (engine == null && !unavailable) {
+        private static java.io.File hintsFile(final Context context) {
+            return new java.io.File(context.getNoBackupFilesDir(), HINTS_FILE);
+        }
+
+        /** Caller holds LOCK. */
+        private static void load(final Context context) {
+            if (loaded) {
+                return;
+            }
+            loaded = true;
+            final java.io.File file = hintsFile(context);
+            if (!file.isFile()) {
+                return;
+            }
+            try (
+                java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(file), java.nio.charset.StandardCharsets.UTF_8)
+                )
+            ) {
+                String line;
+                while ((line = reader.readLine()) != null && hints.size() < MAX_QUIC_HINTS) {
+                    final String[] parts = line.trim().split(" ");
+                    if (parts.length != 3) {
+                        continue;
+                    }
                     try {
-                        final Context application = context.getApplicationContext();
-                        // No storage path: no disk cache and no persisted Alt-Svc / QUIC hints, so each process
-                        // learns HTTP/3 from the first Alt-Svc answer of a host.
-                        engine = new HttpEngine.Builder(application != null ? application : context)
-                            .setEnableQuic(true)
-                            .setEnableHttp2(true)
-                            // The core asks for gzip (API calls) or identity (bundle files) itself.
-                            .setEnableBrotli(false)
-                            .setEnableHttpCache(HttpEngine.Builder.HTTP_CACHE_DISABLED, 0)
-                            .build();
-                    } catch (final Throwable e) {
-                        unavailable = true;
+                        final Object[] hint = { parts[0], Integer.parseInt(parts[1]), Integer.parseInt(parts[2]) };
+                        hints.put(parts[0] + ":" + parts[1], hint);
+                    } catch (final NumberFormatException ignored) {
+                        // A damaged line: skipped.
                     }
                 }
-                return engine;
+            } catch (final IOException ignored) {
+                // No hints: origins are learned again from their Alt-Svc answers.
+            }
+        }
+
+        /** Caller holds LOCK. Best effort: a lost write only costs one HTTP/2 answer per origin. */
+        private static void save(final Context context) {
+            final StringBuilder text = new StringBuilder();
+            for (final Object[] hint : hints.values()) {
+                text.append(hint[0]).append(' ').append(hint[1]).append(' ').append(hint[2]).append('\n');
+            }
+            final java.io.File file = hintsFile(context);
+            final java.io.File temp = new java.io.File(file.getPath() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(temp)) {
+                out.write(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } catch (final IOException e) {
+                temp.delete();
+                return;
+            }
+            if (!temp.renameTo(file)) {
+                temp.delete();
+            }
+        }
+
+        /**
+         * HttpEngine moves an origin to HTTP/3 only for new connections: a host first reached over HTTP/2 keeps that
+         * connection even once its {@code Alt-Svc} announced HTTP/3. So an HTTPS origin announcing HTTP/3 gets a QUIC
+         * hint, kept for the next launches, and the next request builds a new engine that starts with QUIC (its TCP
+         * attempt waits briefly and takes over when QUIC fails). The old engine shuts down once its requests end.
+         */
+        static void learn(final Context context, final Object[] hint) {
+            synchronized (LOCK) {
+                load(context);
+                final String origin = hint[0] + ":" + hint[1];
+                if (!hints.containsKey(origin) && hints.size() < MAX_QUIC_HINTS) {
+                    hints.put(origin, hint);
+                    rebuild = true;
+                    save(context);
+                }
+            }
+        }
+
+        /** A hinted origin still answered without HTTP/3 (UDP blocked, QUIC gone): not hinted on the next launch. */
+        static void forget(final Context context, final String origin) {
+            synchronized (LOCK) {
+                if (hints.remove(origin) != null) {
+                    save(context);
+                }
+            }
+        }
+
+        /** No storage path: HttpEngine keeps no disk cache and no state of its own between launches. */
+        private static HttpEngine build(final Context context) {
+            final HttpEngine.Builder builder = new HttpEngine.Builder(context)
+                .setEnableQuic(true)
+                .setEnableHttp2(true)
+                // The core asks for gzip (API calls) or identity (bundle files) itself.
+                .setEnableBrotli(false)
+                .setEnableHttpCache(HttpEngine.Builder.HTTP_CACHE_DISABLED, 0);
+            for (final Object[] hint : hints.values()) {
+                builder.addQuicHint((String) hint[0], (Integer) hint[1], (Integer) hint[2]);
+            }
+            return builder.build();
+        }
+
+        /** The engine for one request ({@link #release} it after); {@code null} when HttpEngine cannot be built. */
+        static Lease acquire(final Context context) {
+            synchronized (LOCK) {
+                if (unavailable) {
+                    return null;
+                }
+                load(context);
+                if (current == null || rebuild) {
+                    rebuild = false;
+                    try {
+                        final Lease previous = current;
+                        current = new Lease(build(context), new java.util.HashSet<>(hints.keySet()));
+                        if (previous != null) {
+                            previous.retired = true;
+                            shutdownIfIdle(previous);
+                        }
+                    } catch (final Throwable e) {
+                        if (current == null) {
+                            unavailable = true;
+                            return null;
+                        }
+                        // Keep the engine that works.
+                    }
+                }
+                current.inFlight++;
+                return current;
+            }
+        }
+
+        static void release(final Lease lease) {
+            synchronized (LOCK) {
+                lease.inFlight--;
+                shutdownIfIdle(lease);
+            }
+        }
+
+        /** Caller holds LOCK. */
+        private static void shutdownIfIdle(final Lease lease) {
+            if (lease.retired && lease.inFlight == 0) {
+                try {
+                    lease.engine.shutdown();
+                } catch (final RuntimeException ignored) {
+                    // Still busy (a callback in flight): it is released with the process.
+                }
             }
         }
 
@@ -217,11 +418,16 @@ final class CapgoHttpTransport {
             final String bodyPath,
             final long sink
         ) {
-            final HttpEngine httpEngine = engine(context);
-            if (httpEngine == null) {
+            final Context application = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+            final Lease lease = acquire(application);
+            if (lease == null) {
                 return null;
             }
-            return new Exchange(sink, bodyPath, timeoutMs).run(httpEngine, method, url, headersJson, body);
+            try {
+                return new Exchange(application, lease, sink, bodyPath, timeoutMs, url).run(lease.engine, method, url, headersJson, body);
+            } finally {
+                release(lease);
+            }
         }
     }
 
@@ -274,9 +480,12 @@ final class CapgoHttpTransport {
         /** cancelReason of a redirect handed to the core: the request ends as completed. */
         private static final String REDIRECT = "redirect";
 
+        private final Context context;
+        private final Api34.Lease lease;
         private final long sink;
         private final String bodyPath;
         private final long timeoutMs;
+        private final String url;
         private final CallingThreadExecutor executor = new CallingThreadExecutor();
         private FileChannel file;
         private long appended;
@@ -287,10 +496,48 @@ final class CapgoHttpTransport {
         private String cancelMessage;
         private String protocol;
 
-        Exchange(final long sink, final String bodyPath, final long timeoutMs) {
+        Exchange(
+            final Context context,
+            final Api34.Lease lease,
+            final long sink,
+            final String bodyPath,
+            final long timeoutMs,
+            final String url
+        ) {
+            this.context = context;
+            this.lease = lease;
             this.sink = sink;
             this.bodyPath = bodyPath;
             this.timeoutMs = timeoutMs <= 0 ? 60_000 : timeoutMs;
+            this.url = url;
+        }
+
+        /**
+         * An HTTPS origin reached without HTTP/3 that announces it gets a QUIC hint for the next engine; a hinted origin
+         * that still answered without HTTP/3 loses its hint for the next launches.
+         */
+        private void learnAltSvc(final UrlResponseInfo info) {
+            final String negotiated = info.getNegotiatedProtocol();
+            if (negotiated != null && (negotiated.startsWith("h3") || negotiated.contains("quic"))) {
+                return;
+            }
+            final String origin = httpsOrigin(url);
+            if (origin == null) {
+                return;
+            }
+            if (lease.hinted.contains(origin)) {
+                Api34.forget(context, origin);
+                return;
+            }
+            for (final Map.Entry<String, String> header : info.getHeaders().getAsList()) {
+                if ("alt-svc".equalsIgnoreCase(header.getKey())) {
+                    final Object[] hint = quicHint(url, header.getValue());
+                    if (hint != null) {
+                        Api34.learn(context, hint);
+                        return;
+                    }
+                }
+            }
         }
 
         String run(final HttpEngine engine, final String method, final String url, final String headersJson, final byte[] body) {
@@ -396,6 +643,7 @@ final class CapgoHttpTransport {
         @Override
         public void onResponseStarted(final UrlRequest request, final UrlResponseInfo info) {
             protocol = info.getNegotiatedProtocol();
+            learnAltSvc(info);
             if (CapgoCoreNative.httpHead(sink, info.getHttpStatusCode(), headersOf(info)) != 0) {
                 cancel(request, "cancelled", "Request cancelled");
                 return;
