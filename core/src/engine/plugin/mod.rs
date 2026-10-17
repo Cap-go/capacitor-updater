@@ -210,7 +210,7 @@ impl PluginConfig {
                 mode.to_string()
             }
             other => {
-                let enabled = other.map_or(true, |value| value == "true");
+                let enabled = other.is_none_or(|value| value == "true");
                 if enabled {
                     let direct = match object.get("directUpdate") {
                         Some(Value::String(value)) => match value.as_str() {

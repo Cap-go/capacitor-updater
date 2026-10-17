@@ -96,6 +96,7 @@ cg_engine *cg_engine_create(const char *config_json, const CapgoHostCallbacks *c
     engine->http = cg_http_new(&engine->host, user_agent, config->timeout_ms);
     free(user_agent);
     cg_http_set_allow_https_to_http_redirect(engine->http, config->allow_https_to_http_redirect);
+    cg_http_set_http3(engine->http, config->http3, config->http3_connections);
     cg_mutex_init(&engine->config_lock);
     cg_mutex_init(&engine->config_write);
     engine->config = config;
@@ -228,12 +229,15 @@ bool cg_engine_configure(cg_engine *engine, const cj *value, cg_error *err) {
     }
     bool allow_downgrade = config->allow_https_to_http_redirect;
     uint64_t timeout_ms = config->timeout_ms;
+    bool http3 = config->http3;
+    uint64_t http3_connections = config->http3_connections;
     char *user_agent;
     http_settings(config, &user_agent);
     cg_engine_config_commit(engine, config);
     cg_http_set_user_agent(engine->http, user_agent);
     cg_http_set_timeout(engine->http, timeout_ms);
     cg_http_set_allow_https_to_http_redirect(engine->http, allow_downgrade);
+    cg_http_set_http3(engine->http, http3, http3_connections);
     free(user_agent);
     return true;
 }

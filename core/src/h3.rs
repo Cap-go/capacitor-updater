@@ -7,7 +7,7 @@
 //!   is busy and the limit is not reached. A single transfer (zip, API call) uses one stream
 //!   on one connection; parallel manifest files spread over several connections, each with
 //!   its own congestion window (one loss-limited window for all files was up to 7x slower on
-//!   a lossy link: core-c/BENCHMARK-HTTP3.md).
+//!   a lossy link: core-c/BENCHMARK-CORE-HTTP3.md).
 //! - A connection that cannot be established, or a request that fails before its response
 //!   head, is reported as [`H3Error::Fallback`]: the caller marks the origin broken and sends
 //!   the request over HTTP/1.1 (only idempotent requests once something was sent).

@@ -102,3 +102,10 @@ path = "fuzz_targets/path_guard.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "alt_svc"
+path = "fuzz_targets/alt_svc.rs"
+test = false
+doc = false
+bench = false

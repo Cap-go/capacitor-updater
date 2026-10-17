@@ -146,6 +146,9 @@ cj *cg_flow_load_plugin(cg_engine *engine, const cj *input, cg_error *err) {
     cj_set(runtime, "timeoutMs", cj_u64(timeout_ms));
     cj_set(runtime, "allowHttpsToHttpRedirect",
            cj_bool(cg_plugin_object_bool(object, "allowHttpsToHttpRedirect", false)));
+    cj_set(runtime, "http3", cj_bool(cg_plugin_object_bool(object, "http3", CG_DEFAULT_HTTP3)));
+    int64_t http3_connections = cg_plugin_object_i64(object, "http3Connections", 0);
+    cj_set(runtime, "http3Connections", cj_i64(http3_connections > 0 ? http3_connections : 0));
     char *version_build = CG_CONFIG_DUP(engine, version_build);
     if (*config.native_version && !*version_build) cj_set(runtime, "versionBuild", cj_str(config.native_version));
     free(version_build);

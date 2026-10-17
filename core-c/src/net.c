@@ -17,6 +17,8 @@
  */
 
 #include "net.h"
+#include "h3.h"
+#include "altsvc.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -340,6 +342,11 @@ typedef struct {
 
 struct cg_http {
     const cg_host *host;
+    atomic_bool http3;
+    atomic_size_t http3_connections;
+    cg_h3_client *h3;
+    cg_altsvc_cache alt_svc;
+    cj *protocols, *broken;
     cg_mutex lock; /* everything below */
     char *user_agent;
     uint64_t timeout_ms;
@@ -449,6 +456,12 @@ cg_http *cg_http_new(const cg_host *host, const char *user_agent, uint64_t timeo
     http->timeout_ms = timeout_ms ? timeout_ms : DEFAULT_TIMEOUT_MS;
     atomic_init(&http->allow_downgrade, false);
     load_env_proxy(http);
+    atomic_init(&http->http3, false);
+    atomic_init(&http->http3_connections, 4);
+    http->h3 = cg_h3_client_new(host);
+    cg_altsvc_cache_init(&http->alt_svc);
+    http->protocols = cj_obj();
+    http->broken = cj_obj();
     return http;
 }
 
@@ -457,6 +470,10 @@ void cg_http_free(cg_http *http) {
     size_t count;
     net_conn **idle = pool_drain(http, &count);
     close_all(idle, count);
+    cg_h3_client_free(http->h3);
+    cg_altsvc_cache_clear(&http->alt_svc);
+    cj_free(http->protocols);
+    cj_free(http->broken);
     free(http->user_agent);
     free(http->env_proxy_host);
     free(http->env_proxy_auth);
@@ -465,6 +482,26 @@ void cg_http_free(cg_http *http) {
     cg_strs_free(&http->proxies_seen);
     cg_mutex_destroy(&http->lock);
     free(http);
+}
+
+void cg_http_set_http3(cg_http *http, bool enabled, size_t connections) {
+    atomic_store(&http->http3, enabled);
+    atomic_store(&http->http3_connections, connections == 0 ? 4 : connections > 32 ? 32 : connections);
+}
+cj *cg_http_protocols(cg_http *http) {
+    cg_lock(&http->lock);
+    cj *out = cj_clone(http->protocols);
+    cg_unlock(&http->lock);
+    return out;
+}
+size_t cg_http_http3_connections_opened(cg_http *http) { return cg_h3_opened_connections(http->h3); }
+static void note_protocol(cg_http *http, const char *origin, const char *protocol) {
+    cg_lock(&http->lock);
+    const char *old = cj_get_str(http->protocols, origin);
+    bool changed = !old || strcmp(old, protocol) != 0;
+    cj_set(http->protocols, origin, cj_str(protocol));
+    cg_unlock(&http->lock);
+    if (changed) cg_debug(http->host, "HTTP protocol for %s: %s", origin, protocol);
 }
 
 void cg_http_set_user_agent(cg_http *http, const char *user_agent) {
@@ -756,6 +793,8 @@ typedef enum { BODY_LENGTH, BODY_CHUNKED, BODY_CLOSE } body_type;
 
 typedef struct {
     cg_http *http;
+    cg_h3_stream *h3;
+    const char *protocol;
     net_conn *conn; /* NULL once the body is done (connection pooled or closed) */
     uint16_t status;
     raw_header *headers;
@@ -1004,6 +1043,7 @@ static void response_add_header(net_response *response, const char *line, size_t
 }
 
 static void response_free(net_response *response) {
+    cg_h3_body_free(response->h3);
     conn_close(response->conn);
     for (size_t i = 0; i < response->header_count; i++) {
         free(response->headers[i].name);
@@ -1206,6 +1246,7 @@ static long read_chunked(net_response *response, uint8_t *buffer, size_t len, ne
 
 /* Body read: bytes, 0 at the end, -1 with *io. */
 static long response_read(net_response *response, uint8_t *buffer, size_t len, net_io_error *io) {
+    if (response->h3) return cg_h3_body_read(response->h3, buffer, len, io);
     if (response->finished || !response->conn || len == 0) return 0;
     switch (response->body) {
     case BODY_LENGTH: {
@@ -1400,6 +1441,7 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
         cg_buf_free(&value);
         free(credentials);
     }
+    bool has_userinfo = *username || password != NULL;
     free(username);
     free(password);
     bool https = cg_url_scheme_is(&url, "https");
@@ -1415,6 +1457,76 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
     }
     char *hostname = cg_url_host_str(&url);
     uint16_t port = (uint16_t)cg_url_port_or_default(&url);
+    char *origin = cg_fmt("%s://%s:%u", https ? "https" : "http", hostname, port);
+    cg_lock(&http->lock);
+    int64_t until = 0;
+    cj_as_i64(cj_get(cj_get(http->broken, origin), "until"), &until);
+    bool broken = until > cg_mono_ms();
+    bool proxy = route->proxy || http->env_proxy_host;
+    cg_unlock(&http->lock);
+    if (https && atomic_load(&http->http3) && !proxy && !broken && !has_userinfo) {
+        uint16_t h3_port = cg_altsvc_lookup(&http->alt_svc, http->host, origin, cg_now_ms());
+        if (h3_port) {
+            req_headers fields = {0};
+            for (size_t i = 0; i < headers.len; i++) {
+                char *name = cg_lower(headers.items[i].name);
+                if (strcmp(name, "host") && strcmp(name, "connection") && strcmp(name, "keep-alive") &&
+                    strcmp(name, "proxy-connection") && strcmp(name, "transfer-encoding") && strcmp(name, "upgrade")) {
+                    char *value = cg_trim(headers.items[i].value);
+                    headers_set(&fields, name, value);
+                    free(value);
+                }
+                free(name);
+            }
+            if (!headers_has(&fields, "accept")) headers_push(&fields, "accept", "*/*");
+            char *path = cg_url_path(&url), *query = cg_url_query(&url);
+            char *target = query && *query ? cg_fmt("%s?%s", path, query) : cg_strdup(path);
+            char *authority = url.port >= 0 ? cg_fmt("%s:%d", hostname, url.port) : cg_strdup(hostname);
+            cg_h3_request request = {method, authority, target, hostname, h3_port,
+                (cg_net_header *)fields.items, fields.len, body, body_len, route->timeout_ms, idempotent(method)};
+            cg_h3_response reply = {0};
+            char *reason = NULL;
+            cg_h3_outcome outcome = cg_h3_send(http->h3, &request, atomic_load(&http->http3_connections), &reply, err, &reason);
+            free(authority); free(target); free(path); free(query); headers_free(&fields);
+            if (outcome == CG_H3_OK) {
+                memset(response, 0, sizeof *response);
+                response->http = http;
+                response->h3 = reply.body;
+                reply.body = NULL;
+                response->protocol = "h3";
+                response->status = reply.status;
+                cg_net_headers valid = {0};
+                cg_h3_headers_of(reply.fields, reply.field_count, &valid);
+                for (size_t i = 0; i < valid.len; i++) {
+                    char *line = cg_fmt("%s: %s", valid.items[i].name, valid.items[i].value);
+                    response_add_header(response, line, strlen(line));
+                    free(line);
+                }
+                cg_net_headers_clear(&valid);
+                cg_h3_response_clear(&reply);
+                cg_lock(&http->lock); cj_remove(http->broken, origin); cg_unlock(&http->lock);
+                note_protocol(http, origin, "h3");
+            } else if (outcome == CG_H3_FALLBACK) {
+                cg_lock(&http->lock);
+                int64_t failures = 0;
+                cj_as_i64(cj_get(cj_get(http->broken, origin), "failures"), &failures);
+                failures++;
+                int64_t period = 300 * ((int64_t)1 << (failures > 7 ? 6 : failures - 1));
+                cj_set(http->broken, origin, cj_objv("until", cj_i64(cg_mono_ms() + period * 1000),
+                                                      "failures", cj_i64(failures), NULL));
+                cg_unlock(&http->lock);
+                cg_debug(http->host, "HTTP/3 to %s failed (%s), using HTTP/1.1 for %lld s", origin,
+                         reason ? reason : "", (long long)period);
+            }
+            free(reason);
+            if (outcome != CG_H3_FALLBACK) {
+                free(origin); free(hostname); cg_url_clear(&url); headers_free(&headers);
+                return outcome == CG_H3_OK;
+            }
+        }
+    }
+    note_protocol(http, origin, "http/1.1");
+    free(origin);
     /* send_prelude */
     char *path = cg_url_path(&url);
     char *query = cg_url_query(&url);
@@ -1497,6 +1609,7 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
         }
         net_io_clear(&io);
         response->http = http;
+        response->protocol = "http/1.1";
         response->conn = conn;
         if (response->body == BODY_LENGTH && response->remaining == 0) response_done(response);
         ok = true;
@@ -1525,6 +1638,22 @@ static bool execute(cg_http *http, bool download, const char *method_in, const c
         bool sent = request_once(http, &route, method, current, headers, header_count, body, body_len, response, err);
         route_clear(&route);
         if (!sent) goto done;
+        if (atomic_load(&http->http3)) {
+            cg_url parsed;
+            if (cg_url_parse(current, NULL, &parsed) == CG_URL_OK) {
+                if (cg_url_scheme_is(&parsed, "https")) {
+                    const char *value = response_header(response, "alt-svc");
+                    if (value) {
+                        char *host = cg_url_host_str(&parsed);
+                        char *origin = cg_fmt("https://%s:%u", host, cg_url_port_or_default(&parsed));
+                        cg_altsvc_update(&http->alt_svc, http->host, origin,
+                            cg_altsvc_parse(value, strlen(value), host), cg_now_ms());
+                        free(origin); free(host);
+                    }
+                }
+                cg_url_clear(&parsed);
+            }
+        }
         uint16_t status = response->status;
         if (status < 300 || status >= 400 || status == 304) {
             ok = true;
@@ -1716,6 +1845,7 @@ bool cg_http_send(cg_http *http, const char *method, const char *url, const cg_n
     free(all);
     if (!ok) return false;
     out->status = response.status;
+    out->protocol = response.protocol;
     headers_of(&response, &out->headers);
     const char *encoding = response_header(&response, "Content-Encoding");
     bool gzip = false;
@@ -1809,6 +1939,7 @@ bool cg_http_download(cg_http *http, const char *url, const cg_net_header *heade
     if (!ok) return false;
     cg_net_stream_head head = {0};
     head.status = response.status;
+    head.protocol = response.protocol;
     headers_of(&response, &head.headers);
     const char *length = response_header(&response, "Content-Length");
     if (length) {

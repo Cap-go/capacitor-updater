@@ -1,14 +1,14 @@
 // Prepare an isolated bench app for one plugin checkout.
 // Copies <checkout>/example-app native projects into .context/bench/apps/<label>,
-// points @capgo/capacitor-updater at file:<checkout>, installs the bench web
+// packs the plugin checkout, installs that snapshot and the bench web
 // assets (www/) and writes a bench-only capacitor.config.json.
 // The checkout's own example-app is never modified.
 //
 // Usage: bun scripts/bench/prepare-app.mjs --label before --checkout <dir> --platform ios|android --variant plain|enc [--no-install]
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl } from './config.mjs';
+import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl, updaterBaseUrl, benchDir } from './config.mjs';
 import { ensureBuiltinPad, ensureKeys } from './fixtures.mjs';
 
 function arg(name, fallback = undefined) {
@@ -85,12 +85,17 @@ if (!skipInstall) {
   const pkgPath = path.join(appDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   pkg.name = `capgo-bench-${label}`;
-  pkg.dependencies['@capgo/capacitor-updater'] = `file:${checkout}`;
+  // Pack the declared shipping files so local installs cannot recursively copy .context.
+  const packageDir = path.join(benchDir, 'packages');
+  mkdirSync(packageDir, { recursive: true });
+  const archive = path.join(packageDir, `${label}-${platform}.tgz`);
+  run('bun', ['pm', 'pack', '--ignore-scripts', '--filename', archive], checkout);
+  pkg.dependencies['@capgo/capacitor-updater'] = `file:${archive}`;
   pkg.scripts = {};
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
   rmSync(path.join(appDir, 'bun.lock'), { force: true });
 
-  // Bun keeps file: deps as copies; drop them so the current checkout is re-copied.
+  // Remove cached copies of this plugin before installing the new package.
   const bunStore = path.join(appDir, 'node_modules', '.bun');
   if (existsSync(bunStore)) {
     for (const entry of readdirSync(bunStore)) {
@@ -133,6 +138,46 @@ if (platform === 'android') {
   if (!configs.some((xml) => /cleartextTrafficPermitted="true"/.test(xml) && xml.includes(`>${host}<`))) {
     throw new Error(`release network security config does not allow cleartext to ${host} (${xmlDir})`);
   }
+  // BENCH_TRUST_CA=<PEM file>: this bench build (only) also trusts that CA, e.g. the local CA of a
+  // Caddy reverse proxy serving the updater over HTTPS / HTTP/3 (BENCH_UPDATER_BASE_URL).
+  const trustCa = process.env.BENCH_TRUST_CA;
+  if (trustCa) {
+    const rawDir = path.join(releaseSrc, 'res', 'raw');
+    mkdirSync(rawDir, { recursive: true });
+    cpSync(trustCa, path.join(rawDir, 'bench_ca.pem'));
+    const anchors = [
+      '    <base-config>',
+      '        <trust-anchors>',
+      '            <certificates src="system" />',
+      '            <certificates src="@raw/bench_ca" />',
+      '        </trust-anchors>',
+      '    </base-config>',
+      '</network-security-config>',
+    ].join('\n');
+    for (const file of readdirSync(xmlDir).filter((f) => f.endsWith('.xml'))) {
+      const xmlPath = path.join(xmlDir, file);
+      const xml = readFileSync(xmlPath, 'utf8');
+      if (!xml.includes('@raw/bench_ca')) writeFileSync(xmlPath, xml.replace('</network-security-config>', anchors));
+    }
+  }
+  // BENCH_PIN_SHA256=<base64 SPKI SHA-256>: pins the bench host domains to that key (pinning checks).
+  const pin = process.env.BENCH_PIN_SHA256;
+  if (pin) {
+    for (const file of readdirSync(xmlDir).filter((f) => f.endsWith('.xml'))) {
+      const xmlPath = path.join(xmlDir, file);
+      const xml = readFileSync(xmlPath, 'utf8').replace(/\s*<pin-set>[\s\S]*?<\/pin-set>/g, '');
+      const pinSet = `\n        <pin-set>\n            <pin digest="SHA-256">${pin}</pin>\n        </pin-set>`;
+      writeFileSync(xmlPath, xml.replace(/(<domain-config[^>]*>)/, `$1${pinSet}`));
+    }
+  }
+}
+
+// BENCH_PIN_SHA256 on iOS: ATS NSPinnedDomains pins the updater host to that CA key (pinning checks).
+if (platform === 'ios' && process.env.BENCH_PIN_SHA256) {
+  const plist = path.join(appDir, 'ios', 'App', 'App', 'Info.plist');
+  const host = new URL(updaterBaseUrl).hostname;
+  const pinned = { [host]: { NSPinnedCAIdentities: [{ 'SPKI-SHA256-BASE64': process.env.BENCH_PIN_SHA256 }] } };
+  run('plutil', ['-replace', 'NSAppTransportSecurity.NSPinnedDomains', '-json', JSON.stringify(pinned), plist], appDir);
 }
 
 rmSync(path.join(appDir, 'www'), { recursive: true, force: true });
@@ -147,11 +192,14 @@ const updater = {
   directUpdate: false,
   appReadyTimeout: 60000,
   responseTimeout: 600,
-  updateUrl: `${deviceBaseUrl}/api/updates`,
-  statsUrl: `${deviceBaseUrl}/api/stats`,
-  channelUrl: `${deviceBaseUrl}/api/channel`,
+  updateUrl: `${updaterBaseUrl}/api/updates`,
+  statsUrl: `${updaterBaseUrl}/api/stats`,
+  channelUrl: `${updaterBaseUrl}/api/channel`,
 };
 if (variant === 'enc') updater.publicKey = keys.publicKey;
+// Compare core HTTP/3 against the same core's HTTP/1.1 transport.
+updater.http3 = process.env.BENCH_HTTP3 !== '0';
+updater.http3Connections = Number(process.env.BENCH_HTTP3_CONNECTIONS ?? '4');
 
 const config = {
   appId: 'app.capgo.updater',

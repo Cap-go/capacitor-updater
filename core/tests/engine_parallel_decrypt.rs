@@ -44,7 +44,7 @@ fn aes_encrypt(plain: &[u8]) -> Vec<u8> {
     let cipher = aes::Aes128::new(&AES_KEY.into());
     let pad = 16 - plain.len() % 16;
     let mut data = plain.to_vec();
-    data.extend(std::iter::repeat(pad as u8).take(pad));
+    data.extend(std::iter::repeat_n(pad as u8, pad));
     let mut previous = IV;
     for block in data.chunks_mut(16) {
         for i in 0..16 {

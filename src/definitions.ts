@@ -311,6 +311,29 @@ declare module '@capacitor/cli' {
       allowHttpsToHttpRedirect?: boolean;
 
       /**
+       * Try HTTP/3 using the shared core's QUIC library after an HTTPS server advertises it
+       * in Alt-Svc. A connection failure falls back to HTTP/1.1. HTTP proxies use HTTP/1.1.
+       * Certificate verification, redirects, encryption and checksum checks still apply.
+       *
+       * Experimental. Disabled by default while native transport comparisons are evaluated.
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.52.1
+       */
+      http3?: boolean;
+
+      /**
+       * Maximum QUIC connections per origin when http3 is enabled. Parallel manifest
+       * downloads share these connections. A single zip uses one connection.
+       * Values are capped at 32; zero uses the default of 4.
+       *
+       * @default 4
+       * @since 8.52.1
+       */
+      http3Connections?: number;
+
+      /**
        * Allow the plugin to modify the appId dynamically from the JavaScript side.
        *
        *

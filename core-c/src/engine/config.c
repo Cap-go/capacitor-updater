@@ -118,6 +118,7 @@ cg_engine_config *cg_config_from_json(const cj *value, cg_error *err) {
     cg_replace(&config->platform, text(object, "platform"));
     uint64_t timeout;
     config->timeout_ms = cj_as_u64(cj_get(object, "timeoutMs"), &timeout) ? timeout : 20000;
+    config->http3 = CG_DEFAULT_HTTP3;
     config->is_prod = cj_get_bool(object, "isProd", true);
     cg_replace(&config->bundle_root, text(object, "bundleRoot"));
     cg_replace(&config->storage_root, text(object, "storageRoot"));
@@ -179,6 +180,9 @@ bool cg_config_apply(cg_engine_config *config, const cj *value, cg_error *err) {
     if (cj_as_bool(cj_get(object, "allowHttpsToHttpRedirect"), &flag)) config->allow_https_to_http_redirect = flag;
     uint64_t timeout;
     if (cj_as_u64(cj_get(object, "timeoutMs"), &timeout)) config->timeout_ms = timeout;
+    if (cj_as_bool(cj_get(object, "http3"), &flag)) config->http3 = flag;
+    uint64_t connections;
+    if (cj_as_u64(cj_get(object, "http3Connections"), &connections)) config->http3_connections = connections;
     if (cj_has(object, "publicKey")) {
         const char *public_key = cg_or_empty(cj_get_str(object, "publicKey"));
         if (!*public_key) {

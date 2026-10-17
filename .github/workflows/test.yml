@@ -388,10 +388,10 @@ jobs:
       matrix:
         include:
           - core: rust
-            name: targets 1-6
-            targets: aes_cbc brotli http_response inflate json manifest
+            name: targets 1-7
+            targets: aes_cbc alt_svc brotli http_response inflate json manifest
           - core: rust
-            name: targets 7-11
+            name: targets 8-12
             targets: path_guard rsa_checksum rsa_key update_response zip
           - core: c
             name: every target

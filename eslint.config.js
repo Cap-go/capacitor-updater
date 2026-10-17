@@ -3,6 +3,7 @@ const ionic = require('@ionic/eslint-config/recommended');
 module.exports = [
   {
     ignores: [
+      '.context/**',
       'build',
       'dist',
       'example-app',

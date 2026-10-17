@@ -63,6 +63,10 @@ typedef struct cg_engine_config {
     /* Follow redirects that downgrade HTTPS to HTTP (off by default). */
     bool allow_https_to_http_redirect;
     uint64_t timeout_ms;
+    /* HTTP/3 for origins that announce it (Alt-Svc: h3); HTTP/1.1 otherwise. */
+    bool http3;
+    /* QUIC connections per origin (manifest downloads spread over them; 0: the default). */
+    uint64_t http3_connections;
     /* Directory holding one sub-directory per downloaded bundle id. */
     char *bundle_root;
     /* Updater-owned storage root (temp unzip folders, download temp files). */
@@ -92,5 +96,8 @@ cg_engine_config *cg_config_clone(const cg_engine_config *config);
 /* Snapshot references. Release frees the config when the count reaches zero. NULL-safe. */
 cg_engine_config *cg_config_retain(cg_engine_config *config);
 void cg_config_release(cg_engine_config *config);
+
+/* HTTP/3 when the configuration does not say (plugin option `http3`, Rust DEFAULT_HTTP3). */
+#define CG_DEFAULT_HTTP3 false
 
 #endif

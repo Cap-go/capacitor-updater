@@ -35,7 +35,7 @@ final class ServerTrustTests: XCTestCase {
             "DQEBCwUAA4IBAQB0Z5cXN/iu9p9uO3XtRHvXyl1RVcYDym8wlQHz2czD6Er2apWyDeQRmCQ3PJDwaWuo5A9jeyeNeVNGPTMqMEcl",
             "QXfJH3+OG89cPZHylFKTvtCNSilqyP2JIFCbE+Y4/05mI6r+P3X47fuxfZB0qeJpiuAHXhzFDcB90jBS9ju5Q3XTC6LW76mDXc0q",
             "7FSxn71rPiAqZfUnTkjQxyOXqKCFLMcg5qZuQcqkRSVyImcobSBuTtQRiZ6PHPmo1lVyJpK+lGZ73TgTti16w+tg7TDQgb6mFENy",
-            "Lp1HXTP6CobsB+VvgrQMBZj8JmxYk/DNiVFS5qZWBan9Jwx1v7TPSeeW",
+            "Lp1HXTP6CobsB+VvgrQMBZj8JmxYk/DNiVFS5qZWBan9Jwx1v7TPSeeW"
         ].joined(),
         [
             "MIIFHjCCBAagAwIBAgIQBPIuzCH8tDgqwouPLWQfwDANBgkqhkiG9w0BAQsFADBhMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGln",
@@ -55,7 +55,7 @@ final class ServerTrustTests: XCTestCase {
             "CwUAA4IBAQBD9c6SmtMxGjRwc/A1bPiM+r1qj5xbDzGn6s6m6oggm9UeBLCSUNJthKffNPqqwtULeeUddssewaOZX+uHjG9bY/O9",
             "J1VQtGtXI2hndyAPiloqNjf5iBW16h3ZIUFQL319hISioItFVJZnVe4gjNEWio1ZRwO5A4e/H69/lPAX294yGtYGllAdv2NexhUM",
             "fjODhCajoTJmkXbyIpYzTNkgDXvQptTecrvr0rPzEMWfTtGSppbOC+s/5jG3aJ6GJn49Ram1ZLEGHTx9PWUoHth9Lj7vwFBD9667",
-            "x9m9nUhuET9a3XvNep+N7w96ZqH2fAqUBW1kl6u3u67D6mvDsCQr",
+            "x9m9nUhuET9a3XvNep+N7w96ZqH2fAqUBW1kl6u3u67D6mvDsCQr"
         ].joined()
     ].map { Data(base64Encoded: $0)! }
 
@@ -66,7 +66,7 @@ final class ServerTrustTests: XCTestCase {
         "AAQPuthMBpvhPqOhuFEwC3eYmswof9VhLzrSNCLx7zY3Rc2nS3tQvldeDafMd3KqdSwm5Em0rWqI57+KpSTHmUf+o2kwZzAdBgNV",
         "HQ4EFgQUYt8DOmvp6RcdA1LBK7EHHfW5gGgwHwYDVR0jBBgwFoAUYt8DOmvp6RcdA1LBK7EHHfW5gGgwDwYDVR0TAQH/BAUwAwEB",
         "/zAUBgNVHREEDTALgglsb2NhbGhvc3QwCgYIKoZIzj0EAwIDSAAwRQIhAI5s0aFIxwPQtpTmjpdv2WZ0cAeCznQ5KTwV1L+Jj5k8",
-        "AiA9dehLNJAhExhzonmiMWF0qIR1juFPqLYcjoXW4Ty+Ng==",
+        "AiA9dehLNJAhExhzonmiMWF0qIR1juFPqLYcjoXW4Ty+Ng=="
     ].joined())!
 
     private static let insideValidity = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01

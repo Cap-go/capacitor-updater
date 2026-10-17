@@ -37,7 +37,7 @@ impl Default for Keys {
 }
 
 /// HTTP/3 when the configuration does not say (plugin option `http3`).
-pub const DEFAULT_HTTP3: bool = true;
+pub const DEFAULT_HTTP3: bool = false;
 
 #[derive(Debug, Clone, Default)]
 pub struct EngineConfig {

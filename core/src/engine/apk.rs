@@ -194,7 +194,7 @@ fn central_directory(file: &File, len: u64) -> io::Result<(u64, u64)> {
         size = u64_at(&record, 40);
         offset = u64_at(&record, 48);
     }
-    if size > MAX_CENTRAL_DIRECTORY || offset.checked_add(size).map_or(true, |end| end > len) {
+    if size > MAX_CENTRAL_DIRECTORY || offset.checked_add(size).is_none_or(|end| end > len) {
         return Err(invalid("central directory out of bounds"));
     }
     Ok((offset, size))

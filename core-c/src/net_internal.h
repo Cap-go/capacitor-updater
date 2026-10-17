@@ -56,6 +56,10 @@ bool net_tls_write_all(net_tls *tls, const uint8_t *data, size_t len, net_io_err
 bool net_tls_buffered(net_tls *tls);
 void net_tls_free(net_tls *tls);
 
+struct mbedtls_x509_crt;
+bool net_tls_verify_chain(const struct mbedtls_x509_crt *leaf, const cg_host *host, const char *name,
+                          net_io_error *err);
+
 /* rustls ServerName::try_from for a DNS name (pki-types validate). */
 bool net_tls_valid_dns_name(const char *name);
 

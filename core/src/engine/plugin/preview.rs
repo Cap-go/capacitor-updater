@@ -175,7 +175,7 @@ impl Engine {
         metadata.entry("createdAt").or_insert_with(|| json!(now));
         metadata.insert("updatedAt".into(), json!(now));
         let current_id = self.current_bundle().id().to_string();
-        if metadata.get("lastUsedAt").map_or(true, Value::is_null) || current_id == id {
+        if metadata.get("lastUsedAt").is_none_or(Value::is_null) || current_id == id {
             metadata.insert("lastUsedAt".into(), json!(now));
         }
         metadata.insert("version".into(), json!(bundle.version_name()));
@@ -868,8 +868,8 @@ impl Engine {
         let next = self.next_bundle();
         let deleted = removed
             && id != ID_BUILTIN
-            && fallback.as_ref().map_or(true, |fallback| fallback.id() != id)
-            && next.as_ref().map_or(true, |next| next.id() != id)
+            && fallback.as_ref().is_none_or(|fallback| fallback.id() != id)
+            && next.as_ref().is_none_or(|next| next.id() != id)
             && self.delete_bundle(id, false, true);
         Ok(json!({ "removed": removed, "deleted": deleted }))
     }

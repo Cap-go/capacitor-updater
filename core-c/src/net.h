@@ -80,6 +80,7 @@ void cg_net_headers_clear(cg_net_headers *headers);
 /* ---- buffered response (Rust Response) */
 typedef struct {
     uint16_t status;
+    const char *protocol; /* static string: http/1.1 or h3 */
     cg_net_headers headers;
     uint8_t *body; /* malloc'd, NUL-terminated (not counted in body_len); never NULL after success */
     size_t body_len;
@@ -96,6 +97,7 @@ void cg_net_response_clear(cg_net_response *response);
 /* ---- streamed download (Rust StreamHead / Stream) */
 typedef struct {
     uint16_t status;
+    const char *protocol; /* static string: http/1.1 or h3 */
     cg_net_headers headers;
     bool has_content_length;
     uint64_t content_length;
@@ -124,6 +126,10 @@ typedef struct cg_http cg_http;
 cg_http *cg_http_new(const cg_host *host, const char *user_agent, uint64_t timeout_ms);
 /* Closes pooled connections. No request may be running. NULL-safe. */
 void cg_http_free(cg_http *http);
+
+void cg_http_set_http3(cg_http *http, bool enabled, size_t connections);
+cj *cg_http_protocols(cg_http *http);
+size_t cg_http_http3_connections_opened(cg_http *http);
 
 void cg_http_set_user_agent(cg_http *http, const char *user_agent);
 /* malloc'd copy. */

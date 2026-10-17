@@ -77,7 +77,7 @@ fn alt_svc_moves_the_origin_to_http3_and_is_persisted() {
     assert_eq!(stored[server.origin()]["port"], server.udp_port);
     // A new client (next launch) reads the announcement back and starts on HTTP/3.
     let second = get(&http, &server.url("/b"), json!({})).unwrap();
-    assert_eq!(second["protocol"], H3);
+    assert_eq!(second["protocol"], H3, "{:?}", host.logs.lock().unwrap());
     assert_eq!(body(&second), b"hello");
     assert_eq!(server.protocols(), vec![HTTP1, H3]);
     assert!(logged(&host, &format!("HTTP protocol for {}: h3", server.origin())));
@@ -503,4 +503,58 @@ fn engine_manifest_download_over_http3() {
         error.message.to_lowercase().contains("checksum") || error.code.contains("checksum"),
         "{error:?}"
     );
+}
+
+#[test]
+fn a_trusted_chain_does_not_bypass_handshake_signature_verification() {
+    let server = H3Server::invalid_signature(|_| Reply::ok("secret"));
+    let host = trusting_host();
+    remember_h3(&host, &server.origin(), server.udp_port);
+    let http = client(host.clone(), Duration::from_secs(5));
+    let error = get(&http, &server.url("/"), json!({})).unwrap_err();
+    assert!(matches!(error.code.as_str(), "tls" | "network"), "{error:?}");
+    assert!(
+        server.seen().is_empty(),
+        "no application request before TLS verification"
+    );
+    assert!(!host.certificate_requests.lock().unwrap().is_empty());
+    assert!(logged(&host, "HTTP/3 to "));
+}
+
+#[test]
+fn chacha20_poly1305_works_over_http3() {
+    let server = H3Server::chacha20(|_| Reply::ok(vec![42; 100_000]));
+    let host = trusting_host();
+    remember_h3(&host, &server.origin(), server.udp_port);
+    let http = client(host.clone(), Duration::from_secs(5));
+    let reply = get(&http, &server.url("/"), json!({ "download": true })).unwrap();
+    assert_eq!(reply["protocol"], H3, "{:?}", host.logs.lock().unwrap());
+    assert_eq!(body(&reply), vec![42; 100_000]);
+}
+
+#[test]
+fn concurrent_closed_connections_fall_back_without_losing_requests() {
+    let server = H3Server::start(|seen| Reply {
+        close_connection: seen.protocol == H3,
+        ..Reply::ok("recovered")
+    });
+    for _ in 0..8 {
+        let host = trusting_host();
+        remember_h3(&host, &server.origin(), server.udp_port);
+        let http = client(host, Duration::from_secs(5));
+        let requests: Vec<Value> = (0..64)
+            .map(|index| json!({ "url": server.url(&format!("/{index}")) }))
+            .collect();
+        let batch = http
+            .call(
+                "httpBatch",
+                json!({ "http3": true, "parallel": 16, "requests": requests }),
+            )
+            .unwrap();
+        for reply in batch["results"].as_array().unwrap() {
+            assert_eq!(reply["status"], 200, "{reply}");
+            assert_eq!(reply["bodyLength"], 9, "{reply}");
+            assert_eq!(reply["protocol"], HTTP1, "{reply}");
+        }
+    }
 }

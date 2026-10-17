@@ -19,6 +19,14 @@ const add = (target, name, data) => {
   seeds.get(target).push([name, typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data)]);
 };
 
+// ---- Alt-Svc: same-origin HTTP/3 discovery, quoted values, expiry, clearing.
+for (const [name, value] of Object.entries({
+  empty: '', clear: 'clear', h3: 'h3=":443"; ma=3600',
+  host: 'h3="example.com:443"', other: 'h3="other.example:443"',
+  malformed: 'h3=":443"; ma=999999999999999999999999',
+  protocols: 'h3-29=":443", h3=":8443"; ma=0; persist=1',
+})) add('alt_svc', name, value);
+
 // ---- zip: a small writer (stored / deflated entries, directories, symlinks, comments)
 const u16 = (value) => {
   const buffer = Buffer.alloc(2);

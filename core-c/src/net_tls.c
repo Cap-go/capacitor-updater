@@ -392,9 +392,12 @@ static char *check_server_name(const mbedtls_x509_crt *leaf, const char *name, b
 }
 
 /* HostVerifier::verify_server_cert after the handshake. */
-static bool verify_peer(net_tls *tls, const cg_host *host, const char *name, bool is_ip, const uint8_t *ip,
-                        size_t ip_len, net_io_error *err) {
-    const mbedtls_x509_crt *leaf = mbedtls_ssl_get_peer_cert(&tls->ssl);
+bool net_tls_verify_chain(const mbedtls_x509_crt *leaf, const cg_host *host, const char *name,
+                          net_io_error *err) {
+    uint8_t ip[16];
+    size_t ip_len = inet_pton(AF_INET, name, ip) == 1 ? 4 :
+                    inet_pton(AF_INET6, name, ip) == 1 ? 16 : 0;
+    bool is_ip = ip_len > 0;
     size_t count = 0;
     for (const mbedtls_x509_crt *cert = leaf; cert && cert->raw.p; cert = cert->next) count++;
     if (count == 0) return net_io_set(err, NET_IO_INVALID_DATA, "peer sent no certificates");
@@ -492,7 +495,7 @@ net_tls *net_tls_connect(int fd, const cg_host *host, const char *server_name, n
     } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
     bool ok = ret == 0;
     if (!ok) tls_failure(tls, ret, true, err);
-    else ok = verify_peer(tls, host, verified_name, is_ip, ip, ip_len, err);
+    else ok = net_tls_verify_chain(mbedtls_ssl_get_peer_cert(&tls->ssl), host, verified_name, err);
     free(name);
     if (!ok) {
         if (ret == 0)

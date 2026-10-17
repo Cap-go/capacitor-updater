@@ -327,9 +327,9 @@ impl Engine {
                 let mut condition = condition.clone();
                 if let Some(object) = condition.as_object_mut() {
                     let is_background = object.get("kind").and_then(Value::as_str) == Some("background");
-                    let empty = object.get("value").map_or(true, |value| {
-                        value.as_str().is_some_and(str::is_empty) || value.is_null()
-                    });
+                    let empty = object
+                        .get("value")
+                        .is_none_or(|value| value.as_str().is_some_and(str::is_empty) || value.is_null());
                     if is_background && empty {
                         object.insert("value".into(), json!("0"));
                     }

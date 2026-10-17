@@ -245,6 +245,8 @@ static cj *job_settings(cg_engine *engine) {
         "previewSession", cj_bool(config->preview_session),               //
         "allowHttpsToHttpRedirect", cj_bool(config->allow_https_to_http_redirect), //
         "timeoutMs", cj_u64(config->timeout_ms),                          //
+        "http3", cj_bool(config->http3),                                  //
+        "http3Connections", cj_u64(config->http3_connections),            //
         "publicKey", cj_str(config->public_key),                          //
         NULL);
     cg_config_release(config);

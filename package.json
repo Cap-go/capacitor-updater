@@ -8,6 +8,7 @@
   "types": "dist/esm/index.d.ts",
   "unpkg": "dist/plugin.js",
   "files": [
+    "core/HTTP3-LICENSES.txt",
     "android/src/main/",
     "android/proguard-rules.pro",
     "android/consumer-rules.pro",
@@ -115,7 +116,6 @@
     "@capacitor/core": "^8.0.0"
   },
   "prettier": "@ionic/prettier-config",
-  "swiftlint": "@ionic/swiftlint-config",
   "capacitor": {
     "ios": {
       "src": "ios"

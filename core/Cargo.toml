@@ -2,7 +2,7 @@
 name = "capgo-updater-core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 license = "MPL-2.0"
 description = "Platform-neutral core of the Capgo live updater: update policy, path guards, bundle crypto and checksums."
 repository = "https://github.com/Cap-go/capacitor-updater"

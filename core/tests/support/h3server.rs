@@ -58,6 +58,8 @@ pub struct Reply {
     pub delay: Duration,
     /// Stop after this many body bytes (HTTP/3: stream reset, HTTP/1.1: connection closed).
     pub abort_after: Option<usize>,
+    /// Close the QUIC connection before sending the response head.
+    pub close_connection: bool,
     /// Content-Length to announce (default: the body length); `Some(None)`: none.
     pub length: Option<Option<u64>>,
     /// Wait between body chunks of 16 KiB.
@@ -115,8 +117,63 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
+// Deliberately corrupt CertificateVerify while retaining a valid certificate chain.
+#[derive(Debug)]
+struct BadSignatureResolver(Arc<dyn rustls::server::ResolvesServerCert>);
+#[derive(Debug)]
+struct BadSignatureKey(Arc<dyn rustls::sign::SigningKey>);
+#[derive(Debug)]
+struct BadSigner(Box<dyn rustls::sign::Signer>);
+impl rustls::server::ResolvesServerCert for BadSignatureResolver {
+    fn resolve(&self, hello: rustls::server::ClientHello<'_>) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        let key = self.0.resolve(hello)?;
+        Some(Arc::new(rustls::sign::CertifiedKey::new(
+            key.cert.clone(),
+            Arc::new(BadSignatureKey(key.key.clone())),
+        )))
+    }
+}
+impl rustls::sign::SigningKey for BadSignatureKey {
+    fn choose_scheme(&self, offered: &[rustls::SignatureScheme]) -> Option<Box<dyn rustls::sign::Signer>> {
+        Some(Box::new(BadSigner(self.0.choose_scheme(offered)?)))
+    }
+    fn algorithm(&self) -> rustls::SignatureAlgorithm {
+        self.0.algorithm()
+    }
+}
+impl rustls::sign::Signer for BadSigner {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
+        let mut signature = self.0.sign(message)?;
+        if let Some(byte) = signature.last_mut() {
+            *byte ^= 1;
+        }
+        Ok(signature)
+    }
+    fn scheme(&self) -> rustls::SignatureScheme {
+        self.0.scheme()
+    }
+}
+fn corrupt_signature(config: &mut rustls::ServerConfig, corrupt: bool) {
+    if corrupt {
+        config.cert_resolver = Arc::new(BadSignatureResolver(config.cert_resolver.clone()));
+    }
+}
+
 impl H3Server {
     pub fn start(responder: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Self {
+        Self::start_inner(responder, false, false)
+    }
+    pub fn invalid_signature(responder: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Self {
+        Self::start_inner(responder, true, false)
+    }
+    pub fn chacha20(responder: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Self {
+        Self::start_inner(responder, false, true)
+    }
+    fn start_inner(
+        responder: impl Fn(&Seen) -> Reply + Send + Sync + 'static,
+        invalid_signature: bool,
+        chacha20: bool,
+    ) -> Self {
         let responder: Responder = Arc::new(responder);
         let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
         let quic_connections = Arc::new(AtomicUsize::new(0));
@@ -124,8 +181,15 @@ impl H3Server {
 
         // TCP + TLS, HTTP/1.1, one request per connection.
         let tls = {
-            let provider = Arc::new(rustls::crypto::ring::default_provider());
-            let config = rustls::ServerConfig::builder_with_provider(provider)
+            let mut provider = rustls::crypto::ring::default_provider();
+            if chacha20 {
+                provider.cipher_suites = vec![
+                    rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+                    rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
+                ];
+            }
+            let provider = Arc::new(provider);
+            let mut config = rustls::ServerConfig::builder_with_provider(provider)
                 .with_safe_default_protocol_versions()
                 .unwrap()
                 .with_no_client_auth()
@@ -134,6 +198,7 @@ impl H3Server {
                     rustls::pki_types::PrivateKeyDer::Pkcs8(key_der().into()),
                 )
                 .unwrap();
+            corrupt_signature(&mut config, invalid_signature);
             Arc::new(config)
         };
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -151,16 +216,24 @@ impl H3Server {
         }
 
         // QUIC, HTTP/3.
-        let mut crypto =
-            rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_protocol_versions(&[&rustls::version::TLS13])
-                .unwrap()
-                .with_no_client_auth()
-                .with_single_cert(
-                    vec![rustls::pki_types::CertificateDer::from(cert_der())],
-                    rustls::pki_types::PrivateKeyDer::Pkcs8(key_der().into()),
-                )
-                .unwrap();
+        let mut provider = rustls::crypto::ring::default_provider();
+        if chacha20 {
+            provider.cipher_suites = vec![
+                rustls::crypto::ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+                rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
+            ];
+        }
+        let mut crypto = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![rustls::pki_types::CertificateDer::from(cert_der())],
+                rustls::pki_types::PrivateKeyDer::Pkcs8(key_der().into()),
+            )
+            .unwrap();
+        corrupt_signature(&mut crypto, invalid_signature);
+        crypto.ignore_client_order = true;
         crypto.alpn_protocols = vec![b"h3".to_vec()];
         crypto.max_early_data_size = 0;
         let server_config = quinn::ServerConfig::with_crypto(Arc::new(
@@ -184,6 +257,7 @@ impl H3Server {
                         (seen.clone(), responder.clone(), connections.clone(), advertise.clone());
                     tokio::spawn(async move {
                         let Ok(connection) = incoming.await else { return };
+                        let transport = connection.clone();
                         let number = connections.fetch_add(1, Ordering::SeqCst) + 1;
                         let Ok(mut session) = h3::server::builder()
                             .build::<_, Bytes>(h3_quinn::Connection::new(connection))
@@ -192,13 +266,14 @@ impl H3Server {
                             return;
                         };
                         while let Ok(Some(resolver)) = session.accept().await {
-                            let (seen, responder, advertise) = (seen.clone(), responder.clone(), advertise.clone());
+                            let (seen, responder, advertise, transport) =
+                                (seen.clone(), responder.clone(), advertise.clone(), transport.clone());
                             tokio::spawn(async move {
                                 let Ok((request, stream)) = resolver.resolve_request().await else {
                                     return;
                                 };
                                 let advertised = advertise.lock().unwrap().clone();
-                                serve_h3(request, stream, number, &seen, &responder, &advertised).await;
+                                serve_h3(request, stream, number, &transport, &seen, &responder, &advertised).await;
                             });
                         }
                     });
@@ -338,6 +413,7 @@ async fn serve_h3(
     request: http::Request<()>,
     mut stream: h3::server::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>,
     connection: usize,
+    transport: &quinn::Connection,
     seen: &Mutex<Vec<Seen>>,
     responder: &Responder,
     advertised: &str,
@@ -380,6 +456,10 @@ async fn serve_h3(
         tokio::task::spawn_blocking(move || responder(&recorded)).await.unwrap()
     };
     tokio::time::sleep(reply.delay).await;
+    if reply.close_connection {
+        transport.close(0u32.into(), b"test close before response");
+        return;
+    }
     let mut response = http::Response::builder().status(reply.status);
     if let Some(length) = reply.announced_length() {
         response = response.header("content-length", length.to_string());

@@ -119,3 +119,11 @@ fixtures for pure rules: `scripts/generate-core-contract-fixtures.mjs`, mapped i
 
 Security boundaries (path guards, signature/checksum/session-key checks) must
 not be weakened without an explicit product decision and tests.
+
+## Experimental HTTP/3
+
+The optional `http3` transport uses quinn + h3 over rustls, with the same host
+certificate verifier as HTTP/1.1. It is disabled by default. See
+[the shared transport notes](../core-c/HTTP3.md) and
+[the native measurements](../core-c/BENCHMARK-CORE-HTTP3.md). Building this core
+requires Rust 1.85 or newer.
