@@ -71,6 +71,22 @@ trailing `cg_error *err` (may be NULL). Set it with `cg_err_set(err, "code",
   that (the Rust comments explain the lock orders; keep them).
 - Thread-locals (`thread_local!`) -> `_Thread_local`.
 
+## Crash safety
+
+- Unbounded string calls (`strcpy`, `strcat`, `sprintf`, `gets`, `strncpy`...) are
+  refused by CI (`scripts/ci/check-core-c-banned-calls.sh`): use `cg_fmt`, `cg_buf`,
+  `cg_strdup` or `snprintf`.
+- CI runs the Clang static analyzer and the bugprone checks (`.clang-tidy`). A new
+  helper that always returns false (like `cg_err_set`) gets the same
+  `__clang_analyzer__` macro as `rt/err.h`, so the analyzer does not follow its error
+  paths as successes.
+- Every parser of untrusted input has a fuzz target in `fuzz/` with the same name,
+  input format and corpus as the Rust one (`scripts/fuzz.sh build c`, needs a clang
+  with libFuzzer: Homebrew `llvm` on macOS).
+- The crash-loop breaker (`engine/crash_guard.c`) brackets the native steps: a new
+  download or bundle-switch path calls `cg_crash_guard_begin_native_step` /
+  `cg_crash_guard_end_native_step` where the Rust code holds a `NativeStep`.
+
 ## Build and test
 
 ```bash
