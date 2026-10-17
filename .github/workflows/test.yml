@@ -228,6 +228,205 @@ jobs:
       - name: Run iOS native tests against the C core
         run: bun run native:test:ios
 
+  c_core_sanitizers:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: macos-latest
+    name: C core (${{ matrix.name }}, Rust core tests through the C ABI)
+    # macOS: the sanitizer runtime is preloaded into the uninstrumented Rust test binaries
+    # (scripts/ci/sanitizer-runner.sh); on Linux the preloaded ASan runtime corrupts its thread
+    # registry (see c_core_memcheck). Leaks: the fuzz targets (LeakSanitizer) and Valgrind.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AddressSanitizer + UndefinedBehaviorSanitizer
+            sanitize: address,undefined
+            runtime: libclang_rt.asan_osx_dynamic.dylib
+          - name: ThreadSanitizer
+            sanitize: thread
+            runtime: libclang_rt.tsan_osx_dynamic.dylib
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+          key: c-core-sanitizers
+      - name: Cache C core dependencies
+        uses: actions/cache@v4
+        with:
+          path: core-c/.deps
+          key: core-c-deps-${{ hashFiles('core-c/CMakeLists.txt') }}
+      - name: Build the instrumented C core
+        run: |
+          cmake -S core-c -B core-c/build-san -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCAPGO_TEST_SUPPORT=ON \
+            -DCAPGO_SANITIZE=${{ matrix.sanitize }}
+          cmake --build core-c/build-san -j "$(sysctl -n hw.ncpu)"
+      - name: Build test binaries
+        working-directory: core
+        run: cargo test --locked --tests --no-run
+      - name: Test the C core under ${{ matrix.name }}
+        working-directory: core
+        run: |
+          export CAPGO_SANITIZER_RUNTIME="$(clang -print-file-name=${{ matrix.runtime }})"
+          export ASAN_OPTIONS=detect_leaks=0:abort_on_error=1
+          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          export TSAN_OPTIONS=halt_on_error=1:abort_on_error=1:second_deadlock_stack=1
+          CAPGO_CORE_LIB="$GITHUB_WORKSPACE/core-c/build-san/libcapgo_updater_core.dylib" cargo test --locked --tests \
+            --config 'target."cfg(all())".runner="../scripts/ci/sanitizer-runner.sh"'
+
+  c_core_static_analysis:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: C core (clang static analyzer, bugprone checks, unbounded string calls)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup java
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-tidy
+      - name: Cache C core dependencies
+        uses: actions/cache@v4
+        with:
+          path: core-c/.deps
+          key: core-c-deps-${{ hashFiles('core-c/CMakeLists.txt') }}
+      - name: Unbounded string calls
+        run: ./scripts/ci/check-core-c-banned-calls.sh
+      - name: clang-tidy (core-c/.clang-tidy, every finding an error)
+        run: |
+          CC=clang cmake -S core-c -B core-c/build-tidy -DCMAKE_BUILD_TYPE=Release -DCAPGO_TEST_SUPPORT=ON -DCAPGO_JNI=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          run-clang-tidy -config-file core-c/.clang-tidy -p core-c/build-tidy -quiet -j "$(nproc)" 'core-c/src/.*\.c$'
+
+  rust_core_asan:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Rust core (tests under AddressSanitizer, nightly)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+          key: rust-core-asan
+      - name: Test under AddressSanitizer
+        working-directory: core
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+        run: cargo +nightly test --locked --target x86_64-unknown-linux-gnu --features test-support --tests
+
+  rust_core_miri:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Rust core (Miri on the unsafe FFI and libc code)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust nightly with Miri
+        run: |
+          rustup toolchain install nightly --profile minimal --component miri,rust-src
+          cargo +nightly miri setup
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+          key: rust-core-miri
+      - name: Miri
+        working-directory: core
+        # ffi.rs (C ABI marshalling, host callbacks), delay.rs (localtime_r), fsutil.rs (statvfs:
+        # no Miri shim, ignored). jni.rs needs a JVM; the rest of the crate has no unsafe.
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+        run: 'cargo +nightly miri test --locked --lib -- ffi:: local_offset available_space'
+
+  fuzz_smoke:
+    permissions:
+      contents: read
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    name: Fuzz smoke (${{ matrix.core }} core, every target)
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [rust, c]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust nightly
+        if: matrix.core == 'rust'
+        run: rustup toolchain install nightly --profile minimal
+      - name: Cache Rust build (and cargo-fuzz)
+        if: matrix.core == 'rust'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/fuzz -> target
+          key: fuzz
+      - name: Install cargo-fuzz
+        if: matrix.core == 'rust'
+        run: cargo fuzz --version || cargo install cargo-fuzz --locked
+      - name: Install libFuzzer (clang runtime)
+        if: matrix.core == 'c'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang libclang-rt-dev || sudo apt-get install -y -qq clang
+          echo 'int LLVMFuzzerTestOneInput(const char *d, unsigned long n) { return 0; }' > /tmp/probe.c
+          clang -fsanitize=fuzzer,address,undefined /tmp/probe.c -o /tmp/probe
+      - name: Cache C core dependencies
+        if: matrix.core == 'c'
+        uses: actions/cache@v4
+        with:
+          path: core-c/.deps
+          key: core-c-deps-${{ hashFiles('core-c/CMakeLists.txt') }}
+      - name: Build the fuzz targets
+        run: ./scripts/fuzz.sh build ${{ matrix.core }}
+      - name: Run every target for 20 s from the shared seed corpus
+        run: ./scripts/fuzz.sh smoke ${{ matrix.core }} 20
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts-${{ matrix.core }}
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+
   build_android:
     permissions:
       contents: read
