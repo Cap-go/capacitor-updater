@@ -558,3 +558,40 @@ fn concurrent_closed_connections_fall_back_without_losing_requests() {
         }
     }
 }
+
+#[test]
+fn http3_strips_connection_headers_and_preserves_application_headers() {
+    let server = H3Server::start(|_| Reply::ok("ok"));
+    let host = trusting_host();
+    remember_h3(&host, &server.origin(), server.udp_port);
+    let http = client(host, Duration::from_secs(5));
+    let reply = get(
+        &http,
+        &server.url("/"),
+        json!({ "headers": [
+        ["Connection", "keep-alive"], ["Keep-Alive", "timeout=2"],
+        ["Proxy-Connection", "keep-alive"], ["Transfer-Encoding", "chunked"],
+        ["Upgrade", "h2c"], ["TE", "trailers"], ["Host", "wrong.invalid"],
+        ["X-Probe", "kept"]
+    ] }),
+    )
+    .unwrap();
+    assert_eq!(reply["protocol"], H3);
+    let seen = server.seen();
+    let request = seen.last().unwrap();
+    for name in [
+        "connection",
+        "keep-alive",
+        "proxy-connection",
+        "transfer-encoding",
+        "upgrade",
+        "te",
+    ] {
+        assert_eq!(request.header(name), None, "{request:?}");
+    }
+    assert_eq!(request.header("x-probe"), Some("kept"));
+    assert_eq!(
+        request.header("host"),
+        Some(format!("localhost:{}", server.port).as_str())
+    );
+}

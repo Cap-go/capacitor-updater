@@ -140,6 +140,7 @@ bench_start_server() {
   local extra=()
   [[ -n "$ONLY" ]] && extra+=(--only "$ONLY")
   [[ "$RETRY_FAILED" == "1" ]] && extra+=(--retry-failed)
+  [[ "${BENCH_NO_WARMUP:-0}" == "1" ]] && extra+=(--no-warmup)
   (cd "$BENCH_ROOT" && exec bun scripts/bench/server.mjs --platform "$platform" --label "$LABEL" --variant "$variant" \
     --results "$results" --runs "$RUNS" --suites "$SUITES" --port "$BENCH_PORT" --clean-cmd "$clean_cmd" ${extra[@]+"${extra[@]}"}) >>"$log" 2>&1 &
   SERVER_PID=$!

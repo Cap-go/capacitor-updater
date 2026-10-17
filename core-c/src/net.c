@@ -1471,7 +1471,8 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
             for (size_t i = 0; i < headers.len; i++) {
                 char *name = cg_lower(headers.items[i].name);
                 if (strcmp(name, "host") && strcmp(name, "connection") && strcmp(name, "keep-alive") &&
-                    strcmp(name, "proxy-connection") && strcmp(name, "transfer-encoding") && strcmp(name, "upgrade")) {
+                    strcmp(name, "proxy-connection") && strcmp(name, "transfer-encoding") && strcmp(name, "upgrade") &&
+                    strcmp(name, "te")) {
                     char *value = cg_trim(headers.items[i].value);
                     headers_set(&fields, name, value);
                     free(value);

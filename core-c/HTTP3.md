@@ -54,7 +54,7 @@ license notices ship in `core/HTTP3-LICENSES.txt`.
 The same C ABI tests in `core/tests/net_h3.rs` run against either implementation.
 They cover discovery and persistence, disabling HTTP/3, blocked UDP and connection
 failure, redirects, resume, body limits and length mismatches, timeouts,
-cancellation, parallel connections, certificate rejection, forged handshake
+cancellation, parallel connections, request header filtering, certificate rejection, forged handshake
 signatures, ChaCha20-Poly1305, concurrent connection failures, and installation/checksum rejection of manifest
 files delivered over HTTP/3.
 
