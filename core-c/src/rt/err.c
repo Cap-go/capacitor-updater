@@ -9,6 +9,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __clang_analyzer__
+/* The definitions below (see the header). */
+#undef cg_err_set
+#undef cg_err_set_own
+#undef cg_err_invalid_input
+#undef cg_err_io
+#endif
+
 bool cg_err_set_own(cg_error *err, const char *code, char *message) {
     if (!err) {
         free(message);

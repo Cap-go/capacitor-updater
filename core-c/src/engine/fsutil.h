@@ -38,6 +38,12 @@ bool cg_fsutil_os_error(cg_error *err, int errnum);
 bool cg_fsutil_io_error(cg_error *err, const char *kind, const char *message);
 /* Rust read_exact failure: kind unexpected_eof, "failed to fill whole buffer". */
 bool cg_fsutil_eof_error(cg_error *err);
+#ifdef __clang_analyzer__
+/* See rt/err.h: these always return false. */
+#define cg_fsutil_os_error(...) (cg_fsutil_os_error(__VA_ARGS__), false)
+#define cg_fsutil_io_error(...) (cg_fsutil_io_error(__VA_ARGS__), false)
+#define cg_fsutil_eof_error(...) (cg_fsutil_eof_error(__VA_ARGS__), false)
+#endif
 
 /* ---- readers (Rust `&mut dyn Read`) */
 

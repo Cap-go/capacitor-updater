@@ -299,7 +299,7 @@ static bool zread(zfile *f, uint64_t pos, void *dst, size_t n, zerr *e) {
 
 /* Last position p in [lo, hi - 4] holding `sig`, -1 when none. */
 static int64_t find_back(zfile *f, uint64_t lo, uint64_t hi, uint32_t sig, zerr *e, bool *failed) {
-    uint8_t window[2048];
+    uint8_t window[2048] = {0};
     uint8_t magic[4] = {(uint8_t)sig, (uint8_t)(sig >> 8), (uint8_t)(sig >> 16), (uint8_t)(sig >> 24)};
     while (hi >= lo + 4) {
         uint64_t start = hi - lo > sizeof window ? hi - sizeof window : lo;
@@ -866,7 +866,8 @@ static bool read_central_directory(zfile *f, const cd_end *end, zip_entry **out,
             break;
         }
         map_slot *existing = map_find(&names, entry.name, entry.name_len);
-        if (existing) {
+        /* A name in the map has its entry in `entries` (non-NULL then). */
+        if (existing && entries) {
             zip_entry *slot = &entries[existing->value];
             free(slot->name);
             *slot = entry;

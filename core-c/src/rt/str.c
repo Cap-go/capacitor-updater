@@ -156,9 +156,10 @@ void cg_trim_range(const char *value, size_t *start, size_t *len) {
 }
 
 char *cg_trim(const char *value) {
+    if (!value) return cg_strdup("");
     size_t start, len;
     cg_trim_range(value, &start, &len);
-    return cg_strndup(value ? value + start : "", len);
+    return cg_strndup(value + start, len);
 }
 
 char *cg_lower(const char *value) {
@@ -246,7 +247,8 @@ char *cg_utf8_lossy(const uint8_t *bytes, size_t len) {
 
 size_t cg_utf8_chars(const char *value) {
     size_t count = 0;
-    for (const unsigned char *p = (const unsigned char *)(value ? value : ""); *p; p++)
+    if (!value) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++)
         if ((*p & 0xc0) != 0x80) count++;
     return count;
 }

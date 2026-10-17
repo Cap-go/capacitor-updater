@@ -35,4 +35,13 @@ void cg_err_move(cg_error *dst, cg_error *src);
 /* "code: message" (Rust Display), malloc'd. */
 char *cg_err_display(const cg_error *err);
 
+#ifdef __clang_analyzer__
+/* The static analyzer reads one file at a time: tell it these always return false, so it does
+ * not follow `return cg_err_set(...)` paths as successes. No effect on builds. */
+#define cg_err_set(...) (cg_err_set(__VA_ARGS__), false)
+#define cg_err_set_own(...) (cg_err_set_own(__VA_ARGS__), false)
+#define cg_err_invalid_input(...) (cg_err_invalid_input(__VA_ARGS__), false)
+#define cg_err_io(...) (cg_err_io(__VA_ARGS__), false)
+#endif
+
 #endif

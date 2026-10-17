@@ -645,7 +645,7 @@ static url_in parse_path(parser *p, size_t path_start, url_in in) {
         }
         size_t segment_len = s->len - segment_start - (slash ? 1 : 0);
         const char *segment = s->data ? s->data + segment_start : "";
-        if (segment_is(segment, segment_len, double_dot)) {
+        if (s->data && segment_is(segment, segment_len, double_dot)) {
             s->len = segment_start;
             s->data[s->len] = 0;
             if (ends_with_slash(s) && last_slash_can_be_removed(s, path_start)) {
@@ -654,7 +654,7 @@ static url_in parse_path(parser *p, size_t path_start, url_in in) {
             }
             shorten_path(s, path_start);
             if (slash && !ends_with_slash(s)) cg_buf_putc(s, '/');
-        } else if (segment_is(segment, segment_len, single_dot)) {
+        } else if (s->data && segment_is(segment, segment_len, single_dot)) {
             s->len = segment_start;
             s->data[s->len] = 0;
             if (!ends_with_slash(s)) cg_buf_putc(s, '/');

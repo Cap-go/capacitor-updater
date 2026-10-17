@@ -429,8 +429,8 @@ static void print_float(cg_buf *out, double value) {
         snprintf(sci, sizeof sci, "%.*e", precision, value);
         if (strtod(sci, NULL) == value) break;
     }
-    /* sci: [-]d[.ddd]e[+-]XX */
-    char digits[24];
+    /* sci: [-]d[.ddd]e[+-]XX (cj_f64 stores non-finite values as null) */
+    char digits[24] = {0};
     size_t n = 0;
     const char *p = sci;
     bool negative = false;
@@ -441,7 +441,7 @@ static void print_float(cg_buf *out, double value) {
     for (; *p && *p != 'e'; p++)
         if (*p != '.') digits[n++] = *p;
     while (n > 1 && digits[n - 1] == '0') n--;
-    int exponent = atoi(p + 1);
+    int exponent = *p == 'e' ? (int)strtol(p + 1, NULL, 10) : 0;
     int kk = exponent + 1; /* decimal point position relative to the first digit */
     int k = kk - (int)n;
     if (negative) cg_buf_putc(out, '-');

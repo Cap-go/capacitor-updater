@@ -33,6 +33,13 @@
 #include "crypto/checksum.h"
 #include "rt/sync.h"
 
+#ifdef __clang_analyzer__
+/* The definitions below (see the header). */
+#undef cg_fsutil_os_error
+#undef cg_fsutil_io_error
+#undef cg_fsutil_eof_error
+#endif
+
 /* ---- errors */
 
 bool cg_fsutil_io_error(cg_error *err, const char *kind, const char *message) {

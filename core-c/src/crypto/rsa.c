@@ -173,7 +173,8 @@ static void mont_mul(const cg_rsa_public_key *key, const limb *a, const limb *b,
  * dedicated squaring was slower than this fused multiplication on arm64. */
 static void mont_pow(const cg_rsa_public_key *key, const limb *base, limb *out) {
     const size_t k = key->limbs;
-    limb base_m[MAX_LIMBS], acc[MAX_LIMBS];
+    /* acc is set by the first set bit of the exponent (keys have an odd exponent > 1). */
+    limb base_m[MAX_LIMBS], acc[MAX_LIMBS] = {0};
     mont_mul(key, base, key->r_squared, base_m);
     bool started = false;
     for (size_t i = 0; i < key->exponent_len; i++) {
