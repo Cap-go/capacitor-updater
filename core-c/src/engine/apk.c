@@ -183,7 +183,8 @@ static bool parse_central_directory(const uint8_t *central, size_t len, const ch
         at = next;
     }
     /* HashMap::insert: the last entry of a name wins (sorted by name, then archive order). */
-    qsort(entries, count, sizeof *entries, compare_entries);
+    /* qsort's base must not be NULL, even for zero entries. */
+    if (count > 1) qsort(entries, count, sizeof *entries, compare_entries);
     size_t unique = 0;
     for (size_t i = 0; i < count; i++) {
         if (unique && strcmp(entries[unique - 1].name, entries[i].name) == 0) {
