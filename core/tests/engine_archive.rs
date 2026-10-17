@@ -267,8 +267,8 @@ fn delta_engine() -> (TestEngine, std::path::PathBuf) {
         "bundleRoot": base.root().join("versions").to_string_lossy(),
         "cacheDir": base.root().join("cache").to_string_lossy(),
     }));
-    // Keep the directory alive for the engine's lifetime.
-    std::mem::forget(base);
+    // Keep the directory for the engine's lifetime (the base engine itself is released).
+    let _ = base.dir.keep();
     (t, builtin)
 }
 

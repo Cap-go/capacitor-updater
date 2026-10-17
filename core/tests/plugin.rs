@@ -2380,12 +2380,12 @@ fn two_deaths_in_a_row_during_a_download_skip_the_version() {
 
     p.backend.offer("2.0.0", web_bundle("v2"));
     p.foreground();
-    wait_until("the skipped cycle", || !p.events("downloadFailed").is_empty());
-    let ready = p.events("appReady");
-    assert_eq!(
-        ready.last().unwrap()["status"],
-        "Latest version crashed the app natively. Aborting update."
-    );
+    // appReady may come from another thread (it waits for the armed notifyAppReady).
+    wait_until("the skipped cycle", || {
+        p.events("appReady")
+            .iter()
+            .any(|ready| ready["status"] == "Latest version crashed the app natively. Aborting update.")
+    });
     assert_eq!(p.events("downloadFailed").last().unwrap()["version"], "2.0.0");
     assert_eq!(zip_requests(&p), 0, "the failed version is not downloaded again");
     assert_eq!(p.current()["id"], "builtin");
