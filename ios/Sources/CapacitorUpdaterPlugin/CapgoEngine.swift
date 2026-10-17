@@ -86,7 +86,10 @@ final class CapgoEngine {
                 guard let context else { return }
                 Unmanaged<HostBox>.fromOpaque(context).release()
             },
-            verify_server_certificate: CapgoEngine.verifyServerCertificateCallback
+            verify_server_certificate: CapgoEngine.verifyServerCertificateCallback,
+            // Engine requests go through URLSession (HTTP/3, HTTP/2, system proxy, ATS pins);
+            // the engine's own client remains for `systemHttp: false`.
+            http_request: CapgoHttpTransport.callback
         )
         guard let handle = capgo_engine_new(configJson, callbacks) else {
             return nil
