@@ -3,15 +3,15 @@ import Foundation
 
 /// Manifest entry as sent to the engine (`file_name`, `file_hash`, `download_url`).
 struct ManifestEntry {
-    let file_name: String?
-    let file_hash: String?
-    let download_url: String?
+    let fileName: String?
+    let fileHash: String?
+    let downloadUrl: String?
 
     var dict: [String: Any] {
         var dict: [String: Any] = [:]
-        dict["file_name"] = file_name
-        dict["file_hash"] = file_hash
-        dict["download_url"] = download_url
+        dict["file_name"] = fileName
+        dict["file_hash"] = fileHash
+        dict["download_url"] = downloadUrl
         return dict
     }
 }
@@ -64,9 +64,9 @@ extension CapgoUpdater {
         let result = try engineCall("missingBundleFiles", ["manifest": manifest.map(\.dict), "sessionKey": sessionKey])
         return (result["missing"] as? [[String: Any]] ?? []).map {
             ManifestEntry(
-                file_name: $0["file_name"] as? String,
-                file_hash: $0["file_hash"] as? String,
-                download_url: $0["download_url"] as? String
+                fileName: $0["file_name"] as? String,
+                fileHash: $0["file_hash"] as? String,
+                downloadUrl: $0["download_url"] as? String
             )
         }
     }

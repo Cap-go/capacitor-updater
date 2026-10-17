@@ -57,7 +57,7 @@ final class SessionKeyRequiredTests: XCTestCase {
     }
 
     func testDownloadManifestRejectsWhenSessionKeyMissing() {
-        let manifest = [ManifestEntry(file_name: "index.html", file_hash: "abc", download_url: "https://example.com/index.html")]
+        let manifest = [ManifestEntry(fileName: "index.html", fileHash: "abc", downloadUrl: "https://example.com/index.html")]
 
         XCTAssertThrowsError(try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: "")) { error in
             XCTAssertEqual((error as? CapgoCore.Failure)?.code, "session_key_required")
@@ -85,7 +85,7 @@ final class SessionKeyRequiredTests: XCTestCase {
 
     func testAllowsUpdateWhenNoPublicKeyConfigured() throws {
         try implementation.setPublicKey("")
-        let manifest = [ManifestEntry(file_name: "index.html", file_hash: "abc", download_url: "http://[")]
+        let manifest = [ManifestEntry(fileName: "index.html", fileHash: "abc", downloadUrl: "http://[")]
 
         // Invalid URL fails fast after the session-key gate, proving the gate did not block.
         XCTAssertThrowsError(try implementation.downloadManifest(manifest: manifest, version: "1.0.0", sessionKey: ""))
