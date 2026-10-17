@@ -6,9 +6,9 @@
 //
 // Usage: bun scripts/bench/prepare-app.mjs --label before --checkout <dir> --platform ios|android --variant plain|enc [--no-install]
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl } from './config.mjs';
+import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl, updaterBaseUrl } from './config.mjs';
 import { ensureBuiltinPad, ensureKeys } from './fixtures.mjs';
 
 function arg(name, fallback = undefined) {
@@ -133,6 +133,46 @@ if (platform === 'android') {
   if (!configs.some((xml) => /cleartextTrafficPermitted="true"/.test(xml) && xml.includes(`>${host}<`))) {
     throw new Error(`release network security config does not allow cleartext to ${host} (${xmlDir})`);
   }
+  // BENCH_TRUST_CA=<PEM file>: this bench build (only) also trusts that CA, e.g. the local CA of a
+  // Caddy reverse proxy serving the updater over HTTPS / HTTP/3 (BENCH_UPDATER_BASE_URL).
+  const trustCa = process.env.BENCH_TRUST_CA;
+  if (trustCa) {
+    const rawDir = path.join(releaseSrc, 'res', 'raw');
+    mkdirSync(rawDir, { recursive: true });
+    cpSync(trustCa, path.join(rawDir, 'bench_ca.pem'));
+    const anchors = [
+      '    <base-config>',
+      '        <trust-anchors>',
+      '            <certificates src="system" />',
+      '            <certificates src="@raw/bench_ca" />',
+      '        </trust-anchors>',
+      '    </base-config>',
+      '</network-security-config>',
+    ].join('\n');
+    for (const file of readdirSync(xmlDir).filter((f) => f.endsWith('.xml'))) {
+      const xmlPath = path.join(xmlDir, file);
+      const xml = readFileSync(xmlPath, 'utf8');
+      if (!xml.includes('@raw/bench_ca')) writeFileSync(xmlPath, xml.replace('</network-security-config>', anchors));
+    }
+  }
+  // BENCH_PIN_SHA256=<base64 SPKI SHA-256>: pins the bench host domains to that key (pinning checks).
+  const pin = process.env.BENCH_PIN_SHA256;
+  if (pin) {
+    for (const file of readdirSync(xmlDir).filter((f) => f.endsWith('.xml'))) {
+      const xmlPath = path.join(xmlDir, file);
+      const xml = readFileSync(xmlPath, 'utf8').replace(/\s*<pin-set>[\s\S]*?<\/pin-set>/g, '');
+      const pinSet = `\n        <pin-set>\n            <pin digest="SHA-256">${pin}</pin>\n        </pin-set>`;
+      writeFileSync(xmlPath, xml.replace(/(<domain-config[^>]*>)/, `$1${pinSet}`));
+    }
+  }
+}
+
+// BENCH_PIN_SHA256 on iOS: ATS NSPinnedDomains pins the updater host to that CA key (pinning checks).
+if (platform === 'ios' && process.env.BENCH_PIN_SHA256) {
+  const plist = path.join(appDir, 'ios', 'App', 'App', 'Info.plist');
+  const host = new URL(updaterBaseUrl).hostname;
+  const pinned = { [host]: { NSPinnedCAIdentities: [{ 'SPKI-SHA256-BASE64': process.env.BENCH_PIN_SHA256 }] } };
+  run('plutil', ['-replace', 'NSAppTransportSecurity.NSPinnedDomains', '-json', JSON.stringify(pinned), plist], appDir);
 }
 
 rmSync(path.join(appDir, 'www'), { recursive: true, force: true });
@@ -147,11 +187,13 @@ const updater = {
   directUpdate: false,
   appReadyTimeout: 60000,
   responseTimeout: 600,
-  updateUrl: `${deviceBaseUrl}/api/updates`,
-  statsUrl: `${deviceBaseUrl}/api/stats`,
-  channelUrl: `${deviceBaseUrl}/api/channel`,
+  updateUrl: `${updaterBaseUrl}/api/updates`,
+  statsUrl: `${updaterBaseUrl}/api/stats`,
+  channelUrl: `${updaterBaseUrl}/api/channel`,
 };
 if (variant === 'enc') updater.publicKey = keys.publicKey;
+// BENCH_SYSTEM_HTTP=0: the updater keeps its built-in HTTP/1.1 client instead of URLSession / HttpEngine.
+if (process.env.BENCH_SYSTEM_HTTP === '0') updater.systemHttp = false;
 
 const config = {
   appId: 'app.capgo.updater',

@@ -19,6 +19,7 @@ import {
   defaultRuns,
   deviceBaseUrl,
   manifestTmpDir,
+  updaterBaseUrl,
   zipDir,
   zipFixtureBase,
 } from './config.mjs';
@@ -169,7 +170,7 @@ function randomSuffix() {
 
 async function zipDownload(c, version) {
   const fixture = JSON.parse(await readFile(`${zipFixtureBase(c.sizeKey, c.variant)}.json`, 'utf8'));
-  const download = { url: `${deviceBaseUrl}/z/${fixture.file}`, version, checksum: fixture.checksum };
+  const download = { url: `${updaterBaseUrl}/z/${fixture.file}`, version, checksum: fixture.checksum };
   if (fixture.sessionKey) download.sessionKey = fixture.sessionKey;
   return { download, meta: { servedBytes: fixture.size, fileCount: c.files + 2, expectedDownloads: 1 } };
 }
@@ -178,7 +179,7 @@ async function manifestDownload(version, options) {
   const t = Date.now();
   const m = await createManifestVersion({ version, keys, ...options });
   log(`generated manifest ${version} (${m.fileCount} files, ${m.expectedDownloads} to fetch) in ${Date.now() - t}ms`);
-  const download = { url: `${deviceBaseUrl}/z/unused.zip`, version, manifest: m.manifest };
+  const download = { url: `${updaterBaseUrl}/z/unused.zip`, version, manifest: m.manifest };
   if (m.sessionKey) download.sessionKey = m.sessionKey;
   return {
     download,
@@ -524,4 +525,4 @@ setInterval(() => {
   }
 }, 2000);
 
-log(`listening on ${server.hostname}:${server.port} (device url ${deviceBaseUrl})`);
+log(`listening on ${server.hostname}:${server.port} (device url ${deviceBaseUrl}, updater url ${updaterBaseUrl})`);

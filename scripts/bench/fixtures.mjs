@@ -19,9 +19,9 @@ import {
   builtinPadFileBytes,
   builtinPadFiles,
   builtinPadIndex,
-  deviceBaseUrl,
   keysDir,
   manifestTmpDir,
+  updaterBaseUrl,
 } from './config.mjs';
 
 export async function ensureKeys() {
@@ -201,7 +201,7 @@ export async function createManifestVersion({ version, files, bytes, variant, ke
     manifest.push({
       file_name: name,
       file_hash: session ? encryptedChecksum(keys.privateKey, hash) : hash,
-      download_url: `${deviceBaseUrl}/m/${encodePath(version)}/${encodePath(name)}`,
+      download_url: `${updaterBaseUrl}/m/${encodePath(version)}/${encodePath(name)}`,
     });
   }
   let plainRoot = null;

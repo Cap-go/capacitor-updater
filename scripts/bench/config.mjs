@@ -16,6 +16,10 @@ export const benchPort = Number.parseInt(process.env.BENCH_PORT ?? '3193', 10);
 // BENCH_ANDROID_TRANSPORT=reverse (physical devices).
 export const defaultDeviceBaseUrl = `http://127.0.0.1:${benchPort}`;
 export const deviceBaseUrl = process.env.BENCH_DEVICE_BASE_URL ?? defaultDeviceBaseUrl;
+// What the updater itself talks to (update/stats/channel endpoints, zips, manifest files). Defaults to
+// the bench server; BENCH_UPDATER_BASE_URL puts e.g. an HTTPS / HTTP/3 reverse proxy (Caddy) in front of
+// it while bench.js keeps driving the cases over plain HTTP.
+export const updaterBaseUrl = process.env.BENCH_UPDATER_BASE_URL ?? deviceBaseUrl;
 // bench.js (embedded in the builtin www and in every zip) carries the server URL, so zips and
 // the builtin www are kept per device URL: switching transport does not regenerate them.
 const urlTag =
