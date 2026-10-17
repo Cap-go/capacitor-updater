@@ -18,6 +18,7 @@ endif()
 option(CAPGO_TEST_SUPPORT "Build the test.* operations used by core/tests" OFF)
 option(CAPGO_JNI "Build the JNI entry points (Android, JVM unit tests)" OFF)
 option(CAPGO_SHARED "Build a shared library (static otherwise)" ON)
+option(CAPGO_FUZZ "Build the libFuzzer targets of fuzz/ (clang, with CAPGO_SHARED=OFF)" OFF)
 # address,undefined / thread: sanitizer builds for the test suite (host only).
 set(CAPGO_SANITIZE "" CACHE STRING "Sanitizers for the test build, e.g. address,undefined or thread")
 # Port in progress: link with unresolved symbols (resolved lazily, missing modules crash only if called).
@@ -121,4 +122,30 @@ find_package(Threads REQUIRED)
 target_link_libraries(capgo_updater_core PRIVATE ZLIB::ZLIB Threads::Threads)
 if(ANDROID)
   target_link_libraries(capgo_updater_core PRIVATE log)
+endif()
+
+# libFuzzer targets (fuzz/<target>.c, same targets and corpus as core/fuzz): clang only, built
+# with -DCAPGO_FUZZ=ON -DCAPGO_SHARED=OFF (scripts/fuzz.sh). Every source, dependencies
+# included, gets coverage, AddressSanitizer and UndefinedBehaviorSanitizer (abort on error).
+if(CAPGO_FUZZ)
+  if(CAPGO_SHARED)
+    message(FATAL_ERROR "CAPGO_FUZZ needs -DCAPGO_SHARED=OFF (the harnesses call internal functions)")
+  endif()
+  set(CAPGO_FUZZ_FLAGS -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all
+      -fno-omit-frame-pointer -g)
+  target_compile_options(capgo_updater_core PRIVATE ${CAPGO_FUZZ_FLAGS})
+  file(GLOB CAPGO_FUZZ_TARGETS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/*.c)
+  list(FILTER CAPGO_FUZZ_TARGETS EXCLUDE REGEX ".*/fuzz_support\\.c$")
+  foreach(source ${CAPGO_FUZZ_TARGETS})
+    get_filename_component(name ${source} NAME_WE)
+    add_executable(fuzz_${name} ${source} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/fuzz_support.c)
+    target_include_directories(fuzz_${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+      ${CMAKE_CURRENT_SOURCE_DIR}/config ${capgo_mbedtls_SOURCE_DIR}/include ${capgo_brotli_SOURCE_DIR}/c/include)
+    target_compile_definitions(fuzz_${name} PRIVATE MBEDTLS_USER_CONFIG_FILE="capgo_mbedtls_config.h"
+      _GNU_SOURCE _DARWIN_C_SOURCE _FILE_OFFSET_BITS=64)
+    target_compile_options(fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all
+      -fno-omit-frame-pointer -g -Wall -Wextra)
+    target_link_options(fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_libraries(fuzz_${name} PRIVATE capgo_updater_core ZLIB::ZLIB Threads::Threads)
+  endforeach()
 endif()

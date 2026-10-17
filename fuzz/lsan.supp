@@ -1,0 +1,4 @@
+# LeakSanitizer suppressions of the fuzz targets (scripts/fuzz.sh). Only libFuzzer itself:
+# on macOS its RSS-limit thread object is still alive when LeakSanitizer runs at exit.
+# Nothing of either updater core is suppressed.
+leak:fuzzer::StartRssThread
