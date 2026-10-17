@@ -311,6 +311,22 @@ declare module '@capacitor/cli' {
       allowHttpsToHttpRedirect?: boolean;
 
       /**
+       * Send the plugin's own network requests (update checks, stats, channel calls, and bundle/manifest
+       * downloads) through the operating system's network stack: URLSession on iOS, `HttpEngine` on Android 14+
+       * (API 34). They then use HTTP/3 or HTTP/2 when the server offers them, the system proxy, and the platform
+       * trust rules (App Transport Security and `NSPinnedDomains` on iOS, the network security config on Android).
+       * The plugin keeps its own rules on top (redirect policy, size limits, resume, checksums, encryption).
+       *
+       * Set to `false` to always use the plugin's built-in HTTP/1.1 client. Android 13 and older always use it.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since  8.54.0
+       */
+      systemHttp?: boolean;
+
+      /**
        * Allow the plugin to modify the appId dynamically from the JavaScript side.
        *
        *
