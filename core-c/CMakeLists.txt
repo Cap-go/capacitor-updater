@@ -117,6 +117,22 @@ if(CAPGO_SANITIZE)
   target_link_options(capgo_updater_core PRIVATE -fsanitize=${CAPGO_SANITIZE})
 endif()
 
+# Hardening of shipped builds (every source, dependencies included). Costs are measured in
+# COMPARISON.md (Crash safety). Sanitizer and fuzzing builds do without: their runtimes check
+# more, and _FORTIFY_SOURCE wrappers hide accesses from AddressSanitizer.
+option(CAPGO_HARDEN "Stack protector, _FORTIFY_SOURCE=3, zero-initialized locals, RELRO/BIND_NOW" ON)
+if(CAPGO_HARDEN AND NOT CAPGO_SANITIZE AND NOT CAPGO_FUZZ)
+  # Overflowing a stack buffer aborts; locals start zeroed instead of holding stale data.
+  target_compile_options(capgo_updater_core PRIVATE -fstack-protector-strong -ftrivial-auto-var-init=zero)
+  # libc bounds checks on memcpy/strlen/snprintf... (__builtin_dynamic_object_size); needs -O.
+  target_compile_options(capgo_updater_core PRIVATE
+    $<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE> $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=3>)
+  if(ANDROID)
+    # Already the NDK linker's defaults: kept explicit so a toolchain change cannot drop them.
+    target_link_options(capgo_updater_core PRIVATE -Wl,-z,relro,-z,now -Wl,-z,noexecstack)
+  endif()
+endif()
+
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
 target_link_libraries(capgo_updater_core PRIVATE ZLIB::ZLIB Threads::Threads)

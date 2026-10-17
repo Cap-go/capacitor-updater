@@ -12,3 +12,9 @@ rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
 
 [target.x86_64-linux-android]
 rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+# Android hardening, explicit (already the NDK linker's defaults; core-c sets the same):
+# full RELRO with immediate binding (the GOT is read-only after load) and a non-executable
+# stack. Joined with the tables above.
+[target.'cfg(target_os = "android")']
+rustflags = ["-C", "link-arg=-Wl,-z,relro,-z,now", "-C", "link-arg=-Wl,-z,noexecstack"]

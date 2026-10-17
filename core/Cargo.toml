@@ -60,6 +60,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 codegen-units = 1
 lto = true
 opt-level = "s"
+# Integer overflow panics instead of wrapping silently (every crate). The FFI and JNI entry
+# points catch panics and answer an error; measured cost: none on the host micro-benchmarks
+# (core-c/COMPARISON.md, Crash safety).
+overflow-checks = true
 
 # Hot paths (inflate, CRC, AES, the engine's own loops) are built for speed; the rest stays small.
 [profile.release.package.capgo-updater-core]
