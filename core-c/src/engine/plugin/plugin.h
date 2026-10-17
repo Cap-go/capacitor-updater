@@ -88,6 +88,8 @@
 #define CG_KEY_PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET "CapacitorUpdater.previewPreviousDefaultChannelWasSet"
 #define CG_KEY_INSTALL_MARKER_CREATED "CapacitorUpdater.defaultChannelInstallMarkerCreated"
 #define CG_KEY_LAST_FAILED_BUNDLE "CapacitorUpdater.lastFailedBundle"
+/* Crash-loop breaker records (engine/crash_guard.c). Older versions never read it. */
+#define CG_KEY_CRASH_GUARD "CapacitorUpdater.crashGuard"
 #define CG_KEY_LAST_VERSION_OS "CapacitorUpdater.lastVersionOs"
 #define CG_KEY_LAST_VERSION_BUILD "CapacitorUpdater.lastVersionBuild"
 #define CG_KEY_LAST_VERSION_CODE "CapacitorUpdater.lastVersionCode"

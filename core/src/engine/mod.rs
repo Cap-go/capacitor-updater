@@ -9,6 +9,7 @@ mod apk;
 pub mod archive;
 pub mod backend;
 pub mod config;
+mod crash_guard;
 pub mod download;
 pub mod fsutil;
 pub mod manifest;

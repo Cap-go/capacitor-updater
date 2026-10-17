@@ -150,6 +150,8 @@ impl Engine {
 
         self.prepare_default_channel(native_build_changed);
         self.restore_pending_stats();
+        // Before anything reads the current bundle: a bundle that crashed the app goes away.
+        self.account_native_deaths(native.get("previousExits").and_then(Value::as_array).map(Vec::as_slice));
         if config.persist_custom_id {
             if let Some(custom_id) = self.kv_text(keys::CUSTOM_ID).filter(|value| !value.is_empty()) {
                 self.config_mut().custom_id = custom_id;
@@ -285,6 +287,7 @@ impl Engine {
         // foreground arms a fresh one below.
         self.invalidate_app_ready_check();
         self.plugin_state().in_background = false;
+        self.mark_native_steps_background(false);
         self.mark_session_foreground(true);
         let current = self.current_bundle();
         self.send_stats("app_moved_to_foreground", Some(current.version_name()), None, None);
@@ -315,6 +318,7 @@ impl Engine {
             state.in_background = true;
             state.foreground_handled = false;
         }
+        self.mark_native_steps_background(true);
         // The page is paused: its readiness is checked again from the next foreground.
         self.invalidate_app_ready_check();
         self.mark_session_foreground(false);
@@ -387,6 +391,13 @@ impl Engine {
             return;
         }
         self.host.debug(format!("Next bundle is: {}", next.version_name()));
+        let _step = (!next.is_builtin()).then(|| {
+            self.begin_native_step(
+                crate::engine::crash_guard::STEP_SET,
+                crate::engine::crash_guard::step_version(&next),
+                next.id(),
+            )
+        });
         if self.set_bundle(next.id()) && self.reload_app() {
             self.host.info(format!("Updated to bundle: {}", next.version_name()));
             self.emit_set_event(&next);
@@ -639,6 +650,24 @@ impl Engine {
             self.host
                 .info(format!("No need to update, {} is the latest bundle.", current.id()));
             let end = CycleEnd::new("No need to update", &latest_version, &current, false, planned);
+            self.end_update_cycle(end);
+            return;
+        }
+        // A version that crashed the app natively twice in a row waits for another one.
+        self.forget_native_steps_except(&latest_version);
+        if self.native_step_failed(&latest_version) {
+            self.host.error(format!(
+                "Latest bundle {latest_version} crashed the app natively twice in a row: skipped until the server offers another version"
+            ));
+            let mut end = CycleEnd::new(
+                "Latest version crashed the app natively. Aborting update.",
+                &latest_version,
+                &current,
+                true,
+                planned,
+            );
+            // Reported once, when it was marked failed.
+            end.send_stats = false;
             self.end_update_cycle(end);
             return;
         }

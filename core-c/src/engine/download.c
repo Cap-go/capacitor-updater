@@ -19,6 +19,7 @@
 #include "crypto/checksum.h"
 #include "crypto/crypto.h"
 #include "engine/archive.h"
+#include "engine/crash_guard.h"
 #include "engine/engine.h"
 #include "engine/fsutil.h"
 #include "engine/manifest.h"
@@ -365,9 +366,12 @@ static bool download_zip_inner(cg_engine *engine, const cg_download_request *req
 bool cg_download_transfer_and_install(cg_engine *engine, const cg_download_request *request,
                                       const cg_bundle_info *record, const cg_cancel *cancel, bool resumable,
                                       cg_bundle_info *out, cg_error *err) {
-    if (request->manifest)
-        return cg_manifest_download_manifest_inner(engine, request, request->manifest, record, cancel, out, err);
-    return download_zip_inner(engine, request, record, cancel, resumable, out, err);
+    cg_crash_guard_begin_native_step(engine, CG_STEP_DOWNLOAD, request->version, record->id);
+    bool ok = request->manifest
+                  ? cg_manifest_download_manifest_inner(engine, request, request->manifest, record, cancel, out, err)
+                  : download_zip_inner(engine, request, record, cancel, resumable, out, err);
+    cg_crash_guard_end_native_step(engine, request->version);
+    return ok;
 }
 
 bool cg_download_settle_download(cg_engine *engine, const cg_download_request *request, const cg_bundle_info *record,

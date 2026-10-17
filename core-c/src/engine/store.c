@@ -359,6 +359,29 @@ static void set_fallback_bundle(cg_engine *engine, const cg_bundle_info *fallbac
     KV_PUT_KEY(engine, keys.fallback, fallback ? cg_bundle_info_id(fallback) : CG_BUNDLE_ID_BUILTIN);
 }
 
+void cg_store_leave_failed_current_bundle(cg_engine *engine, const char *failed_id) {
+    cg_bundle_info fallback;
+    cg_store_fallback_bundle(engine, &fallback);
+    char *dir = NULL;
+    if (!cg_bundle_info_is_builtin(&fallback) && strcmp(cg_bundle_info_id(&fallback), failed_id) != 0 &&
+        !cg_bundle_info_is_error(&fallback) && cg_store_bundle_exists(engine, cg_bundle_info_id(&fallback))) {
+        cg_error ignored = CG_ERROR_INIT;
+        dir = cg_store_bundle_directory(engine, cg_bundle_info_id(&fallback), &ignored);
+        cg_err_clear(&ignored);
+    }
+    if (dir) {
+        cg_warn(&engine->host, "Going back to bundle %s after native crashes", cg_bundle_info_id(&fallback));
+        set_current_bundle_path(engine, dir);
+        free(dir);
+    } else {
+        cg_warn(&engine->host, "Going back to the builtin bundle after native crashes");
+        char *path = builtin_path(engine);
+        set_current_bundle_path(engine, path);
+        free(path);
+    }
+    cg_bundle_info_clear(&fallback);
+}
+
 bool cg_store_next_bundle(cg_engine *engine, cg_bundle_info *out) {
     char *key = CG_CONFIG_DUP(engine, keys.next);
     char *id = kv(engine, key);

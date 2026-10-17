@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine/crash_guard.h"
 #include "engine/engine.h"
 #include "engine/plugin/plugin.h"
 #include "engine/plugin/preview.h"
@@ -416,6 +417,8 @@ static char *current_version_name(cg_engine *engine) {
 }
 
 bool cg_ready_apply_downloaded_bundle(cg_engine *engine, const cg_bundle_info *bundle) {
+    const char *step_version = cg_crash_guard_step_version(bundle);
+    cg_crash_guard_begin_native_step(engine, CG_STEP_SET, step_version, bundle->id);
     cg_reset_state previous_state;
     cg_store_capture_reset_state(engine, &previous_state);
     char *previous_name = current_version_name(engine);
@@ -434,16 +437,23 @@ bool cg_ready_apply_downloaded_bundle(cg_engine *engine, const cg_bundle_info *b
     }
     free(previous_name);
     cg_reset_state_clear(&previous_state);
+    cg_crash_guard_end_native_step(engine, step_version);
     return ok;
 }
 
 bool cg_ready_set_and_reload(cg_engine *engine, const char *id, cg_bundle_info *out, char **error) {
     cg_info(&engine->host, "Setting active bundle %s", id);
+    cg_bundle_info target;
+    cg_store_get_bundle_info(engine, id, &target);
+    /* Recorded under the target's version (an owned copy: target is cleared at the end). */
+    char *step_version = cg_bundle_info_is_builtin(&target) ? NULL : cg_strdup(cg_crash_guard_step_version(&target));
+    if (step_version) cg_crash_guard_begin_native_step(engine, CG_STEP_SET, step_version, id);
+    bool ok = false;
+    cg_bundle_info bundle;
     if (!cg_store_set_bundle(engine, id)) {
         *error = cg_fmt("Update failed, id %s does not exist.", id);
-        return false;
+        goto done;
     }
-    cg_bundle_info bundle;
     cg_store_get_bundle_info(engine, id, &bundle);
     bool preview = cg_plugin_lock_state(engine)->preview_session_enabled;
     cg_plugin_unlock_state(engine);
@@ -452,17 +462,22 @@ bool cg_ready_set_and_reload(cg_engine *engine, const char *id, cg_bundle_info *
         if (!cg_ready_reload_without_waiting(engine)) {
             *error = cg_fmt("Reload failed after setting preview bundle %s", id);
             cg_bundle_info_clear(&bundle);
-            return false;
+            goto done;
         }
     } else if (!cg_ready_reload_app(engine)) {
         *error = cg_fmt("Reload failed after setting bundle %s", id);
         cg_bundle_info_clear(&bundle);
-        return false;
+        goto done;
     }
     cg_plugin_emit_set_event(engine, &bundle);
     cg_preview_show_preview_notice_if_needed(engine);
     *out = bundle;
-    return true;
+    ok = true;
+done:
+    if (step_version) cg_crash_guard_end_native_step(engine, step_version);
+    free(step_version);
+    cg_bundle_info_clear(&target);
+    return ok;
 }
 
 bool cg_ready_reload_with_pending(cg_engine *engine, char **error) {
@@ -471,6 +486,8 @@ bool cg_ready_reload_with_pending(cg_engine *engine, char **error) {
     bool has_next = cg_store_next_bundle(engine, &next);
     if (has_next && !cg_plugin_is_preview_state_active(engine) && !cg_bundle_info_is_error(&next) &&
         strcmp(next.id, current.id) != 0) {
+        bool guarded = !cg_bundle_info_is_builtin(&next);
+        if (guarded) cg_crash_guard_begin_native_step(engine, CG_STEP_SET, cg_crash_guard_step_version(&next), next.id);
         cg_reset_state previous_state;
         cg_store_capture_reset_state(engine, &previous_state);
         char *previous_name = cg_strdup(cg_bundle_info_version_name(&current));
@@ -497,6 +514,7 @@ bool cg_ready_reload_with_pending(cg_engine *engine, char **error) {
         }
         free(previous_name);
         cg_reset_state_clear(&previous_state);
+        if (guarded) cg_crash_guard_end_native_step(engine, cg_crash_guard_step_version(&next));
         cg_bundle_info_clear(&next);
         cg_bundle_info_clear(&current);
         return ok;

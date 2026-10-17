@@ -14,6 +14,7 @@
 #include "crypto/crypto.h"
 #include "engine/backend.h"
 #include "engine/download.h"
+#include "engine/crash_guard.h"
 #include "engine/engine.h"
 #include "engine/manifest.h"
 #include "engine/plugin/channel.h"
@@ -169,6 +170,8 @@ cj *cg_flow_load_plugin(cg_engine *engine, const cj *input, cg_error *err) {
 
     cg_channel_prepare_default_channel(engine, native_build_changed);
     cg_stats_restore_pending_stats(engine);
+    /* Before anything reads the current bundle: a bundle that crashed the app goes away. */
+    cg_crash_guard_account_native_deaths(engine, cj_get(native, "previousExits"));
     if (config.persist_custom_id) {
         char *custom_id = cg_plugin_kv_text(engine, CG_KEY_CUSTOM_ID);
         if (custom_id && *custom_id) {
@@ -322,6 +325,7 @@ void cg_flow_app_moved_to_foreground(cg_engine *engine) {
     cg_ready_invalidate_app_ready_check(engine);
     cg_plugin_lock_state(engine)->in_background = false;
     cg_plugin_unlock_state(engine);
+    cg_crash_guard_mark_native_steps_background(engine, false);
     cg_telemetry_mark_session_foreground(engine, true);
     cg_bundle_info current;
     current_bundle(engine, &current);
@@ -354,6 +358,7 @@ void cg_flow_background_splash(cg_engine *engine) {
         state->foreground_handled = false;
         cg_plugin_unlock_state(engine);
     }
+    cg_crash_guard_mark_native_steps_background(engine, true);
     /* The page is paused: its readiness is checked again from the next foreground. */
     cg_ready_invalidate_app_ready_check(engine);
     cg_telemetry_mark_session_foreground(engine, false);
@@ -429,6 +434,8 @@ void cg_flow_install_next(cg_engine *engine) {
         return;
     }
     cg_debug(&engine->host, "Next bundle is: %s", cg_bundle_info_version_name(&next));
+    bool guarded = !cg_bundle_info_is_builtin(&next);
+    if (guarded) cg_crash_guard_begin_native_step(engine, CG_STEP_SET, cg_crash_guard_step_version(&next), next.id);
     if (cg_store_set_bundle(engine, next.id) && cg_ready_reload_app(engine)) {
         cg_info(&engine->host, "Updated to bundle: %s", cg_bundle_info_version_name(&next));
         cg_plugin_emit_set_event(engine, &next);
@@ -436,6 +443,7 @@ void cg_flow_install_next(cg_engine *engine) {
     } else {
         cg_error_log(&engine->host, "Update to bundle: %s Failed!", cg_bundle_info_version_name(&next));
     }
+    if (guarded) cg_crash_guard_end_native_step(engine, cg_crash_guard_step_version(&next));
     cg_bundle_info_clear(&next);
     cg_bundle_info_clear(&current);
 }
@@ -820,6 +828,20 @@ static void run_update_cycle(cg_engine *engine, const char *update_url, bool pla
     if (!*latest_version || strcmp(latest_version, cg_bundle_info_version_name(&current)) == 0) {
         cg_info(host, "No need to update, %s is the latest bundle.", current.id);
         cg_cycle_end end = cg_flow_cycle_end("No need to update", latest_version, &current, false, planned);
+        cg_flow_end_update_cycle(engine, &end);
+        goto done;
+    }
+    /* A version that crashed the app natively twice in a row waits for another one. */
+    cg_crash_guard_forget_native_steps_except(engine, latest_version);
+    if (cg_crash_guard_native_step_failed(engine, latest_version)) {
+        cg_error_log(host,
+                     "Latest bundle %s crashed the app natively twice in a row: skipped until the server offers "
+                     "another version",
+                     latest_version);
+        cg_cycle_end end = cg_flow_cycle_end("Latest version crashed the app natively. Aborting update.",
+                                             latest_version, &current, true, planned);
+        /* Reported once, when it was marked failed. */
+        end.send_stats = false;
         cg_flow_end_update_cycle(engine, &end);
         goto done;
     }

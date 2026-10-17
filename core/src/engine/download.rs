@@ -328,6 +328,7 @@ impl Engine {
         cancel: &Cancel,
         resumable: bool,
     ) -> CoreResult<BundleInfo> {
+        let _step = self.begin_native_step(super::crash_guard::STEP_DOWNLOAD, &request.version, record.id());
         match &request.manifest {
             Some(manifest) => self.download_manifest_inner(request, manifest, record, cancel),
             None => self.download_zip_inner(request, record, cancel, resumable),

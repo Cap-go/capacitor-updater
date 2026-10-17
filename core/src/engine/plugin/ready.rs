@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 use super::{hooks, keys};
 use crate::bundle::{BundleInfo, BundleStatus};
+use crate::engine::crash_guard::{step_version, STEP_SET};
 use crate::engine::Engine;
 use crate::host::HostLog;
 
@@ -335,6 +336,7 @@ impl Engine {
 
     /// Stages `bundle`, reloads, finalizes (or restores everything on failure).
     pub(crate) fn apply_downloaded_bundle(&self, bundle: &BundleInfo) -> bool {
+        let _step = self.begin_native_step(STEP_SET, step_version(bundle), bundle.id());
         let previous_state = self.capture_reset_state();
         let previous_name = self.current_bundle().version_name().to_string();
         if !self.stage_pending_reload(bundle) {
@@ -362,6 +364,8 @@ impl Engine {
     /// `set(id)` from JavaScript: switch and reload.
     pub(crate) fn set_and_reload(&self, id: &str) -> Result<BundleInfo, String> {
         self.host.info(format!("Setting active bundle {id}"));
+        let target = self.get_bundle_info(Some(id));
+        let _step = (!target.is_builtin()).then(|| self.begin_native_step(STEP_SET, step_version(&target), id));
         if !self.set_bundle(id) {
             return Err(format!("Update failed, id {id} does not exist."));
         }
@@ -386,6 +390,7 @@ impl Engine {
         if let Some(next) =
             next.filter(|next| !self.is_preview_state_active() && !next.is_error() && next.id() != current.id())
         {
+            let _step = (!next.is_builtin()).then(|| self.begin_native_step(STEP_SET, step_version(&next), next.id()));
             let previous_state = self.capture_reset_state();
             let previous_name = current.version_name().to_string();
             self.host.info(format!(

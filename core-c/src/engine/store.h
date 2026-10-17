@@ -85,6 +85,10 @@ char *cg_store_current_bundle_path(cg_engine *engine);
 bool cg_store_is_using_builtin(cg_engine *engine);
 char *cg_store_current_bundle_id(cg_engine *engine);
 void cg_store_current_bundle(cg_engine *engine, cg_bundle_info *out);
+/* leave_failed_current_bundle: the current bundle `failed_id` crashed the app (crash-loop
+ * breaker, at plugin load): the current bundle goes back to the last successful one, else
+ * builtin. No reload. */
+void cg_store_leave_failed_current_bundle(cg_engine *engine, const char *failed_id);
 void cg_store_fallback_bundle(cg_engine *engine, cg_bundle_info *out);
 bool cg_store_next_bundle(cg_engine *engine, cg_bundle_info *out);
 bool cg_store_preview_fallback_bundle(cg_engine *engine, cg_bundle_info *out);
