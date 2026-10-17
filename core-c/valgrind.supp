@@ -1,0 +1,79 @@
+# Valgrind suppressions for the C core's memcheck job.
+# Only the Rust test harness is suppressed here: its local TLS servers (rustls + ring) use
+# constant-time assembly that Valgrind reports as uninitialised reads/writes on x86-64.
+# Nothing under the C core (libcapgo_updater_core) is suppressed.
+{
+   ring-constant-time-compare
+   Memcheck:Cond
+   ...
+   fun:*ring*
+}
+{
+   ring-constant-time-value
+   Memcheck:Value8
+   ...
+   fun:*ring*
+}
+{
+   rustls-test-server-writev-0
+   Memcheck:Param
+   writev(vector[0])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-1
+   Memcheck:Param
+   writev(vector[1])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-2
+   Memcheck:Param
+   writev(vector[2])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-3
+   Memcheck:Param
+   writev(vector[3])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-4
+   Memcheck:Param
+   writev(vector[4])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-5
+   Memcheck:Param
+   writev(vector[5])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-6
+   Memcheck:Param
+   writev(vector[6])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-writev-7
+   Memcheck:Param
+   writev(vector[7])
+   ...
+   fun:*rustls*
+}
+{
+   rustls-test-server-write
+   Memcheck:Param
+   write(buf)
+   ...
+   fun:*rustls*
+}

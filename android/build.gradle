@@ -65,7 +65,7 @@ dependencies {
     testImplementation 'org.robolectric:robolectric:4.17'
 }
 
-// JVM unit tests load the shared Rust core (../core) built for the host machine.
+// JVM unit tests load the shared core (../core, or ../core-c with CAPGO_CORE_IMPL=c) built for the host machine.
 // The npm package does not ship core/, so app builds never run cargo; they use
 // the prebuilt src/main/jniLibs from scripts/build-core.sh android.
 def capgoCoreDir = file("../core")
@@ -124,17 +124,28 @@ def alignMachOStringTable = { File dylib ->
 }
 
 if (capgoCoreDir.exists()) {
-    def capgoCoreHostLibDir = new File(capgoCoreDir, "target/host/release")
+    // CAPGO_CORE_IMPL=c runs the JVM tests against the C implementation of the core (../core-c).
+    def capgoCoreImpl = System.getenv("CAPGO_CORE_IMPL") ?: "rust"
+    def capgoCoreSourceDir = capgoCoreImpl == "c" ? file("../core-c") : capgoCoreDir
+    def capgoCoreHostLibDir = capgoCoreImpl == "c" ? file("../core-c/build-host") : new File(capgoCoreDir, "target/host/release")
     def buildCapgoCoreHost = tasks.register("buildCapgoCoreHost", Exec) {
-        description = "Builds the Capgo Rust core for the host JVM (unit tests)"
-        workingDir capgoCoreDir
-        def cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty('user.home')}/.cargo"
-        def rustupCargo = new File(cargoHome, "bin/cargo")
-        executable rustupCargo.exists() ? rustupCargo.absolutePath : "cargo"
-        args "build", "--release", "--locked", "--features", "jni", "--target-dir", "target/host"
-        inputs.dir(new File(capgoCoreDir, "src"))
-        inputs.file(new File(capgoCoreDir, "Cargo.toml"))
-        inputs.file(new File(capgoCoreDir, "Cargo.lock"))
+        description = "Builds the Capgo core for the host JVM (unit tests)"
+        if (capgoCoreImpl == "c") {
+            workingDir file("..")
+            executable "bash"
+            args "scripts/build-core.sh", "host"
+            inputs.dir(new File(capgoCoreSourceDir, "src"))
+            inputs.file(new File(capgoCoreSourceDir, "CMakeLists.txt"))
+        } else {
+            workingDir capgoCoreDir
+            def cargoHome = System.getenv("CARGO_HOME") ?: "${System.getProperty('user.home')}/.cargo"
+            def rustupCargo = new File(cargoHome, "bin/cargo")
+            executable rustupCargo.exists() ? rustupCargo.absolutePath : "cargo"
+            args "build", "--release", "--locked", "--features", "jni", "--target-dir", "target/host"
+            inputs.dir(new File(capgoCoreDir, "src"))
+            inputs.file(new File(capgoCoreDir, "Cargo.toml"))
+            inputs.file(new File(capgoCoreDir, "Cargo.lock"))
+        }
         outputs.dir(capgoCoreHostLibDir)
         doLast {
             if (System.getProperty("os.name").toLowerCase().contains("mac")) {

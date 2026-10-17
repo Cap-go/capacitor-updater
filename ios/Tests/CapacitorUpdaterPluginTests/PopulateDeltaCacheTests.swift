@@ -178,7 +178,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         // (checksum was verified when the cache entry was written).
         try "not-the-hashed-bytes".write(to: cacheFile, atomically: true, encoding: .utf8)
         let manifest = [
-            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "app.js", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
@@ -192,13 +192,13 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try Data().write(to: cacheFile)
         let manifest = [
-            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "app.js", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
 
         XCTAssertEqual(missing.count, 1)
-        XCTAssertEqual(missing.first?.file_name, "app.js")
+        XCTAssertEqual(missing.first?.fileName, "app.js")
     }
 
     func testGetMissingBundleFilesReusesEmptyFileForEmptySha256() throws {
@@ -207,7 +207,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try Data().write(to: cacheFile)
         let manifest = [
-            ManifestEntry(file_name: "empty.txt", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "empty.txt", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
@@ -221,7 +221,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
         let manifest = [
-            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "app.js", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
@@ -235,7 +235,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try "payload".write(to: cacheFile, atomically: true, encoding: .utf8)
         let manifest = [
-            ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "app.js", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
@@ -249,7 +249,7 @@ final class PopulateDeltaCacheTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try "legacy-brotli-cache".write(to: cacheFile, atomically: true, encoding: .utf8)
         let manifest = [
-            ManifestEntry(file_name: "app.js.br", file_hash: hash, download_url: nil)
+            ManifestEntry(fileName: "app.js.br", fileHash: hash, downloadUrl: nil)
         ]
 
         let missing = try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
@@ -264,7 +264,7 @@ extension PopulateDeltaCacheTests {
         let name = "\(testId).js"
         let source = try write("builtin \(testId)", named: name, in: builtinFolder.appendingPathComponent("assets"))
         let hash = sha256(source)
-        let manifest = [ManifestEntry(file_name: "assets/\(name).br", file_hash: hash, download_url: nil)]
+        let manifest = [ManifestEntry(fileName: "assets/\(name).br", fileHash: hash, downloadUrl: nil)]
 
         XCTAssertTrue(try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
 
@@ -281,10 +281,10 @@ extension PopulateDeltaCacheTests {
         let (signedHash, plainHash) = Fixture.firstDecryptChecksumCase
         XCTAssertEqual(sha256(source), plainHash)
         let manifest = [ManifestEntry(
-            file_name: "assets/\(name).br",
-            file_hash: signedHash,
+            fileName: "assets/\(name).br",
+            fileHash: signedHash,
             // Invalid URL makes any attempted download fail immediately: this must reuse builtin.
-            download_url: "http://["
+            downloadUrl: "http://["
         )]
 
         // Only checksum recovery is needed when builtin matches; no file/session decryption occurs.
@@ -304,7 +304,7 @@ extension PopulateDeltaCacheTests {
         let source = try write("outside", named: name, in: builtinFolder.deletingLastPathComponent())
         defer { try? FileManager.default.removeItem(at: source) }
         let hash = sha256(source)
-        let manifest = [ManifestEntry(file_name: "../\(name).br", file_hash: hash, download_url: nil)]
+        let manifest = [ManifestEntry(fileName: "../\(name).br", fileHash: hash, downloadUrl: nil)]
 
         XCTAssertEqual(try implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
     }

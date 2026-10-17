@@ -1,0 +1,1 @@
+assets/app.js.br

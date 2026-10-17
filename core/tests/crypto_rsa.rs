@@ -1,12 +1,60 @@
 //! RSA signature edge cases (moved from the iOS RsaContractTests): the public
 //! operation, PKCS#1 type-1 padding and the cached key behind `decrypt_checksum`.
 
+mod support;
+
 use std::path::Path;
 
-use capgo_updater_core::crypto::{self, rsa::unpad_type1, RsaPublicKey};
 use capgo_updater_core::text::{hex_decode, hex_encode};
 use rsa::pkcs1::EncodeRsaPublicKey;
-use serde_json::Value;
+use serde_json::{json, Value};
+use support::{core, AbiResult};
+
+fn bytes_of(value: &Value) -> Vec<u8> {
+    hex_decode(value.as_str().expect("hex string")).expect("hex")
+}
+
+/// PKCS#1 v1.5 type-1 public decryption with a PEM key.
+fn public_decrypt(pem: &str, ciphertext: &[u8]) -> AbiResult<Vec<u8>> {
+    core()
+        .try_test(
+            "rsaPublicDecrypt",
+            json!({ "publicKey": pem, "ciphertextHex": hex_encode(ciphertext) }),
+        )
+        .map(|value| bytes_of(&value["plaintextHex"]))
+}
+
+/// The raw public operation (`input^e mod n`) with a PKCS#1 DER key.
+fn public_op(der: &[u8], input: &[u8]) -> AbiResult<Vec<u8>> {
+    core()
+        .try_test(
+            "rsaPublicOp",
+            json!({ "derHex": hex_encode(der), "inputHex": hex_encode(input) }),
+        )
+        .map(|value| bytes_of(&value["outputHex"]))
+}
+
+fn der_key_valid(der: &[u8]) -> bool {
+    core().test("rsaKeyFromDer", json!({ "derHex": hex_encode(der) }))["valid"] == true
+}
+
+fn pem_key_valid(pem: &str) -> bool {
+    core().test("publicKeyValid", json!({ "publicKey": pem }))["valid"] == true
+}
+
+fn unpad_type1(block: &[u8]) -> Option<Vec<u8>> {
+    let payload = core().test("rsaUnpadType1", json!({ "blockHex": hex_encode(block) }))["payloadHex"].clone();
+    (!payload.is_null()).then(|| bytes_of(&payload))
+}
+
+fn decrypt_checksum(checksum: &str, public_key: &str) -> AbiResult<String> {
+    core()
+        .try_test(
+            "decryptChecksum",
+            json!({ "checksum": checksum, "publicKey": public_key }),
+        )
+        .map(|value| value["checksum"].as_str().expect("checksum").to_string())
+}
 
 struct SignedVector {
     key: String,
@@ -29,19 +77,20 @@ fn signed_vector() -> SignedVector {
 #[test]
 fn public_decrypt_rejects_modified_and_wrong_length_signatures() {
     let vector = signed_vector();
-    let key = RsaPublicKey::from_pem(&vector.key).unwrap();
-    assert_eq!(key.public_decrypt(&vector.ciphertext).unwrap(), vector.plaintext);
-    assert!(key.public_decrypt(&[]).is_err());
-    assert!(key
-        .public_decrypt(&vector.ciphertext[..vector.ciphertext.len() - 1])
-        .is_err());
+    let key = &vector.key;
+    assert_eq!(public_decrypt(key, &vector.ciphertext).unwrap(), vector.plaintext);
+    assert!(public_decrypt(key, &[]).is_err());
+    assert!(public_decrypt(key, &vector.ciphertext[..vector.ciphertext.len() - 1]).is_err());
     let mut longer = vector.ciphertext.clone();
     longer.push(0);
-    assert!(key.public_decrypt(&longer).is_err());
+    assert!(public_decrypt(key, &longer).is_err());
     for index in 0..vector.ciphertext.len() {
         let mut changed = vector.ciphertext.clone();
         changed[index] ^= 1;
-        assert!(key.public_decrypt(&changed).is_err(), "modified signature byte {index}");
+        assert!(
+            public_decrypt(key, &changed).is_err(),
+            "modified signature byte {index}"
+        );
     }
 }
 
@@ -74,20 +123,20 @@ fn checksum_key_cache_handles_invalid_keys_rotation_and_concurrent_callers() {
     let vector = signed_vector();
     let checksum = hex_encode(&vector.ciphertext);
     let expected = hex_encode(&vector.plaintext);
-    assert_eq!(crypto::decrypt_checksum(&checksum, &vector.key).unwrap(), expected);
+    assert_eq!(decrypt_checksum(&checksum, &vector.key).unwrap(), expected);
     for invalid in ["not-a-public-key", "YWJj"] {
-        assert!(RsaPublicKey::from_pem(invalid).is_err(), "{invalid}");
+        assert!(!pem_key_valid(invalid), "{invalid}");
         assert_eq!(
-            crypto::decrypt_checksum(&checksum, invalid).unwrap_err().code,
+            decrypt_checksum(&checksum, invalid).unwrap_err().code,
             "invalid_public_key"
         );
     }
 
     let other = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
     let other_pem = other.to_public_key().to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
-    assert!(crypto::decrypt_checksum(&checksum, &other_pem).is_err());
+    assert!(decrypt_checksum(&checksum, &other_pem).is_err());
     assert_eq!(
-        crypto::decrypt_checksum(&checksum, &vector.key).unwrap(),
+        decrypt_checksum(&checksum, &vector.key).unwrap(),
         expected,
         "switching keys must not keep the previous key"
     );
@@ -98,9 +147,9 @@ fn checksum_key_cache_handles_invalid_keys_rotation_and_concurrent_callers() {
             scope.spawn(move || {
                 for round in 0..4 {
                     if (index + round) % 2 == 0 {
-                        assert_eq!(&crypto::decrypt_checksum(checksum, key).unwrap(), expected);
+                        assert_eq!(&decrypt_checksum(checksum, key).unwrap(), expected);
                     } else {
-                        assert!(crypto::decrypt_checksum(checksum, other_pem).is_err());
+                        assert!(decrypt_checksum(checksum, other_pem).is_err());
                     }
                 }
             });
@@ -109,7 +158,7 @@ fn checksum_key_cache_handles_invalid_keys_rotation_and_concurrent_callers() {
 
     // Keys pasted into JSON config sometimes keep literal "\n" sequences.
     let escaped = vector.key.replace('\n', "\\n");
-    assert_eq!(crypto::decrypt_checksum(&checksum, &escaped).unwrap(), expected);
+    assert_eq!(decrypt_checksum(&checksum, &escaped).unwrap(), expected);
 }
 
 fn der(tag: u8, content: &[u8]) -> Vec<u8> {
@@ -182,7 +231,8 @@ fn public_op_matches_big_integer_reference_on_random_values() {
                     exponent
                 }
             };
-            let key = RsaPublicKey::from_der(&pkcs1_der(&modulus, &exponent)).unwrap();
+            let key = pkcs1_der(&modulus, &exponent);
+            assert!(der_key_valid(&key));
             for case in 0..4 {
                 let mut input = vec![0u8; size];
                 match case {
@@ -197,12 +247,12 @@ fn public_op_matches_big_integer_reference_on_random_values() {
                     }
                 }
                 assert_eq!(
-                    key.public_op(&input).unwrap(),
+                    public_op(&key, &input).unwrap(),
                     reference_public_op(&input, &modulus, &exponent, size),
                     "{bits} bits, round {round}, case {case}"
                 );
             }
-            assert!(key.public_op(&modulus).is_err(), "input equal to the modulus");
+            assert!(public_op(&key, &modulus).is_err(), "input equal to the modulus");
         }
     }
 }
@@ -217,16 +267,17 @@ fn public_decrypt_recovers_private_encrypt_output_from_random_keys() {
         let private = rsa::RsaPrivateKey::new(&mut rng, bits).unwrap();
         let public = private.to_public_key();
         let pem = public.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
-        let key = RsaPublicKey::from_pem(&pem).unwrap();
+        assert!(pem_key_valid(&pem));
+        let der = public.to_pkcs1_der().unwrap();
         let modulus = public.n().to_bytes_be();
         let exponent = public.e().to_bytes_be();
         for _ in 0..4 {
             let mut payload = vec![0u8; rng.gen_range(1..=bits / 8 - 11)];
             rng.fill_bytes(&mut payload);
             let signature = private.sign(rsa::Pkcs1v15Sign::new_unprefixed(), &payload).unwrap();
-            assert_eq!(key.public_decrypt(&signature).unwrap(), payload, "{bits} bits");
+            assert_eq!(public_decrypt(&pem, &signature).unwrap(), payload, "{bits} bits");
             assert_eq!(
-                key.public_op(&signature).unwrap(),
+                public_op(der.as_bytes(), &signature).unwrap(),
                 reference_public_op(&signature, &modulus, &exponent, bits / 8)
             );
         }
@@ -236,15 +287,12 @@ fn public_decrypt_recovers_private_encrypt_output_from_random_keys() {
 #[test]
 fn even_modulus_and_invalid_exponents_are_rejected() {
     let mut modulus = vec![0xc3u8; 128];
-    assert!(RsaPublicKey::from_der(&pkcs1_der(&modulus, &[1, 0, 1])).is_ok());
+    assert!(der_key_valid(&pkcs1_der(&modulus, &[1, 0, 1])));
     for exponent in [&[][..], &[1], &[0, 1], &[2], &[1, 0]] {
-        assert!(
-            RsaPublicKey::from_der(&pkcs1_der(&modulus, exponent)).is_err(),
-            "{exponent:?}"
-        );
+        assert!(!der_key_valid(&pkcs1_der(&modulus, exponent)), "{exponent:?}");
     }
     modulus[127] = 0xc2;
-    assert!(RsaPublicKey::from_der(&pkcs1_der(&modulus, &[1, 0, 1])).is_err());
+    assert!(!der_key_valid(&pkcs1_der(&modulus, &[1, 0, 1])));
     // 1016-bit modulus: below the minimum size.
-    assert!(RsaPublicKey::from_der(&pkcs1_der(&[0xc3; 127], &[1, 0, 1])).is_err());
+    assert!(!der_key_valid(&pkcs1_der(&[0xc3; 127], &[1, 0, 1])));
 }

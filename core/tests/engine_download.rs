@@ -7,7 +7,7 @@ use aes::cipher::{BlockEncrypt, KeyInit};
 use base64::Engine as _;
 use rsa::pkcs1::EncodeRsaPublicKey;
 use serde_json::{json, Value};
-use support::{FakeServer, TestEngine};
+use support::{core, FakeServer, TestEngine};
 
 fn sha256(bytes: &[u8]) -> String {
     capgo_updater_core::crypto::checksum::sha256_hex(bytes)
@@ -612,7 +612,13 @@ fn https_to_http_redirect_is_refused() {
 
 #[test]
 fn redirect_policy_blocks_downgrade_only() {
-    use capgo_updater_core::net::redirect_allowed;
+    let redirect_allowed = |from: &str, to: &str, allow_downgrade: bool| {
+        core().test(
+            "redirectAllowed",
+            json!({ "from": from, "to": to, "allowDowngrade": allow_downgrade }),
+        )["allowed"]
+            == true
+    };
     assert!(!redirect_allowed("https", "http", false));
     assert!(redirect_allowed("https", "http", true));
     assert!(redirect_allowed("http", "https", false));

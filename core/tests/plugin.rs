@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use capgo_updater_core::host::Host;
 use serde_json::{json, Value};
-use support::{FakeServer, TestEngine};
+use support::{AbiEngine, FakeServer, TestEngine};
 
 fn sha256(bytes: &[u8]) -> String {
     capgo_updater_core::crypto::checksum::sha256_hex(bytes)
@@ -40,6 +40,8 @@ struct Backend {
     latest: Arc<Mutex<Value>>,
     bundle: Arc<Mutex<Vec<u8>>>,
     channel_reply: Arc<Mutex<(u16, Value)>>,
+    /// While set, `/b.zip` requests wait.
+    hold: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Backend {
@@ -49,12 +51,16 @@ impl Backend {
         ));
         let bundle = Arc::new(Mutex::new(Vec::new()));
         let channel_reply = Arc::new(Mutex::new((200, json!({ "status": "ok" }))));
-        let (l, b, c) = (latest.clone(), bundle.clone(), channel_reply.clone());
+        let hold = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (l, b, c, h) = (latest.clone(), bundle.clone(), channel_reply.clone(), hold.clone());
         let server = FakeServer::start(move |request| {
             let path = request.url.split('?').next().unwrap_or_default().to_string();
             match path.as_str() {
                 "/updates" => FakeServer::json(200, l.lock().unwrap().clone()),
                 "/b.zip" => {
+                    while h.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
                     let body = b.lock().unwrap().clone();
                     // Resumed transfers (`Range: bytes=N-`) get the rest of the bundle.
                     let start = request
@@ -85,7 +91,12 @@ impl Backend {
             latest,
             bundle,
             channel_reply,
+            hold,
         }
+    }
+
+    fn hold_downloads(&self, hold: bool) {
+        self.hold.store(hold, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn offer(&self, version: &str, bundle: Vec<u8>) {
@@ -493,9 +504,9 @@ impl Plugin {
     }
 
     /// A new process: same preferences and files, new engine and plugin load.
-    fn relaunch(&self) -> Arc<capgo_updater_core::engine::Engine> {
+    fn relaunch(&self) -> Arc<AbiEngine> {
         let root = self.t.root();
-        let engine = capgo_updater_core::engine::Engine::new(
+        let engine = AbiEngine::new(
             self.t.host.clone(),
             &json!({
                 "platform": "ios",
@@ -923,20 +934,20 @@ fn update_requests(p: &Plugin, path: &str) -> usize {
 fn periodic_check_reports_errors_and_downloads_only_new_versions() {
     let p = Plugin::load(json!({}));
     *p.backend.latest.lock().unwrap() = json!({ "error": "server_down", "message": "try later", "version": "9.9.9", "url": format!("{}/b.zip", p.backend.server.url) });
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     let results = p.events("updateCheckResult");
     assert_eq!(results.len(), 1, "{results:?}");
     assert_eq!(results[0]["error"], "server_down");
     *p.backend.latest.lock().unwrap() =
         json!({ "error": "disabled_auto_update", "kind": "blocked", "message": "blocked" });
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     assert_eq!(p.events("updateCheckResult")[1]["kind"], "blocked");
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(update_requests(&p, "/b.zip"), 0, "error responses never download");
 
     p.use_bundle("abcdefghij", "2.0.0");
     p.backend.offer("2.0.0", web_bundle("v2"));
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(
         update_requests(&p, "/b.zip"),
@@ -945,7 +956,7 @@ fn periodic_check_reports_errors_and_downloads_only_new_versions() {
     );
 
     p.backend.offer("3.0.0", web_bundle("v3"));
-    p.t.engine.plugin_periodic_tick_for_tests();
+    p.t.call("test.pluginPeriodicTick", json!({}));
     wait_until("new version downloaded", || {
         p.events("updateAvailable")
             .iter()
@@ -1001,7 +1012,7 @@ fn background_delay_blocks_one_install() {
     assert!(p.events("set").is_empty(), "delayed");
     // Foreground clears the elapsed background condition, next background installs.
     std::thread::sleep(Duration::from_millis(5));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     assert!(p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").is_none());
     p.background();
     assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id);
@@ -1019,7 +1030,7 @@ fn malformed_stored_delay_conditions_are_ignored() {
         let id = "abcdefghij";
         p.t.install_bundle(id, "2.0.0", "pending");
         p.resolve("next", json!({ "id": id }));
-        p.t.engine.plugin_foreground_for_tests();
+        p.t.call("test.pluginForeground", json!({}));
         p.background();
         assert_eq!(p.wait_for_event("set", 1)[0]["bundle"]["id"], id, "{stored}");
     }
@@ -1032,7 +1043,7 @@ fn kill_and_date_delays() {
         "setMultiDelay",
         json!({ "delayConditions": [{ "kind": "kill" }, { "kind": "date", "value": "2000-01-01T00:00:00Z" }, { "kind": "date", "value": "2999-01-01T00:00:00Z" }, { "kind": "nativeVersion", "value": "0.9.0" }] }),
     );
-    p.t.engine.plugin_terminate_for_tests();
+    p.t.call("appTerminate", json!({}));
     let stored = p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap();
     assert!(!stored.contains("kill"));
     assert!(!stored.contains("2000-01-01"));
@@ -1052,7 +1063,7 @@ fn native_version_delay_orders_prerelease_numbers_numerically() {
         "setMultiDelay",
         json!({ "delayConditions": [{ "kind": "nativeVersion", "value": "1.0.0-beta.2" }, { "kind": "nativeVersion", "value": "1.0.0-beta.11" }] }),
     );
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     let stored = p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap();
     assert!(!stored.contains("beta.2\""), "beta.10 reached beta.2: {stored}");
     assert!(stored.contains("beta.11"), "beta.10 has not reached beta.11: {stored}");
@@ -1539,12 +1550,12 @@ fn default_channel_is_cleared_on_native_update_when_not_persisted() {
         json!({ "autoUpdate": false, "persistDefaultChannelOnReinstall": false, "defaultChannel": "prod" });
     let p = Plugin::load(backend_config.clone());
     p.resolve("setChannel", json!({ "channel": "beta" }));
-    assert_eq!(p.t.engine.config().default_channel, "beta");
+    assert_eq!(p.t.call("config", json!({}))["defaultChannel"], "beta");
     // Same storage, new native build.
     let native = json!({ "versionName": "1.1.0", "versionCode": "11", "noBackupDir": p.t.root().join("nobackup").to_string_lossy() });
     p.t.call("pluginLoad", json!({ "config": backend_config, "native": native }));
     assert!(p.t.kv("CapacitorUpdater.defaultChannel").is_none());
-    assert_eq!(p.t.engine.config().default_channel, "prod");
+    assert_eq!(p.t.call("config", json!({}))["defaultChannel"], "prod");
 }
 
 // ---- previews -----------------------------------------------------------------------------------
@@ -1910,7 +1921,7 @@ fn unexpired_background_delay_and_kill_delay() {
     );
     p.background();
     std::thread::sleep(Duration::from_millis(100));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     assert!(
         p.t.kv("DELAY_CONDITION_PREFERENCES_CAPGO").unwrap().contains("600000"),
         "kept"
@@ -2005,7 +2016,7 @@ fn background_resets_the_rollback_deadline() {
     std::thread::sleep(Duration::from_millis(300));
     p.background();
     std::thread::sleep(Duration::from_millis(200));
-    p.t.engine.plugin_foreground_for_tests();
+    p.t.call("test.pluginForeground", json!({}));
     let resumed_at = Instant::now();
     // The first deadline (set + 1 s) passes without a rollback.
     std::thread::sleep(Duration::from_millis(1100).saturating_sub(set_at.elapsed()));
@@ -2221,4 +2232,266 @@ fn apply_bundle_carries_the_ready_generation_script() {
     let script = hook["readyScript"].as_str().unwrap();
     assert!(script.starts_with(&format!("(function(){{window.__CAPGO_READY_GEN={generation};")));
     assert!(script.contains("next.loadGeneration=window.__CAPGO_READY_GEN"));
+}
+
+// ---- crash-loop breaker -----------------------------------------------------------------------
+
+const CRASH_GUARD: &str = "CapacitorUpdater.crashGuard";
+
+fn crash_guard(t: &TestEngine) -> Value {
+    t.kv(CRASH_GUARD)
+        .map(|text| serde_json::from_str(&text).expect("crash guard JSON"))
+        .unwrap_or(Value::Null)
+}
+
+/// What a process that died during `step` of `version` left in the storage: a running step of
+/// another process (`attempts` deaths counted before).
+fn died_in_step(t: &TestEngine, version: &str, step: &str, id: &str, attempts: u64, background: bool) {
+    let guard = json!({ version: {
+        "step": step, "id": id, "attempts": attempts, "active": 1, "process": "dead-process",
+        "pid": 4242, "background": background, "failed": false,
+    } });
+    t.host.kv_set(CRASH_GUARD, Some(&guard.to_string()));
+}
+
+fn zip_requests(p: &Plugin) -> usize {
+    p.backend
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.url.starts_with("/b.zip"))
+        .count()
+}
+
+/// A download (transfer, verification, extraction) is recorded while it runs, with the app's
+/// foreground state, and forgotten when it ends.
+#[test]
+fn a_download_leaves_a_crash_marker_until_it_ends() {
+    let p = Plugin::load(json!({}));
+    p.backend.hold_downloads(true);
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    wait_until("the download marker", || !crash_guard(&p.t).is_null());
+    let record = crash_guard(&p.t)["2.0.0"].clone();
+    let bundles = p.t.call("bundleList", json!({ "raw": true }));
+    let id = bundles
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|bundle| bundle["version"] == "2.0.0")
+        .map(|bundle| bundle["id"].clone())
+        .expect("the downloading record");
+    assert_eq!(p.t.call("bundleGet", json!({ "id": id }))["status"], "downloading");
+    assert_eq!(record["step"], "download", "{record}");
+    assert_eq!(record["id"], id);
+    assert_eq!(record["active"], 1);
+    assert_eq!(record["attempts"], 0);
+    assert_eq!(record["failed"], false);
+    assert_eq!(record["background"], false);
+    assert!(record["pid"].as_u64().unwrap() > 0);
+    assert!(!record["process"].as_str().unwrap().is_empty());
+    p.background();
+    wait_until("the background flag", || {
+        crash_guard(&p.t)["2.0.0"]["background"] == true
+    });
+    p.t.call("appForeground", json!({}));
+    wait_until("the foreground flag", || {
+        crash_guard(&p.t)["2.0.0"]["background"] == false
+    });
+    p.backend.hold_downloads(false);
+    wait_until("the end of the download", || crash_guard(&p.t).is_null());
+    wait_until("the downloaded bundle", || {
+        !p.resolve("getNextBundle", json!({})).is_null()
+    });
+}
+
+/// Applying a bundle (`set`) is recorded until the reload returns.
+#[test]
+fn applying_a_bundle_leaves_a_crash_marker_until_the_reload_returns() {
+    let p = Plugin::load(json!({ "autoUpdate": false }));
+    p.t.install_bundle("bundlebbbb", "2.0.0", "pending");
+    let seen: Arc<Mutex<Option<String>>> = Arc::default();
+    let (host, record) = (Arc::downgrade(&p.t.host), seen.clone());
+    *p.t.host.on_log.lock().unwrap() = Some(Arc::new(move |message: &str| {
+        if message.starts_with("Reloading: ") && message.ends_with("bundlebbbb") {
+            if let Some(host) = host.upgrade() {
+                *record.lock().unwrap() = host.store.lock().unwrap().get(CRASH_GUARD).cloned();
+            }
+        }
+    }));
+    p.resolve("set", json!({ "id": "bundlebbbb" }));
+    let during: Value = serde_json::from_str(&seen.lock().unwrap().clone().expect("marker during the reload")).unwrap();
+    assert_eq!(during["2.0.0"]["step"], "set", "{during}");
+    assert_eq!(during["2.0.0"]["id"], "bundlebbbb");
+    assert_eq!(during["2.0.0"]["active"], 1);
+    assert!(crash_guard(&p.t).is_null(), "{}", crash_guard(&p.t));
+    assert_eq!(p.current()["id"], "bundlebbbb");
+}
+
+/// One death is counted, the next launch downloads the version again, and the clean end
+/// forgets it.
+#[test]
+fn one_death_during_a_download_is_counted_and_the_download_retried() {
+    let t = Plugin::engine();
+    died_in_step(&t, "2.0.0", "download", "", 0, false);
+    let p = Plugin::launch(t, Backend::start(), json!({}), json!({}));
+    p.resolve("notifyAppReady", json!({}));
+    let record = crash_guard(&p.t)["2.0.0"].clone();
+    assert_eq!(record["attempts"], 1, "{record}");
+    assert_eq!(record["active"], 0);
+    assert_eq!(record["failed"], false);
+    assert_eq!(record["process"], "");
+    assert!(stat_events(&p, "download_fail").is_empty());
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    wait_until("the downloaded bundle", || {
+        !p.resolve("getNextBundle", json!({})).is_null()
+    });
+    wait_until("the end of the download", || crash_guard(&p.t).is_null());
+}
+
+/// Two deaths in a row during the download of the same version: its record is ERROR, a
+/// `download_fail` statistic says "native crash", and the update cycle skips the version until
+/// the server offers another one.
+#[test]
+fn two_deaths_in_a_row_during_a_download_skip_the_version() {
+    let t = Plugin::engine();
+    t.call(
+        "bundleSave",
+        json!({ "id": "deadbundl1", "bundle": { "id": "deadbundl1", "version": "2.0.0", "downloaded": "2024-01-01T00:00:00.000Z", "checksum": "", "status": "downloading" } }),
+    );
+    died_in_step(&t, "2.0.0", "download", "deadbundl1", 1, false);
+    let p = Plugin::launch(t, Backend::start(), json!({}), json!({}));
+    p.resolve("notifyAppReady", json!({}));
+    let record = crash_guard(&p.t)["2.0.0"].clone();
+    assert_eq!(record["attempts"], 2, "{record}");
+    assert_eq!(record["failed"], true);
+    assert_eq!(record["active"], 0);
+    assert_eq!(p.t.call("bundleGet", json!({ "id": "deadbundl1" }))["status"], "error");
+    let fails = stat_events(&p, "download_fail");
+    assert_eq!(fails.len(), 1, "{fails:?}");
+    assert_eq!(fails[0]["version_name"], "2.0.0");
+    assert_eq!(
+        fails[0]["metadata"]["message"],
+        "native crash during download (2 in a row)"
+    );
+    assert_eq!(fails[0]["metadata"]["step"], "download");
+    assert_eq!(fails[0]["metadata"]["attempts"], "2");
+
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    // appReady may come from another thread (it waits for the armed notifyAppReady).
+    wait_until("the skipped cycle", || {
+        p.events("appReady")
+            .iter()
+            .any(|ready| ready["status"] == "Latest version crashed the app natively. Aborting update.")
+    });
+    assert_eq!(p.events("downloadFailed").last().unwrap()["version"], "2.0.0");
+    assert_eq!(zip_requests(&p), 0, "the failed version is not downloaded again");
+    assert_eq!(p.current()["id"], "builtin");
+    assert_eq!(stat_events(&p, "download_fail").len(), 1, "reported once");
+
+    // Another version: downloaded normally, and the failed record is forgotten.
+    p.backend.offer("3.0.0", web_bundle("v3"));
+    p.background();
+    p.foreground();
+    wait_until("the downloaded bundle", || {
+        p.resolve("getNextBundle", json!({}))["version"] == "3.0.0"
+    });
+    wait_until("the forgotten record", || crash_guard(&p.t).is_null());
+}
+
+/// Two deaths in a row while applying a bundle: the app goes back to the bundle it ran before
+/// (no reload: the host applies the path the load returns), the bundle is ERROR, and a
+/// `set_fail` statistic says "native crash".
+#[test]
+fn two_deaths_in_a_row_applying_a_bundle_go_back_to_the_previous_one() {
+    let t = Plugin::engine();
+    t.install_bundle("bundleaaaa", "1.1.0", "success");
+    t.call("bundleSet", json!({ "id": "bundleaaaa" }));
+    t.call("bundleSetSuccess", json!({ "id": "bundleaaaa" }));
+    t.install_bundle("bundlebbbb", "2.0.0", "pending");
+    t.call("bundleSet", json!({ "id": "bundlebbbb" }));
+    t.call("bundleSetNext", json!({ "id": "bundlebbbb" }));
+    died_in_step(&t, "2.0.0", "set", "bundlebbbb", 1, false);
+    let p = Plugin::launch(t, Backend::start(), json!({ "autoUpdate": false }), json!({}));
+    assert_eq!(p.current()["id"], "bundleaaaa");
+    assert_eq!(p.t.call("bundleGet", json!({ "id": "bundlebbbb" }))["status"], "error");
+    assert!(p.resolve("getNextBundle", json!({})).is_null());
+    assert_eq!(crash_guard(&p.t)["2.0.0"]["failed"], true);
+    let fails = stat_events(&p, "set_fail");
+    assert_eq!(fails.len(), 1, "{fails:?}");
+    assert_eq!(fails[0]["version_name"], "2.0.0");
+    assert_eq!(fails[0]["metadata"]["message"], "native crash during set (2 in a row)");
+}
+
+/// Without a fallback bundle the app goes back to the builtin one.
+#[test]
+fn two_deaths_applying_the_only_bundle_go_back_to_builtin() {
+    let t = Plugin::engine();
+    t.install_bundle("bundlebbbb", "2.0.0", "pending");
+    t.call("bundleSet", json!({ "id": "bundlebbbb" }));
+    died_in_step(&t, "2.0.0", "set", "bundlebbbb", 1, false);
+    let p = Plugin::launch(t, Backend::start(), json!({ "autoUpdate": false }), json!({}));
+    assert_eq!(p.current()["id"], "builtin");
+    assert_eq!(p.t.call("bundleGet", json!({ "id": "bundlebbbb" }))["status"], "error");
+}
+
+/// Android reports how the previous processes ended: only crashes (crash, native crash, ANR)
+/// count, whatever the foreground state.
+#[test]
+fn only_exits_the_platform_reports_as_crashes_are_counted() {
+    for (reason, counted) in [(10, false), (3, false), (2, false), (4, true), (5, true), (6, true)] {
+        let t = Plugin::engine();
+        died_in_step(&t, "2.0.0", "download", "", 1, true);
+        let exits = json!([
+            { "pid": 4243, "reason": 5, "timestamp": 2 },
+            { "pid": 4242, "reason": reason, "timestamp": 1 },
+        ]);
+        let p = Plugin::launch(
+            t,
+            Backend::start(),
+            json!({ "autoUpdate": false }),
+            json!({ "previousExits": exits }),
+        );
+        let record = crash_guard(&p.t)["2.0.0"].clone();
+        assert_eq!(
+            record["attempts"],
+            if counted { 2 } else { 1 },
+            "reason {reason}: {record}"
+        );
+        assert_eq!(record["failed"], counted, "reason {reason}");
+        assert_eq!(record["active"], 0, "reason {reason}");
+    }
+}
+
+/// Without a report, a step that ran in the background is not counted (the OS stops
+/// background apps; a user closing the app sends it to the background first).
+#[test]
+fn a_death_in_the_background_without_a_crash_report_is_not_counted() {
+    let t = Plugin::engine();
+    died_in_step(&t, "2.0.0", "download", "", 1, true);
+    let p = Plugin::launch(t, Backend::start(), json!({ "autoUpdate": false }), json!({}));
+    let record = crash_guard(&p.t)["2.0.0"].clone();
+    assert_eq!(record["attempts"], 1, "{record}");
+    assert_eq!(record["failed"], false);
+    assert_eq!(record["active"], 0);
+}
+
+/// A step still running in this process (another engine of the same process) is not a death.
+#[test]
+fn a_step_of_a_live_engine_is_not_a_death() {
+    let p = Plugin::load(json!({}));
+    p.backend.hold_downloads(true);
+    p.backend.offer("2.0.0", web_bundle("v2"));
+    p.foreground();
+    wait_until("the download marker", || !crash_guard(&p.t).is_null());
+    // Another engine of this process loads the plugin on the same storage.
+    let engine = p.relaunch();
+    let record = crash_guard(&p.t)["2.0.0"].clone();
+    assert_eq!(record["active"], 1, "{record}");
+    assert_eq!(record["attempts"], 0);
+    drop(engine);
+    p.backend.hold_downloads(false);
+    wait_until("the end of the download", || crash_guard(&p.t).is_null());
 }

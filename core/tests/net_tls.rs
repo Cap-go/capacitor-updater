@@ -4,6 +4,8 @@
 //! closed otherwise (rejection, no answer, no callback). Requests go through
 //! the system HTTP proxy the host reports, with the same TLS rules.
 
+mod support;
+
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -11,10 +13,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use capgo_updater_core::ffi::{host_from_callbacks_for_tests, CapgoHostCallbacks};
+use capgo_updater_core::ffi::CapgoHostCallbacks;
 use capgo_updater_core::host::{Host, MemoryHost};
-use capgo_updater_core::net::{Http, NetErrorKind};
 use capgo_updater_core::text::base64_decode;
+use support::{core, TestHttp};
 
 /// Self-signed EC P-256 certificate for `localhost` (SAN DNS:localhost only), valid until 2126.
 const CERT_DER_BASE64: &str = "MIIBlTCCATugAwIBAgIUJ5aRle5e8iK9YLs/MZNuxZYugd0wCgYIKoZIzj0EAwIwFDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTAwMTAzMTY1MVoYDzIxMjYwOTA3MDMxNjUxWjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQPuthMBpvhPqOhuFEwC3eYmswof9VhLzrSNCLx7zY3Rc2nS3tQvldeDafMd3KqdSwm5Em0rWqI57+KpSTHmUf+o2kwZzAdBgNVHQ4EFgQUYt8DOmvp6RcdA1LBK7EHHfW5gGgwHwYDVR0jBBgwFoAUYt8DOmvp6RcdA1LBK7EHHfW5gGgwDwYDVR0TAQH/BAUwAwEB/zAUBgNVHREEDTALgglsb2NhbGhvc3QwCgYIKoZIzj0EAwIDSAAwRQIhAI5s0aFIxwPQtpTmjpdv2WZ0cAeCznQ5KTwV1L+Jj5k8AiA9dehLNJAhExhzonmiMWF0qIR1juFPqLYcjoXW4Ty+Ng==";
@@ -78,8 +80,10 @@ impl TlsServer {
     }
 }
 
-fn http(host: Arc<dyn Host>) -> Http {
-    Http::new(host, "CapacitorUpdater/test".into(), Duration::from_secs(5))
+const USER_AGENT: &str = "CapacitorUpdater/test";
+
+fn http(host: Arc<dyn Host>) -> TestHttp {
+    TestHttp::new(host, USER_AGENT, Duration::from_secs(5))
 }
 
 fn memory_host(verdict: Option<Result<(), String>>) -> Arc<MemoryHost> {
@@ -107,7 +111,7 @@ fn host_rejection_fails_closed_before_any_request() {
     let error = http(host)
         .get(&format!("https://localhost:{}/", server.port))
         .unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(error.code, "tls", "{error:?}");
     assert!(error.message.contains("untrusted root"), "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 0);
 }
@@ -118,7 +122,7 @@ fn no_host_answer_fails_closed() {
     let error = http(memory_host(None))
         .get(&format!("https://localhost:{}/", server.port))
         .unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(error.code, "tls", "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 0);
 }
 
@@ -130,7 +134,7 @@ fn trusted_chain_for_another_name_is_refused() {
     let error = http(host.clone())
         .get(&format!("https://127.0.0.1:{}/", server.port))
         .unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(error.code, "tls", "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 0);
     assert_eq!(host.certificate_requests.lock().unwrap()[0].1, "127.0.0.1");
 }
@@ -142,7 +146,7 @@ fn platform_trust_store_rejects_self_signed_certificate() {
     let error = http(Arc::new(MemoryHost::default()))
         .get(&format!("https://localhost:{}/", server.port))
         .unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(error.code, "tls", "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 0);
 }
 
@@ -182,8 +186,10 @@ unsafe extern "C" fn verify(
     state.verdict
 }
 
-fn c_host(state: &CallbackState, with_verifier: bool) -> Arc<dyn Host> {
-    host_from_callbacks_for_tests(CapgoHostCallbacks {
+/// A client whose engine reaches `state` through the C callbacks. `state` is borrowed (no
+/// `release`): it outlives the client, dropped at the end of each statement below.
+fn c_http(state: &CallbackState, with_verifier: bool) -> TestHttp {
+    let callbacks = CapgoHostCallbacks {
         context: state as *const CallbackState as *mut c_void,
         log: Some(log),
         kv_get: None,
@@ -194,7 +200,8 @@ fn c_host(state: &CallbackState, with_verifier: bool) -> Arc<dyn Host> {
         hook: None,
         release: None,
         verify_server_certificate: if with_verifier { Some(verify) } else { None },
-    })
+    };
+    TestHttp::with_callbacks(callbacks, USER_AGENT, Duration::from_secs(5))
 }
 
 #[test]
@@ -206,7 +213,7 @@ fn c_abi_verifier_marshals_the_chain_and_only_one_trusts() {
         verdict: 1,
         ..Default::default()
     };
-    let response = http(c_host(&trusted, true)).get(&url).unwrap();
+    let response = c_http(&trusted, true).get(&url).unwrap();
     assert_eq!(response.status, 200);
     assert_eq!(
         trusted.seen.lock().unwrap()[0],
@@ -219,17 +226,17 @@ fn c_abi_verifier_marshals_the_chain_and_only_one_trusts() {
             error: Some("SecTrust: not trusted"),
             ..Default::default()
         };
-        let error = http(c_host(&rejected, true)).get(&url).unwrap_err();
-        assert_eq!(error.kind, NetErrorKind::Tls, "{verdict}: {error:?}");
+        let error = c_http(&rejected, true).get(&url).unwrap_err();
+        assert_eq!(error.code, "tls", "{verdict}: {error:?}");
         assert!(error.message.contains("SecTrust: not trusted"), "{error:?}");
     }
 
     let silent = CallbackState::default();
-    let error = http(c_host(&silent, true)).get(&url).unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    let error = c_http(&silent, true).get(&url).unwrap_err();
+    assert_eq!(error.code, "tls", "{error:?}");
 
-    let error = http(c_host(&CallbackState::default(), false)).get(&url).unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    let error = c_http(&CallbackState::default(), false).get(&url).unwrap_err();
+    assert_eq!(error.code, "tls", "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 1);
 }
 
@@ -348,7 +355,7 @@ fn https_is_tunnelled_with_connect_and_still_verified() {
     let error = http(host.clone())
         .get(&format!("https://localhost:{}/again", server.port))
         .unwrap_err();
-    assert_eq!(error.kind, NetErrorKind::Tls, "{error:?}");
+    assert_eq!(error.code, "tls", "{error:?}");
     assert_eq!(server.requests.load(Ordering::SeqCst), 1);
 }
 
@@ -401,20 +408,16 @@ fn ipv6_proxies_are_used() {
 
 #[test]
 fn proxy_replies_parse() {
-    use capgo_updater_core::host::HttpProxy;
+    let from_reply = |reply: &serde_json::Value| {
+        core().test("proxyFromReply", serde_json::json!({ "reply": reply }))["proxy"].clone()
+    };
     assert_eq!(
-        HttpProxy::from_reply(&serde_json::json!({ "type": "HTTP", "host": " proxy.corp ", "port": 3128 })),
-        Some(HttpProxy {
-            host: "proxy.corp".into(),
-            port: 3128
-        })
+        from_reply(&serde_json::json!({ "type": "HTTP", "host": " proxy.corp ", "port": 3128 })),
+        serde_json::json!({ "host": "proxy.corp", "port": 3128 })
     );
     assert_eq!(
-        HttpProxy::from_reply(&serde_json::json!({ "type": "http", "host": "[fe80::1]", "port": 8080 })),
-        Some(HttpProxy {
-            host: "fe80::1".into(),
-            port: 8080
-        })
+        from_reply(&serde_json::json!({ "type": "http", "host": "[fe80::1]", "port": 8080 })),
+        serde_json::json!({ "host": "fe80::1", "port": 8080 })
     );
     for reply in [
         serde_json::json!({ "type": "http", "host": "fe80::zz", "port": 3128 }),
@@ -424,6 +427,6 @@ fn proxy_replies_parse() {
         serde_json::json!({ "type": "http", "port": 3128 }),
         serde_json::Value::Null,
     ] {
-        assert_eq!(HttpProxy::from_reply(&reply), None, "{reply}");
+        assert_eq!(from_reply(&reply), serde_json::Value::Null, "{reply}");
     }
 }

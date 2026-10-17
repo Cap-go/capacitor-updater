@@ -77,3 +77,10 @@ package-lock.json
 core/target
 android/src/main/jniLibs
 ios/Frameworks/CapgoUpdaterCore.xcframework
+
+# Fuzzing (scripts/fuzz.sh): build outputs, generated inputs and crashes; seeds live in fuzz/corpus
+core/fuzz/target
+core/fuzz/corpus
+core/fuzz/artifacts
+fuzz/work
+fuzz/artifacts

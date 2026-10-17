@@ -269,6 +269,30 @@ impl Engine {
         self.config().builtin_server_path.clone()
     }
 
+    /// The current bundle `failed_id` crashed the app (crash-loop breaker, at plugin load):
+    /// points the current bundle back at the last successful one, else builtin. No reload: the
+    /// host applies the current path after the load.
+    pub(crate) fn leave_failed_current_bundle(&self, failed_id: &str) {
+        let fallback = self.fallback_bundle();
+        let fallback_dir = (!fallback.is_builtin()
+            && fallback.id() != failed_id
+            && !fallback.is_error()
+            && self.bundle_exists(fallback.id()))
+        .then(|| self.bundle_directory(fallback.id()).ok())
+        .flatten();
+        match fallback_dir {
+            Some(dir) => {
+                self.host
+                    .warn(format!("Going back to bundle {} after native crashes", fallback.id()));
+                self.set_current_bundle_path(&dir.to_string_lossy());
+            }
+            None => {
+                self.host.warn("Going back to the builtin bundle after native crashes");
+                self.set_current_bundle_path(&self.builtin_path());
+            }
+        }
+    }
+
     pub fn fallback_bundle(&self) -> BundleInfo {
         let id = self.kv_or(&self.config().keys.fallback, ID_BUILTIN);
         self.get_bundle_info(Some(&id))

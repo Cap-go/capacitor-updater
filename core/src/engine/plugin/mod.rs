@@ -105,6 +105,9 @@ pub mod keys {
     pub const PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET: &str = "CapacitorUpdater.previewPreviousDefaultChannelWasSet";
     pub const INSTALL_MARKER_CREATED: &str = "CapacitorUpdater.defaultChannelInstallMarkerCreated";
     pub const LAST_FAILED_BUNDLE: &str = "CapacitorUpdater.lastFailedBundle";
+    /// Crash-loop breaker records (`engine::crash_guard`): `{ <version>: { step, id, attempts,
+    /// active, process, pid, background, failed } }`. Older versions never read it.
+    pub const CRASH_GUARD: &str = "CapacitorUpdater.crashGuard";
     pub const LAST_VERSION_OS: &str = "CapacitorUpdater.lastVersionOs";
     pub const LAST_VERSION_BUILD: &str = "CapacitorUpdater.lastVersionBuild";
     pub const LAST_VERSION_CODE: &str = "CapacitorUpdater.lastVersionCode";

@@ -1,0 +1,104 @@
+# libFuzzer targets of the Rust core (cargo-fuzz, nightly). The C core has the same targets in
+# core-c/fuzz and both share the seed corpus in fuzz/corpus/<target>. Run: scripts/fuzz.sh.
+[package]
+name = "capgo-updater-core-fuzz"
+version = "0.0.0"
+edition = "2021"
+license = "MPL-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+capgo-updater-core = { path = "..", features = ["test-support"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+libc = "0.2"
+# The inflate and brotli decoders the core uses (zip crate -> flate2 zlib-rs; manifest .br files).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+brotli-decompressor = "4"
+
+# Not part of the core's (non-)workspace.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "zip"
+path = "fuzz_targets/zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inflate"
+path = "fuzz_targets/inflate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "brotli"
+path = "fuzz_targets/brotli.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest"
+path = "fuzz_targets/manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "update_response"
+path = "fuzz_targets/update_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_response"
+path = "fuzz_targets/http_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rsa_key"
+path = "fuzz_targets/rsa_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rsa_checksum"
+path = "fuzz_targets/rsa_checksum.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aes_cbc"
+path = "fuzz_targets/aes_cbc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_guard"
+path = "fuzz_targets/path_guard.rs"
+test = false
+doc = false
+bench = false

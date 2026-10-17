@@ -1,12 +1,13 @@
 //! Throughput smoke test for the bundle hot paths. Run with
 //! `cargo test --release --test perf -- --ignored --nocapture`.
 
+mod support;
+
 use std::io::Write;
 use std::time::Instant;
 
-use capgo_updater_core::crypto::aes_cbc;
-use capgo_updater_core::crypto::checksum::sha256_file;
-use capgo_updater_core::engine::archive::extract_zip;
+use serde_json::json;
+use support::core;
 
 fn noise(len: usize) -> Vec<u8> {
     let mut state: u32 = 7;
@@ -29,16 +30,21 @@ fn hot_path_throughput() {
     let mb = size as f64 / 1_048_576.0;
 
     let start = Instant::now();
-    sha256_file(&path).unwrap();
+    core().test("sha256File", json!({ "path": path.to_string_lossy() }));
     println!("sha256: {:.0} MB/s", mb / start.elapsed().as_secs_f64());
 
-    // AES-CBC decrypt (the ciphertext does not need to be valid for throughput).
-    let key = [1u8; 16];
-    let iv = [2u8; 16];
-    let mut decryptor = aes_cbc::CbcDecryptor::new(&key, &iv);
-    let mut out = Vec::with_capacity(size + 16);
+    // AES-CBC decrypt (the ciphertext does not need to be valid for throughput: the
+    // padding error at the end is ignored).
     let start = Instant::now();
-    decryptor.update(&data, &mut out);
+    let _ = core().try_test(
+        "decryptFileTo",
+        json!({
+            "source": path.to_string_lossy(),
+            "destination": dir.path().join("plain.bin").to_string_lossy(),
+            "keyHex": "01".repeat(16),
+            "ivHex": "02".repeat(16),
+        }),
+    );
     println!("aes-cbc: {:.0} MB/s", mb / start.elapsed().as_secs_f64());
 
     let zip_path = dir.path().join("bundle.zip");
@@ -52,9 +58,40 @@ fn hot_path_throughput() {
         writer.finish().unwrap();
     }
     let start = Instant::now();
-    extract_zip(&zip_path, &dir.path().join("out"), &mut |_, _| {}, &|| false).unwrap();
+    core().test(
+        "extractZip",
+        json!({ "zip": zip_path.to_string_lossy(), "destination": dir.path().join("out").to_string_lossy() }),
+    );
     println!(
         "unzip (inflate + CRC + write): {:.0} MB/s",
         mb / start.elapsed().as_secs_f64()
     );
+}
+
+/// RSA-2048 public operation per encrypted checksum (`decryptChecksum`, cached key),
+/// including the ABI and JSON envelope: 200 warm-up calls, then 5 loops of 5000.
+#[test]
+#[ignore]
+fn rsa_checksum_throughput() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../native-contract-tests/crypto-rsa.json");
+    let fixture: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let case = &fixture["decryptChecksum"][0];
+    let input = json!({
+        "checksum": case["input"]["checksumHex"],
+        "publicKey": fixture["publicKeyPem"],
+    });
+    let expected = case["expect"]["decryptedHex"].as_str().unwrap();
+    for _ in 0..200 {
+        assert_eq!(core().test("decryptChecksum", input.clone())["checksum"], expected);
+    }
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..5000 {
+            core().test("decryptChecksum", input.clone());
+        }
+        println!(
+            "rsa decryptChecksum: {:.2} us",
+            start.elapsed().as_secs_f64() * 1e6 / 5000.0
+        );
+    }
 }

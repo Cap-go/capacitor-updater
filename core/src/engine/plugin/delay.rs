@@ -502,4 +502,12 @@ mod tests {
         assert_eq!(logs.len(), 2);
         assert!(parse_delay_conditions("{", &mut |_| {}).is_empty());
     }
+
+    /// The `localtime_r` call (also run under Miri).
+    #[test]
+    fn local_offset_is_within_a_day() {
+        for instant in [0, 1_700_000_000, -86_400] {
+            assert!(local_offset_seconds(instant).abs() < 86_400);
+        }
+    }
 }

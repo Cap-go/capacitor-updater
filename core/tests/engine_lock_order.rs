@@ -3,14 +3,16 @@
 //! ones hosts make on the main thread (an ANR on Android, a watchdog kill on iOS).
 //! Own binary: a host whose storage read is slow widens the window deterministically.
 
+mod support;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use capgo_updater_core::engine::Engine;
 use capgo_updater_core::host::{Host, LogLevel, MemoryHost};
 use serde_json::{json, Value};
+use support::AbiEngine;
 
 static SLOW: AtomicBool = AtomicBool::new(false);
 
@@ -41,7 +43,7 @@ impl Host for SlowStorage {
     }
 }
 
-fn spawn_call(engine: &Arc<Engine>, op: &'static str, input: Value) -> mpsc::Receiver<()> {
+fn spawn_call(engine: &Arc<AbiEngine>, op: &'static str, input: Value) -> mpsc::Receiver<()> {
     let (done, finished) = mpsc::channel();
     let engine = engine.clone();
     std::thread::spawn(move || {
@@ -60,7 +62,7 @@ fn a_config_writer_during_a_reset_capture_does_not_hang_the_engine() {
         "bundleRoot": dir.path().join("versions").to_string_lossy(),
         "storageRoot": dir.path().to_string_lossy(),
     });
-    let engine = Engine::new(Arc::new(SlowStorage(MemoryHost::default())), &config).unwrap();
+    let engine = AbiEngine::new(Arc::new(SlowStorage(MemoryHost::default())), &config).unwrap();
     engine
         .call(
             "pluginLoad",

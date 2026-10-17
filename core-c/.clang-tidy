@@ -1,0 +1,11 @@
+# Static analysis of the C core (CI job c_core_static_analysis): the Clang static analyzer and
+# the bugprone checks, every finding an error. Disabled: style checks that flag ordinary C
+# (open() flag ORs, free() of typed pointers, `x = f()` loop conditions, ported match arms with
+# equal bodies, constant size products, swappable parameters, char literals passed as int),
+# struct padding hints, and the C11 Annex K "use memcpy_s" advice. `sizeof *ptr_array` sizes
+# arrays of pointers on purpose.
+Checks: '-*,clang-analyzer-*,-clang-analyzer-optin.performance.Padding,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-implicit-widening-of-multiplication-result,-bugprone-branch-clone,-bugprone-assignment-in-if-condition,-bugprone-assignment-in-selection-statement,-bugprone-signed-bitwise,-bugprone-multi-level-implicit-pointer-conversion,-bugprone-narrowing-conversions'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/core-c/src/.*'
+CheckOptions:
+  bugprone-sizeof-expression.WarnOnSizeOfPointerToAggregate: false

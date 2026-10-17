@@ -14,6 +14,7 @@ implements a handful of platform hooks.
 | `engine::store` | Bundle registry (`<id>_info`), current / next / fallback bundles, set / reset / delete, cleanup |
 | `engine::download`, `engine::manifest`, `engine::archive` | Zip and manifest downloads: resume, retries, checksum before extraction, decryption, brotli, delta cache, zip-slip / symlink guards |
 | `engine::backend`, `engine::stats` | Update, channel and stats endpoints, 429 handling, batched and persisted stats |
+| `engine::crash_guard` | Crash-loop breaker: a version whose download or bundle switch killed the process twice in a row is marked failed and skipped (`core-c/COMPARISON.md`, Crash safety) |
 | `net` | HTTP client (rustls, no cookies, HTTPS -> HTTP redirect guard) |
 | `policy`, `http`, `paths`, `crypto` | Pure rules used by the engine, pinned by the contract fixtures |
 
@@ -75,7 +76,14 @@ bun run core:test            # cargo test: engine scenarios, downloads, contract
 bun run core:lint            # rustfmt + clippy
 bun run core:build:android   # android/src/main/jniLibs/<abi>/libcapgo_updater_core.so (needs cargo-ndk + NDK)
 bun run core:build:ios       # ios/Frameworks/CapgoUpdaterCore.xcframework (needs Xcode)
+scripts/fuzz.sh build rust   # libFuzzer targets (nightly + cargo-fuzz); `run rust <target> <s>`
 ```
+
+Every parser of untrusted input has a fuzz target (`fuzz/`), shared with the C
+core: same names, inputs and seed corpus. CI runs each one briefly on every
+pull request, and runs the test suite under AddressSanitizer and the `unsafe`
+FFI code under Miri. Fuzz findings get a regression test in
+`tests/fuzz_regressions.rs`.
 
 `tests/plugin.rs` drives the engine like a Capacitor host does (hooks, events,
 a fake update server) and covers the update lifecycle end to end.
