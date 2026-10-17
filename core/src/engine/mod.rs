@@ -74,6 +74,7 @@ impl Engine {
         );
         let timeout = Duration::from_millis(config.timeout_ms);
         let allow_downgrade = config.allow_https_to_http_redirect;
+        let system_http = config.system_http;
         let engine = Arc::new_cyclic(|weak| Self {
             http: Http::new(host.clone(), user_agent, timeout),
             host,
@@ -86,6 +87,7 @@ impl Engine {
             weak: weak.clone(),
         });
         engine.http.set_allow_https_to_http_redirect(allow_downgrade);
+        engine.http.set_system_http(system_http);
         Ok(engine)
     }
 
@@ -118,7 +120,7 @@ impl Engine {
 
     /// Applies runtime settings (endpoints, ids, public key, preview session, timeout).
     pub fn configure(&self, value: &Value) -> CoreResult<()> {
-        let (user_agent, timeout, allow_downgrade) = {
+        let (user_agent, timeout, allow_downgrade, system_http) = {
             let mut config = self.config_mut();
             // All or nothing: an invalid public key must not leave half the settings applied.
             let mut updated = config.clone();
@@ -134,11 +136,13 @@ impl Engine {
                 ),
                 Duration::from_millis(config.timeout_ms),
                 allow_downgrade,
+                config.system_http,
             )
         };
         self.http.set_user_agent(user_agent);
         self.http.set_timeout(timeout);
         self.http.set_allow_https_to_http_redirect(allow_downgrade);
+        self.http.set_system_http(system_http);
         Ok(())
     }
 

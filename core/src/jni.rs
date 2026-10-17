@@ -66,12 +66,12 @@ pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_call<'lo
 
 use std::sync::Arc;
 
-use jni::objects::{GlobalRef, JObject, JValue};
-use jni::sys::jlong;
+use jni::objects::{GlobalRef, JByteBuffer, JObject, JValue};
+use jni::sys::{jint, jlong};
 use jni::JavaVM;
 
 use crate::engine::Engine;
-use crate::host::{Host, LogLevel};
+use crate::host::{Host, HttpTransportEvent, HttpTransportOutcome, HttpTransportRequest, LogLevel};
 
 struct JniHost {
     vm: JavaVM,
@@ -304,6 +304,138 @@ impl Host for JniHost {
         });
         Some(verdict.unwrap_or_else(|| Err("Certificate verification failed in host".to_string())))
     }
+
+    /// `String httpRequest(String method, String url, String headersJson, byte[] body,
+    /// long timeoutMs, String bodyPath, long sink)`: null when the host has no transport,
+    /// else the result JSON. Java reports the response through `CapgoCoreNative.httpHead`,
+    /// `httpData` and `httpProgress` with `sink`, on this thread.
+    fn http_request(
+        &self,
+        request: &HttpTransportRequest<'_>,
+        sink: &mut dyn FnMut(HttpTransportEvent<'_>) -> bool,
+    ) -> HttpTransportOutcome {
+        let reply = crate::ffi::with_c_sink(sink, |c_sink| {
+            let sink_handle = c_sink as *const crate::ffi::CapgoHttpSink as jlong;
+            self.with_env(|env| {
+                let method = Self::string_arg(env, request.method)?;
+                let url = Self::string_arg(env, request.url)?;
+                let headers = Self::string_arg(env, &crate::ffi::headers_json(request.headers))?;
+                let body = match request.body {
+                    Some(body) => JObject::from(env.byte_array_from_slice(body)?),
+                    None => JObject::null(),
+                };
+                let path = match request.body_path {
+                    Some(path) => Self::string_arg(env, &path.to_string_lossy())?,
+                    None => JObject::null(),
+                };
+                let timeout = i64::try_from(request.timeout.as_millis()).unwrap_or(i64::MAX);
+                let value = env
+                    .call_method(
+                        self.host.as_obj(),
+                        "httpRequest",
+                        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BJLjava/lang/String;J)Ljava/lang/String;",
+                        &[
+                            JValue::Object(&method),
+                            JValue::Object(&url),
+                            JValue::Object(&headers),
+                            JValue::Object(&body),
+                            JValue::Long(timeout),
+                            JValue::Object(&path),
+                            JValue::Long(sink_handle),
+                        ],
+                    )?
+                    .l()?;
+                if value.is_null() {
+                    return Ok(None);
+                }
+                let json: String = env.get_string(&JString::from(value))?.into();
+                Ok(Some(json))
+            })
+        });
+        match reply {
+            Some(None) => HttpTransportOutcome::Unavailable,
+            Some(Some(json)) => {
+                let failed = serde_json::from_str::<serde_json::Value>(&json)
+                    .map(|reply| reply.get("error").is_some())
+                    .unwrap_or(true);
+                let code = if failed {
+                    crate::ffi::CAPGO_HTTP_FAILED
+                } else {
+                    crate::ffi::CAPGO_HTTP_COMPLETED
+                };
+                crate::ffi::transport_outcome(code, Some(&json))
+            }
+            None => HttpTransportOutcome::Failed {
+                kind: "network".into(),
+                message: "HTTP request failed in host".into(),
+            },
+        }
+    }
+}
+
+/// `static native int httpHead(long sink, int status, String headersJson)`
+#[no_mangle]
+pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpHead<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sink: jlong,
+    status: jint,
+    headers_json: JString<'local>,
+) -> jint {
+    let Ok(headers) = read(&mut env, &headers_json) else {
+        return 1;
+    };
+    let headers = std::ffi::CString::new(headers.replace('\0', "")).unwrap_or_default();
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        crate::ffi::sink_head(sink as *const crate::ffi::CapgoHttpSink, status, headers.as_ptr())
+    }))
+    .unwrap_or(1)
+}
+
+/// `static native int httpData(long sink, ByteBuffer buffer, int offset, int length)`; the
+/// buffer must be direct.
+#[no_mangle]
+pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpData<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sink: jlong,
+    buffer: JByteBuffer<'local>,
+    offset: jint,
+    length: jint,
+) -> jint {
+    let (Ok(offset), Ok(length)) = (usize::try_from(offset), usize::try_from(length)) else {
+        return 1;
+    };
+    let (Ok(address), Ok(capacity)) = (
+        env.get_direct_buffer_address(&buffer),
+        env.get_direct_buffer_capacity(&buffer),
+    ) else {
+        return 1;
+    };
+    if address.is_null() || offset.checked_add(length).map_or(true, |end| end > capacity) {
+        return 1;
+    }
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        crate::ffi::sink_data(sink as *const crate::ffi::CapgoHttpSink, address.add(offset), length)
+    }))
+    .unwrap_or(1)
+}
+
+/// `static native int httpProgress(long sink, long written)`
+#[no_mangle]
+pub extern "system" fn Java_ee_forgr_capacitor_1updater_CapgoCoreNative_httpProgress<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sink: jlong,
+    written: jlong,
+) -> jint {
+    let Ok(written) = u64::try_from(written) else {
+        return 1;
+    };
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        crate::ffi::sink_progress(sink as *const crate::ffi::CapgoHttpSink, written)
+    }))
+    .unwrap_or(1)
 }
 
 /// `static native long create(String configJson, CapgoEngineHost host)`; 0 on failure.

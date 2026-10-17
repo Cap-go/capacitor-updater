@@ -51,7 +51,59 @@ void capgo_core_free(char *value);
  * owns it and releases it with free_string (the host must not free it). The
  * engine checks the host name itself as well. NULL refuses every HTTPS
  * connection.
+ * http_request (optional) sends requests through the platform network stack
+ * (see CapgoHttpRequest); NULL keeps the engine's own HTTP/1.1 client.
  */
+
+/** http_request return values. */
+#define CAPGO_HTTP_UNAVAILABLE 0 /* nothing sent: the engine uses its own HTTP/1.1 client */
+#define CAPGO_HTTP_COMPLETED 1   /* the whole response went to the sink */
+#define CAPGO_HTTP_FAILED 2      /* *result_json: {"error": kind, "message": text} */
+
+/**
+ * One HTTP exchange for the host's network stack (URLSession, Android HttpEngine:
+ * HTTP/2, HTTP/3, system proxy and trust). Strings are valid during the call.
+ *
+ * The host must not follow redirects: it reports a 3xx response like any other and
+ * the engine applies its own redirect policy. It must not cache, store cookies or
+ * add credentials, and must deliver the body without content coding (the platform
+ * stacks decode gzip themselves). headers_json is a JSON array of [name, value]
+ * pairs, User-Agent first; Accept-Encoding is set (gzip for API calls, identity for
+ * bundle files) and Range when a download resumes. timeout_ms is an idle timeout:
+ * the request fails with "timeout" when nothing moves for that long.
+ */
+typedef struct CapgoHttpRequest {
+    const char *method;
+    const char *url;
+    const char *headers_json;
+    /** Request body, NULL when there is none. */
+    const uint8_t *body;
+    size_t body_length;
+    uint64_t timeout_ms;
+    /**
+     * NULL: the body goes to on_data. Otherwise, once on_head returned 0, the host
+     * appends the body to this file (it exists and the engine prepared it) and calls
+     * on_progress with the total bytes appended so far.
+     */
+    const char *body_path;
+} CapgoHttpRequest;
+
+/**
+ * Where the host reports the response: on the thread that called http_request,
+ * one call at a time, before http_request returns. Each function returns 0 to
+ * continue; any other value means "cancel": the host stops the request, writes
+ * nothing more and returns.
+ */
+typedef struct CapgoHttpSink {
+    void *handle;
+    /** Status and response headers (JSON array of [name, value] pairs), once, before the body. */
+    int32_t (*on_head)(void *handle, int32_t status, const char *headers_json);
+    /** Body bytes (requests without body_path). */
+    int32_t (*on_data)(void *handle, const uint8_t *data, size_t length);
+    /** Total body bytes appended to body_path so far. */
+    int32_t (*on_progress)(void *handle, uint64_t written);
+} CapgoHttpSink;
+
 typedef struct CapgoHostCallbacks {
     void *context;
     void (*log)(void *context, int level, const char *message);
@@ -66,6 +118,16 @@ typedef struct CapgoHostCallbacks {
     int32_t (*verify_server_certificate)(void *context, const char *server_name,
                                          const uint8_t *const *certificates, const size_t *lengths,
                                          size_t count, char **error);
+    /**
+     * Sends one request (any thread, many at once). Returns CAPGO_HTTP_UNAVAILABLE
+     * before reporting anything to fall back to the engine's client. *result_json may
+     * receive a host-allocated JSON object (released with free_string):
+     * {"protocol": "h3" | "h2" | "http/1.1"} when completed, {"error": "timeout" |
+     * "network" | "tls" | "invalid_url" | "io" | "cancelled", "message": "..."} when
+     * failed. A request a sink function cancelled may return either.
+     */
+    int32_t (*http_request)(void *context, const CapgoHttpRequest *request, const CapgoHttpSink *sink,
+                            char **result_json);
 } CapgoHostCallbacks;
 
 typedef struct CapgoEngine CapgoEngine;

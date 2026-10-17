@@ -130,6 +130,10 @@ impl Engine {
             "allowHttpsToHttpRedirect".into(),
             json!(super::object_bool(&object, "allowHttpsToHttpRedirect", false)),
         );
+        runtime.insert(
+            "systemHttp".into(),
+            json!(super::object_bool(&object, "systemHttp", true)),
+        );
         if !config.native_version.is_empty() && self.config().version_build.is_empty() {
             runtime.insert("versionBuild".into(), json!(config.native_version));
         }

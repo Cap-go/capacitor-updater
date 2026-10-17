@@ -60,6 +60,8 @@ pub struct EngineConfig {
     pub preview_session: bool,
     /// Follow redirects that downgrade HTTPS to HTTP (off by default).
     pub allow_https_to_http_redirect: bool,
+    /// Send through the host's network stack when it has one (`systemHttp`, default on).
+    pub system_http: bool,
     pub timeout_ms: u64,
     /// Directory holding one sub-directory per downloaded bundle id.
     pub bundle_root: PathBuf,
@@ -95,6 +97,7 @@ impl EngineConfig {
             platform: text(object, "platform"),
             timeout_ms: object.get("timeoutMs").and_then(Value::as_u64).unwrap_or(20_000),
             is_prod: flag(object, "isProd", true),
+            system_http: flag(object, "systemHttp", true),
             bundle_root: path("bundleRoot"),
             storage_root: path("storageRoot"),
             stats_dir: path("statsDir"),
@@ -163,6 +166,9 @@ impl EngineConfig {
         }
         if let Some(value) = object.get("allowHttpsToHttpRedirect").and_then(Value::as_bool) {
             self.allow_https_to_http_redirect = value;
+        }
+        if let Some(value) = object.get("systemHttp").and_then(Value::as_bool) {
+            self.system_http = value;
         }
         if let Some(value) = object.get("timeoutMs").and_then(Value::as_u64) {
             self.timeout_ms = value;

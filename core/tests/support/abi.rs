@@ -10,8 +10,10 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::fmt;
 use std::sync::{Arc, OnceLock};
 
-use capgo_updater_core::ffi::CapgoHostCallbacks;
-use capgo_updater_core::host::{Host, LogLevel, RETAIN_EVENT_KEY};
+use capgo_updater_core::ffi::{CapgoHostCallbacks, CapgoHttpRequest, CapgoHttpSink};
+use capgo_updater_core::host::{
+    Host, HttpTransportEvent, HttpTransportOutcome, HttpTransportRequest, LogLevel, RETAIN_EVENT_KEY,
+};
 use serde_json::{json, Value};
 
 type CoreCall = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char;
@@ -334,6 +336,59 @@ unsafe extern "C" fn cb_verify(
     verdict
 }
 
+/// `http_request`: the C request and sink, adapted to [`Host::http_request`].
+unsafe extern "C" fn cb_http_request(
+    raw: *mut c_void,
+    request: *const CapgoHttpRequest,
+    sink: *const CapgoHttpSink,
+    result: *mut *mut c_char,
+) -> i32 {
+    let request = &*request;
+    let sink = &*sink;
+    let headers: Vec<(String, String)> = serde_json::from_str::<Value>(text(request.headers_json))
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|pair| {
+            (
+                pair[0].as_str().unwrap_or_default().to_string(),
+                pair[1].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    let body = (!request.body.is_null()).then(|| std::slice::from_raw_parts(request.body, request.body_length));
+    let path = (!request.body_path.is_null()).then(|| std::path::PathBuf::from(text(request.body_path)));
+    let transport_request = HttpTransportRequest {
+        method: text(request.method),
+        url: text(request.url),
+        headers: &headers,
+        body,
+        timeout: std::time::Duration::from_millis(request.timeout_ms),
+        body_path: path.as_deref(),
+    };
+    let mut forward = |event: HttpTransportEvent<'_>| -> bool {
+        match event {
+            HttpTransportEvent::Head { status, headers } => {
+                let json: Value = headers.iter().map(|(name, value)| json!([name, value])).collect();
+                let json = CString::new(json.to_string()).unwrap();
+                (sink.on_head.unwrap())(sink.handle, i32::from(status), json.as_ptr()) == 0
+            }
+            HttpTransportEvent::Data(data) => (sink.on_data.unwrap())(sink.handle, data.as_ptr(), data.len()) == 0,
+            HttpTransportEvent::Written(written) => (sink.on_progress.unwrap())(sink.handle, written) == 0,
+        }
+    };
+    let (code, reply) = match context(raw).http_request(&transport_request, &mut forward) {
+        HttpTransportOutcome::Unavailable => (0, None),
+        HttpTransportOutcome::Completed { protocol } => (1, Some(json!({ "protocol": protocol }))),
+        HttpTransportOutcome::Failed { kind, message } => (2, Some(json!({ "error": kind, "message": message }))),
+    };
+    if let (Some(reply), false) = (reply, result.is_null()) {
+        *result = owned(&reply.to_string());
+    }
+    code
+}
+
 /// C callbacks backed by `host`; the engine releases them with `release`.
 pub fn host_callbacks(host: Arc<dyn Host>) -> CapgoHostCallbacks {
     CapgoHostCallbacks {
@@ -347,5 +402,6 @@ pub fn host_callbacks(host: Arc<dyn Host>) -> CapgoHostCallbacks {
         hook: Some(cb_hook),
         release: Some(cb_release),
         verify_server_certificate: Some(cb_verify),
+        http_request: Some(cb_http_request),
     }
 }

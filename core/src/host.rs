@@ -66,6 +66,48 @@ impl HttpProxy {
     }
 }
 
+/// One HTTP exchange for the host's network stack ([`Host::http_request`]): no redirect is
+/// followed (the engine applies its own redirect policy), the body is decoded when the
+/// host's stack applied a content coding.
+#[derive(Debug, Clone)]
+pub struct HttpTransportRequest<'a> {
+    pub method: &'a str,
+    pub url: &'a str,
+    /// In order; `User-Agent` first.
+    pub headers: &'a [(String, String)],
+    pub body: Option<&'a [u8]>,
+    /// Idle timeout: the request fails as `timeout` when nothing moves for this long.
+    pub timeout: std::time::Duration,
+    /// `None`: the body comes back in [`HttpTransportEvent::Data`]. `Some`: once the
+    /// head is accepted, the host appends the body to this file and reports
+    /// [`HttpTransportEvent::Written`].
+    pub body_path: Option<&'a std::path::Path>,
+}
+
+/// What a host transport reports while a request runs, in order: one `Head`, then `Data`
+/// (memory) or `Written` (file) events.
+#[derive(Debug)]
+pub enum HttpTransportEvent<'a> {
+    Head {
+        status: u16,
+        headers: Vec<(String, String)>,
+    },
+    Data(&'a [u8]),
+    /// Total body bytes the host appended to `body_path` so far.
+    Written(u64),
+}
+
+/// End of a host transport request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HttpTransportOutcome {
+    /// Nothing was sent: the engine uses its own HTTP/1.1 client.
+    Unavailable,
+    /// The response was delivered; `protocol` is the negotiated one (`h3`, `h2`, `http/1.1`).
+    Completed { protocol: Option<String> },
+    /// `kind`: `timeout`, `network`, `tls`, `invalid_url`, `io` or `cancelled`.
+    Failed { kind: String, message: String },
+}
+
 thread_local! {
     /// Host whose method lane the detached plugin method running on this thread still holds.
     static METHOD_LANE: RefCell<Option<Arc<dyn Host>>> = const { RefCell::new(None) };
@@ -185,7 +227,27 @@ pub trait Host: Send + Sync + 'static {
     fn verify_server_certificate(&self, _chain: &[&[u8]], _server_name: &str) -> Option<Result<(), String>> {
         None
     }
+
+    /// Sends one request through the platform's network stack (URLSession, Android
+    /// `HttpEngine`: HTTP/2, HTTP/3, system proxy and trust). `sink` gets the events on
+    /// the calling thread and returns `false` to cancel the request. The default has no
+    /// transport: the engine uses its own client.
+    fn http_request(
+        &self,
+        _request: &HttpTransportRequest<'_>,
+        _sink: &mut dyn FnMut(HttpTransportEvent<'_>) -> bool,
+    ) -> HttpTransportOutcome {
+        HttpTransportOutcome::Unavailable
+    }
 }
+
+/// A host transport for tests ([`MemoryHost::http_transport`]).
+#[cfg(any(test, feature = "test-support"))]
+pub type TestTransport = std::sync::Arc<
+    dyn Fn(&HttpTransportRequest<'_>, &mut dyn FnMut(HttpTransportEvent<'_>) -> bool) -> HttpTransportOutcome
+        + Send
+        + Sync,
+>;
 
 /// Convenience logging helpers.
 pub trait HostLog {
@@ -230,6 +292,9 @@ pub struct MemoryHost {
     /// Called with every log message, after it is recorded (lets tests act at a precise point).
     #[allow(clippy::type_complexity)]
     pub on_log: std::sync::Mutex<Option<std::sync::Arc<dyn Fn(&str) + Send + Sync>>>,
+    /// Scripted host HTTP transport. Unset: none, unless `CAPGO_TEST_HOST_TRANSPORT=1`
+    /// (then a stand-in for the platform stacks, see [`crate::test_transport`]).
+    pub http_transport: std::sync::Mutex<Option<TestTransport>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -330,6 +395,20 @@ impl Host for MemoryHost {
         return Some(crate::net::platform_verify_for_tests(chain, server_name));
         #[cfg(not(feature = "test-support"))]
         None
+    }
+
+    fn http_request(
+        &self,
+        request: &HttpTransportRequest<'_>,
+        sink: &mut dyn FnMut(HttpTransportEvent<'_>) -> bool,
+    ) -> HttpTransportOutcome {
+        let transport = self.http_transport.lock_or_recover().clone();
+        match transport {
+            Some(transport) => transport(request, sink),
+            #[cfg(feature = "test-support")]
+            None if crate::test_transport::enabled_by_env() => crate::test_transport::send(self, request, sink),
+            None => HttpTransportOutcome::Unavailable,
+        }
     }
 
     /// Tests talk to local plain-HTTP servers: allowed unless a reply says otherwise.

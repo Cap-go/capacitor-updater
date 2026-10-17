@@ -147,6 +147,7 @@ impl Engine {
             "isProd": config.is_prod,
             "previewSession": config.preview_session,
             "allowHttpsToHttpRedirect": config.allow_https_to_http_redirect,
+            "systemHttp": config.system_http,
             "timeoutMs": config.timeout_ms,
             "publicKey": config.public_key,
         })

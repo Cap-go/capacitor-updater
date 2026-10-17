@@ -69,7 +69,7 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use crate::engine::Engine;
-use crate::host::{Host, LogLevel};
+use crate::host::{Host, HttpTransportEvent, HttpTransportOutcome, HttpTransportRequest, LogLevel};
 
 /// Host services provided by a C-ABI host (iOS, or any other runtime).
 ///
@@ -99,10 +99,193 @@ pub struct CapgoHostCallbacks {
     /// `*error` may receive a host-allocated reason (released with
     /// `free_string`). NULL refuses every HTTPS connection.
     pub verify_server_certificate: Option<VerifyServerCertificate>,
+    /// Optional transport through the platform network stack (see `CapgoHttpRequest`
+    /// and `http_request` in `include/capgo_updater_core.h`). NULL: the engine's own client.
+    pub http_request: Option<HttpRequestCallback>,
 }
 
 pub type VerifyServerCertificate =
     unsafe extern "C" fn(*mut c_void, *const c_char, *const *const u8, *const usize, usize, *mut *mut c_char) -> i32;
+
+pub type HttpRequestCallback =
+    unsafe extern "C" fn(*mut c_void, *const CapgoHttpRequest, *const CapgoHttpSink, *mut *mut c_char) -> i32;
+
+/// `http_request` return values.
+pub const CAPGO_HTTP_UNAVAILABLE: i32 = 0;
+pub const CAPGO_HTTP_COMPLETED: i32 = 1;
+pub const CAPGO_HTTP_FAILED: i32 = 2;
+
+/// One request for the host transport (strings valid during the call).
+#[repr(C)]
+pub struct CapgoHttpRequest {
+    pub method: *const c_char,
+    pub url: *const c_char,
+    /// JSON array of `[name, value]` pairs, `User-Agent` first.
+    pub headers_json: *const c_char,
+    /// NULL when the request has no body.
+    pub body: *const u8,
+    pub body_length: usize,
+    /// Idle timeout in milliseconds.
+    pub timeout_ms: u64,
+    /// NULL: the body goes to `on_data`. Otherwise the host appends it to this file.
+    pub body_path: *const c_char,
+}
+
+/// Where the host reports a response, on the thread that called `http_request`, one call
+/// at a time, before `http_request` returns. Each function returns 0 to continue; any
+/// other value cancels the request.
+#[repr(C)]
+pub struct CapgoHttpSink {
+    pub handle: *mut c_void,
+    /// Status and response headers (JSON array of `[name, value]` pairs), before any body byte.
+    pub on_head: Option<unsafe extern "C" fn(*mut c_void, i32, *const c_char) -> i32>,
+    /// Body bytes (requests without `body_path`).
+    pub on_data: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> i32>,
+    /// Total body bytes appended to `body_path` so far.
+    pub on_progress: Option<unsafe extern "C" fn(*mut c_void, u64) -> i32>,
+}
+
+type SinkFn<'a> = &'a mut dyn FnMut(HttpTransportEvent<'_>) -> bool;
+
+/// `[["name","value"], ...]` from a host; anything else is skipped.
+fn header_pairs(json: &str) -> Vec<(String, String)> {
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|pair| Some((pair.get(0)?.as_str()?.to_string(), pair.get(1)?.as_str()?.to_string())))
+        .collect()
+}
+
+/// Runs a sink callback; a panic cancels the request instead of unwinding into the host.
+unsafe fn sink_call(handle: *mut c_void, event: HttpTransportEvent<'_>) -> i32 {
+    if handle.is_null() {
+        return 1;
+    }
+    let sink = &mut *(handle as *mut SinkFn<'_>);
+    match catch_unwind(AssertUnwindSafe(|| sink(event))) {
+        Ok(true) => 0,
+        _ => 1,
+    }
+}
+
+unsafe extern "C" fn sink_on_head(handle: *mut c_void, status: i32, headers_json: *const c_char) -> i32 {
+    let headers = if headers_json.is_null() {
+        Vec::new()
+    } else {
+        header_pairs(&CStr::from_ptr(headers_json).to_string_lossy())
+    };
+    let status = u16::try_from(status).unwrap_or(0);
+    sink_call(handle, HttpTransportEvent::Head { status, headers })
+}
+
+unsafe extern "C" fn sink_on_data(handle: *mut c_void, data: *const u8, length: usize) -> i32 {
+    if length == 0 {
+        return 0;
+    }
+    if data.is_null() {
+        return 1;
+    }
+    sink_call(
+        handle,
+        HttpTransportEvent::Data(std::slice::from_raw_parts(data, length)),
+    )
+}
+
+unsafe extern "C" fn sink_on_progress(handle: *mut c_void, written: u64) -> i32 {
+    sink_call(handle, HttpTransportEvent::Written(written))
+}
+
+/// Runs `f` with a C sink that forwards to `sink` (valid only during `f`).
+pub(crate) fn with_c_sink<R>(
+    sink: &mut dyn FnMut(HttpTransportEvent<'_>) -> bool,
+    f: impl FnOnce(&CapgoHttpSink) -> R,
+) -> R {
+    let mut sink: SinkFn<'_> = sink;
+    let c_sink = CapgoHttpSink {
+        handle: &mut sink as *mut SinkFn<'_> as *mut c_void,
+        on_head: Some(sink_on_head),
+        on_data: Some(sink_on_data),
+        on_progress: Some(sink_on_progress),
+    };
+    f(&c_sink)
+}
+
+#[cfg(feature = "jni")]
+/// Calls a host sink function (JNI natives forward Java calls here). Returns 1 (cancel)
+/// for a NULL sink or callback.
+///
+/// # Safety
+/// `sink` must be NULL or the sink of an `http_request` call still running on this thread.
+pub(crate) unsafe fn sink_head(sink: *const CapgoHttpSink, status: i32, headers_json: *const c_char) -> i32 {
+    match sink.as_ref() {
+        Some(CapgoHttpSink {
+            handle,
+            on_head: Some(on_head),
+            ..
+        }) => on_head(*handle, status, headers_json),
+        _ => 1,
+    }
+}
+
+#[cfg(feature = "jni")]
+/// # Safety
+/// See [`sink_head`]; `data` holds `length` bytes.
+pub(crate) unsafe fn sink_data(sink: *const CapgoHttpSink, data: *const u8, length: usize) -> i32 {
+    match sink.as_ref() {
+        Some(CapgoHttpSink {
+            handle,
+            on_data: Some(on_data),
+            ..
+        }) => on_data(*handle, data, length),
+        _ => 1,
+    }
+}
+
+#[cfg(feature = "jni")]
+/// # Safety
+/// See [`sink_head`].
+pub(crate) unsafe fn sink_progress(sink: *const CapgoHttpSink, written: u64) -> i32 {
+    match sink.as_ref() {
+        Some(CapgoHttpSink {
+            handle,
+            on_progress: Some(on_progress),
+            ..
+        }) => on_progress(*handle, written),
+        _ => 1,
+    }
+}
+
+/// The outcome of an `http_request` call: its return value and result JSON
+/// (`{"protocol": ...}` or `{"error": kind, "message": ...}`).
+pub(crate) fn transport_outcome(code: i32, reply: Option<&str>) -> HttpTransportOutcome {
+    let reply: serde_json::Value = reply
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or(serde_json::Value::Null);
+    let text = |key: &str| reply.get(key).and_then(serde_json::Value::as_str).map(str::to_string);
+    match code {
+        CAPGO_HTTP_UNAVAILABLE => HttpTransportOutcome::Unavailable,
+        CAPGO_HTTP_COMPLETED => HttpTransportOutcome::Completed {
+            protocol: text("protocol"),
+        },
+        _ => HttpTransportOutcome::Failed {
+            kind: text("error").unwrap_or_else(|| "network".into()),
+            message: text("message").unwrap_or_else(|| "HTTP request failed in the host".into()),
+        },
+    }
+}
+
+/// The request headers as the host gets them.
+pub(crate) fn headers_json(headers: &[(String, String)]) -> String {
+    serde_json::Value::Array(
+        headers
+            .iter()
+            .map(|(name, value)| serde_json::json!([name, value]))
+            .collect(),
+    )
+    .to_string()
+}
 
 struct CHost(CapgoHostCallbacks);
 
@@ -248,6 +431,35 @@ impl Host for CHost {
         )
         .and_then(|reply| reply.get("handled").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)
+    }
+
+    fn http_request(
+        &self,
+        request: &HttpTransportRequest<'_>,
+        sink: &mut dyn FnMut(HttpTransportEvent<'_>) -> bool,
+    ) -> HttpTransportOutcome {
+        let Some(callback) = self.0.http_request else {
+            return HttpTransportOutcome::Unavailable;
+        };
+        let method = c_string(request.method);
+        let url = c_string(request.url);
+        let headers = c_string(&headers_json(request.headers));
+        let path = request.body_path.map(|path| c_string(&path.to_string_lossy()));
+        let c_request = CapgoHttpRequest {
+            method: method.as_ptr(),
+            url: url.as_ptr(),
+            headers_json: headers.as_ptr(),
+            body: request.body.map_or(std::ptr::null(), <[u8]>::as_ptr),
+            body_length: request.body.map_or(0, <[u8]>::len),
+            timeout_ms: u64::try_from(request.timeout.as_millis()).unwrap_or(u64::MAX),
+            body_path: path.as_ref().map_or(std::ptr::null(), |path| path.as_ptr()),
+        };
+        let mut result: *mut c_char = std::ptr::null_mut();
+        let code = with_c_sink(sink, |c_sink| unsafe {
+            callback(self.0.context, &c_request, c_sink, &mut result)
+        });
+        let reply = self.take_string(result);
+        transport_outcome(code, reply.as_deref())
     }
 }
 

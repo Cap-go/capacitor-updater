@@ -24,6 +24,8 @@ use crate::paths;
 
 const PER_FILE_ESTIMATE: u64 = 100 * 1024;
 const MIN_FREE_BYTES: u64 = 50 * 1024 * 1024;
+/// Stops a host transport from appending a 416 answer to a complete partial file.
+const RANGE_SATISFIED: &str = "range_satisfied";
 
 #[derive(Debug, Clone)]
 struct Task {
@@ -497,14 +499,23 @@ impl Engine {
             Vec::new()
         };
         let mut output: Option<io::BufWriter<File>> = None;
-        // Hashed while downloading when the whole body comes in this response.
+        // Hashed while downloading when the whole body comes in this response. A host
+        // transport appends the body to the partial itself: hashed after the transfer.
         let mut hasher: Option<ring::digest::Context> = None;
+        let mut host_whole_body = false;
         let result = self
             .http
-            .download(&task.download_url, &headers, &mut |event| match event {
+            .download_to(&task.download_url, &headers, Some(&partial), &mut |event| match event {
                 crate::net::Stream::Head(head) => {
                     if head.status == 416 && existing > 0 {
-                        // The partial already holds the whole file.
+                        // The partial already holds the whole file. A host transport would
+                        // append this answer's body: stop it.
+                        if head.body_in_file {
+                            return Err(NetError {
+                                kind: crate::net::NetErrorKind::Io,
+                                message: RANGE_SATISFIED.into(),
+                            });
+                        }
                         return Ok(());
                     }
                     if head.status != 200 && head.status != 206 {
@@ -524,6 +535,11 @@ impl Engine {
                             kind: crate::net::NetErrorKind::Io,
                             message: error.to_string(),
                         })?;
+                    if head.body_in_file {
+                        // The partial is ready (truncated or kept for the append): the host writes.
+                        host_whole_body = !append;
+                        return Ok(());
+                    }
                     // Network reads are small: batch them into large writes.
                     output = Some(io::BufWriter::with_capacity(256 * 1024, file));
                     hasher = (!append).then(|| ring::digest::Context::new(&ring::digest::SHA256));
@@ -547,15 +563,28 @@ impl Engine {
                         None => Ok(()),
                     }
                 }
+                crate::net::Stream::Written(_) => {
+                    if cancel.is_cancelled() {
+                        return Err(NetError {
+                            kind: crate::net::NetErrorKind::Io,
+                            message: "download_stopped".into(),
+                        });
+                    }
+                    Ok(())
+                }
             });
+        let result = match result {
+            Err(error) if error.message == RANGE_SATISFIED => Ok(()),
+            other => other.map(|_| ()),
+        };
         let flushed = output.map_or(Ok(()), |mut output| output.flush());
-        let result = result.and_then(|head| {
-            flushed.map(|()| head).map_err(|error| NetError {
+        let result = result.and_then(|()| {
+            flushed.map_err(|error| NetError {
                 kind: crate::net::NetErrorKind::Io,
                 message: error.to_string(),
             })
         });
-        let streamed_hash = hasher.map(|hasher| crate::text::hex_encode(hasher.finish().as_ref()));
+        let mut streamed_hash = hasher.map(|hasher| crate::text::hex_encode(hasher.finish().as_ref()));
         if let Err(error) = result {
             if error.message == "download_stopped" {
                 return Err(CoreError::new("download_stopped", "Download cancelled"));
@@ -588,6 +617,9 @@ impl Engine {
             CoreError::new("decrypt_fail", format!("Failed to decrypt {}: {error}", task.file_name))
         };
         let session = session.get().map_err(|message| decrypt_failed(&message))?;
+        if host_whole_body && session.is_none() && !task.brotli {
+            streamed_hash = crypto::checksum::sha256_file(&partial).ok();
+        }
         let mut work: Option<std::path::PathBuf> = None;
         let written = match session {
             // Brotli needs a seekable plaintext file: decrypt into a work file in one pass.
@@ -613,7 +645,8 @@ impl Engine {
                 }
             }
             None if task.brotli => decode_brotli(&partial, &task.target, &task.hash),
-            // Plain file hashed while downloading: move it in place, no second pass.
+            // Plain file hashed while downloading (or right after the host wrote it): move it
+            // in place, no copy.
             None => match &streamed_hash {
                 Some(hash) if hash.eq_ignore_ascii_case(&task.hash) => {
                     fs::rename(&partial, &task.target).map(|()| Some(hash.clone()))

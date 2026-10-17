@@ -645,9 +645,11 @@ impl Engine {
         } else {
             Vec::new()
         };
-        // Hashed while writing when the whole body comes in this response.
+        // Hashed while writing when the whole body comes in this response. A host transport
+        // appends the body to `temp` itself: hashed (and decrypted) after the transfer.
         let mut file: Option<fsutil::BlockWriter> = None;
         let mut written: u64 = 0;
+        let mut base: u64 = 0;
         let mut expected_total: Option<u64> = None;
         let mut offset: u64 = 0;
         let mut last_percent = 0;
@@ -658,75 +660,88 @@ impl Engine {
             kind: crate::net::NetErrorKind::Io,
             message: "download_stopped".into(),
         };
-        let result = self.http.download(url, &headers, &mut |event| match event {
-            crate::net::Stream::Head(head) => {
-                if !(head.status == 200 || head.status == 206) {
-                    return Err(NetError {
-                        kind: crate::net::NetErrorKind::Network,
-                        message: format!("HTTP error: {}", head.status),
-                    });
-                }
-                let plan = crate::http::plan_zip_resume_write(
-                    head.status as i64,
-                    existing as i64,
-                    head.header("Content-Range"),
-                )
-                .map_err(|code| NetError {
-                    kind: crate::net::NetErrorKind::Network,
-                    message: code.to_string(),
-                })?;
-                plan_status = plan.response_code as u16;
-                offset = plan.write_offset as u64;
-                content_range = head.header("Content-Range").map(str::to_string);
-                body_len = head.content_length;
-                let append = crate::http::should_append_http_body(plan.response_code, existing as i64);
-                expected_total = head
-                    .content_length
-                    .map(|length| if append { length + offset } else { length });
-                if let (Some(total), Some(free)) = (expected_total, fsutil::available_space(temp)) {
-                    if free < total.saturating_mul(2) {
+        let result = self
+            .http
+            .download_to(url, &headers, Some(temp), &mut |event| match event {
+                crate::net::Stream::Head(head) => {
+                    if !(head.status == 200 || head.status == 206) {
                         return Err(NetError {
-                            kind: crate::net::NetErrorKind::Io,
-                            message: "insufficient_disk_space".into(),
+                            kind: crate::net::NetErrorKind::Network,
+                            message: format!("HTTP error: {}", head.status),
                         });
                     }
+                    let plan = crate::http::plan_zip_resume_write(
+                        head.status as i64,
+                        existing as i64,
+                        head.header("Content-Range"),
+                    )
+                    .map_err(|code| NetError {
+                        kind: crate::net::NetErrorKind::Network,
+                        message: code.to_string(),
+                    })?;
+                    plan_status = plan.response_code as u16;
+                    offset = plan.write_offset as u64;
+                    content_range = head.header("Content-Range").map(str::to_string);
+                    body_len = head.content_length;
+                    let append = crate::http::should_append_http_body(plan.response_code, existing as i64);
+                    expected_total = head
+                        .content_length
+                        .map(|length| if append { length + offset } else { length });
+                    if let (Some(total), Some(free)) = (expected_total, fsutil::available_space(temp)) {
+                        if free < total.saturating_mul(2) {
+                            return Err(NetError {
+                                kind: crate::net::NetErrorKind::Io,
+                                message: "insufficient_disk_space".into(),
+                            });
+                        }
+                    }
+                    let handle = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .append(append)
+                        .truncate(!append)
+                        .open(temp)
+                        .map_err(|error| NetError {
+                            kind: crate::net::NetErrorKind::Io,
+                            message: error.to_string(),
+                        })?;
+                    written = if append { existing } else { 0 };
+                    base = written;
+                    if head.body_in_file {
+                        // The file is ready (truncated or kept for the append): the host writes.
+                        return Ok(());
+                    }
+                    // A resumed body only covers the tail: no streamed result.
+                    let sink = if append { fsutil::StreamSink::None } else { sink.clone() };
+                    file = Some(fsutil::BlockWriter::new(handle, sink));
+                    Ok(())
                 }
-                let handle = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(append)
-                    .truncate(!append)
-                    .open(temp)
-                    .map_err(|error| NetError {
+                crate::net::Stream::Chunk(chunk) => {
+                    if cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    let handle = file.as_mut().ok_or_else(stopped)?;
+                    handle.write(chunk).map_err(|error| NetError {
                         kind: crate::net::NetErrorKind::Io,
                         message: error.to_string(),
                     })?;
-                written = if append { existing } else { 0 };
-                // A resumed body only covers the tail: no streamed result.
-                let sink = if append { fsutil::StreamSink::None } else { sink.clone() };
-                file = Some(fsutil::BlockWriter::new(handle, sink));
-                Ok(())
-            }
-            crate::net::Stream::Chunk(chunk) => {
-                if cancel.is_cancelled() {
-                    return Err(stopped());
-                }
-                let handle = file.as_mut().ok_or_else(stopped)?;
-                handle.write(chunk).map_err(|error| NetError {
-                    kind: crate::net::NetErrorKind::Io,
-                    message: error.to_string(),
-                })?;
-                written += chunk.len() as u64;
-                if let Some(total) = expected_total.filter(|total| *total > 0) {
-                    let percent = (((written as f64 / total as f64) * 100.0) as i64).clamp(10, 70);
-                    if percent >= last_percent + 10 {
-                        last_percent = (percent / 10) * 10;
-                        self.progress(id, last_percent);
+                    written += chunk.len() as u64;
+                    if let Some(percent) = zip_progress_step(written, expected_total, &mut last_percent) {
+                        self.progress(id, percent);
                     }
+                    Ok(())
                 }
-                Ok(())
-            }
-        });
+                crate::net::Stream::Written(total) => {
+                    if cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    written = base + total;
+                    if let Some(percent) = zip_progress_step(written, expected_total, &mut last_percent) {
+                        self.progress(id, percent);
+                    }
+                    Ok(())
+                }
+            });
         let streamed_hash = match file.map(fsutil::BlockWriter::finish) {
             Some(Ok(hash)) => hash,
             Some(Err(error)) => {
@@ -854,6 +869,19 @@ impl Engine {
                 }
             }
         }
+    }
+}
+
+/// Zip transfer progress: 10..=70 %, reported in steps of 10 once `written` of
+/// `expected_total` bytes reach the next step.
+fn zip_progress_step(written: u64, expected_total: Option<u64>, last_percent: &mut i64) -> Option<i64> {
+    let total = expected_total.filter(|total| *total > 0)?;
+    let percent = (((written as f64 / total as f64) * 100.0) as i64).clamp(10, 70);
+    if percent >= *last_percent + 10 {
+        *last_percent = (percent / 10) * 10;
+        Some(*last_percent)
+    } else {
+        None
     }
 }
 

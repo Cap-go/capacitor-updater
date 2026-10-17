@@ -391,6 +391,7 @@ fn http_request(engine: &Engine, input: &Value) -> CoreResult<Value> {
             "status": head.status,
             "headers": headers_of(&head.headers),
             "bodyHex": hex_encode(&body),
+            "protocol": head.protocol,
         }));
     }
     let method = opt_str(input, "method")?.unwrap_or("GET");
@@ -403,5 +404,6 @@ fn http_request(engine: &Engine, input: &Value) -> CoreResult<Value> {
         "status": response.status,
         "headers": headers_of(&response.headers),
         "bodyHex": hex_encode(&response.body),
+        "protocol": response.protocol,
     }))
 }

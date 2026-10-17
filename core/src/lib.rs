@@ -29,6 +29,8 @@ pub mod paths;
 pub mod policy;
 mod sync;
 #[cfg(feature = "test-support")]
+pub mod test_transport;
+#[cfg(feature = "test-support")]
 pub mod testing;
 pub mod text;
 

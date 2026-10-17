@@ -1,7 +1,14 @@
 //! HTTP client used by the engine (update checks, channels, stats, bundle
-//! downloads). Plain HTTP/1.1 over rustls; certificate chains are verified by
-//! the operating system trust store through the host (Android
-//! `X509TrustManager`, iOS `SecTrust`), host names by rustls.
+//! downloads).
+//!
+//! Requests go through the host's network stack when it has one
+//! ([`Host::http_request`]: URLSession on iOS, `HttpEngine` on Android 14+, with
+//! HTTP/2, HTTP/3, the system proxy and the platform trust rules). The engine keeps
+//! its rules there too: it follows redirects itself (count, HTTPS -> HTTP guard),
+//! checks the cleartext policy, caps API bodies and checks every downloaded length.
+//! Without a host transport (or with `systemHttp: false`), plain HTTP/1.1 over
+//! rustls; certificate chains are then verified by the operating system trust store
+//! through the host (Android `X509TrustManager`, iOS `SecTrust`), host names by rustls.
 
 use crate::sync::{LockRecover, RwLockRecover};
 use std::io::Read;
@@ -14,7 +21,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
 use serde_json::Value;
 
-use crate::host::{Host, HttpProxy};
+use crate::host::{Host, HttpProxy, HttpTransportEvent, HttpTransportOutcome, HttpTransportRequest};
 
 /// Largest non-download response body accepted (JSON API responses).
 const MAX_API_BODY_BYTES: u64 = 16 * 1024 * 1024;
@@ -53,6 +60,8 @@ pub struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    /// Negotiated protocol (`http/1.1` for the engine's own client).
+    pub protocol: Option<String>,
 }
 
 impl Response {
@@ -82,6 +91,12 @@ pub struct StreamHead {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub content_length: Option<u64>,
+    /// The host transport appends the body to the file given to [`Http::download_to`]
+    /// itself ([`Stream::Written`] events): the head handler only prepares that file
+    /// (truncated for a whole body, kept for an append) and writes nothing.
+    pub body_in_file: bool,
+    /// Negotiated protocol, known once the transfer ended (`http/1.1` for the engine's own client).
+    pub protocol: Option<String>,
 }
 
 impl StreamHead {
@@ -107,6 +122,81 @@ pub struct Http {
     /// Agents for system HTTP proxies (ureq sets the proxy per agent), keyed
     /// by (download agent, proxy). Rebuilt when the timeout changes.
     proxied: Mutex<std::collections::HashMap<(bool, HttpProxy), ureq::Agent>>,
+    /// Send through the host's network stack when it has one (`systemHttp`).
+    system_http: std::sync::atomic::AtomicBool,
+    /// Last protocol the host transport reported per host name (logged when it changes).
+    protocols: Mutex<std::collections::HashMap<String, String>>,
+}
+
+/// The engine's own client speaks HTTP/1.1 only.
+const OWN_PROTOCOL: &str = "http/1.1";
+
+/// One request hop through the host transport.
+enum HostHop {
+    /// No host transport for this request: the engine's own client sends it.
+    Unavailable,
+    /// A redirect (status, `Location`) for the engine to follow.
+    Redirect(u16, String),
+    /// The final response; its body went to the event handler.
+    Final(StreamHead),
+}
+
+/// Who answered a request.
+enum Exchange {
+    /// The host transport: the body was already handed over.
+    Host(StreamHead),
+    /// The engine's own client: the body is still to be read.
+    Own(ureq::Response),
+}
+
+/// Response headers the way the engine's own client reports them (ureq `headers_names`):
+/// lower-case names, each with the first value of that name.
+fn normalize_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, _)| {
+            let value = find_header(headers, name).unwrap_or_default().to_string();
+            (name.to_ascii_lowercase(), value)
+        })
+        .collect()
+}
+
+fn find_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+/// Drops the headers of a content coding that was removed from the body.
+fn strip_content_coding(headers: &mut Vec<(String, String)>) {
+    headers.retain(|(name, _)| {
+        !name.eq_ignore_ascii_case("Content-Encoding") && !name.eq_ignore_ascii_case("Content-Length")
+    });
+}
+
+fn is_gzip(headers: &[(String, String)]) -> bool {
+    find_header(headers, "Content-Encoding")
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip"))
+}
+
+/// Error kind of a failed host transport request.
+fn transport_error_kind(kind: &str) -> NetErrorKind {
+    match kind {
+        "timeout" => NetErrorKind::Timeout,
+        "tls" => NetErrorKind::Tls,
+        "invalid_url" => NetErrorKind::InvalidUrl,
+        "io" => NetErrorKind::Io,
+        _ => NetErrorKind::Network,
+    }
+}
+
+/// Whether the host transport may carry `url`: any other URL keeps the exact error of
+/// the engine's own client.
+fn host_transport_url(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|parsed| {
+        matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some_and(|host| !host.is_empty())
+    })
 }
 
 fn classify_io(error: &std::io::Error) -> NetErrorKind {
@@ -172,6 +262,155 @@ impl Http {
             host,
             cleartext: Mutex::new(std::collections::HashMap::new()),
             proxied: Mutex::new(std::collections::HashMap::new()),
+            system_http: std::sync::atomic::AtomicBool::new(true),
+            protocols: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Uses the host's network stack when it has one (default), or always the engine's
+    /// own HTTP/1.1 client (`systemHttp: false`).
+    pub fn set_system_http(&self, enabled: bool) {
+        self.system_http.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Idle timeout of a host transport request: bundle transfers get at least 60 s,
+    /// like the engine's own download agent.
+    fn timeout_for(&self, download: bool) -> Duration {
+        let timeout = *self.timeout.read_or_recover();
+        if download {
+            timeout.max(Duration::from_secs(60))
+        } else {
+            timeout
+        }
+    }
+
+    /// Logs the protocol the host transport negotiated with a host when it changes.
+    fn note_protocol(&self, url: &str, protocol: Option<&str>) {
+        let Some(protocol) = protocol.filter(|protocol| !protocol.is_empty()) else {
+            return;
+        };
+        let host = url::Url::parse(url)
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_ascii_lowercase))
+            .unwrap_or_default();
+        let changed = {
+            let mut protocols = self.protocols.lock_or_recover();
+            if protocols.get(&host).map(String::as_str) == Some(protocol) {
+                false
+            } else {
+                protocols.insert(host.clone(), protocol.to_string());
+                true
+            }
+        };
+        if changed {
+            self.host.log(
+                crate::host::LogLevel::Debug,
+                &format!("System HTTP transport: {protocol} with {host}"),
+            );
+        }
+    }
+
+    /// Sends one hop through the host transport. The head, body chunks and written byte
+    /// counts of a final response go to `on_event`; an error from it cancels the request
+    /// and is returned as is.
+    #[allow(clippy::too_many_arguments)]
+    fn host_hop(
+        &self,
+        download: bool,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<&[u8]>,
+        body_path: Option<&std::path::Path>,
+        on_event: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
+    ) -> Result<HostHop, NetError> {
+        if !self.system_http.load(std::sync::atomic::Ordering::SeqCst) || !host_transport_url(url) {
+            return Ok(HostHop::Unavailable);
+        }
+        // What the engine's own client sends: its User-Agent first, `Accept: */*` by default.
+        let mut request_headers: Vec<(String, String)> = vec![("User-Agent".into(), self.user_agent())];
+        request_headers.extend(
+            headers
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string())),
+        );
+        if !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("Accept")) {
+            request_headers.push(("Accept".into(), "*/*".into()));
+        }
+        let request = HttpTransportRequest {
+            method,
+            url,
+            headers: &request_headers,
+            body,
+            timeout: self.timeout_for(download),
+            body_path,
+        };
+        let mut head: Option<StreamHead> = None;
+        let mut redirect: Option<(u16, String)> = None;
+        let mut failure: Option<NetError> = None;
+        let violation = |message: &str| NetError {
+            kind: NetErrorKind::Network,
+            message: format!("Invalid response from the system HTTP transport: {message}"),
+        };
+        let outcome = self.host.http_request(&request, &mut |event| {
+            let result = match event {
+                HttpTransportEvent::Head { .. } if head.is_some() => Err(violation("second response head")),
+                HttpTransportEvent::Head { status, headers } => {
+                    let headers = normalize_headers(&headers);
+                    match find_header(&headers, "location") {
+                        // The engine follows redirects itself: no body needed.
+                        Some(location) if (300..400).contains(&status) && status != 304 => {
+                            redirect = Some((status, location.to_string()));
+                            return false;
+                        }
+                        _ => {
+                            let stream_head = StreamHead {
+                                status,
+                                content_length: find_header(&headers, "content-length")
+                                    .and_then(|value| value.trim().parse().ok()),
+                                headers,
+                                body_in_file: body_path.is_some(),
+                                protocol: None,
+                            };
+                            let accepted = on_event(Stream::Head(&stream_head));
+                            head = Some(stream_head);
+                            accepted
+                        }
+                    }
+                }
+                HttpTransportEvent::Data(_) | HttpTransportEvent::Written(_) if head.is_none() => {
+                    Err(violation("body before the response head"))
+                }
+                HttpTransportEvent::Data(chunk) => on_event(Stream::Chunk(chunk)),
+                HttpTransportEvent::Written(total) => on_event(Stream::Written(total)),
+            };
+            match result {
+                Ok(()) => true,
+                Err(error) => {
+                    failure = Some(error);
+                    false
+                }
+            }
+        });
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        if let Some((status, location)) = redirect {
+            return Ok(HostHop::Redirect(status, location));
+        }
+        match (outcome, head) {
+            (HttpTransportOutcome::Unavailable, None) => Ok(HostHop::Unavailable),
+            (HttpTransportOutcome::Completed { protocol }, Some(mut head)) => {
+                self.note_protocol(url, protocol.as_deref());
+                head.protocol = protocol;
+                Ok(HostHop::Final(head))
+            }
+            (HttpTransportOutcome::Failed { kind, message }, _) => Err(NetError {
+                kind: transport_error_kind(&kind),
+                message,
+            }),
+            (HttpTransportOutcome::Completed { .. }, None) => Err(violation("no response head")),
+            (HttpTransportOutcome::Unavailable, Some(_)) => Err(violation("unavailable after the response head")),
         }
     }
 
@@ -286,33 +525,46 @@ impl Http {
     }
 
     /// Sends a request, following up to 5 redirects. A redirect from HTTPS to
-    /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set.
-    fn execute(
+    /// plain HTTP is refused unless `allowHttpsToHttpRedirect` is set. Each hop goes
+    /// through the host transport when it takes it, else through the engine's own client
+    /// (whose body the caller then reads).
+    #[allow(clippy::too_many_arguments)]
+    fn exchange(
         &self,
         download: bool,
         method: &str,
         url: &str,
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
-    ) -> Result<ureq::Response, NetError> {
+        body_path: Option<&std::path::Path>,
+        on_event: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
+    ) -> Result<Exchange, NetError> {
         crate::host::release_method_lane();
         let mut current = url.to_string();
         let mut method = method.to_string();
         let mut body = body;
         for _ in 0..=MAX_REDIRECTS {
             self.check_cleartext(&current)?;
-            let request = self.prepare(self.agent_for(download, &current), &method, &current, headers);
-            let response = Self::finish(match body {
-                Some(body) => request.send_bytes(body),
-                None => request.call(),
-            })?;
-            let status = response.status();
-            if !(300..400).contains(&status) || status == 304 {
-                return Ok(response);
-            }
-            let Some(location) = response.header("Location").map(str::to_string) else {
-                return Ok(response);
-            };
+            let (status, location) =
+                match self.host_hop(download, &method, &current, headers, body, body_path, on_event)? {
+                    HostHop::Final(head) => return Ok(Exchange::Host(head)),
+                    HostHop::Redirect(status, location) => (status, location),
+                    HostHop::Unavailable => {
+                        let request = self.prepare(self.agent_for(download, &current), &method, &current, headers);
+                        let response = Self::finish(match body {
+                            Some(body) => request.send_bytes(body),
+                            None => request.call(),
+                        })?;
+                        let status = response.status();
+                        if !(300..400).contains(&status) || status == 304 {
+                            return Ok(Exchange::Own(response));
+                        }
+                        let Some(location) = response.header("Location").map(str::to_string) else {
+                            return Ok(Exchange::Own(response));
+                        };
+                        (status, location)
+                    }
+                };
             let base = url::Url::parse(&current).map_err(|error| NetError {
                 kind: NetErrorKind::InvalidUrl,
                 message: error.to_string(),
@@ -369,12 +621,42 @@ impl Http {
     ) -> Result<Response, NetError> {
         // Transparent gzip, as OkHttp and URLSession did for API calls.
         let headers = with_accept_encoding(headers, "gzip");
-        let response = self.execute(false, method, url, &headers, body)?;
+        // Host transport: the decoded body arrives in chunks; the cap ends it (like `Read::take`).
+        let mut head: Option<StreamHead> = None;
+        let mut buffer = Vec::new();
+        let capped = std::cell::Cell::new(false);
+        let exchange = self.exchange(false, method, url, &headers, body, None, &mut |event| {
+            match event {
+                Stream::Head(stream_head) => head = Some(stream_head.clone()),
+                Stream::Chunk(chunk) => {
+                    let room = MAX_API_BODY_BYTES as usize - buffer.len();
+                    if chunk.len() >= room {
+                        buffer.extend_from_slice(&chunk[..room]);
+                        capped.set(true);
+                        return Err(NetError {
+                            kind: NetErrorKind::Io,
+                            message: "Response body cap reached".into(),
+                        });
+                    }
+                    buffer.extend_from_slice(chunk);
+                }
+                Stream::Written(_) => {}
+            }
+            Ok(())
+        });
+        let response = match exchange {
+            Ok(Exchange::Own(response)) => response,
+            Ok(Exchange::Host(head)) => return Ok(host_response(head, buffer)),
+            Err(error) => {
+                return match head {
+                    Some(head) if capped.get() => Ok(host_response(head, buffer)),
+                    _ => Err(error),
+                }
+            }
+        };
         let status = response.status();
         let mut headers = headers_of(&response);
-        let gzip = response.header("Content-Encoding").is_some_and(|value| {
-            value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip")
-        });
+        let gzip = is_gzip(&headers);
         let read_error = |error: std::io::Error| NetError {
             kind: classify_io(&error),
             message: error.to_string(),
@@ -395,14 +677,13 @@ impl Http {
                     .map_err(read_error)?;
             }
             buffer = decoded;
-            headers.retain(|(name, _)| {
-                !name.eq_ignore_ascii_case("Content-Encoding") && !name.eq_ignore_ascii_case("Content-Length")
-            });
+            strip_content_coding(&mut headers);
         }
         Ok(Response {
             status,
             headers,
             body: buffer,
+            protocol: Some(OWN_PROTOCOL.into()),
         })
     }
 
@@ -435,15 +716,35 @@ impl Http {
         headers: &[(&str, &str)],
         handler: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
     ) -> Result<StreamHead, NetError> {
+        self.download_to(url, headers, None, handler)
+    }
+
+    /// [`Http::download`] whose body may go straight to `body_path`: when the host
+    /// transport carries the request, the head has `body_in_file` set, the handler
+    /// prepares the file (truncate, or keep it for an append) and the host appends the
+    /// body to it ([`Stream::Written`] events, no bytes through the engine). The
+    /// engine's own client still hands every [`Stream::Chunk`] to the handler.
+    pub fn download_to(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body_path: Option<&std::path::Path>,
+        handler: &mut dyn FnMut(Stream<'_>) -> Result<(), NetError>,
+    ) -> Result<StreamHead, NetError> {
         // Bundle files are stored byte for byte (checksums, Range resume): no content coding.
         let headers = with_accept_encoding(headers, "identity");
-        let response = self.execute(true, "GET", url, &headers, None)?;
+        let response = match self.exchange(true, "GET", url, &headers, None, body_path, handler)? {
+            Exchange::Host(head) => return Ok(head),
+            Exchange::Own(response) => response,
+        };
         let head = StreamHead {
             status: response.status(),
             headers: headers_of(&response),
             content_length: response
                 .header("Content-Length")
                 .and_then(|value| value.trim().parse().ok()),
+            body_in_file: false,
+            protocol: Some(OWN_PROTOCOL.into()),
         };
         handler(Stream::Head(&head))?;
         let mut reader = response.into_reader();
@@ -459,6 +760,22 @@ impl Http {
             handler(Stream::Chunk(&buffer[..read]))?;
         }
         Ok(head)
+    }
+}
+
+/// An API response the host transport delivered. Its body is decoded (the platform
+/// stacks remove the content coding), so the coding headers go, as after the engine's
+/// own gzip decoding.
+fn host_response(head: StreamHead, body: Vec<u8>) -> Response {
+    let mut headers = head.headers;
+    if is_gzip(&headers) {
+        strip_content_coding(&mut headers);
+    }
+    Response {
+        status: head.status,
+        headers,
+        body,
+        protocol: head.protocol,
     }
 }
 
@@ -483,6 +800,9 @@ pub fn redirect_allowed(from_scheme: &str, to_scheme: &str, allow_downgrade: boo
 pub enum Stream<'a> {
     Head(&'a StreamHead),
     Chunk(&'a [u8]),
+    /// Total body bytes the host transport appended to the download file so far
+    /// ([`Http::download_to`], heads with `body_in_file`).
+    Written(u64),
 }
 
 /// Proxy server name given to ureq; [`ProxyResolver`] resolves it to the real proxy.

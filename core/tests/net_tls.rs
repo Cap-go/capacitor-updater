@@ -200,6 +200,7 @@ fn c_http(state: &CallbackState, with_verifier: bool) -> TestHttp {
         hook: None,
         release: None,
         verify_server_certificate: if with_verifier { Some(verify) } else { None },
+        http_request: None,
     };
     TestHttp::with_callbacks(callbacks, USER_AGENT, Duration::from_secs(5))
 }
