@@ -203,7 +203,7 @@ bool cg_testing_net(struct cg_engine *engine, const char *name, const cj *input,
                 atomic_init(&b.next, 0);
                 pthread_t *threads = cg_calloc(workers, sizeof *threads);
                 size_t started = 0;
-                for (; started < workers; started++)
+                for (; started + 1 < workers; started++)
                     if (pthread_create(&threads[started], NULL, batch_worker, &b) != 0) break;
                 batch_worker(&b);
                 for (size_t i = 0; i < started; i++) pthread_join(threads[i], NULL);

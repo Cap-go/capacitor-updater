@@ -6,8 +6,7 @@
 //!   with the fewest requests in flight; a new connection is opened while every existing one
 //!   is busy and the limit is not reached. A single transfer (zip, API call) uses one stream
 //!   on one connection; parallel manifest files spread over several connections, each with
-//!   its own congestion window (one loss-limited window for all files was up to 7x slower on
-//!   a lossy link: core-c/BENCHMARK-CORE-HTTP3.md).
+//!   its own congestion window. See core-c/BENCHMARK-CORE-HTTP3.md for the pool comparison.
 //! - A connection that cannot be established, or a request that fails before its response
 //!   head, is reported as [`H3Error::Fallback`]: the caller marks the origin broken and sends
 //!   the request over HTTP/1.1 (only idempotent requests once something was sent).
@@ -207,8 +206,11 @@ impl H3Client {
     /// Picks the connection for a new request (see the module comment).
     fn pick(&self, key: &str, max_connections: usize) -> SlotUse {
         let mut pools = self.pools.lock_or_recover();
+        pools.retain(|_, slots| {
+            slots.retain(|slot| !slot.is_dead());
+            !slots.is_empty()
+        });
         let slots = pools.entry(key.to_string()).or_default();
-        slots.retain(|slot| !slot.is_dead());
         let best = slots
             .iter()
             .min_by_key(|slot| slot.active.load(Ordering::SeqCst))
@@ -571,5 +573,45 @@ fn stream_error_message(error: &h3::error::StreamError) -> &'static str {
         h3::error::StreamError::RemoteTerminate { .. } => MESSAGE_RESET,
         h3::error::StreamError::StreamError { .. } | h3::error::StreamError::HeaderTooBig { .. } => MESSAGE_PROTOCOL,
         _ => MESSAGE_CLOSED,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_origins_release_their_transport_pools() {
+        let tls = ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+        let client = H3Client {
+            runtime: OnceLock::new(),
+            tls: Arc::new(tls),
+            pools: Mutex::new(HashMap::new()),
+            opened: AtomicUsize::new(0),
+        };
+        // Distinct live UDP sockets receive the handshake but never answer it.
+        let servers: Vec<_> = (0..8)
+            .map(|_| std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
+            .collect();
+        for server in &servers {
+            let port = server.local_addr().unwrap().port();
+            let url = format!("https://127.0.0.1:{port}/");
+            let request = H3Request {
+                method: "GET",
+                url: &url,
+                host: "127.0.0.1",
+                port,
+                headers: &[],
+                body: None,
+                timeout: Duration::from_millis(30),
+                idempotent: true,
+            };
+            assert!(matches!(client.request(&request, 4), Err(H3Error::Fallback(_))));
+        }
+        assert!(client.pools.lock_or_recover().len() <= 1);
     }
 }

@@ -132,7 +132,7 @@ fn alt_svc_clear_and_other_hosts_are_not_followed() {
 #[test]
 fn blocked_udp_falls_back_to_http1_and_the_origin_stays_there() {
     let server = H3Server::start(|_| Reply::ok("ok"));
-    let (_socket, dead_port) = blackhole_udp();
+    let (socket, dead_port) = blackhole_udp();
     let host = trusting_host();
     remember_h3(&host, &server.origin(), dead_port);
     server.set_advertise(&format!("h3=\":{dead_port}\""));
@@ -154,7 +154,23 @@ fn blocked_udp_falls_back_to_http1_and_the_origin_stays_there() {
     }
     // One handshake timeout (3 s, split over localhost's addresses), not one per request.
     assert!(elapsed < Duration::from_millis(5500), "{elapsed:?}");
-    assert!(elapsed >= Duration::from_millis(1400), "{elapsed:?}");
+    // Inspect actual UDP traffic instead of requiring a minimum elapsed time:
+    // a network error may end a handshake before its timeout.
+    socket.set_nonblocking(true).unwrap();
+    let mut peers = std::collections::BTreeSet::new();
+    let mut packet = [0u8; 2048];
+    while let Ok((_, peer)) = socket.recv_from(&mut packet) {
+        peers.insert(peer);
+    }
+    assert!(!peers.is_empty(), "QUIC traffic reached the blackhole");
+    let failures = host
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, message)| message.contains(&format!("HTTP/3 to {} failed", server.origin())))
+        .count();
+    assert_eq!(failures, 1, "only the first request attempted QUIC");
     assert!(logged(&host, &format!("HTTP/3 to {} failed", server.origin())));
     assert!(logged(&host, "using HTTP/1.1 for 300 s"));
     assert_eq!(server.protocols(), vec![HTTP1, HTTP1]);
@@ -594,4 +610,17 @@ fn http3_strips_connection_headers_and_preserves_application_headers() {
         request.header("host"),
         Some(format!("localhost:{}", server.port).as_str())
     );
+}
+
+#[test]
+fn configured_connection_pool_accepts_32_and_caps_larger_values() {
+    let server = H3Server::start(|_| Reply {
+        delay: Duration::from_secs(1),
+        ..Reply::ok("ok")
+    });
+    let batch = batch_of(&server, 64, 99);
+    assert!(batch["results"].as_array().unwrap().iter().all(|r| r["protocol"] == H3));
+    assert_eq!(batch["quicConnections"], 32, "{batch}");
+    let used: std::collections::BTreeSet<usize> = server.seen().iter().map(|seen| seen.connection).collect();
+    assert_eq!(used.len(), 32, "every connection carried requests");
 }

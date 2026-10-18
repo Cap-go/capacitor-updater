@@ -33,7 +33,7 @@ const MAX_REDIRECTS: usize = 5;
 /// QUIC connections per origin when the configuration does not say.
 pub const DEFAULT_HTTP3_CONNECTIONS: usize = 4;
 /// Most QUIC connections per origin a configuration can ask for.
-pub const MAX_HTTP3_CONNECTIONS: usize = 16;
+pub const MAX_HTTP3_CONNECTIONS: usize = 32;
 /// An origin whose QUIC attempt failed stays on HTTP/1.1 for this long, doubled for each
 /// further failure in a row (at most 16 times).
 const BROKEN_BASE: Duration = Duration::from_secs(300);
