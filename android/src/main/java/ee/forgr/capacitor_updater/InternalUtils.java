@@ -16,6 +16,8 @@ import org.json.JSONObject;
 
 public class InternalUtils {
 
+    static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
+
     /**
      * Converts a Map to JSObject for proper bridge serialization.
      */
@@ -37,22 +39,25 @@ public class InternalUtils {
         }
     }
 
-    /**
-     * Reads a root string value from the bundled capacitor.config.json.
-     * Capacitor 9 removed CapConfig.getString, so the file is read directly.
-     */
-    public static String getRootConfigString(Context context, String key, String defaultValue) {
+    static String readAssetAsString(final Context context, final String assetPath) throws IOException {
+        final StringBuilder buffer = new StringBuilder();
         try (
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(context.getAssets().open("capacitor.config.json"), StandardCharsets.UTF_8)
+            final BufferedReader reader = new BufferedReader(
+                new InputStreamReader(context.getAssets().open(assetPath), StandardCharsets.UTF_8)
             )
         ) {
-            final StringBuilder json = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
-                json.append(line);
+                buffer.append(line).append('\n');
             }
-            return JSONUtils.getString(new JSONObject(json.toString()), key, defaultValue);
+        }
+        return buffer.toString();
+    }
+
+    /** Replaces CapConfig.getString for root keys: Capacitor 9 removed it. */
+    public static String getRootConfigString(Context context, String key, String defaultValue) {
+        try {
+            return JSONUtils.getString(new JSONObject(readAssetAsString(context, CAPACITOR_CONFIG_ASSET)), key, defaultValue);
         } catch (IOException | JSONException e) {
             return defaultValue;
         }
