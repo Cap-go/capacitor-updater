@@ -128,6 +128,49 @@ final class PopulateDeltaCacheTests: XCTestCase {
         return file
     }
 
+    func testManifestProgressIsMonotonicAndDoesNotRepeatPercentages() throws {
+        let updater = try XCTUnwrap(implementation)
+        updater.setLogger(Logger(withTag: "manifest-progress-test", options: Logger.Options(level: .silent)))
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        let content = "<html>progress-\(UUID().uuidString)</html>"
+        let source = try write(content, named: "source.html", in: bundleDir)
+        let hash = CryptoCipher.calcChecksum(filePath: source)
+        var entries: [ManifestEntry] = []
+        for index in 0..<120 {
+            let name = index == 0 ? "index.html" : "file-\(index).txt"
+            try Data(content.utf8).write(to: expectedCacheFile(hash: hash, name: name))
+            entries.append(ManifestEntry(file_name: name, file_hash: hash, download_url: "https://cached-fixture.invalid/\(name)"))
+        }
+        let completed = expectation(description: "manifest completed")
+        var percents: [Int] = []
+        var installedId: String?
+        updater.notifyDownloadRaw = { _, percent, _, bundle in
+            percents.append(percent)
+            if percent == 100 {
+                installedId = bundle?.getId()
+                completed.fulfill()
+            }
+        }
+        let manifest = entries
+        DispatchQueue.global().async {
+            do {
+                _ = try updater.downloadManifest(manifest: manifest, version: "progress-test", sessionKey: "")
+            } catch {
+                DispatchQueue.main.async {
+                    XCTFail("Manifest failed: \(error)")
+                    completed.fulfill()
+                }
+            }
+        }
+        wait(for: [completed], timeout: 10)
+        if let installedId { _ = updater.delete(id: installedId) }
+        XCTAssertEqual(percents.first, 0)
+        XCTAssertEqual(percents.last, 100)
+        XCTAssertEqual(percents, percents.sorted())
+        XCTAssertEqual(Set(percents).count, percents.count)
+        XCTAssertLessThanOrEqual(percents.count, 63)
+    }
+
     // MARK: - manifestHashLookup
 
     func testManifestHashLookupStripsBrotliSuffixAndReturnsPlainHash() {

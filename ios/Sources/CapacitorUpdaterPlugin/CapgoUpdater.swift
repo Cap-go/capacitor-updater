@@ -1682,7 +1682,9 @@ import UIKit
         let totalFiles = manifest.count
 
         // Thread-safe counters for concurrent operations
-        let completedFiles = AtomicCounter()
+        let progressLock = NSLock()
+        var completedFiles = 0
+        var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
         var downloadError: Error?
         let errorLock = NSLock()
@@ -1885,9 +1887,14 @@ import UIKit
                         )
                     }
 
-                    let completed = completedFiles.increment()
-                    let percent = self.calcTotalPercent(percent: Int((Double(completed) / Double(totalFiles)) * 100), min: 10, max: 70)
-                    self.notifyDownload(id: id, percent: percent)
+                    progressLock.lock()
+                    completedFiles += 1
+                    let percent = self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70)
+                    if percent > lastProgressPercent {
+                        lastProgressPercent = percent
+                        self.notifyDownload(id: id, percent: percent, bundle: bundleInfo)
+                    }
+                    progressLock.unlock()
 
                 } catch {
                     errorLock.lock()

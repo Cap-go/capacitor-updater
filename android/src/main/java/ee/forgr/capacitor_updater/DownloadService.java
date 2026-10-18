@@ -262,6 +262,8 @@ public class DownloadService extends Worker {
         }
     }
 
+    private int lastProgressPercent = -1;
+
     public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
         // Use shared client - no need to create new instances
@@ -271,7 +273,9 @@ public class DownloadService extends Worker {
         cleanupOldTempFiles(new File(getApplicationContext().getCacheDir(), "capgo_downloads"));
     }
 
-    private void setProgress(int percent) {
+    private synchronized void setProgress(int percent) {
+        if (percent <= lastProgressPercent) return;
+        lastProgressPercent = percent;
         Data progress = new Data.Builder().putInt(PERCENT, percent).build();
         setProgressAsync(progress);
     }
