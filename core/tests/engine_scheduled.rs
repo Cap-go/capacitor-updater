@@ -113,6 +113,48 @@ fn caller_waits_for_the_scheduled_job() {
         .any(|event| event["percent"] == 100));
 }
 
+// Android and Linux condition variables must use the same clock as their deadline.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn scheduled_wait_sleeps_instead_of_spinning() {
+    fn thread_cpu(clock: libc::clockid_t) -> Duration {
+        let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
+        assert_eq!(unsafe { libc::clock_gettime(clock, time.as_mut_ptr()) }, 0);
+        let time = unsafe { time.assume_init() };
+        Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
+    }
+    let bundle = web_bundle("sleeping-waiter");
+    let served = bundle.clone();
+    let server = FakeServer::start(move |_| (200, vec![], served.clone()));
+    let t = TestEngine::new(json!({}));
+    scheduling(&t);
+    let engine = t.engine.clone();
+    let input = json!({ "url": format!("{}/b.zip", server.url), "version": "2.0.0", "checksum": sha256(&bundle) });
+    let (send, receive) = std::sync::mpsc::channel();
+    let caller = std::thread::spawn(move || {
+        let mut clock = 0;
+        assert_eq!(
+            unsafe { libc::pthread_getcpuclockid(libc::pthread_self(), &mut clock) },
+            0
+        );
+        send.send(clock).unwrap();
+        engine.call("download", &input)
+    });
+    let clock = receive.recv().unwrap();
+    let id = scheduled_job(&t.host, 1);
+    let before = thread_cpu(clock);
+    std::thread::sleep(Duration::from_millis(350));
+    let waiting_cpu = thread_cpu(clock) - before;
+    // Finish the job before asserting so a failing test leaves no blocked caller.
+    assert_eq!(run_job(&t.engine, &id)["result"], "success");
+    caller.join().unwrap().unwrap();
+    eprintln!("idle scheduled waiter CPU over 350 ms: {waiting_cpu:?}");
+    assert!(
+        waiting_cpu < Duration::from_millis(100),
+        "idle scheduled waiter used {waiting_cpu:?} CPU in 350 ms"
+    );
+}
+
 /// Serves the first request truncated (connection closed midway), then the rest on a
 /// Range request. Records the Range header of every request.
 fn truncating_server(body: Vec<u8>) -> (String, Arc<Mutex<Vec<Option<String>>>>) {
