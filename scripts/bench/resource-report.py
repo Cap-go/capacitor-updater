@@ -6,10 +6,19 @@ import json
 import statistics
 from pathlib import Path
 
+# Keep generated files in the workspace scratch directory, including through symlinks.
+def output_path(value):
+    path = Path(value).resolve()
+    scratch = Path(__file__).resolve().parents[2] / '.context'
+    if not path.is_relative_to(scratch):
+        raise argparse.ArgumentTypeError('output must be inside the workspace .context directory')
+    return path
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('directory', type=Path)
 parser.add_argument('--samples', type=Path, required=True)
-parser.add_argument('--output', type=Path, required=True)
+parser.add_argument('--output', type=output_path, required=True)
 args = parser.parse_args()
 
 
