@@ -1,0 +1,110 @@
+{
+  "runtimeCommits": {
+    "c-before": "ff6783bd",
+    "c-after": "14988ba96efbeac4f276be03a80854a038f0f7ae",
+    "rust-before": "97ca6bb3",
+    "rust-after": "533a927b",
+    "native-before": "e2d8bc7b",
+    "native-after": "c56347c8e3d730aada0d1112bef207765e7473c3"
+  },
+  "host": {
+    "model": "Mac17,9",
+    "cpus": 18,
+    "ramBytes": 68719476736,
+    "os": "27.2",
+    "cpuBrand": "Apple M5 Pro"
+  },
+  "android": {
+    "serial": "emulator-5610",
+    "sdk": "36",
+    "release": "16",
+    "clockTicksPerSecond": "100",
+    "cpus": "4",
+    "memory": "MemTotal:        2531868 kB\nMemFree:          136036 kB\nMemAvailable:    1036712 kB\nBuffers:            5940 kB\nCached:          1120112 kB"
+  },
+  "boundaries": {
+    "cpu": "Server case assignment through completion, plus 1500ms post-completion. Includes pre-download bundle cleanup.",
+    "memory": "Sampled primary-process peaks, including 1500ms post-completion. Excludes separate WebView and OS network processes.",
+    "latency": "JavaScript download() until it resolves, after bundle cleanup."
+  },
+  "samplingMs": {
+    "android": 100,
+    "ios": 20
+  },
+  "http3": false,
+  "limitations": [
+    "Experimental core PRs are pinned to their existing versions and do not include the newer main-branch features. These are implementation measurements, not language rankings.",
+    "Simulator/emulator results; no physical-phone battery or forced-memory-pressure verdict.",
+    "C-after first-round samples were rerun after the final per-file buffer change; unaffected frozen candidates retained.",
+    "Native-after initial samples were replaced after adding per-manifest key reuse; other frozen builds retained.",
+    "Native-after first two rounds were rerun after progress coalescing; unchanged candidates retained."
+  ],
+  "ios": {
+    "udid": "EDFC80C4-6DA0-4966-B9C4-8C439106E328",
+    "cpuClock": "Mach absolute ticks converted with mach_timebase_info",
+    "cpuTimebaseNumer": 125,
+    "cpuTimebaseDenom": 3,
+    "timerCalibration": {
+      "processCpuMs": 100.012,
+      "convertedCpuMs": 100.00995833333333
+    },
+    "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "deviceName": "iPhone 18 Pro"
+  },
+  "workers": {
+    "android": {
+      "c-before": 32,
+      "c-after": 32,
+      "rust-before": 32,
+      "rust-after": 32,
+      "native-before": 8,
+      "native-after": 32
+    },
+    "ios": {
+      "c-before": 64,
+      "c-after": 32,
+      "rust-before": 64,
+      "rust-after": 32,
+      "native-before": 36,
+      "native-after": 32
+    }
+  },
+  "finalPolicy": "8 workers per CPU, capped at32,64KiB transfer buffers",
+  "profiles": {
+    "main": [
+      "encrypted ZIP300MiB",
+      "encrypted manifest2000files200MiB",
+      "plain manifest2000files20MiB,40Mbit/s,80msresponseTTFB"
+    ],
+    "fault": "one503response per20file2MiBupdate, no whole-case retry",
+    "lossy": "Android cold launch,75msdelay+1%packet loss each direction"
+  },
+  "repeatCount": 5,
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "ciOnlyHeads": {
+    "rust": "f9756a01",
+    "c": "f847b135",
+    "native": "4fe1754d"
+  },
+  "toolchains": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "swift": "swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.2.0",
+    "appleClang": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.2.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+    "ndkClang": "Android (13624864, +pgo, -bolt, +lto, -mlgo, based on r530567e) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)\nTarget: x86_64-apple-darwin27.2.0\nThread model: posix\nInstalledDir: /Users/martindonadieu/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin",
+    "java": "openjdk version \"21.0.12.1\" 2026-08-18\nOpenJDK Runtime Environment Homebrew (build 21.0.12.1)\nOpenJDK 64-Bit Server VM Homebrew (build 21.0.12.1, mixed mode, sharing)",
+    "bun": "1.4.2",
+    "ndk": "28.2.13676358"
+  },
+  "buildProfiles": {
+    "c": "CMake Release, -O3 -DNDEBUG; CAPGO_HARDEN=ON; production CAPGO_TEST_SUPPORT=OFF",
+    "rust": "Release, LTO, codegen-units=1, opt-level=s except core and selected hot-path dependencies at3; overflow-checks=true; strip=true",
+    "native": "Android release APK and iOS Release simulator app"
+  },
+  "networkEvidence": {
+    "eth0EgressDroppedPackets": 138,
+    "ifbIngressDroppedPackets": 186,
+    "restoredWifi": 1,
+    "restoredRootQdisc": "pfifo_fast",
+    "preservedClsact": true
+  }
+}

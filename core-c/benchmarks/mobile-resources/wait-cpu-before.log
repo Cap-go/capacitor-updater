@@ -1,0 +1,16 @@
+
+running 1 test
+idle scheduled waiter CPU over 350 ms: 348.779549ms
+
+thread 'scheduled_wait_sleeps_instead_of_spinning' (8461) panicked at tests/engine_scheduled.rs:152:5:
+idle scheduled waiter used 348.779549ms CPU in 350 ms
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test scheduled_wait_sleeps_instead_of_spinning ... FAILED
+
+failures:
+
+failures:
+    scheduled_wait_sleeps_instead_of_spinning
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.36s
+

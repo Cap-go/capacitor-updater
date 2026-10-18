@@ -1,0 +1,194 @@
+[
+  {
+    "label": "native-before",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/native-before-android-plain.apk",
+    "sha256": "6e376a9b369aac7c1e9d47078c0f9b748be481175421d897f4f0e04d43e00c8b",
+    "bytes": 193664874
+  },
+  {
+    "label": "native-before",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/native-before-ios-plain.app/App",
+    "sha256": "07edfcc2678689cf8db8a57a5678a9409e783362574ceb3fc7ceaea683dbcb13",
+    "bytes": 2004256
+  },
+  {
+    "label": "native-before",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/native-before-android-enc.apk",
+    "sha256": "232a6820c80e8771f1db008bd155ea58b8cc8fd27c75f1d5ea3bcc59bdc057b1",
+    "bytes": 193664874
+  },
+  {
+    "label": "native-before",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/native-before-ios-enc.app/App",
+    "sha256": "053bada7f33b94558e71d5a51f7e3ff1f218f28759fba9f328e32842e10ee73f",
+    "bytes": 2004256
+  },
+  {
+    "label": "native-after",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/native-after-android-plain.apk",
+    "sha256": "17390baeb1246a4d44a6e3bdfa6c5c5524b75c3a867e384faf302022c9bdec10",
+    "bytes": 193664874
+  },
+  {
+    "label": "native-after",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/native-after-ios-plain.app/App",
+    "sha256": "842d4ebaf046dea901673af17370210ebb9fb84d61782593ec82c297a73aabc8",
+    "bytes": 2023664
+  },
+  {
+    "label": "native-after",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/native-after-android-enc.apk",
+    "sha256": "40c4c8378b04531649cf40ce95a97e8ab59c9cc4dbc34a28c3d398f5d6bf1e31",
+    "bytes": 193664874
+  },
+  {
+    "label": "native-after",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/native-after-ios-enc.app/App",
+    "sha256": "a1066ee69e634cfccd14c8878841be274cc14e6f33d887bb45ce83f5ecb570b5",
+    "bytes": 2023664
+  },
+  {
+    "label": "rust-before",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/rust-before-android-plain.apk",
+    "sha256": "eaac4863c3e88d32f2dfb8333da1fa71091672f8cb8c91f6320b3eca56733858",
+    "bytes": 205211652
+  },
+  {
+    "label": "rust-before",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/rust-before-ios-plain.app/App",
+    "sha256": "cb73d3ed621a6fa3f6cc6e7b68f397274fd45170f9c3b696f21af1f66179e418",
+    "bytes": 4426832
+  },
+  {
+    "label": "rust-before",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/rust-before-android-enc.apk",
+    "sha256": "8d2d83a11053a593113db7d954c01ff498733a3c54d5a3a7fe38d9efa5b70b04",
+    "bytes": 205211652
+  },
+  {
+    "label": "rust-before",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/rust-before-ios-enc.app/App",
+    "sha256": "7aa35ef86c0cd24f5fef3cac36966859411d5bedb4ba70e6f58ef65d28cc06cf",
+    "bytes": 4426832
+  },
+  {
+    "label": "rust-after",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/rust-after-android-plain.apk",
+    "sha256": "196cad1c342a98448112ec6833129009225bc68fd908036b62d0e3a48b8b67a2",
+    "bytes": 205211652
+  },
+  {
+    "label": "rust-after",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/rust-after-ios-plain.app/App",
+    "sha256": "cb5664a5316661a0c47a4e53273afbcca645067f77fb0ad72c64ea305abd4ff2",
+    "bytes": 4426832
+  },
+  {
+    "label": "rust-after",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/rust-after-android-enc.apk",
+    "sha256": "b6d4addf827fb95f1957d9627a99c8f8c118148d981ed7d70bf5088d932bcc7e",
+    "bytes": 205211652
+  },
+  {
+    "label": "rust-after",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/rust-after-ios-enc.app/App",
+    "sha256": "85af3bd398724eb35d2817ea8a0cc7bd62c1d3548a55fe02f0bd0f6e56fa97e2",
+    "bytes": 4426832
+  },
+  {
+    "label": "c-before",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/c-before-android-plain.apk",
+    "sha256": "061a078b5634dc2f18a9e78212e10ebeee759c1bdbb46727dc05f1e733b62579",
+    "bytes": 196556804
+  },
+  {
+    "label": "c-before",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/c-before-ios-plain.app/App",
+    "sha256": "9afd30c4ecdf7079eea234081f159c448f033ce4d9ba11e14ce964fe49743d73",
+    "bytes": 1589280
+  },
+  {
+    "label": "c-before",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/c-before-android-enc.apk",
+    "sha256": "f1f6b47795daa046a2d8c7e7149fb892a6136e2ad92d61fb4fce86bedceec4b0",
+    "bytes": 196556804
+  },
+  {
+    "label": "c-before",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/c-before-ios-enc.app/App",
+    "sha256": "c809bdb4dba231778e75972a3d2eb8bfa17e6c615b3557421ffeaae998775ebf",
+    "bytes": 1589280
+  },
+  {
+    "label": "c-after",
+    "variant": "plain",
+    "platform": "android",
+    "artifact": "apps/c-after-android-plain.apk",
+    "sha256": "fc54ca600b3f1e6de801bc990482a4694a3ac1ded940f9a99840603a97baeeab",
+    "bytes": 196573188
+  },
+  {
+    "label": "c-after",
+    "variant": "plain",
+    "platform": "ios",
+    "artifact": "apps/c-after-ios-plain.app/App",
+    "sha256": "feb208c2787311532230aa0c2917d795ca1db028cd1667ae108cc8e943d95eba",
+    "bytes": 1589264
+  },
+  {
+    "label": "c-after",
+    "variant": "enc",
+    "platform": "android",
+    "artifact": "apps/c-after-android-enc.apk",
+    "sha256": "e04e93f7d70d3401fb4b6cebd37918f189a05361ac153c29c47b4e91580d317a",
+    "bytes": 196573188
+  },
+  {
+    "label": "c-after",
+    "variant": "enc",
+    "platform": "ios",
+    "artifact": "apps/c-after-ios-enc.app/App",
+    "sha256": "bb3b8d995b25bfd645c122fc1d043f1b050cac7c36a8adbaa32d955b3a255e61",
+    "bytes": 1589264
+  }
+]

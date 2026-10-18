@@ -1,5 +1,7 @@
 # Rust core vs C core
 
+For the optimized C/Rust and Java/Swift comparison, including CPU, sampled memory and network recovery, see [Mobile resource measurements](BENCHMARK-MOBILE-RESOURCES.md). The historical measurements below predate those optimizations and use different workloads and measurement boundaries.
+
 Both libraries implement `core/include/capgo_updater_core.h` and the JNI entry
 points, and pass the same tests. Measured in October 2026 on an Apple silicon
 Mac (iOS simulator, Android emulator `capgo_mem_api36`), Mbed TLS 3.6.5,

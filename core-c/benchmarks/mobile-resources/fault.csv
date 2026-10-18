@@ -1,0 +1,61 @@
+platform,label,variant,kind,sizeKey,run,ok,downloadMs,cpuThroughSettleMs,sampledPeakMemoryMiB,requests,expectedDownloads,requestBytes,servedBytes,error
+android,c-after,plain,manifest,20f-2MB,1,True,30045,60,92.486328125,22,22,2103233,2103233,
+android,c-after,plain,manifest,20f-2MB,2,True,30042,60,92.1044921875,22,22,2103233,2103233,
+android,c-after,plain,manifest,20f-2MB,3,True,30051,50,93.0888671875,22,22,2103233,2103233,
+android,c-after,plain,manifest,20f-2MB,4,True,30053,60,92.2802734375,22,22,2103233,2103233,
+android,c-after,plain,manifest,20f-2MB,5,True,30044,50,91.0390625,22,22,2103233,2103233,
+ios,c-after,plain,manifest,20f-2MB,1,True,280,93.33283333333338,20.8306884765625,22,22,2103234,2103234,
+ios,c-after,plain,manifest,20f-2MB,2,True,281,72.24254166666663,21.002540588378906,22,22,2103234,2103234,
+ios,c-after,plain,manifest,20f-2MB,3,True,279,71.20733333333328,20.830665588378906,22,22,2103234,2103234,
+ios,c-after,plain,manifest,20f-2MB,4,True,274,88.2769166666667,20.9556884765625,22,22,2103234,2103234,
+ios,c-after,plain,manifest,20f-2MB,5,True,276,87.44612499999994,20.690040588378906,22,22,2103234,2103234,
+android,c-before,plain,manifest,20f-2MB,1,True,30042,29870,94.0908203125,22,22,2103237,2103237,
+android,c-before,plain,manifest,20f-2MB,2,True,30051,29910,93.3583984375,22,22,2103237,2103237,
+android,c-before,plain,manifest,20f-2MB,3,True,30038,29860,93.1767578125,22,22,2103237,2103237,
+android,c-before,plain,manifest,20f-2MB,4,True,30038,29860,91.1904296875,22,22,2103237,2103237,
+android,c-before,plain,manifest,20f-2MB,5,True,30040,29860,94.0146484375,22,22,2103237,2103237,
+ios,c-before,plain,manifest,20f-2MB,1,False,,70.74924999999996,20.4244384765625,21,22,2102757,2103238,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,c-before,plain,manifest,20f-2MB,2,False,,85.02616666666665,20.721290588378906,21,22,2102757,2103238,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,c-before,plain,manifest,20f-2MB,3,False,,68.50237500000003,20.2681884765625,21,22,2102757,2103238,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,c-before,plain,manifest,20f-2MB,4,False,,81.94687499999998,20.611961364746094,21,22,2102757,2103238,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,c-before,plain,manifest,20f-2MB,5,False,,68.82262500000002,20.174392700195312,21,22,2102757,2103238,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+android,native-after,plain,manifest,20f-2MB,1,True,284,70,101.578125,22,22,2103253,2103253,
+android,native-after,plain,manifest,20f-2MB,2,True,280,70,101.984375,22,22,2103253,2103253,
+android,native-after,plain,manifest,20f-2MB,3,True,274,60,101.8291015625,22,22,2103253,2103253,
+android,native-after,plain,manifest,20f-2MB,4,True,273,50,101.990234375,22,22,2103253,2103253,
+android,native-after,plain,manifest,20f-2MB,5,True,281,70,102.0107421875,22,22,2103253,2103253,
+ios,native-after,plain,manifest,20f-2MB,1,True,269,113.33270833333336,24.315040588378906,22,22,2103254,2103254,
+ios,native-after,plain,manifest,20f-2MB,2,True,278,110.73179166666671,24.736915588378906,22,22,2103254,2103254,
+ios,native-after,plain,manifest,20f-2MB,3,True,282,125.92287499999998,24.549415588378906,22,22,2103254,2103254,
+ios,native-after,plain,manifest,20f-2MB,4,True,275,115.25099999999998,24.471290588378906,22,22,2103254,2103254,
+ios,native-after,plain,manifest,20f-2MB,5,True,282,117.44458333333341,24.580642700195312,22,22,2103254,2103254,
+android,native-before,plain,manifest,20f-2MB,1,False,,70,104.037109375,21,22,1998400,2103257,download: Failed to download from: http://10.0.2.2:3193/z/unused.zip
+android,native-before,plain,manifest,20f-2MB,2,False,,70,103.556640625,21,22,1998400,2103257,download: Failed to download from: http://10.0.2.2:3193/z/unused.zip
+android,native-before,plain,manifest,20f-2MB,3,False,,70,103.37109375,21,22,1998400,2103257,download: Failed to download from: http://10.0.2.2:3193/z/unused.zip
+android,native-before,plain,manifest,20f-2MB,4,False,,60,103.2490234375,21,22,1998400,2103257,download: Failed to download from: http://10.0.2.2:3193/z/unused.zip
+android,native-before,plain,manifest,20f-2MB,5,False,,70,103.5390625,21,22,1998400,2103257,download: Failed to download from: http://10.0.2.2:3193/z/unused.zip
+ios,native-before,plain,manifest,20f-2MB,1,False,,115.2437083333333,24.096290588378906,21,22,1998401,2103258,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to fetch. Status code (503) invalid for file pad/d00/f0001.bin at url http://127.0.0.1:3193/m/native-before-manifest-20f-2MB-plain-background-r1-a1-65c3/pad/d00/f0001.bin
+ios,native-before,plain,manifest,20f-2MB,2,False,,111.52808333333326,24.393165588378906,21,22,1998401,2103258,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to fetch. Status code (503) invalid for file pad/d00/f0001.bin at url http://127.0.0.1:3193/m/native-before-manifest-20f-2MB-plain-background-r2-a1-11db/pad/d00/f0001.bin
+ios,native-before,plain,manifest,20f-2MB,3,False,,121.94870833333334,24.033790588378906,21,22,1998401,2103258,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to fetch. Status code (503) invalid for file pad/d00/f0000.bin at url http://127.0.0.1:3193/m/native-before-manifest-20f-2MB-plain-background-r3-a1-fa55/pad/d00/f0000.bin
+ios,native-before,plain,manifest,20f-2MB,4,False,,121.12924999999996,24.549415588378906,21,22,1998401,2103258,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to fetch. Status code (503) invalid for file pad/d00/f0000.bin at url http://127.0.0.1:3193/m/native-before-manifest-20f-2MB-plain-background-r4-a1-64e5/pad/d00/f0000.bin
+ios,native-before,plain,manifest,20f-2MB,5,False,,124.85645833333342,24.440040588378906,21,22,2097638,2103258,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to fetch. Status code (503) invalid for file bench.js at url http://127.0.0.1:3193/m/native-before-manifest-20f-2MB-plain-background-r5-a1-fb44/bench.js
+android,rust-after,plain,manifest,20f-2MB,1,True,30049,50,97.69140625,22,22,2103245,2103245,
+android,rust-after,plain,manifest,20f-2MB,2,True,30040,70,92.9404296875,22,22,2103245,2103245,
+android,rust-after,plain,manifest,20f-2MB,3,True,30043,60,94.4638671875,22,22,2103245,2103245,
+android,rust-after,plain,manifest,20f-2MB,4,True,30040,40,96.7109375,22,22,2103245,2103245,
+android,rust-after,plain,manifest,20f-2MB,5,True,30039,60,97.2861328125,22,22,2103245,2103245,
+ios,rust-after,plain,manifest,20f-2MB,1,True,273,81.8534166666667,20.5181884765625,22,22,2103246,2103246,
+ios,rust-after,plain,manifest,20f-2MB,2,True,275,106.45974999999999,20.346290588378906,22,22,2103246,2103246,
+ios,rust-after,plain,manifest,20f-2MB,3,True,284,86.03241666666668,20.9869384765625,22,22,2103246,2103246,
+ios,rust-after,plain,manifest,20f-2MB,4,True,270,77.72625000000005,20.596290588378906,22,22,2103246,2103246,
+ios,rust-after,plain,manifest,20f-2MB,5,True,283,77.66133333333335,20.9556884765625,22,22,2103246,2103246,
+android,rust-before,plain,manifest,20f-2MB,1,True,30051,60,97.345703125,22,22,2103249,2103249,
+android,rust-before,plain,manifest,20f-2MB,2,True,30038,60,94.2783203125,22,22,2103249,2103249,
+android,rust-before,plain,manifest,20f-2MB,3,True,30043,70,94.76953125,22,22,2103249,2103249,
+android,rust-before,plain,manifest,20f-2MB,4,True,30041,50,93.833984375,22,22,2103249,2103249,
+android,rust-before,plain,manifest,20f-2MB,5,True,30051,60,93.66015625,22,22,2103249,2103249,
+ios,rust-before,plain,manifest,20f-2MB,1,False,,74.99883333333332,20.205665588378906,21,22,1998393,2103250,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download pad/d00/f0006.bin: Unexpected response code: 503
+ios,rust-before,plain,manifest,20f-2MB,2,False,,74.70995833333336,20.799461364746094,21,22,2102766,2103250,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,rust-before,plain,manifest,20f-2MB,3,False,,81.31887499999993,20.221359252929688,21,22,1998393,2103250,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download pad/d00/f0002.bin: Unexpected response code: 503
+ios,rust-before,plain,manifest,20f-2MB,4,False,,65.14575000000002,20.0806884765625,21,22,2102766,2103250,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download index.html: Unexpected response code: 503
+ios,rust-before,plain,manifest,20f-2MB,5,False,,62.572874999999954,20.236892700195312,21,22,2097636,2103250,download: Failed to download from: http://127.0.0.1:3193/z/unused.zip - Failed to download bench.js: Unexpected response code: 503

@@ -1,0 +1,21 @@
+Cmdline: /data/local/tmp/capgo-simpleperf record -a -e cpu-clock:u -f 1000 --duration 20 -o /data/local/tmp/capgo-resource.data
+Arch: arm64
+Event: cpu-clock:u (type 1, config 0)
+Samples: 8042
+Event count: 8042000000
+
+Overhead  Command           Shared Object                                                                                                                     Symbol
+49.86%    CapgoUpdater-de   [vdso]                                                                                                                            __kernel_clock_gettime
+1.87%     HeapTaskDaemon    /apex/com.android.art/lib64/libart.so                                                                                             void art::mirror::Object::VisitReferences<true, (art::VerifyObjectFlags)0, (art::ReadBarrierOption)0, art::gc::collector::MarkCompact::RefFieldsVisitor, art::gc::collector::MarkCompact::RefFieldsVisitor>(art::gc::collector::MarkCompact::RefFieldsVisitor const&, art::gc::collector::MarkCompact::RefFieldsVisitor const&)
+1.49%     CapgoUpdater-de   /apex/com.android.runtime/lib64/bionic/libc.so                                                                                    clock_gettime
+0.75%     CapgoUpdater-de   /data/app/~~USFTA2Bhar_cDznuyA6DNQ==/app.capgo.updater-smpozRNB8x4fa9jdbobAcQ==/base.apk!/lib/arm64-v8a/libcapgo_updater_core.so  @plt
+0.67%     capgo-simpleperf  /data/local/tmp/capgo-simpleperf                                                                                                  pread
+0.66%     CapgoUpdater-de   /apex/com.android.runtime/lib64/bionic/libc.so                                                                                    pthread_cond_timedwait
+0.53%     HeapTaskDaemon    /apex/com.android.art/lib64/libart.so                                                                                             unsigned long art::mirror::Object::VisitRefsForCompaction<false, false, (art::VerifyObjectFlags)0, (art::ReadBarrierOption)2, art::gc::collector::MarkCompact::RefsUpdateVisitor<false, false, false>>(art::gc::collector::MarkCompact::RefsUpdateVisitor<false, false, false> const&, art::MemberOffset, art::MemberOffset)
+0.52%     CapgoUpdater-de   /apex/com.android.runtime/lib64/bionic/libc.so                                                                                    __strcmp_aarch64
+0.50%     CapgoUpdater-de   /apex/com.android.runtime/lib64/bionic/libc.so                                                                                    __futex_wait_ex(void volatile*, bool, int, bool, timespec const*)
+0.50%     HeapTaskDaemon    /apex/com.android.art/lib64/libart.so                                                                                             art::gc::collector::MarkCompact::ProcessMarkStack()
+0.46%     pidof             /apex/com.android.runtime/bin/linker64                                                                                            [linker]elf64_sym const* soinfo_do_lookup_impl<false>(char const*, version_info const*, soinfo**, SymbolLookupList const&) (.__uniq.331521225453620004837736674378903349473.llvm.5777414486736791846)
+0.45%     CapgoUpdater-de   /apex/com.android.runtime/lib64/bionic/libc.so                                                                                    monotonic_time_from_realtime_time(timespec&, timespec const&)
+0.45%     sleep             /apex/com.android.runtime/bin/linker64                                                                                            [linker]elf64_sym const* soinfo_do_lookup_impl<false>(char const*, version_info const*, soinfo**, SymbolLookupList const&) (.__uniq.331521225453620004837736674378903349473.llvm.5777414486736791846)
+0.44%     HeapTaskDaemon    /apex/com.android.art/lib64/libart.so                                                                                             art::gc::collector::MarkCompact::VisitRoots(art::mirror::CompressedReference<art::mirror::Object>**, unsigned long, art::RootInfo const&)
