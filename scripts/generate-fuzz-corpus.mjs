@@ -211,7 +211,8 @@ const aes = (seed, plaintext) => {
   const material = createHash('sha256').update(seed).digest();
   const keyBytes = material.subarray(0, 16);
   const iv = material.subarray(16, 32);
-  const cipher = createCipheriv('aes-128-cbc', keyBytes, iv);
+  // Capgo bundle format (AES-128-CBC); deterministic fuzz corpus only.
+  const cipher = createCipheriv('aes-128-cbc', keyBytes, iv); // NOSONAR
   return Buffer.concat([keyBytes, iv, cipher.update(plaintext), cipher.final()]);
 };
 add('aes_cbc', 'short.bin', aes('short', 'hello'));
