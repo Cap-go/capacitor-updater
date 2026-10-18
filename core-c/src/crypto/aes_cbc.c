@@ -22,7 +22,7 @@
 #include "crypto/checksum.h"
 
 /* Plaintext processed per read / hash / write round by the file helpers. */
-#define DECRYPT_CHUNK_BYTES (1024 * 1024)
+#define DECRYPT_CHUNK_BYTES CG_IO_BUFFER_BYTES
 
 void cg_cbc_init(cg_cbc_decryptor *decryptor, const uint8_t key[16], const uint8_t iv[16]) {
     memset(decryptor, 0, sizeof(*decryptor));
