@@ -791,7 +791,7 @@ static void channel_release(sink_channel *ch) {
     bool last = --ch->refs == 0;
     cg_unlock(&ch->mutex);
     if (!last) return;
-    for (size_t i = 0; i < ch->count; i++) free(ch->blocks[(ch->head + i) % CHANNEL_DEPTH]);
+    for (size_t i = 0; i < CHANNEL_DEPTH; i++) free(ch->blocks[i]);
     free(ch->plain);
     free(ch->result);
     cg_cond_destroy(&ch->cond);
@@ -806,6 +806,7 @@ static uint8_t *channel_recv(sink_channel *ch, size_t *len) {
     uint8_t *block = NULL;
     if (ch->count) {
         block = ch->blocks[ch->head];
+        ch->blocks[ch->head] = NULL;
         *len = ch->lens[ch->head];
         ch->head = (ch->head + 1) % CHANNEL_DEPTH;
         ch->count--;
@@ -923,7 +924,7 @@ cg_block_writer *cg_block_writer_new(int fd, const cg_stream_sink *sink) {
         if (cg_spawn_joinable("blocksink", sink_thread, ch, &writer->thread)) {
             writer->sink = ch;
         } else {
-            /* Rust panics when a thread cannot start; here the caller falls back to a file pass. */
+            /* Without a sink thread, both cores fall back to a file pass. */
             ch->refs = 1;
             channel_release(ch);
         }
