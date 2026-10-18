@@ -1512,7 +1512,7 @@ static bool request_once(cg_http *http, const net_route *route, const char *meth
                 int64_t failures = 0;
                 cj_as_i64(cj_get(cj_get(http->broken, origin), "failures"), &failures);
                 failures++;
-                int64_t period = 300 * ((int64_t)1 << (failures > 7 ? 6 : failures - 1));
+                int64_t period = 300 * ((int64_t)1 << (failures > 4 ? 4 : failures - 1));
                 cj_set(http->broken, origin, cj_objv("until", cj_i64(cg_mono_ms() + period * 1000),
                                                       "failures", cj_i64(failures), NULL));
                 cg_unlock(&http->lock);
