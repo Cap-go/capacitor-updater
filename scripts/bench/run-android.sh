@@ -45,7 +45,7 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     }
     first=0
     echo "[bench] gradle assembleRelease $LABEL ($variant)"
-    (cd "$BENCH_DIR/apps/$LABEL/android" && ./gradlew assembleRelease) >"$BENCH_LOG_DIR/build-$LABEL-android-$variant.log" 2>&1 || {
+    (cd "$BENCH_DIR/apps/$LABEL/android" && ./gradlew -Dorg.gradle.jvmargs=-Xmx3g --max-workers=4 assembleRelease) >"$BENCH_LOG_DIR/build-$LABEL-android-$variant.log" 2>&1 || {
       echo "[bench] gradle failed, see $BENCH_LOG_DIR/build-$LABEL-android-$variant.log" >&2
       exit 1
     }
@@ -57,6 +57,8 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
     rm -f "$aligned"
   done
 fi
+
+[[ "${BENCH_BUILD_ONLY:-0}" == "1" ]] && exit 0
 
 bench_acquire_lock
 STARTED_EMULATOR=0
@@ -154,6 +156,8 @@ for variant in "${VARIANT_LIST[@]}"; do
   bench_start_server android "$variant" "'$ADB' shell rm -rf /data/data/$APP_ID/cache/capgo_downloads"
   "$ADB" shell am start -n "$ACTIVITY" >/dev/null
   bench_monitor restart_app
+  # Capture asynchronous cache work before stopping the process.
+  sleep 2
   bench_stop_server
   "$ADB" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
 done

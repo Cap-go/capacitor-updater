@@ -510,7 +510,7 @@
         "processorCount": -3
       },
       "expect": {
-        "maxConcurrentFiles": 32
+        "maxConcurrentFiles": 4
       }
     },
     {
@@ -519,7 +519,7 @@
         "processorCount": 0
       },
       "expect": {
-        "maxConcurrentFiles": 32
+        "maxConcurrentFiles": 4
       }
     },
     {
@@ -528,7 +528,7 @@
         "processorCount": 1
       },
       "expect": {
-        "maxConcurrentFiles": 32
+        "maxConcurrentFiles": 4
       }
     },
     {
@@ -537,7 +537,7 @@
         "processorCount": 4
       },
       "expect": {
-        "maxConcurrentFiles": 32
+        "maxConcurrentFiles": 16
       }
     },
     {
@@ -546,7 +546,7 @@
         "processorCount": 5
       },
       "expect": {
-        "maxConcurrentFiles": 40
+        "maxConcurrentFiles": 20
       }
     },
     {
@@ -555,7 +555,7 @@
         "processorCount": 8
       },
       "expect": {
-        "maxConcurrentFiles": 64
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -564,7 +564,7 @@
         "processorCount": 32
       },
       "expect": {
-        "maxConcurrentFiles": 64
+        "maxConcurrentFiles": 32
       }
     },
     {
@@ -573,7 +573,7 @@
         "processorCount": 128
       },
       "expect": {
-        "maxConcurrentFiles": 64
+        "maxConcurrentFiles": 32
       }
     }
   ],

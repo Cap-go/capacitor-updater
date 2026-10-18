@@ -329,7 +329,7 @@ impl Engine {
         resumable: bool,
     ) -> CoreResult<BundleInfo> {
         match &request.manifest {
-            Some(manifest) => self.download_manifest_inner(request, manifest, record, cancel),
+            Some(manifest) => self.download_manifest_inner(request, manifest, record, cancel, resumable),
             None => self.download_zip_inner(request, record, cancel, resumable),
         }
     }

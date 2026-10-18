@@ -86,3 +86,40 @@ Logs are in `.context/bench/logs/`.
 - `prepare-app.mjs`: isolated bench app per checkout.
 - `run-ios.sh`, `run-android.sh`, `lib.sh`: runners.
 - `report.mjs`: markdown tables.
+
+## Resource and recovery measurements
+
+Set `BENCH_BUILD_ONLY=1` to prepare release snapshots without launching a device. The Android
+benchmark build uses a 3 GiB Gradle heap and four build workers; those settings affect the build
+host, not the app runtime. iOS snapshots and fixture copies use copy-on-write storage on APFS.
+
+`resource-sampler.py --platform android|ios --output samples.jsonl` records the updater's primary
+app process. Android reads CPU ticks, resident memory and thread counts through one persistent
+ADB connection, roughly every 100 ms. Pass `--serial` when using another emulator. The iOS
+simulator sampler reads host process CPU, RSS and physical footprint every 20 ms; `--udid`
+selects the simulator. Separate WebView processes and OS networking daemons are excluded.
+These measurements are sampled process peaks, not whole-app peak memory or physical-phone
+battery measurements. Android CPU counters have 10 ms resolution.
+
+The server records `hostStartedAt` and `hostFinishedAt` for each attempt. Name sample files
+`resources-<label>-<platform>-<variant>-r<run>.jsonl`, then join them with:
+
+```bash
+python3 scripts/bench/resource-report.py results-directory --samples samples-directory --output report.json
+```
+
+The report keeps failures, sample counts and measurement-boundary overhang. Check those fields
+before comparing short cases; a sample can straddle an operation's boundaries. CPU time covers
+the process, including its worker threads. Do not interpret RSS as private heap size.
+
+For recovery checks, `BENCH_FAULT_PROFILE=503-once` makes the server refuse the first manifest
+payload request of every timed case with HTTP 503. Warm-ups are unaffected. Results include
+`faultsInjected`. Set `BENCH_MAX_ATTEMPTS=1` to disable the harness's whole-case retry, so client
+recovery and a harness retry cannot be confused. This is a controlled server-failure test;
+packet loss and disconnections require separate network shaping and transport tests.
+
+Resource windows begin when the server assigns the case, so they also include the app's
+pre-download bundle cleanup. `cpuThroughSettleMs` and memory peaks include a further 1.5 seconds
+after completion to capture asynchronous cache work. Runners keep the app alive for at least two
+seconds after the final result. This lifecycle CPU measurement has a different boundary from
+`downloadMs`, which starts after the app's cleanup. Keep both boundaries explicit in reports.

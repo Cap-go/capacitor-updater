@@ -167,7 +167,7 @@ type SinkThread = (
     std::thread::JoinHandle<Option<String>>,
 );
 
-/// Writes a stream to a file in 1 MiB blocks; a side thread hashes (or
+/// Writes a stream to a file in 256 KiB blocks; a side thread hashes (or
 /// decrypts and hashes) the same blocks, overlapping with network and disk I/O.
 pub struct BlockWriter {
     file: File,
@@ -175,7 +175,7 @@ pub struct BlockWriter {
     sink: Option<SinkThread>,
 }
 
-const BLOCK_BYTES: usize = 1024 * 1024;
+const BLOCK_BYTES: usize = 256 * 1024;
 
 fn decrypt_sink(
     receiver: std::sync::mpsc::Receiver<Vec<u8>>,
@@ -210,26 +210,26 @@ impl BlockWriter {
         let sink = match sink {
             StreamSink::None => None,
             StreamSink::Hash => {
-                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
-                let handle = std::thread::spawn(move || {
+                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(1);
+                let handle = std::thread::Builder::new().spawn(move || {
                     let mut context = Context::new(&SHA256);
                     for block in receiver {
                         context.update(&block);
                     }
                     Some(hex_encode(context.finish().as_ref()))
                 });
-                Some((sender, handle))
+                handle.ok().map(|handle| (sender, handle))
             }
             StreamSink::Decrypt { key, iv, plain } => {
-                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
-                let handle = std::thread::spawn(move || {
+                let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<u8>>(1);
+                let handle = std::thread::Builder::new().spawn(move || {
                     let result = decrypt_sink(receiver, key, iv, &plain);
                     if result.is_none() {
                         let _ = fs::remove_file(&plain);
                     }
                     result
                 });
-                Some((sender, handle))
+                handle.ok().map(|handle| (sender, handle))
             }
         };
         Self {
@@ -256,6 +256,10 @@ impl BlockWriter {
             return Ok(());
         }
         self.file.write_all(&self.block)?;
+        if self.sink.is_none() {
+            self.block.clear();
+            return Ok(());
+        }
         let block = std::mem::replace(&mut self.block, Vec::with_capacity(BLOCK_BYTES));
         if let Some((sender, _)) = &self.sink {
             // A failed side thread only loses its result; the caller falls back to a file pass.

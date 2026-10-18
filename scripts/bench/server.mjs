@@ -44,6 +44,8 @@ const resultsFile = arg('results');
 const runs = Number.parseInt(arg('runs', String(defaultRuns)), 10);
 const only = arg('only') ? new RegExp(arg('only')) : null;
 const cleanCmd = arg('clean-cmd', process.env.BENCH_CLEAN_CMD ?? '');
+const faultProfile = process.env.BENCH_FAULT_PROFILE ?? '';
+if (!['', '503-once'].includes(faultProfile)) throw new Error('Unknown BENCH_FAULT_PROFILE');
 const retryFailed = Boolean(arg('retry-failed', false));
 const maxAttempts = Number.parseInt(arg('max-attempts', '2'), 10);
 const port = Number.parseInt(arg('port', String(benchPort)), 10);
@@ -126,6 +128,9 @@ function log(msg) {
 function record(c, fields) {
   const rec = {
     ts: new Date().toISOString(),
+    hostStartedAt: c.startedAt,
+    hostFinishedAt: Date.now(),
+    ...(faultProfile ? { faultProfile, faultsInjected: c.faultsInjected ?? 0 } : {}),
     label,
     platform,
     variant: c.case.variant,
@@ -391,7 +396,13 @@ const server = Bun.serve({
     if (p.startsWith('/m/')) {
       const rel = decodeURIComponent(p.slice(3));
       const file = safeJoin(path.resolve(manifestTmpDir), rel);
-      if (file && req.method === 'GET' && existsSync(file)) countServed(rel.split('/')[0], Bun.file(file).size);
+      if (file && req.method === 'GET' && existsSync(file)) {
+        if (faultProfile === '503-once' && current && !current.case.warmup && !current.faultsInjected) {
+          current.faultsInjected = 1;
+          return new Response(null, { status: 503, headers: cors });
+        }
+        countServed(rel.split('/')[0], Bun.file(file).size);
+      }
       return serveFile(file, req.method);
     }
     if (p.startsWith('/api/')) {

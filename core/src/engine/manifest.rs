@@ -221,7 +221,6 @@ impl Engine {
 
     /// Downloads a manifest bundle into `versions/<id>`. Blocking.
     pub fn download_manifest(&self, request: &DownloadRequest) -> CoreResult<BundleInfo> {
-        let manifest = request.manifest.clone().unwrap_or_default();
         self.require_session_key(&request.session_key, &request.version)?;
         self.host
             .before_download()
@@ -236,11 +235,15 @@ impl Engine {
                 ));
             }
         }
-        let mut request = request.clone();
-        request.manifest = Some(manifest);
-        let record = self.start_record(&request);
+        // Normal manifest requests are borrowed; do not duplicate every JSON entry.
+        let empty = request.manifest.is_none().then(|| DownloadRequest {
+            manifest: Some(Vec::new()),
+            ..request.clone()
+        });
+        let request = empty.as_ref().unwrap_or(request);
+        let record = self.start_record(request);
         self.progress(record.id(), 0);
-        self.run_download(&request, &record)
+        self.run_download(request, &record)
     }
 
     fn manifest_path_fail(&self, version: &str, file_name: &str) {
@@ -351,6 +354,7 @@ impl Engine {
         manifest: &[Value],
         record: &BundleInfo,
         cancel: &Cancel,
+        resumable: bool,
     ) -> CoreResult<BundleInfo> {
         let id = record.id().to_string();
         self.check_disk_space(
@@ -383,32 +387,44 @@ impl Engine {
         let failed = AtomicBool::new(false);
         let first_error: Mutex<Option<CoreError>> = Mutex::new(None);
         let assets = self.apk_assets();
-        std::thread::scope(|scope| {
-            for _ in 0..workers {
-                scope.spawn(|| loop {
-                    if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
-                        return;
-                    }
-                    let Some(task) = queue.lock_or_recover().next() else {
-                        return;
-                    };
-                    match self.process_manifest_file(&task, request, &session, assets.as_ref(), cancel) {
-                        Ok(()) => {
-                            let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                            self.progress(&id, 10 + (done * 60 / total.max(1)) as i64);
-                        }
-                        Err(error) => {
-                            self.host.error(format!(
-                                "Manifest file download failed: {} ({})",
-                                task.file_name, error.message
-                            ));
-                            failed.store(true, Ordering::SeqCst);
-                            first_error.lock_or_recover().get_or_insert(error);
-                            return;
-                        }
-                    }
-                });
+        let worker = || loop {
+            if failed.load(Ordering::SeqCst) || cancel.is_cancelled() {
+                return;
             }
+            let Some(task) = queue.lock_or_recover().next() else {
+                return;
+            };
+            match self.process_manifest_file(
+                &task,
+                request,
+                &session,
+                assets.as_ref(),
+                cancel,
+                if resumable { 1 } else { 3 },
+            ) {
+                Ok(()) => {
+                    let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    self.progress(&id, 10 + (done * 60 / total.max(1)) as i64);
+                }
+                Err(error) => {
+                    self.host.error(format!(
+                        "Manifest file download failed: {} ({})",
+                        task.file_name, error.message
+                    ));
+                    failed.store(true, Ordering::SeqCst);
+                    first_error.lock_or_recover().get_or_insert(error);
+                    return;
+                }
+            }
+        };
+        std::thread::scope(|scope| {
+            for _ in 1..workers {
+                if std::thread::Builder::new().spawn_scoped(scope, worker).is_err() {
+                    // Resource pressure reduces concurrency, rather than aborting the app.
+                    break;
+                }
+            }
+            worker();
         });
         if cancel.is_cancelled() {
             return Err(CoreError::new("download_stopped", "Download cancelled"));
@@ -432,6 +448,7 @@ impl Engine {
         session: &LazySession<'_>,
         assets: Option<&ApkAssets>,
         cancel: &Cancel,
+        attempts: u32,
     ) -> CoreResult<()> {
         if let Some(parent) = task.target.parent() {
             fs::create_dir_all(parent).map_err(|error| CoreError::io("Failed to create parent directory", error))?;
@@ -456,10 +473,39 @@ impl Engine {
             }
         }
         // 4. Network.
-        self.download_manifest_file(task, request, session, cancel)
+        self.download_manifest_file(task, request, session, cancel, attempts)
     }
 
     fn download_manifest_file(
+        &self,
+        task: &Task,
+        request: &DownloadRequest,
+        session: &LazySession<'_>,
+        cancel: &Cancel,
+        attempts: u32,
+    ) -> CoreResult<()> {
+        for attempt in 1..=attempts {
+            match self.download_manifest_file_once(task, request, session, cancel) {
+                Err(error)
+                    if attempt < attempts
+                        && super::download::is_retryable_download_error(&error)
+                        && !error.message.ends_with("Unexpected response code: 429") =>
+                {
+                    // Keep verified files and the resumable partial; retry only this transfer.
+                    for _ in 0..5 * attempt {
+                        if cancel.is_cancelled() {
+                            return Err(CoreError::new("download_stopped", "Download cancelled"));
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+                result => return result,
+            }
+        }
+        unreachable!()
+    }
+
+    fn download_manifest_file_once(
         &self,
         task: &Task,
         request: &DownloadRequest,
@@ -525,7 +571,10 @@ impl Engine {
                             message: error.to_string(),
                         })?;
                     // Network reads are small: batch them into large writes.
-                    output = Some(io::BufWriter::with_capacity(256 * 1024, file));
+                    output = Some(io::BufWriter::with_capacity(
+                        crate::crypto::checksum::IO_BUFFER_BYTES,
+                        file,
+                    ));
                     hasher = (!append).then(|| ring::digest::Context::new(&ring::digest::SHA256));
                     Ok(())
                 }
