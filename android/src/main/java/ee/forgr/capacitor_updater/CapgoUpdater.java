@@ -149,15 +149,27 @@ public class CapgoUpdater {
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
+    // The live plugin instance owns the stats file. A headless worker hands its unsent events to it
+    // instead of writing the file; events handed over before the plugin claims ownership wait here.
+    private static final Object statsOwnerLock = new Object();
+    private static CapgoUpdater statsOwner = null;
+    private static final List<JSONObject> orphanedStats = new ArrayList<>();
 
     private static final class QueuedStatsEvent {
 
         private final JSONObject event;
         private final Runnable onSent;
+        /** True when the event was loaded from the shared pending-stats file (not created by this instance). */
+        private final boolean restored;
 
         private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this(event, onSent, false);
+        }
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent, final boolean restored) {
             this.event = event;
             this.onSent = onSent;
+            this.restored = restored;
         }
     }
 
@@ -3427,7 +3439,7 @@ public class CapgoUpdater {
                     if (statsQueue.size() >= MAX_PENDING_STATS) {
                         break;
                     }
-                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null, true));
                 }
             }
             if (backup.exists() && !backup.delete()) {
@@ -3447,6 +3459,105 @@ public class CapgoUpdater {
                 logger.debug("Error: " + e.getMessage());
             }
         }
+    }
+
+    /** Makes this instance the stats file owner and adopts events handed over before it loaded. */
+    public void claimStatsOwnership() {
+        final List<JSONObject> adopted;
+        synchronized (statsOwnerLock) {
+            statsOwner = this;
+            adopted = new ArrayList<>(orphanedStats);
+            orphanedStats.clear();
+        }
+        if (!adoptPendingStats(adopted)) {
+            parkOrphanedStats(adopted);
+        }
+    }
+
+    public void releaseStatsOwnership() {
+        synchronized (statsOwnerLock) {
+            if (statsOwner == this) {
+                statsOwner = null;
+            }
+        }
+    }
+
+    /** Moves this instance's unsent events to the stats file owner (or parks them until one claims). */
+    void handOverPendingStats() {
+        // Stop first so a flush finishing later cannot requeue or persist what we hand over.
+        statsStopped.set(true);
+        final List<JSONObject> events = new ArrayList<>();
+        synchronized (statsQueue) {
+            final List<QueuedStatsEvent> restoredEvents = new ArrayList<>();
+            for (final QueuedStatsEvent queued : statsInFlight) {
+                if (!queued.restored) {
+                    events.add(queued.event);
+                }
+            }
+            for (final QueuedStatsEvent queued : statsQueue) {
+                if (queued.restored) {
+                    restoredEvents.add(queued);
+                } else {
+                    events.add(queued.event);
+                }
+            }
+            statsInFlight.clear();
+            statsQueue.clear();
+            statsQueue.addAll(restoredEvents);
+        }
+        if (events.isEmpty()) {
+            return;
+        }
+        synchronized (statsOwnerLock) {
+            CapgoUpdater owner = statsOwner == this ? null : statsOwner;
+            if (owner != null && owner.adoptPendingStats(events)) {
+                return;
+            }
+            addOrphanedStats(events);
+            owner = statsOwner == this ? null : statsOwner;
+            if (owner != null && !orphanedStats.isEmpty()) {
+                final List<JSONObject> parked = new ArrayList<>(orphanedStats);
+                orphanedStats.clear();
+                if (owner.adoptPendingStats(parked)) {
+                    return;
+                }
+                addOrphanedStats(parked);
+            }
+        }
+    }
+
+    private static void addOrphanedStats(final List<JSONObject> events) {
+        orphanedStats.addAll(events);
+        while (orphanedStats.size() > MAX_PENDING_STATS) {
+            orphanedStats.remove(0);
+        }
+    }
+
+    private static void parkOrphanedStats(final List<JSONObject> events) {
+        synchronized (statsOwnerLock) {
+            addOrphanedStats(events);
+        }
+    }
+
+    /** Returns false (keeping nothing) when this instance has stopped and can no longer send the events. */
+    private boolean adoptPendingStats(final List<JSONObject> events) {
+        if (events.isEmpty()) {
+            return true;
+        }
+        synchronized (statsQueue) {
+            if (statsStopped.get()) {
+                return false;
+            }
+            for (final JSONObject event : events) {
+                while (statsQueue.size() >= MAX_PENDING_STATS) {
+                    statsQueue.remove(0);
+                }
+                statsQueue.add(new QueuedStatsEvent(event, null));
+            }
+        }
+        persistStatsQueue();
+        ensureStatsTimerStarted();
+        return true;
     }
 
     int pendingStatsCount() {
@@ -3475,6 +3586,11 @@ public class CapgoUpdater {
             return;
         }
         synchronized (pendingStatsPersistLock) {
+            synchronized (statsOwnerLock) {
+                if (statsOwner != null && statsOwner != this) {
+                    return;
+                }
+            }
             if (statsStopped.get() && !force) {
                 return;
             }
@@ -3923,6 +4039,14 @@ public class CapgoUpdater {
      * Should be called when the plugin is destroyed to prevent resource leaks.
      */
     public void shutdown() {
+        shutdown(true);
+    }
+
+    /**
+     * @param persistStats false when another live instance owns the stats file (headless worker
+     *     handing over to the plugin): writing this instance's queue would replace the newer file.
+     */
+    public void shutdown(final boolean persistStats) {
         statsStopped.set(true);
         // Cancel the scheduled task
         if (statsFlushTask != null) {
@@ -3931,7 +4055,9 @@ public class CapgoUpdater {
         }
 
         // Write once, then ignore later callbacks so they cannot delete a newer instance's file.
-        persistStatsQueue(true);
+        if (persistStats) {
+            persistStatsQueue(true);
+        }
 
         // Shutdown the scheduler
         statsScheduler.shutdown();
