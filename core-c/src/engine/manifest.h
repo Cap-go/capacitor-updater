@@ -32,7 +32,7 @@ bool cg_manifest_download_manifest(cg_engine *engine, const cg_download_request 
                                    cg_error *err);
 /* Transfer + install of a started manifest download (download_manifest_inner). */
 bool cg_manifest_download_manifest_inner(cg_engine *engine, const cg_download_request *request, const cj *manifest,
-                                         const cg_bundle_info *record, const cg_cancel *cancel, cg_bundle_info *out,
+                                         const cg_bundle_info *record, const cg_cancel *cancel, bool resumable, cg_bundle_info *out,
                                          cg_error *err);
 /* Registers a new token for `version` in engine->downloads. Returns it with one reference
  * for the caller (the map holds its own); pass it to unregister, then cg_cancel_release. */

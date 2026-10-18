@@ -36,7 +36,7 @@
 #define PER_FILE_ESTIMATE (100ull * 1024)
 #define MIN_FREE_BYTES (50ull * 1024 * 1024)
 /* Network reads are small: batch them into large writes (Rust BufWriter::with_capacity). */
-#define PARTIAL_BUFFER_BYTES (256u * 1024u)
+#define PARTIAL_BUFFER_BYTES CG_IO_BUFFER_BYTES
 
 typedef struct {
     char *file_name;
@@ -399,15 +399,16 @@ bool cg_manifest_download_manifest(cg_engine *engine, const cg_download_request 
         cg_bundle_info_clear(&existing);
         if (failed) return cg_err_set(err, "delete_failed", "Failed to delete existing bundle before retry");
     }
-    cg_download_request copy;
-    cg_download_request_copy(&copy, request);
-    if (!copy.manifest) copy.manifest = cj_arr();
+    /* Borrow request fields during this blocking call; only an absent manifest is owned. */
+    cg_download_request copy = *request;
+    cj *empty = copy.manifest ? NULL : cj_arr();
+    if (empty) copy.manifest = empty;
     cg_bundle_info record;
     cg_download_start_record(engine, &copy, &record);
     cg_download_progress(engine, record.id, 0);
     bool ok = cg_download_run_download(engine, &copy, &record, out, err);
     cg_bundle_info_clear(&record);
-    cg_download_request_clear(&copy);
+    cj_free(empty);
     return ok;
 }
 
@@ -637,6 +638,7 @@ typedef struct {
     const char *id;
     task *tasks;
     size_t total;
+    int attempts;
     size_t next;
     cg_mutex queue_lock;
     atomic_size_t completed;
@@ -755,7 +757,7 @@ static int write_target(pool *p, const task *t, const char *partial, const char 
     return matched ? 1 : 0;
 }
 
-static bool download_manifest_file(pool *p, const task *t, cg_error *err) {
+static bool download_manifest_file_once(pool *p, const task *t, cg_error *err) {
     cg_engine *engine = p->engine;
     const cg_download_request *request = p->request;
     char *cache = CG_CONFIG_DUP(engine, cache_dir);
@@ -875,6 +877,20 @@ done:
     return ok;
 }
 
+static bool download_manifest_file(pool *p, const task *t, cg_error *err) {
+    for (int attempt = 1; ; attempt++) {
+        if (download_manifest_file_once(p, t, err)) return true;
+        if (attempt >= p->attempts || !cg_download_is_retryable_download_error(err) ||
+            cg_ends_with(cg_or_empty(err->message), "Unexpected response code: 429")) return false;
+        cg_err_clear(err);
+        for (int tick = 0; tick < 5 * attempt; tick++) {
+            if (cg_cancel_is_cancelled(p->cancel))
+                return cg_err_set(err, "download_stopped", "Download cancelled");
+            cg_sleep_ms(50);
+        }
+    }
+}
+
 static bool process_manifest_file(pool *p, const task *t, cg_error *err) {
     char *parent = cg_fsutil_parent(t->target);
     if (parent) {
@@ -932,7 +948,7 @@ static void worker_main(void *arg) {
 }
 
 bool cg_manifest_download_manifest_inner(cg_engine *engine, const cg_download_request *request, const cj *manifest,
-                                         const cg_bundle_info *record, const cg_cancel *cancel, cg_bundle_info *out,
+                                         const cg_bundle_info *record, const cg_cancel *cancel, bool resumable, cg_bundle_info *out,
                                          cg_error *err) {
     const char *id = record->id;
     size_t entries = cj_is_arr(manifest) ? cj_len(manifest) : 0;
@@ -970,7 +986,7 @@ bool cg_manifest_download_manifest_inner(cg_engine *engine, const cg_download_re
               .cancel = cancel,
               .id = id,
               .tasks = tasks,
-              .total = total};
+              .total = total, .attempts = resumable ? 1 : 3};
     p.assets = apk_assets(engine);
     cg_mutex_init(&p.queue_lock);
     cg_mutex_init(&p.error_lock);
@@ -979,12 +995,12 @@ bool cg_manifest_download_manifest_inner(cg_engine *engine, const cg_download_re
     /* std::thread::scope: every worker is joined before returning. */
     pthread_t *threads = cg_calloc(workers, sizeof(pthread_t));
     size_t started = 0;
-    for (size_t i = 0; i < workers; i++) {
+    for (size_t i = 1; i < workers; i++) {
         if (!cg_spawn_joinable("manifest", worker_main, &p, &threads[started])) break;
         started++;
     }
-    /* No thread at all: the calling thread does the work. */
-    if (started == 0) worker_main(&p);
+    /* The calling thread is one worker, also when thread creation fails. */
+    worker_main(&p);
     for (size_t i = 0; i < started; i++) cg_join(threads[i]);
     free(threads);
     cg_mutex_destroy(&p.queue_lock);

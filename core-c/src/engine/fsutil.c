@@ -759,8 +759,8 @@ bool cg_fsutil_modified_before(const char *path, uint64_t age_ms) {
 
 /* ---- block writer */
 
-#define BLOCK_BYTES (1024 * 1024)
-#define CHANNEL_DEPTH 4
+#define BLOCK_BYTES (256 * 1024)
+#define CHANNEL_DEPTH 1
 
 typedef struct {
     cg_mutex mutex;

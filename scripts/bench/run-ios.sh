@@ -34,9 +34,11 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
       exit 1
     }
     rm -rf "$(app_path "$variant")"
-    cp -R "$DERIVED/Build/Products/Release-iphonesimulator/App.app" "$(app_path "$variant")"
+    cp -cR "$DERIVED/Build/Products/Release-iphonesimulator/App.app" "$(app_path "$variant")"
   done
 fi
+
+[[ "${BENCH_BUILD_ONLY:-0}" == "1" ]] && exit 0
 
 bench_acquire_lock
 BOOTED_BY_BENCH=0
@@ -65,6 +67,8 @@ for variant in "${VARIANT_LIST[@]}"; do
   bench_start_server ios "$variant" "$clean_cmd"
   xcrun simctl launch "$UDID" "$APP_ID" >/dev/null
   bench_monitor restart_app
+  # Capture asynchronous cache work before stopping the process.
+  sleep 2
   bench_stop_server
   xcrun simctl terminate "$UDID" "$APP_ID" >/dev/null 2>&1 || true
 done

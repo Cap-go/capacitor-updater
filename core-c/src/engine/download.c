@@ -368,7 +368,7 @@ bool cg_download_transfer_and_install(cg_engine *engine, const cg_download_reque
                                       cg_bundle_info *out, cg_error *err) {
     cg_crash_guard_begin_native_step(engine, CG_STEP_DOWNLOAD, request->version, record->id);
     bool ok = request->manifest
-                  ? cg_manifest_download_manifest_inner(engine, request, request->manifest, record, cancel, out, err)
+                  ? cg_manifest_download_manifest_inner(engine, request, request->manifest, record, cancel, resumable, out, err)
                   : download_zip_inner(engine, request, record, cancel, resumable, out, err);
     cg_crash_guard_end_native_step(engine, request->version);
     return ok;

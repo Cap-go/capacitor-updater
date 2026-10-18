@@ -9,7 +9,7 @@ on:
     branches:
       - renovate/**
   pull_request:
-    branches: [main, v5, v6, v7]
+    branches: [main, v5, v6, v7, riderx/capgo-rust-core-rewrite]
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 

@@ -7,8 +7,8 @@ use ring::digest::{self, Context, SHA256};
 use crate::error::{CoreError, CoreResult};
 use crate::text::hex_encode;
 
-/// 256 KiB: one buffer size for checksum, copy and decode on every host.
-pub const IO_BUFFER_BYTES: usize = 256 * 1024;
+/// 64 KiB bounds per-worker memory for checksum, copy and decode on every host.
+pub const IO_BUFFER_BYTES: usize = 64 * 1024;
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex_encode(digest::digest(&SHA256, bytes).as_ref())

@@ -644,3 +644,95 @@ fn manifest_real_brotli_stream() {
     let dir = t.root().join("versions").join(installed["id"].as_str().unwrap());
     assert_eq!(std::fs::read(dir.join("big.js")).unwrap(), content);
 }
+
+#[test]
+fn manifest_retries_only_transient_file_failures() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    let body = b"<html>recovered</html>";
+    let server = FakeServer::start(move |_| {
+        if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            (503, vec![], vec![])
+        } else {
+            (200, vec![], body.to_vec())
+        }
+    });
+    let t = TestEngine::new(json!({}));
+    let installed = t.call(
+        "download",
+        json!({"version":"retry-manifest", "manifest":[
+            manifest_entry(&server, "index.html", body)
+        ]}),
+    );
+    assert_eq!(installed["status"], "pending");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    let path = t
+        .root()
+        .join("versions")
+        .join(installed["id"].as_str().unwrap())
+        .join("index.html");
+    assert_eq!(std::fs::read(path).unwrap(), body);
+}
+
+#[test]
+fn manifest_retry_budget_does_not_repeat_permanent_or_checksum_failures() {
+    for status in [404, 429, 503, 200] {
+        let server = FakeServer::start(move |_| (status, vec![], b"incorrect".to_vec()));
+        let t = TestEngine::new(json!({}));
+        let result = t.engine.call(
+            "download",
+            &json!({"version":"failure", "manifest":[
+                manifest_entry(&server, "index.html", b"expected")
+            ]}),
+        );
+        assert!(result.is_err());
+        assert_eq!(server.requests().len(), if status == 503 { 3 } else { 1 });
+    }
+}
+
+#[test]
+fn manifest_retry_reuses_existing_partial_bytes() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let body = b"<html>resumed after a transient failure</html>";
+    let offset = 10;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    let server = FakeServer::start(move |request| {
+        assert_eq!(request.header("Range").as_deref(), Some("bytes=10-"));
+        if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            (503, vec![], vec![])
+        } else {
+            (
+                206,
+                vec![(
+                    "Content-Range".into(),
+                    format!("bytes 10-{}/{}", body.len() - 1, body.len()),
+                )],
+                body[offset..].to_vec(),
+            )
+        }
+    });
+    let t = TestEngine::new(json!({}));
+    let cache = t.root().join("cache/capgo_downloads");
+    std::fs::create_dir_all(&cache).unwrap();
+    let partial = cache.join(capgo_updater_core::paths::manifest_partial_name(
+        Some(&sha256(body)),
+        "index.html",
+    ));
+    std::fs::write(&partial, &body[..offset]).unwrap();
+    let installed = t.call(
+        "download",
+        json!({"version":"resumed-manifest", "manifest":[
+            manifest_entry(&server, "index.html", body)
+        ]}),
+    );
+    let path = t
+        .root()
+        .join("versions")
+        .join(installed["id"].as_str().unwrap())
+        .join("index.html");
+    assert_eq!(std::fs::read(path).unwrap(), body);
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert!(!partial.exists());
+}

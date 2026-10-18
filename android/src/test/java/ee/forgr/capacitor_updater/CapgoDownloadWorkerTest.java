@@ -279,7 +279,7 @@ public class CapgoDownloadWorkerTest {
         while (true) {
             this.driver().setAllConstraintsMet(job.getId());
             final WorkInfo info = this.job(job);
-            if (info.getRunAttemptCount() > 0 || info.getState().isFinished()) {
+            if (info.getState().isFinished() || (info.getState() == WorkInfo.State.ENQUEUED && info.getRunAttemptCount() > 0)) {
                 return info;
             }
             if (System.nanoTime() > deadline) {

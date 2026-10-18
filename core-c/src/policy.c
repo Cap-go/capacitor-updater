@@ -99,6 +99,6 @@ bool cg_policy_should_clear_persisted_default_channel(bool persist_default_chann
 
 int64_t cg_policy_manifest_max_concurrent_files(int64_t processor_count) {
     int64_t count = processor_count > 1 ? processor_count : 1;
-    int64_t scaled = count > INT64_MAX / 8 ? INT64_MAX : count * 8;
-    return scaled < 32 ? 32 : scaled > 64 ? 64 : scaled;
+    int64_t scaled = count > INT64_MAX / 4 ? INT64_MAX : count * 4;
+    return scaled < 4 ? 4 : scaled > 32 ? 32 : scaled;
 }

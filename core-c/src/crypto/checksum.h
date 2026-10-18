@@ -16,7 +16,7 @@
 #include "rt/err.h"
 
 /* Buffer size of file reads / download chunks (Rust IO_BUFFER_BYTES). */
-#define CG_IO_BUFFER_BYTES (256 * 1024)
+#define CG_IO_BUFFER_BYTES (64 * 1024)
 
 /* Lowercase hex SHA-256 (malloc'd). */
 char *cg_checksum_sha256_hex(const uint8_t *bytes, size_t len);

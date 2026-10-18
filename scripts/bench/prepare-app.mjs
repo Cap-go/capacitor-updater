@@ -6,9 +6,9 @@
 //
 // Usage: bun scripts/bench/prepare-app.mjs --label before --checkout <dir> --platform ios|android --variant plain|enc [--no-install]
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl } from './config.mjs';
+import { appsDir, builtinPadDir, builtinWwwDir, deviceBaseUrl, benchDir } from './config.mjs';
 import { ensureBuiltinPad, ensureKeys } from './fixtures.mjs';
 
 function arg(name, fallback = undefined) {
@@ -85,7 +85,12 @@ if (!skipInstall) {
   const pkgPath = path.join(appDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   pkg.name = `capgo-bench-${label}`;
-  pkg.dependencies['@capgo/capacitor-updater'] = `file:${checkout}`;
+  // Install only declared shipping files; file:<checkout> can recursively copy .context.
+  const packageDir = path.join(benchDir, 'packages');
+  mkdirSync(packageDir, { recursive: true });
+  const archive = path.join(packageDir, `${label}-${platform}.tgz`);
+  run('bun', ['pm', 'pack', '--ignore-scripts', '--filename', archive], checkout);
+  pkg.dependencies['@capgo/capacitor-updater'] = `file:${archive}`;
   pkg.scripts = {};
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
   rmSync(path.join(appDir, 'bun.lock'), { force: true });
@@ -136,10 +141,10 @@ if (platform === 'android') {
 }
 
 rmSync(path.join(appDir, 'www'), { recursive: true, force: true });
-cpSync(builtinWwwDir, path.join(appDir, 'www'), { recursive: true });
+cpSync(builtinWwwDir, path.join(appDir, 'www'), { recursive: true, mode: constants.COPYFILE_FICLONE });
 // Builtin files for the builtin-reuse manifest cases (www/bpad/...).
 await ensureBuiltinPad();
-cpSync(builtinPadDir, path.join(appDir, 'www'), { recursive: true });
+cpSync(builtinPadDir, path.join(appDir, 'www'), { recursive: true, mode: constants.COPYFILE_FICLONE });
 
 const keys = await ensureKeys();
 const updater = {
