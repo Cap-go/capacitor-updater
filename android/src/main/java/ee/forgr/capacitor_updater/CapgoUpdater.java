@@ -159,10 +159,17 @@ public class CapgoUpdater {
 
         private final JSONObject event;
         private final Runnable onSent;
+        /** True when the event was loaded from the shared pending-stats file (not created by this instance). */
+        private final boolean restored;
 
         private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this(event, onSent, false);
+        }
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent, final boolean restored) {
             this.event = event;
             this.onSent = onSent;
+            this.restored = restored;
         }
     }
 
@@ -3432,7 +3439,7 @@ public class CapgoUpdater {
                     if (statsQueue.size() >= MAX_PENDING_STATS) {
                         break;
                     }
-                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null, true));
                 }
             }
             if (backup.exists() && !backup.delete()) {
@@ -3481,14 +3488,22 @@ public class CapgoUpdater {
         statsStopped.set(true);
         final List<JSONObject> events = new ArrayList<>();
         synchronized (statsQueue) {
+            final List<QueuedStatsEvent> restoredEvents = new ArrayList<>();
             for (final QueuedStatsEvent queued : statsInFlight) {
-                events.add(queued.event);
+                if (!queued.restored) {
+                    events.add(queued.event);
+                }
             }
             for (final QueuedStatsEvent queued : statsQueue) {
-                events.add(queued.event);
+                if (queued.restored) {
+                    restoredEvents.add(queued);
+                } else {
+                    events.add(queued.event);
+                }
             }
             statsInFlight.clear();
             statsQueue.clear();
+            statsQueue.addAll(restoredEvents);
         }
         if (events.isEmpty()) {
             return;
@@ -3571,6 +3586,11 @@ public class CapgoUpdater {
             return;
         }
         synchronized (pendingStatsPersistLock) {
+            synchronized (statsOwnerLock) {
+                if (statsOwner != null && statsOwner != this) {
+                    return;
+                }
+            }
             if (statsStopped.get() && !force) {
                 return;
             }
