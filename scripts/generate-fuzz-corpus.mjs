@@ -3,7 +3,7 @@
 // fuzz/corpus/<target>/<name>. Deterministic: rerun after changing a seed and commit the result.
 //
 //   bun scripts/generate-fuzz-corpus.mjs
-import { createHash, createCipheriv, createPublicKey } from 'node:crypto';
+import { createPublicKey } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -207,17 +207,15 @@ for (const bundle of cli.bundles) {
 add('rsa_checksum', 'block.bin', Buffer.concat([Buffer.from([0, 1]), Buffer.alloc(221, 0xff), Buffer.from([0]), Buffer.alloc(32, 0xab)]));
 
 // ---- AES-CBC (key, iv, ciphertext) and session keys
-const aes = (seed, plaintext) => {
-  const material = createHash('sha256').update(seed).digest();
-  const keyBytes = material.subarray(0, 16);
-  const iv = material.subarray(16, 32);
-  // Capgo bundle format (AES-128-CBC); deterministic fuzz corpus only.
-  const cipher = createCipheriv('aes-128-cbc', keyBytes, iv); // NOSONAR
-  return Buffer.concat([keyBytes, iv, cipher.update(plaintext), cipher.final()]);
+// Precomputed `<key 16><iv 16><ciphertext>` seeds (Capgo AES-128-CBC bundle format).
+const AES_CBC_SEEDS = {
+  'short.bin': 'f9b0078b5df596d2ea19010c001bbd009e651de2c57e8fb7e355f31eb9d3f739f61f57b19df0a98ccc60daaeab9c433b',
+  'block.bin':
+    '496aca80e4d8f29fb8e8cd816c3afb48d3f103970b3a2ee1600c08ca67326dee82325148313c0f1fb9498f3c306b3a1ed015f0d848ebfaa29cffb08b0bcd2a0c',
+  'long.bin':
+    'fc66f021c67d064c1490a12b5a4d4d2f5167ca692a16ca12f1f3a4cda29a6fa98afc2417e95e5b2bf6b25205f381f5d63a8da6eb9914840c7f6cfae6fd67b2ca9d76005ff46b03177934a0dd370d034df95d0a32035c55501a0874cb974c730930c84952bb66088c764485725452bd6cd77e105c0ed4b78b2c0284bd8d41e53fa5543403ee54c7d241cfaf5661b7e130',
 };
-add('aes_cbc', 'short.bin', aes('short', 'hello'));
-add('aes_cbc', 'block.bin', aes('block', Buffer.alloc(16, 1)));
-add('aes_cbc', 'long.bin', aes('long', Buffer.alloc(100, 2)));
+for (const [name, hex] of Object.entries(AES_CBC_SEEDS)) add('aes_cbc', name, Buffer.from(hex, 'hex'));
 for (const bundle of cli.bundles) add('aes_cbc', `${bundle.id}.session`, bundle.ivSessionKey);
 
 // ---- path guards: `<base> 0xFF <relative>` or a relative path alone
