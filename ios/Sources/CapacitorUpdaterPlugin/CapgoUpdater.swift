@@ -23,11 +23,11 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    /// Bound HTTP + decode to four workers per CPU, between 4 and 32.
     static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
 
     static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        min(64, max(8, max(1, processorCount) * 2))
+        max(4, min(8, max(1, processorCount)) * 4)
     }
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
@@ -1285,7 +1285,7 @@ import UIKit
             }
 
             do {
-                try copyItemAtomically(from: fileURL, to: cacheFile)
+                try linkOrCopyImmutableFile(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -1934,6 +1934,32 @@ import UIKit
     /// Downloads a single manifest file synchronously
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
+        downloadUrl: String, destFilePath: URL, cacheFilePath: URL?, fileHash: String,
+        fileName: String, destFileName: String, isBrotli: Bool, sessionKey: String,
+        version: String, bundleId: String
+    ) throws {
+        for attempt in 1...3 {
+            do {
+                try downloadManifestFileOnce(downloadUrl: downloadUrl, destFilePath: destFilePath,
+                                             cacheFilePath: cacheFilePath, fileHash: fileHash, fileName: fileName,
+                                             destFileName: destFileName, isBrotli: isBrotli, sessionKey: sessionKey,
+                                             version: version, bundleId: bundleId)
+                return
+            } catch {
+                let failure = error as NSError
+                let retryableStatus = failure.domain == "StatusCodeError" &&
+                    (failure.code == 408 || (500...599).contains(failure.code))
+                let retryableNetwork = failure.domain == NSURLErrorDomain && [
+                    NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
+                    NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
+                ].contains(failure.code)
+                guard attempt < 3 && (retryableStatus || retryableNetwork) else { throw error }
+                Thread.sleep(forTimeInterval: 0.25 * Double(attempt))
+            }
+        }
+    }
+
+    private func downloadManifestFileOnce(
         downloadUrl: String,
         destFilePath: URL,
         cacheFilePath: URL?,
@@ -2057,11 +2083,12 @@ import UIKit
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
+            } else if workURL == nil {
+                // URLSession already wrote the payload. Verify it before moving it into the bundle.
+                calculatedChecksum = try CryptoCipher.calcChecksumOrThrow(filePath: source)
             } else {
                 let handle = try FileHandle(forReadingFrom: source)
-                defer {
-                    try? handle.close()
-                }
+                defer { try? handle.close() }
                 let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
                 calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
             }
@@ -2075,8 +2102,16 @@ import UIKit
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
+            if !isBrotli && workURL == nil {
+                try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try replaceItemAtomically(at: destFilePath, withItemAt: partialURL)
+            }
             if let cacheFilePath {
-                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+                do {
+                    try linkOrCopyImmutableFile(from: destFilePath, to: cacheFilePath)
+                } catch {
+                    logger.debug("Delta cache write failed: \(error.localizedDescription)")
+                }
             }
             try? FileManager.default.removeItem(at: partialURL)
 
@@ -2144,6 +2179,21 @@ import UIKit
         try replaceItemAtomically(at: destination, withItemAt: tempURL)
     }
 
+    /// Only updater-owned verified bundle/cache files, which are never rewritten in place.
+    func linkOrCopyImmutableFile(from source: URL, to destination: URL) throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temp = destination.deletingLastPathComponent().appendingPathComponent("capgo-link-\(UUID().uuidString).tmp")
+        defer { try? manager.removeItem(at: temp) }
+        do {
+            try manager.linkItem(at: source.resolvingSymlinksInPath(), to: temp)
+        } catch {
+            try copyItemAtomically(from: source.resolvingSymlinksInPath(), to: destination)
+            return
+        }
+        try replaceItemAtomically(at: destination, withItemAt: temp)
+    }
+
     /// One-step replace when dest exists, move when it does not. Avoids the
     /// fileExists/removeItem race that can fail a verified install.
     private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
@@ -2169,7 +2219,7 @@ import UIKit
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemAtomically(from: source, to: destination)
+            try linkOrCopyImmutableFile(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead

@@ -368,9 +368,8 @@ public class CryptoCipher {
         }
     }
 
-    // 256 KiB: one size for checksum, copy, and decode.
-    // 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
-    static final int IO_BUFFER_BYTES = 256 * 1024;
+    // Bound per-worker checksum, copy and decode buffers to 64 KiB.
+    static final int IO_BUFFER_BYTES = 64 * 1024;
 
     static int ioBufferBytes() {
         return IO_BUFFER_BYTES;
@@ -395,27 +394,32 @@ public class CryptoCipher {
     }
 
     public static String calcChecksum(InputStream inputStream) {
-        final int BUFFER_SIZE = checksumBufferBytes();
-        MessageDigest digest;
+        try {
+            return calcChecksumOrThrow(inputStream);
+        } catch (IOException error) {
+            logger.error("Cannot calculate checksum");
+            logger.debug("Error: " + error.getMessage());
+            return "";
+        }
+    }
+
+    static String calcChecksumOrThrow(File file) throws IOException {
+        try (FileInputStream input = new FileInputStream(file)) {
+            return calcChecksumOrThrow(input);
+        }
+    }
+
+    static String calcChecksumOrThrow(InputStream input) throws IOException {
+        final MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
-        } catch (java.security.NoSuchAlgorithmException e) {
-            logger.error("SHA-256 algorithm not available");
-            return "";
+        } catch (java.security.NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 algorithm not available", error);
         }
-
-        try {
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int length;
-            while ((length = inputStream.read(buffer)) != -1) {
-                digest.update(buffer, 0, length);
-            }
-            return digestToHex(digest);
-        } catch (IOException e) {
-            logger.error("Cannot calculate checksum");
-            logger.debug("Error: " + e.getMessage());
-            return "";
-        }
+        byte[] buffer = new byte[checksumBufferBytes()];
+        int length;
+        while ((length = input.read(buffer)) != -1) digest.update(buffer, 0, length);
+        return digestToHex(digest);
     }
 
     static String digestToHex(MessageDigest digest) {

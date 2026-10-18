@@ -141,9 +141,8 @@ public struct CryptoCipher {
         }
     }
 
-    /// 256 KiB: one size for checksum, copy, and decode.
-    /// 64 workers * 256 KiB = 16 MiB for one buffer; AES/Brotli hold two (~32 MiB).
-    static let ioBufferBytesValue = 256 * 1024
+    /// Bound per-worker checksum, copy and decode buffers to 64 KiB.
+    static let ioBufferBytesValue = 64 * 1024
 
     static func ioBufferBytes() -> Int {
         return ioBufferBytesValue
@@ -158,45 +157,27 @@ public struct CryptoCipher {
     }
 
     public static func calcChecksum(filePath: URL) -> String {
-        let bufferSize = checksumBufferBytes()
-        var sha256 = SHA256()
-
-        let fileHandle: FileHandle
         do {
-            fileHandle = try FileHandle(forReadingFrom: filePath)
+            return try calcChecksumOrThrow(filePath: filePath)
         } catch {
-            logger.error("Cannot open file for checksum calculation")
+            logger.error("Cannot calculate checksum")
             logger.debug("Path: \(filePath.path), Error: \(error)")
             return ""
         }
+    }
 
-        defer {
-            do {
-                try fileHandle.close()
-            } catch {
-                logger.error("Error closing file during checksum")
-                logger.debug("Error: \(error)")
+    static func calcChecksumOrThrow(filePath: URL) throws -> String {
+        let file = try FileHandle(forReadingFrom: filePath)
+        defer { try? file.close() }
+        var sha256 = SHA256()
+        while true {
+            let count = try autoreleasepool {
+                let data = try file.read(upToCount: checksumBufferBytes()) ?? Data()
+                sha256.update(data: data)
+                return data.count
             }
+            if count == 0 { break }
         }
-
-        while autoreleasepool(invoking: {
-            let fileData: Data
-            do {
-                fileData = try fileHandle.read(upToCount: bufferSize) ?? Data()
-            } catch {
-                logger.error("Error reading file during checksum")
-                logger.debug("Error: \(error)")
-                return false
-            }
-
-            if fileData.count > 0 {
-                sha256.update(data: fileData)
-                return true // Continue
-            } else {
-                return false // End of file
-            }
-        }) {}
-
         return hexString(from: sha256)
     }
 

@@ -375,24 +375,24 @@ extension PopulateDeltaCacheTests {
 }
 
 final class IoBufferSizeTests: XCTestCase {
-    func testIoBuffersAre256KiBForChecksumAndCopy() {
-        XCTAssertEqual(CryptoCipher.ioBufferBytes(), 256 * 1024)
-        XCTAssertEqual(CryptoCipher.checksumBufferBytes(), 256 * 1024)
-        XCTAssertEqual(CryptoCipher.copyBufferBytes(), 256 * 1024)
+    func testIoBuffersStayWithin64KiBForChecksumAndCopy() {
+        XCTAssertEqual(CryptoCipher.ioBufferBytes(), 64 * 1024)
+        XCTAssertEqual(CryptoCipher.checksumBufferBytes(), 64 * 1024)
+        XCTAssertEqual(CryptoCipher.copyBufferBytes(), 64 * 1024)
     }
 }
 
 final class ManifestConcurrencyTests: XCTestCase {
     func testManifestConcurrencyScalesWithCpuAndStaysCapped() {
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 12)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 16)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 36)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 64)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 4)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 16)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 24)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 32)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 32)
+        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 32)
         let live = CapgoUpdater.manifestMaxConcurrentFiles
-        XCTAssertGreaterThanOrEqual(live, 8)
-        XCTAssertLessThanOrEqual(live, 64)
+        XCTAssertGreaterThanOrEqual(live, 4)
+        XCTAssertLessThanOrEqual(live, 32)
         XCTAssertEqual(live, CapgoUpdater.clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount))
     }
 }
@@ -505,5 +505,30 @@ final class StreamDecodeTests: XCTestCase {
             index = next
         }
         return data
+    }
+}
+
+final class ImmutableCacheLinkTests: XCTestCase {
+    func testLinkedCacheSurvivesDeletingBundleAndAtomicReplacement() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let source = root.appendingPathComponent("bundle.js")
+        let cache = root.appendingPathComponent("cache/app.js")
+        let restored = root.appendingPathComponent("restored.js")
+        let original = Data("verified content".utf8)
+        try original.write(to: source)
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "cache-link-test", options: Logger.Options(level: .silent)))
+        let alias = root.appendingPathComponent("alias.js")
+        try manager.createSymbolicLink(at: alias, withDestinationURL: source)
+        try updater.linkOrCopyImmutableFile(from: alias, to: cache)
+        try manager.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: cache), original)
+        try updater.linkOrCopyImmutableFile(from: cache, to: restored)
+        try Data("replacement".utf8).write(to: restored, options: .atomic)
+        XCTAssertEqual(try Data(contentsOf: cache), original)
+        XCTAssertEqual(try manager.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("capgo-link-") }.count, 0)
     }
 }

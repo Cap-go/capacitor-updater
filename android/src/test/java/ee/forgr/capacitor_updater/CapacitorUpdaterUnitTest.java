@@ -4682,22 +4682,22 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void ioBuffersAre256KiBForChecksumAndCopy() {
-        assertEquals(256 * 1024, CryptoCipher.ioBufferBytes());
-        assertEquals(256 * 1024, CryptoCipher.checksumBufferBytes());
-        assertEquals(256 * 1024, CryptoCipher.copyBufferBytes());
+    public void ioBuffersStayWithin64KiBForChecksumAndCopy() {
+        assertEquals(64 * 1024, CryptoCipher.ioBufferBytes());
+        assertEquals(64 * 1024, CryptoCipher.checksumBufferBytes());
+        assertEquals(64 * 1024, CryptoCipher.copyBufferBytes());
     }
 
     @Test
     public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(1));
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(4));
-        assertEquals(12, DownloadService.manifestMaxConcurrentFiles(6));
-        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(8));
-        assertEquals(36, DownloadService.manifestMaxConcurrentFiles(18));
-        assertEquals(64, DownloadService.manifestMaxConcurrentFiles(40));
+        assertEquals(4, DownloadService.manifestMaxConcurrentFiles(1));
+        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(4));
+        assertEquals(24, DownloadService.manifestMaxConcurrentFiles(6));
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(8));
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(18));
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(40));
         int live = DownloadService.manifestMaxConcurrentFiles();
-        assertTrue(live >= 8 && live <= 64);
+        assertTrue(live >= 4 && live <= 32);
         assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
     }
 

@@ -123,7 +123,7 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // HTTP + decode share one pool. Cap per host by CPU: 8 on 4 cores, 16 on 8 cores.
+    // Bound HTTP + decode to four workers per CPU, between 4 and 32.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
     private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
     private static final int SHARED_MAX_REQUESTS = 64;
@@ -220,7 +220,7 @@ public class DownloadService extends Worker {
 
     static int manifestMaxConcurrentFiles(int processors) {
         int cores = Math.max(1, processors);
-        return Math.min(64, Math.max(8, cores * 2));
+        return Math.max(4, Math.min(8, cores) * 4);
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
@@ -1119,12 +1119,33 @@ public class DownloadService extends Worker {
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         try {
-            copyFile(source, dest);
+            linkOrCopyImmutableFile(source, dest);
             return true;
         } catch (IOException e) {
             // File was deleted between check and copy, or other IO error - caller should download instead
             logger.debug("Cache copy failed (likely OS eviction): " + e.getMessage());
             return false;
+        }
+    }
+
+    // Only updater-owned verified bundle/cache files, which are never rewritten in place.
+    static void linkOrCopyImmutableFile(File source, File dest) throws IOException {
+        File parent = dest.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create cache directory");
+        File temp = File.createTempFile("capgo-link-", ".tmp", parent);
+        try {
+            if (!temp.delete()) throw new IOException("Cannot prepare cache link");
+            try {
+                android.system.Os.link(source.getCanonicalPath(), temp.getAbsolutePath());
+            } catch (Exception unsupported) {
+                try (FileInputStream input = new FileInputStream(source)) {
+                    writeFileAtomic(dest, input, null);
+                }
+                return;
+            }
+            CryptoCipher.replaceFile(temp, dest);
+        } finally {
+            if (temp.exists() && !temp.delete()) temp.deleteOnExit();
         }
     }
 
@@ -1174,6 +1195,46 @@ public class DownloadService extends Worker {
         boolean isBrotli,
         String relativeName
     ) throws Exception {
+        for (int attempt = 1; ; attempt++) {
+            if (isStopped()) throw new IOException("download_stopped");
+            try {
+                downloadAndVerifyOnce(downloadUrl, targetFile, cacheFile, expectedHash, sessionKey, publicKey, isBrotli, relativeName);
+                return;
+            } catch (Exception error) {
+                if (attempt >= 3 || !isRetryableManifestError(error)) throw error;
+                for (int tick = 0; tick < 5 * attempt; tick++) {
+                    if (isStopped()) throw new IOException("download_stopped");
+                    Thread.sleep(50);
+                }
+            }
+        }
+    }
+
+    static boolean isRetryableManifestError(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof BlockedRedirectException || cause instanceof javax.net.ssl.SSLException) return false;
+            if (
+                cause instanceof DownloadRetryException ||
+                cause instanceof java.net.SocketException ||
+                cause instanceof java.net.SocketTimeoutException ||
+                cause instanceof java.net.UnknownHostException ||
+                cause instanceof java.net.ProtocolException ||
+                cause instanceof java.io.EOFException
+            ) return true;
+        }
+        return false;
+    }
+
+    private void downloadAndVerifyOnce(
+        String downloadUrl,
+        File targetFile,
+        File cacheFile,
+        String expectedHash,
+        String sessionKey,
+        String publicKey,
+        boolean isBrotli,
+        String relativeName
+    ) throws Exception {
         logger.debug("downloadAndVerify " + downloadUrl);
 
         File finalTargetFile = targetFile;
@@ -1197,6 +1258,9 @@ public class DownloadService extends Worker {
                     keepPartial = true;
                 } else if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                     sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    if (code != 429 && isRetryableHttpStatus(code)) {
+                        throw new DownloadRetryException("Unexpected response code: " + code);
+                    }
                     throw new IOException("Unexpected response code: " + code);
                 } else {
                     ResponseBody responseBody = response.body();
@@ -1231,6 +1295,12 @@ public class DownloadService extends Worker {
             try {
                 if (isBrotli) {
                     decompressBrotli(source, finalTargetFile, targetFile.getName(), expectedHash);
+                } else if (!needDecrypt) {
+                    // The partial is already on disk. Verify it, then move it without a second write.
+                    if (!expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksumOrThrow(source))) {
+                        throw new IOException("Checksum verification failed");
+                    }
+                    CryptoCipher.replaceFile(source, finalTargetFile);
                 } else {
                     try (FileInputStream fis = new FileInputStream(source)) {
                         writeFileAtomic(finalTargetFile, fis, expectedHash);
@@ -1252,8 +1322,10 @@ public class DownloadService extends Worker {
             CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
             if (cacheFile != null) {
-                try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                    writeFileAtomic(cacheFile, fis, null);
+                try {
+                    linkOrCopyImmutableFile(finalTargetFile, cacheFile);
+                } catch (IOException error) {
+                    logger.debug("Delta cache write failed: " + error.getMessage());
                 }
             }
             keepPartial = false;
@@ -1447,15 +1519,14 @@ public class DownloadService extends Worker {
     }
 
     /**
-     * Atomically write a stream to a file using the 256 KiB IO buffer.
+     * Atomically write a stream to a file using the bounded IO buffer.
      * When expectedChecksum is set, SHA-256 is hashed during the write.
      */
     static void writeFileAtomic(File targetFile, InputStream inputStream, String expectedChecksum) throws IOException {
         File tempFile = File.createTempFile("capgo-", ".tmp", targetFile.getParentFile());
 
         try {
-            // Okio's default segment is 8 KiB. Copy with 256 KiB so 8 MiB wrapper unwraps
-            // are not 1000 tiny writes.
+            // Reuse one bounded buffer for the whole stream.
             byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
             MessageDigest digest = null;
             if (expectedChecksum != null && !expectedChecksum.isEmpty()) {
