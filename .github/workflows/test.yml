@@ -105,12 +105,30 @@ jobs:
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
-      - name: Run iOS native tests
-        id: test_ios
-        run: bun run native:test:ios
       - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
         # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
         run: bun run generate:cli-crypto && bun run native:contract:cli:ios
+
+  # Keep native tests separate from device/package and fresh-CLI verification so
+  # every check fits the existing 10-minute job budget.
+  test_ios:
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Run iOS native tests
+        run: bun run native:test:ios
 
   maestro_web_assets:
     permissions:
