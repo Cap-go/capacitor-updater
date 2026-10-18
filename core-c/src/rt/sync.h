@@ -17,7 +17,6 @@ typedef pthread_mutex_t cg_mutex;
 typedef pthread_cond_t cg_cond;
 
 #define CG_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
-#define CG_COND_INIT PTHREAD_COND_INITIALIZER
 
 void cg_mutex_init(cg_mutex *mutex);
 void cg_mutex_destroy(cg_mutex *mutex);

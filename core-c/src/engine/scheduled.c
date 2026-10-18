@@ -55,7 +55,13 @@ typedef struct running_job {
 /* Process-wide: the job may run on another engine of the process (a worker started before the
  * plugin loaded) than the one waiting for it. Leaf lock. */
 static cg_mutex jobs_lock = CG_MUTEX_INIT;
-static cg_cond jobs_changed = CG_COND_INIT;
+static cg_cond jobs_changed;
+
+/* Timed waits use monotonic deadlines on Android/Linux. A static pthread initializer
+ * uses realtime there, making every timeout expire immediately and spin the waiter. */
+__attribute__((constructor)) static void init_jobs_changed(void) {
+    cg_cond_init(&jobs_changed);
+}
 static waiter *waiters;
 static running_job *running;
 
