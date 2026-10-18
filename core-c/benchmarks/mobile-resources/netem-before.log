@@ -1,5 +1,5 @@
 qdisc pfifo_fast 0: root refcnt 2 bands 3 priomap  1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1
-qdisc clsact ffff: parent ffff:fff1 
+qdisc clsact ffff: parent ffff:fff1
 PING 10.0.2.2 (10.0.2.2) 56(84) bytes of data.
 64 bytes from 10.0.2.2: icmp_seq=1 ttl=255 time=0.503 ms
 64 bytes from 10.0.2.2: icmp_seq=2 ttl=255 time=0.538 ms
