@@ -18,8 +18,12 @@ def output_path(value):
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('directory', type=Path)
 parser.add_argument('--samples', type=Path, required=True)
-parser.add_argument('--output', type=output_path, required=True)
+parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
+try:
+    output_path_checked = output_path(args.output)
+except argparse.ArgumentTypeError as error:
+    parser.error(str(error))
 
 
 def read_rows(path):
@@ -79,5 +83,5 @@ for key, group in groups.items():
         if values:
             entry[field] = {'n': len(values), 'median': statistics.median(values), 'min': min(values), 'max': max(values)}
     summary.append(entry)
-args.output.write_text(json.dumps({'rows': rows, 'summary': summary}, indent=2) + '\n')
+output_path_checked.write_text(json.dumps({'rows': rows, 'summary': summary}, indent=2) + '\n')
 print(f'{len(rows)} attempts, {sum(bool(row["ok"]) for row in rows)} successful; {len(summary)} summary cells')
