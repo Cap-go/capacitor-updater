@@ -21,6 +21,8 @@ HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_P
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 EMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EMULATOR_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+# Reserve the hard-stop grace within the ten-minute command budget.
+if (( MAESTRO_TIMEOUT_SECONDS > 595 )); then MAESTRO_TIMEOUT_SECONDS=595; fi
 MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-180000}"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
@@ -408,7 +410,7 @@ run_maestro_test_with_retries() {
     set +e
     MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
-      "$TIMEOUT_CMD" --foreground "${MAESTRO_TIMEOUT_SECONDS}s" \
+      "$TIMEOUT_CMD" --foreground --kill-after=5s "${MAESTRO_TIMEOUT_SECONDS}s" \
       maestro test \
       "$FLOW_PATH" \
       --platform android \
@@ -426,7 +428,7 @@ run_maestro_test_with_retries() {
       return 0
     fi
 
-    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && { [[ $command_status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
+    if [[ $attempt -lt $MAESTRO_TEST_RETRIES ]] && { [[ $command_status -eq 124 || $command_status -eq 137 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
       echo "Retrying Android Maestro smoke after driver/bootstrap failure." >&2
       rm -f "$output_file"
       attempt=$((attempt + 1))
