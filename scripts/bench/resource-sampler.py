@@ -39,10 +39,16 @@ def simulator_id(value):
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--platform', choices=['android', 'ios'], required=True)
-parser.add_argument('--output', type=output_path, required=True)
-parser.add_argument('--serial', type=device_serial, default='emulator-5610')
-parser.add_argument('--udid', type=simulator_id, default='EDFC80C4-6DA0-4966-B9C4-8C439106E328')
+parser.add_argument('--output', type=Path, required=True)
+parser.add_argument('--serial', default='emulator-5610')
+parser.add_argument('--udid', default='EDFC80C4-6DA0-4966-B9C4-8C439106E328')
 args = parser.parse_args()
+try:
+    output_path_checked = output_path(args.output)
+    serial = device_serial(args.serial)
+    udid = simulator_id(args.udid)
+except argparse.ArgumentTypeError as error:
+    parser.error(str(error))
 
 
 def emit(output, sample):
@@ -50,7 +56,7 @@ def emit(output, sample):
     output.flush()
 
 
-with open(args.output, 'a', encoding='utf-8') as output:
+with open(output_path_checked, 'a', encoding='utf-8') as output:
     if args.platform == 'android':
         adb = os.path.expanduser('~/Library/Android/sdk/platform-tools/adb')
         # One persistent ADB connection avoids a new transport per sample.
@@ -63,7 +69,7 @@ with open(args.output, 'a', encoding='utf-8') as output:
           fi
           sleep 0.1
         done'''
-        child = subprocess.Popen([adb, '-s', args.serial, 'shell', script], stdout=subprocess.PIPE, text=True)
+        child = subprocess.Popen([adb, '-s', serial, 'shell', script], stdout=subprocess.PIPE, text=True)
         signal.signal(signal.SIGTERM, lambda *_: child.terminate())
         record = None
         try:
@@ -112,7 +118,7 @@ with open(args.output, 'a', encoding='utf-8') as output:
         while True:
             if pid is None and time.monotonic() - last_find >= .5:
                 last_find = time.monotonic()
-                app = subprocess.run(['xcrun', 'simctl', 'get_app_container', args.udid,
+                app = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid,
                                       'app.capgo.updater', 'app'], capture_output=True, text=True)
                 if app.returncode == 0:
                     executable = app.stdout.strip() + '/App'
