@@ -84,6 +84,87 @@ public class CliCryptoFixtureTest {
     }
 
     @Test
+    public void manifestSessionPreparesKeyOnceAndResetsCipherForEachFile() throws Exception {
+        Path dir = fixtureDir();
+        JSONObject fixture = fixture(dir);
+        String publicKey = fixture.getString("publicKey");
+        JSONObject bundle = fixture.getJSONArray("bundles").getJSONObject(0);
+        byte[] expected = Files.readAllBytes(dir.resolve(bundle.getString("zip")));
+        CryptoCipher.DecryptionSession session = new CryptoCipher.DecryptionSession(publicKey, bundle.getString("ivSessionKey"));
+        try (
+            org.mockito.MockedStatic<CryptoCipher> calls = org.mockito.Mockito.mockStatic(
+                CryptoCipher.class,
+                org.mockito.Mockito.CALLS_REAL_METHODS
+            )
+        ) {
+            for (int index = 0; index < 3; index++) {
+                File file = temp.newFile("shared-" + index);
+                Files.copy(dir.resolve(bundle.getString("encrypted")), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                session.decryptFile(file);
+                assertArrayEquals(expected, Files.readAllBytes(file.toPath()));
+            }
+            calls.verify(() -> CryptoCipher.stringToPublicKey(publicKey), org.mockito.Mockito.times(1));
+        }
+    }
+
+    @Test
+    public void concurrentManifestSessionsNeverShareKeysOrCipherState() throws Exception {
+        Path dir = fixtureDir();
+        JSONObject fixture = fixture(dir);
+        JSONArray bundles = fixture.getJSONArray("bundles");
+        CryptoCipher.DecryptionSession[] sessions = new CryptoCipher.DecryptionSession[bundles.length()];
+        for (int index = 0; index < sessions.length; index++) {
+            sessions[index] = new CryptoCipher.DecryptionSession(
+                fixture.getString("publicKey"),
+                bundles.getJSONObject(index).getString("ivSessionKey")
+            );
+        }
+        Path work = temp.newFolder("concurrent-sessions").toPath();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        try {
+            java.util.List<java.util.concurrent.Future<Void>> jobs = new java.util.ArrayList<>();
+            for (int index = 0; index < 24; index++) {
+                final int task = index;
+                jobs.add(
+                    pool.submit(() -> {
+                        int selected = task % sessions.length;
+                        JSONObject bundle = bundles.getJSONObject(selected);
+                        Path file = work.resolve("file-" + task);
+                        Files.copy(dir.resolve(bundle.getString("encrypted")), file);
+                        sessions[selected].decryptFile(file.toFile());
+                        assertArrayEquals(Files.readAllBytes(dir.resolve(bundle.getString("zip"))), Files.readAllBytes(file));
+                        return null;
+                    })
+                );
+            }
+            for (java.util.concurrent.Future<Void> job : jobs) job.get();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    public void invalidSessionDoesNotModifyFilesOrPoisonAnotherSession() throws Exception {
+        Path dir = fixtureDir();
+        JSONObject fixture = fixture(dir);
+        JSONObject bundle = fixture.getJSONArray("bundles").getJSONObject(0);
+        File file = temp.newFile("invalid-session");
+        Files.copy(dir.resolve(bundle.getString("encrypted")), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        byte[] encrypted = Files.readAllBytes(file.toPath());
+        org.junit.Assert.assertThrows(IOException.class, () ->
+            new CryptoCipher.DecryptionSession(fixture.getString("publicKey"), "").decryptFile(file)
+        );
+        assertArrayEquals(encrypted, Files.readAllBytes(file.toPath()));
+        CryptoCipher.DecryptionSession invalid = new CryptoCipher.DecryptionSession(fixture.getString("publicKey"), "AAAA:AAAA");
+        for (int attempt = 0; attempt < 2; attempt++) {
+            org.junit.Assert.assertThrows(IOException.class, () -> invalid.decryptFile(file));
+            assertArrayEquals(encrypted, Files.readAllBytes(file.toPath()));
+        }
+        new CryptoCipher.DecryptionSession(fixture.getString("publicKey"), bundle.getString("ivSessionKey")).decryptFile(file);
+        assertArrayEquals(Files.readAllBytes(dir.resolve(bundle.getString("zip"))), Files.readAllBytes(file.toPath()));
+    }
+
+    @Test
     public void finishDownloadInstallsEveryCliEncryptedBundle() throws Exception {
         Path dir = fixtureDir();
         JSONObject fixture = fixture(dir);

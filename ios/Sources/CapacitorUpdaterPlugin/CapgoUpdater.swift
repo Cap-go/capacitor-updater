@@ -1653,6 +1653,7 @@ import UIKit
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
@@ -1878,9 +1879,9 @@ import UIKit
                             fileName: task.fileName,
                             destFileName: task.destFileName,
                             isBrotli: task.isBrotli,
-                            sessionKey: sessionKey,
                             version: version,
-                            bundleId: id
+                            bundleId: id,
+                            decryptionSession: decryptionSession
                         )
                     }
 
@@ -1935,15 +1936,15 @@ import UIKit
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
         downloadUrl: String, destFilePath: URL, cacheFilePath: URL?, fileHash: String,
-        fileName: String, destFileName: String, isBrotli: Bool, sessionKey: String,
-        version: String, bundleId: String
+        fileName: String, destFileName: String, isBrotli: Bool,
+        version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
     ) throws {
         for attempt in 1...3 {
             do {
                 try downloadManifestFileOnce(downloadUrl: downloadUrl, destFilePath: destFilePath,
                                              cacheFilePath: cacheFilePath, fileHash: fileHash, fileName: fileName,
-                                             destFileName: destFileName, isBrotli: isBrotli, sessionKey: sessionKey,
-                                             version: version, bundleId: bundleId)
+                                             destFileName: destFileName, isBrotli: isBrotli,
+                                             version: version, bundleId: bundleId, decryptionSession: decryptionSession)
                 return
             } catch {
                 let failure = error as NSError
@@ -1967,9 +1968,9 @@ import UIKit
         fileName: String,
         destFileName: String,
         isBrotli: Bool,
-        sessionKey: String,
         version: String,
-        bundleId: String
+        bundleId: String,
+        decryptionSession: CryptoCipher.DecryptionSession
     ) throws {
         guard let url = URL(string: downloadUrl) else {
             throw NSError(
@@ -2060,12 +2061,12 @@ import UIKit
 
         do {
             var source = partialURL
-            if !self.publicKey.isEmpty && CryptoCipher.isValidSessionKey(sessionKey) {
+            if decryptionSession.isEncrypted {
                 let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
                 try FileManager.default.copyItem(at: partialURL, to: work)
                 workURL = work
                 do {
-                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try decryptionSession.decryptFile(filePath: work)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "decrypt_fail", versionName: version)
@@ -2116,7 +2117,7 @@ import UIKit
             try? FileManager.default.removeItem(at: partialURL)
 
             self.logger.info("Manifest file downloaded and cached")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(decryptionSession.isEncrypted)")
         } catch {
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")

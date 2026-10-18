@@ -715,6 +715,7 @@ public class DownloadService extends Worker {
                 }
             }
 
+            CryptoCipher.DecryptionSession decryptionSession = new CryptoCipher.DecryptionSession(publicKey, sessionKey);
             ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
             List<Future<?>> futures = new ArrayList<>();
 
@@ -736,8 +737,7 @@ public class DownloadService extends Worker {
                                 task.targetFile,
                                 task.cacheFile,
                                 task.finalFileHash,
-                                sessionKey,
-                                publicKey,
+                                decryptionSession,
                                 task.isBrotli,
                                 task.fileName
                             );
@@ -1190,15 +1190,14 @@ public class DownloadService extends Worker {
         File targetFile,
         File cacheFile,
         String expectedHash,
-        String sessionKey,
-        String publicKey,
+        CryptoCipher.DecryptionSession decryptionSession,
         boolean isBrotli,
         String relativeName
     ) throws Exception {
         for (int attempt = 1; ; attempt++) {
             if (isStopped()) throw new IOException("download_stopped");
             try {
-                downloadAndVerifyOnce(downloadUrl, targetFile, cacheFile, expectedHash, sessionKey, publicKey, isBrotli, relativeName);
+                downloadAndVerifyOnce(downloadUrl, targetFile, cacheFile, expectedHash, decryptionSession, isBrotli, relativeName);
                 return;
             } catch (Exception error) {
                 if (attempt >= 3 || !isRetryableManifestError(error)) throw error;
@@ -1230,8 +1229,7 @@ public class DownloadService extends Worker {
         File targetFile,
         File cacheFile,
         String expectedHash,
-        String sessionKey,
-        String publicKey,
+        CryptoCipher.DecryptionSession decryptionSession,
         boolean isBrotli,
         String relativeName
     ) throws Exception {
@@ -1277,14 +1275,14 @@ public class DownloadService extends Worker {
                 }
             }
 
-            boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && CryptoCipher.isValidSessionKey(sessionKey);
+            boolean needDecrypt = decryptionSession.isEncrypted();
             File source = partial;
             if (needDecrypt) {
                 workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
                 copyFile(partial, workFile);
                 try {
                     logger.debug("Decrypting file " + targetFile.getName());
-                    CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
+                    decryptionSession.decryptFile(workFile);
                     source = workFile;
                 } catch (Exception e) {
                     keepPartial = false;

@@ -219,7 +219,45 @@ public struct CryptoCipher {
             logger.info("Encryption not set, no public key or session, ignored")
             return
         }
+        try DecryptionSession(publicKey: publicKey, sessionKey: sessionKey).decryptFile(filePath: filePath)
+    }
 
+    // Scoped to one manifest. Key material is immutable; CBC state stays local to each file.
+    final class DecryptionSession {
+        private let publicKey: String
+        private let sessionKey: String
+        private let lock = NSLock()
+        private var prepared: Result<AES128Key, Error>?
+
+        init(publicKey: String, sessionKey: String) {
+            self.publicKey = publicKey
+            self.sessionKey = sessionKey
+        }
+
+        private func key() throws -> AES128Key {
+            lock.lock()
+            defer { lock.unlock() }
+            if let prepared { return try prepared.get() }
+            let result = Result { try CryptoCipher.prepareDecryptionKey(publicKey: publicKey, sessionKey: sessionKey) }
+            prepared = result
+            return try result.get()
+        }
+
+        var isEncrypted: Bool {
+            !publicKey.isEmpty
+        }
+
+        func decryptFile(filePath: URL) throws {
+            guard isEncrypted else {
+                CryptoCipher.logger.info("Encryption not set, no public key or session, ignored")
+                return
+            }
+            try CryptoCipher.decryptPreparedFile(filePath: filePath, aesPrivateKey: key())
+        }
+    }
+
+    private static func prepareDecryptionKey(publicKey: String, sessionKey: String) throws -> AES128Key {
+        guard isValidSessionKey(sessionKey) else { throw CustomError.cannotDecode }
         // The bundle is encrypted from here on: an unusable key must fail, never leave it encrypted.
         if !publicKey.hasPrefix("-----BEGIN RSA PUBLIC KEY-----") {
             logger.error("The public key is not a valid RSA Public key")
@@ -265,8 +303,15 @@ public struct CryptoCipher {
                 throw NSError(domain: "Invalid decrypted session key", code: 5, userInfo: nil)
             }
 
-            let aesPrivateKey = AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
+            return AES128Key(iv: ivData, aes128Key: sessionKeyDataDecrypted, logger: logger)
+        } catch {
+            logger.error("File decryption failed")
+            throw CustomError.cannotDecode
+        }
+    }
 
+    private static func decryptPreparedFile(filePath: URL, aesPrivateKey: AES128Key) throws {
+        do {
             let encryptedSize = (try FileManager.default.attributesOfItem(atPath: filePath.path)[.size] as? NSNumber)?.uint64Value ?? 0
             if encryptedSize == 0 {
                 logger.error("Encrypted file data is empty")
@@ -279,7 +324,6 @@ public struct CryptoCipher {
                 logger.error("Decrypted data is empty")
                 throw NSError(domain: "Empty decrypted data", code: 7, userInfo: nil)
             }
-
         } catch {
             logger.error("File decryption failed")
             throw CustomError.cannotDecode

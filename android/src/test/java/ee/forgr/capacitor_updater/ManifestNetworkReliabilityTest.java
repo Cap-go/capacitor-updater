@@ -138,8 +138,7 @@ public class ManifestNetworkReliabilityTest {
                 File.class,
                 File.class,
                 String.class,
-                String.class,
-                String.class,
+                CryptoCipher.DecryptionSession.class,
                 boolean.class,
                 String.class
             );
@@ -151,8 +150,7 @@ public class ManifestNetworkReliabilityTest {
                     target,
                     null,
                     hash,
-                    "",
-                    "",
+                    new CryptoCipher.DecryptionSession("", ""),
                     false,
                     "index.html"
                 );
