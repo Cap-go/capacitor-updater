@@ -45,6 +45,9 @@ for path in sorted(args.directory.glob('results-*.jsonl')):
                 row['resources']['sampledPeakRssBytes'] = max(sample['rssBytes'] for sample in tail)
                 if 'footprintBytes' in tail[0]:
                     row['resources']['sampledPeakFootprintBytes'] = max(sample['footprintBytes'] for sample in tail)
+            if 'pssBytes' in window[0]:
+                memory_window = samples[lo:tail_index + 1] if tail_index < len(samples) and samples[tail_index]['pid'] == window[0]['pid'] else window
+                row['resources']['sampledPeakPssBytes'] = max(sample['pssBytes'] for sample in memory_window)
             if 'threads' in window[0]:
                 row['resources']['sampledPeakThreads'] = max(sample['threads'] for sample in window)
             if 'footprintBytes' in window[0]:
@@ -61,7 +64,7 @@ for key, group in groups.items():
     entry = dict(zip(['platform', 'label', 'variant', 'kind', 'sizeKey'], key))
     entry.update(attempts=len(group), successes=sum(bool(row['ok']) for row in group))
     for field, source in [('downloadMs', None), ('cpuMs', 'resources'), ('cpuThroughSettleMs', 'resources'), ('sampledPeakRssBytes', 'resources'),
-                          ('sampledPeakFootprintBytes', 'resources'), ('sampledPeakThreads', 'resources')]:
+                          ('sampledPeakFootprintBytes', 'resources'), ('sampledPeakPssBytes', 'resources'), ('sampledPeakThreads', 'resources')]:
         values = [(row if source is None else row.get(source, {})).get(field) for row in group if row['ok']]
         values = [value for value in values if value is not None]
         if values:

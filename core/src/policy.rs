@@ -122,9 +122,9 @@ pub fn should_clear_persisted_default_channel(
 }
 
 /// Bound HTTP + decode workers on small devices while overlapping network I/O.
-/// Four workers per CPU, between 4 and 32; each transfer buffer is 64 KiB.
+/// Eight workers per CPU, between 8 and 32; each transfer buffer is 64 KiB.
 pub fn manifest_max_concurrent_files(processor_count: i64) -> i64 {
-    processor_count.max(1).saturating_mul(4).clamp(4, 32)
+    processor_count.max(1).saturating_mul(8).clamp(8, 32)
 }
 
 #[cfg(test)]

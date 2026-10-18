@@ -33,7 +33,7 @@ with open(args.output, 'a', encoding='utf-8') as output:
           sample_pid=$(pidof app.capgo.updater)
           if [ -n "$sample_pid" ]; then
             echo "BEGIN $sample_pid"
-            cat /proc/$sample_pid/stat /proc/$sample_pid/status 2>/dev/null
+            cat /proc/$sample_pid/stat /proc/$sample_pid/status /proc/$sample_pid/smaps_rollup 2>/dev/null
             echo END
           fi
           sleep 0.1
@@ -57,6 +57,8 @@ with open(args.output, 'a', encoding='utf-8') as output:
                         record['cpuMs'] = (int(fields[11]) + int(fields[12])) * 10
                     elif line.startswith('VmRSS:'):
                         record['rssBytes'] = int(line.split()[1]) * 1024
+                    elif line.startswith('Pss:'):
+                        record['pssBytes'] = int(line.split()[1]) * 1024
                     elif line.startswith('Threads:'):
                         record['threads'] = int(line.split()[1])
         finally:
@@ -69,6 +71,15 @@ with open(args.output, 'a', encoding='utf-8') as output:
         class Usage(ctypes.Structure):
             _fields_ = [('uuid', ctypes.c_uint8 * 16)] + [(field, ctypes.c_uint64) for field in fields]
 
+        class Timebase(ctypes.Structure):
+            _fields_ = [('numer', ctypes.c_uint32), ('denom', ctypes.c_uint32)]
+
+        # rusage CPU counters use Mach ticks, not nanoseconds on Apple silicon.
+        timebase = Timebase()
+        system = ctypes.CDLL('/usr/lib/libSystem.B.dylib')
+        if system.mach_timebase_info(ctypes.byref(timebase)) != 0 or not timebase.denom:
+            raise RuntimeError('Cannot read Mach timebase')
+        tick_to_ms = timebase.numer / timebase.denom / 1_000_000
         proc = ctypes.CDLL('/usr/lib/libproc.dylib')
         proc.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
         pid = None
@@ -87,7 +98,7 @@ with open(args.output, 'a', encoding='utf-8') as output:
                 usage = Usage()
                 if proc.proc_pid_rusage(pid, 0, ctypes.byref(usage)) == 0:
                     emit(output, {'ts': time.time() * 1000, 'pid': pid,
-                                  'cpuMs': (usage.user_time + usage.system_time) / 1_000_000,
+                                  'cpuMs': (usage.user_time + usage.system_time) * tick_to_ms,
                                   'rssBytes': usage.resident_size,
                                   'footprintBytes': usage.phys_footprint})
                 else:
