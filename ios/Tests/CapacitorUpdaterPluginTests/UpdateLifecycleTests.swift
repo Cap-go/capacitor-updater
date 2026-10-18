@@ -55,8 +55,24 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         return true
     }
 
-    override func restoreCurrentBundle(_ bundle: BundleInfo) {
-        currentBundleValue = bundle
+    private var savedCurrentForReset: BundleInfo?
+    private var savedNextForReset: BundleInfo?
+
+    override func captureResetState() -> ResetState {
+        savedCurrentForReset = currentBundleValue
+        savedNextForReset = nextBundleValue
+        return ResetState(
+            currentBundlePath: currentBundleValue.getId(),
+            fallbackBundleId: BundleInfo.ID_BUILTIN,
+            nextBundleId: nextBundleValue?.getId()
+        )
+    }
+
+    override func restoreResetState(_ state: ResetState) {
+        if let savedCurrentForReset {
+            currentBundleValue = savedCurrentForReset
+        }
+        nextBundleValue = savedNextForReset
     }
 
     override func getBundleInfo(id: String?) -> BundleInfo {
@@ -347,6 +363,37 @@ final class UpdateLifecycleTests: XCTestCase {
 
         XCTAssertEqual(updater.setBundleCalls, [])
         XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+    }
+
+    func testAlwaysModeDoesNotInstallQueuedBundleWhileInBackground() {
+        plugin.setAutoUpdateModeForTesting("always")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, [])
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+    }
+
+    func testOnLaunchRetriesQueuedBundleOnForegroundAfterFailedDirectReload() {
+        plugin.setAutoUpdateModeForTesting("onLaunch")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.reloadResult = false
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.currentBundleValue.getId(), "current-id")
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+
+        plugin.reloadResult = true
+        plugin.appMovedToForeground()
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "bundle-2")
+        XCTAssertNil(updater.nextBundleValue)
     }
 
     // triggerUpdateCheck returned "preview_session" (not in the TS union) and never "unavailable".

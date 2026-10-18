@@ -3493,22 +3493,34 @@ public class CapgoUpdater {
         if (events.isEmpty()) {
             return;
         }
-        final CapgoUpdater owner;
         synchronized (statsOwnerLock) {
+            CapgoUpdater owner = statsOwner == this ? null : statsOwner;
+            if (owner != null && owner.adoptPendingStats(events)) {
+                return;
+            }
+            addOrphanedStats(events);
             owner = statsOwner == this ? null : statsOwner;
+            if (owner != null && !orphanedStats.isEmpty()) {
+                final List<JSONObject> parked = new ArrayList<>(orphanedStats);
+                orphanedStats.clear();
+                if (owner.adoptPendingStats(parked)) {
+                    return;
+                }
+                addOrphanedStats(parked);
+            }
         }
-        // A stopping owner rejects the events: park them for the next instance that claims ownership.
-        if (owner == null || !owner.adoptPendingStats(events)) {
-            parkOrphanedStats(events);
+    }
+
+    private static void addOrphanedStats(final List<JSONObject> events) {
+        orphanedStats.addAll(events);
+        while (orphanedStats.size() > MAX_PENDING_STATS) {
+            orphanedStats.remove(0);
         }
     }
 
     private static void parkOrphanedStats(final List<JSONObject> events) {
         synchronized (statsOwnerLock) {
-            orphanedStats.addAll(events);
-            while (orphanedStats.size() > MAX_PENDING_STATS) {
-                orphanedStats.remove(0);
-            }
+            addOrphanedStats(events);
         }
     }
 

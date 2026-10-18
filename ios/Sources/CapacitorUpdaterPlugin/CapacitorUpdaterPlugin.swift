@@ -5000,11 +5000,42 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     /// until the app reaches the foreground.
     @discardableResult
     func installNextIfInBackground() -> Bool {
-        let install = { self.appInBackground && self.installNext() }
+        let install = {
+            self.appInBackground && self.shouldInstallQueuedBundleWhileInBackground() && self.installNext()
+        }
         if Thread.isMainThread {
             return install()
         }
         return DispatchQueue.main.sync(execute: install)
+    }
+
+    /// Immediate background install applies to deferred (`atBackground`) updates only.
+    /// Direct-update modes retry from `appMovedToForeground` when a reload failed earlier.
+    private func shouldInstallQueuedBundleWhileInBackground() -> Bool {
+        autoUpdateMode == Self.autoUpdateModeBackground
+    }
+
+    /// Direct-update modes queue `next` when an immediate reload fails; retry once the app is active again.
+    private func shouldInstallQueuedBundleOnForeground() -> Bool {
+        switch directUpdateMode {
+        case Self.autoUpdateModeAlways, Self.autoUpdateModeLaunch:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func installQueuedBundleOnForegroundIfNeeded() {
+        guard shouldInstallQueuedBundleOnForeground() else {
+            return
+        }
+        let current = self.implementation.getCurrentBundle()
+        guard let next = self.implementation.getNextBundle(),
+              !next.isErrorStatus(),
+              next.getVersionName() != current.getVersionName() else {
+            return
+        }
+        _ = self.installNext()
     }
 
     /// Returns true when the next bundle became the active WebView bundle.
@@ -5024,13 +5055,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         if next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName() {
             logger.info("Next bundle is: \(next!.toString())")
+            let resetState = self.implementation.captureResetState()
             guard self.implementation.set(bundle: next!) else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")
                 return false
             }
             guard self._reload() else {
-                // The WebView still runs the previous bundle: point back at it and keep next queued for a retry.
-                self.implementation.restoreCurrentBundle(current)
+                // Built-in `set` may reset fallback/next; restore the full pre-install state for retry.
+                self.implementation.restoreResetState(resetState)
                 logger.error("Update to bundle: \(next!.toString()) Failed! Reload failed, keeping it as next")
                 return false
             }
@@ -5060,6 +5092,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             backgroundWork!.cancel()
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
+        self.installQueuedBundleOnForegroundIfNeeded()
         if self._isAutoUpdateEnabled() {
             // Check if download is already in progress (with timeout protection)
             if !isDownloadStuckOrTimedOut() {
