@@ -28,6 +28,8 @@ pub mod net;
 pub mod paths;
 pub mod policy;
 mod sync;
+#[cfg(feature = "test-support")]
+pub mod testing;
 pub mod text;
 
 pub use error::{CoreError, CoreResult};

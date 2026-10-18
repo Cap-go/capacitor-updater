@@ -1,0 +1,81 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/* Mbed TLS trimmed to what the updater uses: a TLS 1.2 / 1.3 client whose
+ * trust decision is the host's, AES-128-CBC, SHA-256 and RSA big numbers. */
+
+#define MBEDTLS_THREADING_C
+#define MBEDTLS_THREADING_PTHREAD
+/* Constant AES tables: the default lazily generated tables are built on first use without
+ * a memory barrier, a data race when two threads decrypt at once (found by ThreadSanitizer). */
+#define MBEDTLS_AES_ROM_TABLES
+/* ARMv8 SHA-256 instructions when the CPU has them (AES uses AESCE by default). */
+#define MBEDTLS_SHA256_USE_ARMV8_A_CRYPTO_IF_PRESENT
+
+/* Server side, DTLS and session caches: client only. */
+#undef MBEDTLS_SSL_SRV_C
+#undef MBEDTLS_SSL_PROTO_DTLS
+#undef MBEDTLS_SSL_DTLS_ANTI_REPLAY
+#undef MBEDTLS_SSL_DTLS_HELLO_VERIFY
+#undef MBEDTLS_SSL_DTLS_CLIENT_PORT_REUSE
+#undef MBEDTLS_SSL_DTLS_CONNECTION_ID
+#undef MBEDTLS_SSL_DTLS_SRTP
+#undef MBEDTLS_SSL_COOKIE_C
+#undef MBEDTLS_SSL_CACHE_C
+#undef MBEDTLS_SSL_TICKET_C
+#undef MBEDTLS_SSL_EARLY_DATA
+#undef MBEDTLS_SSL_RENEGOTIATION
+#undef MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED
+#undef MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_EPHEMERAL_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED
+#undef MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+#undef MBEDTLS_ECJPAKE_C
+#undef MBEDTLS_DHM_C
+
+/* Our own sockets and clocks. */
+#undef MBEDTLS_NET_C
+#undef MBEDTLS_TIMING_C
+
+/* Certificate / key writing, PKCS#12, legacy ciphers. */
+#undef MBEDTLS_X509_CREATE_C
+#undef MBEDTLS_X509_CRT_WRITE_C
+#undef MBEDTLS_X509_CSR_WRITE_C
+#undef MBEDTLS_X509_CSR_PARSE_C
+#undef MBEDTLS_X509_CRL_PARSE_C
+#undef MBEDTLS_PEM_WRITE_C
+#undef MBEDTLS_PK_WRITE_C
+#undef MBEDTLS_PKCS12_C
+#undef MBEDTLS_PKCS5_C
+#undef MBEDTLS_PKCS7_C
+#undef MBEDTLS_DES_C
+#undef MBEDTLS_ARIA_C
+#undef MBEDTLS_CAMELLIA_C
+#undef MBEDTLS_CCM_C
+#undef MBEDTLS_NIST_KW_C
+#undef MBEDTLS_CMAC_C
+#undef MBEDTLS_RIPEMD160_C
+#undef MBEDTLS_MD5_C
+#undef MBEDTLS_LMS_C
+#undef MBEDTLS_HKDF_C_UNUSED
+#undef MBEDTLS_SELF_TEST
+#undef MBEDTLS_DEBUG_C
+#undef MBEDTLS_VERSION_FEATURES
+#undef MBEDTLS_ECP_DP_SECP192R1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP224R1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP192K1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP224K1_ENABLED
+#undef MBEDTLS_ECP_DP_SECP256K1_ENABLED
+#undef MBEDTLS_ECP_DP_BP256R1_ENABLED
+#undef MBEDTLS_ECP_DP_BP384R1_ENABLED
+#undef MBEDTLS_ECP_DP_BP512R1_ENABLED
+#undef MBEDTLS_ECP_DP_CURVE448_ENABLED

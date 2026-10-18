@@ -30,7 +30,9 @@ libc = "0.2"
 jni = { version = "0.21", default-features = false, optional = true }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-serde_json = "1"
+# float_roundtrip: correctly rounded float parsing, like the C core (strtod); the default
+# parser can be one bit off (found by the json fuzz target).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 url = "2"
 # Pinned to the ASCII-only adapter so url/idna skip the ICU normalization tables (~200 KiB):
 # Unicode (IDN) host names are rejected, punycode (xn--) host names still work.
@@ -47,6 +49,7 @@ rustls-platform-verifier = { version = "0.5", optional = true }
 [dev-dependencies]
 capgo-updater-core = { path = ".", features = ["test-support"] }
 brotli = "7"
+libloading = "0.8"
 rand = "0.8"
 rsa = "0.9"
 tempfile = "3"
@@ -57,6 +60,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 codegen-units = 1
 lto = true
 opt-level = "s"
+# Integer overflow panics instead of wrapping silently (every crate). The FFI and JNI entry
+# points catch panics and answer an error; measured cost: none on the host micro-benchmarks
+# (core-c/COMPARISON.md, Crash safety).
+overflow-checks = true
 
 # Hot paths (inflate, CRC, AES, the engine's own loops) are built for speed; the rest stays small.
 [profile.release.package.capgo-updater-core]

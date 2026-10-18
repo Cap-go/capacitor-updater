@@ -1,0 +1,9 @@
+qdisc netem 7711: root refcnt 2 limit 10000 delay 75.0ms loss 1%
+ Sent 1290427 bytes 14876 pkt (dropped 138, overlimits 0 requeues 0)
+ backlog 1296b 24p requeues 0
+qdisc clsact ffff: parent ffff:fff1
+ Sent 65096022 bytes 52666 pkt (dropped 0, overlimits 0 requeues 0)
+ backlog 0b 0p requeues 0
+qdisc netem 7712: root refcnt 2 limit 10000 delay 75.0ms loss 1%
+ Sent 66535380 bytes 52092 pkt (dropped 186, overlimits 0 requeues 0)
+ backlog 0b 0p requeues 0

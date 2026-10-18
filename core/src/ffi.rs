@@ -331,3 +331,145 @@ pub unsafe extern "C" fn capgo_engine_free(engine: *mut Engine) {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(engine)));
     }
 }
+
+/// The `unsafe` marshalling of this file, without the network or crypto code: these also run
+/// under Miri (CI job `rust_core_sanitizers`, `cargo miri test --lib ffi::`).
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    unsafe fn call(operation: &[u8], input: &[u8]) -> serde_json::Value {
+        let operation = CString::new(operation).unwrap();
+        let input = CString::new(input).unwrap();
+        let raw = capgo_core_call(operation.as_ptr(), input.as_ptr());
+        let text = CStr::from_ptr(raw).to_str().unwrap().to_string();
+        capgo_core_free(raw);
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn core_calls_marshal_strings_both_ways() {
+        unsafe {
+            let reply = call(b"resolvePathInside", br#"{"base":"/data","path":"a/b"}"#);
+            assert_eq!(reply["ok"], true, "{reply}");
+            assert_eq!(reply["value"]["path"], "/data/a/b");
+            let reply = call(b"resolvePathInside", br#"{"base":"/data","path":"../x"}"#);
+            assert_eq!(reply["ok"], false, "{reply}");
+            // Not UTF-8, NULL arguments, NULL free.
+            let reply = call(b"\xff\xfe", b"{}");
+            assert_eq!(reply["error"]["code"], "invalid_input", "{reply}");
+            let raw = capgo_core_call(std::ptr::null(), std::ptr::null());
+            assert!(!raw.is_null());
+            capgo_core_free(raw);
+            capgo_core_free(std::ptr::null_mut());
+        }
+    }
+
+    struct Context {
+        store: Mutex<Vec<(String, String)>>,
+        released: Mutex<bool>,
+    }
+
+    unsafe extern "C" fn kv_get(context: *mut c_void, key: *const c_char) -> *mut c_char {
+        let context = &*(context as *const Context);
+        let key = CStr::from_ptr(key).to_str().unwrap();
+        let store = context.store.lock().unwrap();
+        match store.iter().find(|(name, _)| name == key) {
+            Some((_, value)) => CString::new(value.as_str()).unwrap().into_raw(),
+            None => std::ptr::null_mut(),
+        }
+    }
+
+    unsafe extern "C" fn kv_set(context: *mut c_void, key: *const c_char, value: *const c_char) {
+        let context = &*(context as *const Context);
+        let key = CStr::from_ptr(key).to_str().unwrap().to_string();
+        let mut store = context.store.lock().unwrap();
+        store.retain(|(name, _)| *name != key);
+        if !value.is_null() {
+            store.push((key, CStr::from_ptr(value).to_str().unwrap().to_string()));
+        }
+    }
+
+    unsafe extern "C" fn kv_keys(context: *mut c_void) -> *mut c_char {
+        let context = &*(context as *const Context);
+        let keys: Vec<String> = context
+            .store
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect();
+        CString::new(serde_json::to_string(&keys).unwrap()).unwrap().into_raw()
+    }
+
+    unsafe extern "C" fn hook(_: *mut c_void, name: *const c_char, payload: *const c_char) -> *mut c_char {
+        let name = CStr::from_ptr(name).to_str().unwrap();
+        let payload: serde_json::Value = serde_json::from_str(CStr::from_ptr(payload).to_str().unwrap()).unwrap();
+        let reply = serde_json::json!({ "name": name, "payload": payload });
+        CString::new(reply.to_string()).unwrap().into_raw()
+    }
+
+    unsafe extern "C" fn verify(
+        _: *mut c_void,
+        server_name: *const c_char,
+        certificates: *const *const u8,
+        lengths: *const usize,
+        count: usize,
+        error: *mut *mut c_char,
+    ) -> i32 {
+        let first = std::slice::from_raw_parts(*certificates, *lengths);
+        let name = CStr::from_ptr(server_name).to_str().unwrap();
+        *error = CString::new(format!("{name} {count} {}", first.len()))
+            .unwrap()
+            .into_raw();
+        0
+    }
+
+    unsafe extern "C" fn free_string(_: *mut c_void, value: *mut c_char) {
+        drop(CString::from_raw(value));
+    }
+
+    unsafe extern "C" fn release(context: *mut c_void) {
+        let context = Box::from_raw(context as *mut Context);
+        *context.released.lock().unwrap() = true;
+        // Leaked on purpose so the test can read the flag after the host is gone.
+        Box::leak(context);
+    }
+
+    #[test]
+    fn host_callbacks_marshal_strings_and_release_the_context() {
+        let context = Box::into_raw(Box::new(Context {
+            store: Mutex::new(Vec::new()),
+            released: Mutex::new(false),
+        }));
+        let host = CHost(CapgoHostCallbacks {
+            context: context as *mut c_void,
+            log: None,
+            kv_get: Some(kv_get),
+            kv_set: Some(kv_set),
+            kv_keys: Some(kv_keys),
+            emit: None,
+            free_string: Some(free_string),
+            hook: Some(hook),
+            release: Some(release),
+            verify_server_certificate: Some(verify),
+        });
+        host.kv_set("a\0b", Some("value"));
+        assert_eq!(host.kv_get("ab", None).as_deref(), Some("value"));
+        assert_eq!(host.kv_get("missing", Some("fallback")).as_deref(), Some("fallback"));
+        assert_eq!(host.kv_keys(), vec!["ab".to_string()]);
+        host.kv_set("ab", None);
+        assert!(host.kv_keys().is_empty());
+        let reply = host.hook("name", &serde_json::json!({ "x": 1 })).unwrap();
+        assert_eq!(reply["payload"]["x"], 1);
+        let verdict = host.verify_server_certificate(&[b"cert", b"chain"], "example.com");
+        assert_eq!(verdict, Some(Err("example.com 2 4".to_string())));
+        host.log(LogLevel::Info, "ignored without a callback");
+        drop(host);
+        unsafe {
+            assert!(*(*context).released.lock().unwrap());
+            drop(Box::from_raw(context));
+        }
+    }
+}

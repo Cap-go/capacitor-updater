@@ -144,6 +144,19 @@ fn transport_error(error: ureq::Transport) -> NetError {
     NetError { kind, message }
 }
 
+/// ureq 2.12 (its last 2.x release) panics when it reads a response header line that has no
+/// `:` (`Header::value` slices past the end of the line). Such a response is refused with a
+/// network error instead of unwinding through the engine's threads. The C core skips the line
+/// (core-c/COMPARISON.md, Crash safety).
+fn contain_ureq_panic<T>(work: impl FnOnce() -> Result<T, NetError>) -> Result<T, NetError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| {
+        Err(NetError {
+            kind: NetErrorKind::Network,
+            message: "Invalid HTTP response header".into(),
+        })
+    })
+}
+
 fn headers_of(response: &ureq::Response) -> Vec<(String, String)> {
     response
         .headers_names()
@@ -369,22 +382,25 @@ impl Http {
     ) -> Result<Response, NetError> {
         // Transparent gzip, as OkHttp and URLSession did for API calls.
         let headers = with_accept_encoding(headers, "gzip");
-        let response = self.execute(false, method, url, &headers, body)?;
-        let status = response.status();
-        let mut headers = headers_of(&response);
-        let gzip = response.header("Content-Encoding").is_some_and(|value| {
-            value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip")
-        });
         let read_error = |error: std::io::Error| NetError {
             kind: classify_io(&error),
             message: error.to_string(),
         };
-        let mut buffer = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_API_BODY_BYTES)
-            .read_to_end(&mut buffer)
-            .map_err(read_error)?;
+        let (status, mut headers, gzip, mut buffer) = contain_ureq_panic(|| {
+            let response = self.execute(false, method, url, &headers, body)?;
+            let status = response.status();
+            let headers = headers_of(&response);
+            let gzip = response.header("Content-Encoding").is_some_and(|value| {
+                value.trim().eq_ignore_ascii_case("gzip") || value.trim().eq_ignore_ascii_case("x-gzip")
+            });
+            let mut buffer = Vec::new();
+            response
+                .into_reader()
+                .take(MAX_API_BODY_BYTES)
+                .read_to_end(&mut buffer)
+                .map_err(read_error)?;
+            Ok((status, headers, gzip, buffer))
+        })?;
         if gzip {
             // The decoded size is capped too (gzip bomb).
             let mut decoded = Vec::new();
@@ -437,16 +453,18 @@ impl Http {
     ) -> Result<StreamHead, NetError> {
         // Bundle files are stored byte for byte (checksums, Range resume): no content coding.
         let headers = with_accept_encoding(headers, "identity");
-        let response = self.execute(true, "GET", url, &headers, None)?;
-        let head = StreamHead {
-            status: response.status(),
-            headers: headers_of(&response),
-            content_length: response
-                .header("Content-Length")
-                .and_then(|value| value.trim().parse().ok()),
-        };
+        let (head, mut reader) = contain_ureq_panic(|| {
+            let response = self.execute(true, "GET", url, &headers, None)?;
+            let head = StreamHead {
+                status: response.status(),
+                headers: headers_of(&response),
+                content_length: response
+                    .header("Content-Length")
+                    .and_then(|value| value.trim().parse().ok()),
+            };
+            Ok((head, response.into_reader()))
+        })?;
         handler(Stream::Head(&head))?;
-        let mut reader = response.into_reader();
         let mut buffer = vec![0u8; crate::crypto::checksum::IO_BUFFER_BYTES];
         loop {
             let read = reader.read(&mut buffer).map_err(|error| NetError {

@@ -1,0 +1,29 @@
+qdisc netem 7711: root refcnt 2 limit 10000 delay 75.0ms loss 1%
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0)
+ backlog 144b 2p requeues 0
+qdisc clsact ffff: parent ffff:fff1
+ Sent 11833 bytes 76 pkt (dropped 0, overlimits 0 requeues 0)
+ backlog 0b 0p requeues 0
+qdisc netem 7712: root refcnt 2 limit 10000 delay 75.0ms loss 1%
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0)
+ backlog 166b 2p requeues 0
+filter protocol all pref 62000 matchall chain 0
+filter protocol all pref 62000 matchall chain 0 handle 0x1
+  not_in_hw
+	action order 1: mirred (Egress Redirect to device ifbcapgo0) stolen
+ 	index 1 ref 1 bind 1
+
+PING 10.0.2.2 (10.0.2.2) 56(84) bytes of data.
+64 bytes from 10.0.2.2: icmp_seq=2 ttl=255 time=150 ms
+64 bytes from 10.0.2.2: icmp_seq=3 ttl=255 time=152 ms
+64 bytes from 10.0.2.2: icmp_seq=4 ttl=255 time=150 ms
+64 bytes from 10.0.2.2: icmp_seq=5 ttl=255 time=150 ms
+64 bytes from 10.0.2.2: icmp_seq=6 ttl=255 time=151 ms
+64 bytes from 10.0.2.2: icmp_seq=7 ttl=255 time=151 ms
+64 bytes from 10.0.2.2: icmp_seq=8 ttl=255 time=152 ms
+64 bytes from 10.0.2.2: icmp_seq=9 ttl=255 time=150 ms
+64 bytes from 10.0.2.2: icmp_seq=10 ttl=255 time=152 ms
+
+--- 10.0.2.2 ping statistics ---
+10 packets transmitted, 9 received, 10% packet loss, time 1810ms
+rtt min/avg/max/mdev = 150.302/151.422/152.644/0.799 ms
