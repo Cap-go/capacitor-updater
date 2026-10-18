@@ -4633,15 +4633,16 @@ public class CapacitorUpdaterUnitTest {
         assertEquals(liveQueue, new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
     }
 
-    private CapgoUpdater headlessWithPendingStat(final String action) throws Exception {
+    private CapgoUpdater headlessWithUnsentStat(final String action) throws Exception {
         final Path dir = Files.createTempDirectory("capgo-pending-stats-headless");
-        Files.write(
-            dir.resolve("capgo_pending_stats.json"),
-            ("[{\"action\":\"" + action + "\",\"timestamp\":1}]").getBytes(StandardCharsets.UTF_8)
-        );
-        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        final CapgoUpdater headless = spy(new CapgoUpdater(mock(Logger.class)));
         headless.documentsDir = dir.toFile();
-        headless.restorePendingStats();
+        doReturn(new BundleInfo(BundleInfo.ID_BUILTIN, "builtin", BundleStatus.SUCCESS, "", ""))
+            .when(headless)
+            .getCurrentBundle();
+        headless.statsUrl = "https://example.com/stats";
+        headless.sendStats(action, "builtin");
+        headless.statsUrl = "";
         return headless;
     }
 
@@ -4654,7 +4655,7 @@ public class CapacitorUpdaterUnitTest {
         live.documentsDir = tempDir.toFile();
         live.claimStatsOwnership();
         try {
-            final CapgoUpdater headless = headlessWithPendingStat("set_next");
+            final CapgoUpdater headless = headlessWithUnsentStat("set_next");
             assertEquals(1, headless.pendingStatsCount());
 
             headless.handOverPendingStats();
@@ -4677,7 +4678,7 @@ public class CapacitorUpdaterUnitTest {
         stopping.claimStatsOwnership();
         stopping.shutdown(false);
 
-        final CapgoUpdater headless = headlessWithPendingStat("set_next");
+        final CapgoUpdater headless = headlessWithUnsentStat("set_next");
         headless.handOverPendingStats();
         headless.shutdown(false);
         stopping.releaseStatsOwnership();
@@ -4698,7 +4699,7 @@ public class CapacitorUpdaterUnitTest {
     public void statsHandedOverBeforeThePluginLoadsAreAdoptedOnClaim() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-orphan");
 
-        final CapgoUpdater headless = headlessWithPendingStat("set");
+        final CapgoUpdater headless = headlessWithUnsentStat("set");
         headless.handOverPendingStats();
         headless.shutdown(false);
 
