@@ -94,7 +94,7 @@ benchmark build uses a 3 GiB Gradle heap and four build workers; those settings 
 host, not the app runtime. iOS snapshots and fixture copies use copy-on-write storage on APFS.
 
 `resource-sampler.py --platform android|ios --output samples.jsonl` records the updater's primary
-app process. Android reads CPU ticks, resident memory and thread counts through one persistent
+app process. Android reads CPU ticks, resident and proportional memory, and thread counts through one persistent
 ADB connection, roughly every 100 ms. Pass `--serial` when using another emulator. The iOS
 simulator sampler reads host process CPU, RSS and physical footprint every 20 ms; `--udid`
 selects the simulator. Separate WebView processes and OS networking daemons are excluded.
@@ -110,7 +110,7 @@ python3 scripts/bench/resource-report.py results-directory --samples samples-dir
 
 The report keeps failures, sample counts and measurement-boundary overhang. Check those fields
 before comparing short cases; a sample can straddle an operation's boundaries. CPU time covers
-the process, including its worker threads. Do not interpret RSS as private heap size.
+the process, including its worker threads. Do not interpret RSS as private heap size. Prefer Android PSS and iOS physical footprint when discussing memory pressure; both still exclude separate WebView processes.
 
 For recovery checks, `BENCH_FAULT_PROFILE=503-once` makes the server refuse the first manifest
 payload request of every timed case with HTTP 503. Warm-ups are unaffected. Results include

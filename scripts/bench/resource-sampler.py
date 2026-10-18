@@ -33,7 +33,7 @@ with open(args.output, 'a', encoding='utf-8') as output:
           sample_pid=$(pidof app.capgo.updater)
           if [ -n "$sample_pid" ]; then
             echo "BEGIN $sample_pid"
-            cat /proc/$sample_pid/stat /proc/$sample_pid/status 2>/dev/null
+            cat /proc/$sample_pid/stat /proc/$sample_pid/status /proc/$sample_pid/smaps_rollup 2>/dev/null
             echo END
           fi
           sleep 0.1
@@ -57,6 +57,8 @@ with open(args.output, 'a', encoding='utf-8') as output:
                         record['cpuMs'] = (int(fields[11]) + int(fields[12])) * 10
                     elif line.startswith('VmRSS:'):
                         record['rssBytes'] = int(line.split()[1]) * 1024
+                    elif line.startswith('Pss:'):
+                        record['pssBytes'] = int(line.split()[1]) * 1024
                     elif line.startswith('Threads:'):
                         record['threads'] = int(line.split()[1])
         finally:
