@@ -23,11 +23,11 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// Bound HTTP + decode to four workers per CPU, between 4 and 32.
+    /// Bound HTTP + decode to eight workers per CPU, between 8 and 32.
     static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
 
     static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        max(4, min(8, max(1, processorCount)) * 4)
+        min(4, max(1, processorCount)) * 8
     }
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075

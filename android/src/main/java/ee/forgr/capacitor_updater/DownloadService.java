@@ -123,7 +123,7 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // Bound HTTP + decode to four workers per CPU, between 4 and 32.
+    // Bound HTTP + decode to eight workers per CPU, between 8 and 32.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
     private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
     private static final int SHARED_MAX_REQUESTS = 64;
@@ -220,7 +220,7 @@ public class DownloadService extends Worker {
 
     static int manifestMaxConcurrentFiles(int processors) {
         int cores = Math.max(1, processors);
-        return Math.max(4, Math.min(8, cores) * 4);
+        return Math.min(4, cores) * 8;
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
