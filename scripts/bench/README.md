@@ -93,8 +93,8 @@ Set `BENCH_BUILD_ONLY=1` to prepare release snapshots without launching a device
 benchmark build uses a 3 GiB Gradle heap and four build workers; those settings affect the build
 host, not the app runtime. iOS snapshots and fixture copies use copy-on-write storage on APFS.
 
-`resource-sampler.py --platform android|ios --output samples.jsonl` records the updater's primary
-app process. Android reads CPU ticks, resident and proportional memory, and thread counts through one persistent
+`resource-sampler.py --platform android|ios --output .context/bench/samples.jsonl` records the updater's primary
+app process. Output paths must stay inside the workspace `.context/` directory; device identifiers are validated before invoking platform tools. Android reads CPU ticks, resident and proportional memory, and thread counts through one persistent
 ADB connection, roughly every 100 ms. Pass `--serial` when using another emulator. The iOS
 simulator sampler reads host process CPU, RSS and physical footprint every 20 ms; `--udid`
 selects the simulator. Separate WebView processes and OS networking daemons are excluded.
@@ -105,7 +105,7 @@ The server records `hostStartedAt` and `hostFinishedAt` for each attempt. Name s
 `resources-<label>-<platform>-<variant>-r<run>.jsonl`, then join them with:
 
 ```bash
-python3 scripts/bench/resource-report.py results-directory --samples samples-directory --output report.json
+python3 scripts/bench/resource-report.py results-directory --samples samples-directory --output .context/bench/report.json
 ```
 
 The report keeps failures, sample counts and measurement-boundary overhang. Check those fields

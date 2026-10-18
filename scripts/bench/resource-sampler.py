@@ -9,14 +9,39 @@ import ctypes
 import json
 import os
 import signal
+import re
+import uuid
+from pathlib import Path
 import subprocess
 import time
 
+# Keep generated files in the workspace scratch directory, including through symlinks.
+def output_path(value):
+    path = Path(value).resolve()
+    scratch = Path(__file__).resolve().parents[2] / '.context'
+    if not path.is_relative_to(scratch):
+        raise argparse.ArgumentTypeError('output must be inside the workspace .context directory')
+    return path
+
+
+def device_serial(value):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', value):
+        raise argparse.ArgumentTypeError('invalid ADB device serial')
+    return value
+
+
+def simulator_id(value):
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError('invalid simulator UUID') from error
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--platform', choices=['android', 'ios'], required=True)
-parser.add_argument('--output', required=True)
-parser.add_argument('--serial', default='emulator-5610')
-parser.add_argument('--udid', default='EDFC80C4-6DA0-4966-B9C4-8C439106E328')
+parser.add_argument('--output', type=output_path, required=True)
+parser.add_argument('--serial', type=device_serial, default='emulator-5610')
+parser.add_argument('--udid', type=simulator_id, default='EDFC80C4-6DA0-4966-B9C4-8C439106E328')
 args = parser.parse_args()
 
 
