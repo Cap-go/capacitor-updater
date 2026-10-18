@@ -1,0 +1,752 @@
+[
+  {
+    "dataset": "lossy",
+    "version": "c-h1-manifest-200f-20MB-plain-background-r1-a1-1436",
+    "label": "c-h1",
+    "run": 1,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h1-manifest-200f-20MB-plain-background-r2-a1-fd45",
+    "label": "c-h1",
+    "run": 2,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h1-manifest-200f-20MB-plain-background-r3-a1-b34a",
+    "label": "c-h1",
+    "run": 3,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h1-manifest-200f-20MB-plain-background-r4-a1-0168",
+    "label": "c-h1",
+    "run": 4,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h1-manifest-200f-20MB-plain-background-r5-a1-e59d",
+    "label": "c-h1",
+    "run": 5,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-manifest-200f-20MB-plain-background-r1-a1-3c9b",
+    "label": "c-h3",
+    "run": 1,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-manifest-200f-20MB-plain-background-r2-a1-c0c7",
+    "label": "c-h3",
+    "run": 2,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-manifest-200f-20MB-plain-background-r3-a1-f022",
+    "label": "c-h3",
+    "run": 3,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-manifest-200f-20MB-plain-background-r4-a1-299f",
+    "label": "c-h3",
+    "run": 4,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-manifest-200f-20MB-plain-background-r5-a1-c1b8",
+    "label": "c-h3",
+    "run": 5,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977597,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-32-manifest-200f-20MB-plain-background-r1-a1-05f0",
+    "label": "c-h3-32",
+    "run": 1,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-32-manifest-200f-20MB-plain-background-r2-a1-44cc",
+    "label": "c-h3-32",
+    "run": 2,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-32-manifest-200f-20MB-plain-background-r3-a1-67a2",
+    "label": "c-h3-32",
+    "run": 3,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-32-manifest-200f-20MB-plain-background-r4-a1-facd",
+    "label": "c-h3-32",
+    "run": 4,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-32-manifest-200f-20MB-plain-background-r5-a1-bb0e",
+    "label": "c-h3-32",
+    "run": 5,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-8-manifest-200f-20MB-plain-background-r1-a1-028d",
+    "label": "c-h3-8",
+    "run": 1,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977605,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-8-manifest-200f-20MB-plain-background-r2-a1-56cb",
+    "label": "c-h3-8",
+    "run": 2,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977605,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-8-manifest-200f-20MB-plain-background-r3-a1-4ac9",
+    "label": "c-h3-8",
+    "run": 3,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977605,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-8-manifest-200f-20MB-plain-background-r4-a1-dba2",
+    "label": "c-h3-8",
+    "run": 4,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977605,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "c-h3-8-manifest-200f-20MB-plain-background-r5-a1-2919",
+    "label": "c-h3-8",
+    "run": 5,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977605,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r1-a1-d08e",
+    "label": "rust-h1",
+    "run": 1,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r2-a1-9469",
+    "label": "rust-h1",
+    "run": 2,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r3-a1-d2b6",
+    "label": "rust-h1",
+    "run": 3,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r4-a1-f003",
+    "label": "rust-h1",
+    "run": 4,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r5-a1-341b",
+    "label": "rust-h1",
+    "run": 5,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-manifest-200f-20MB-plain-background-r1-a1-a101",
+    "label": "rust-h3",
+    "run": 1,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-manifest-200f-20MB-plain-background-r2-a1-7582",
+    "label": "rust-h3",
+    "run": 2,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-manifest-200f-20MB-plain-background-r3-a1-3679",
+    "label": "rust-h3",
+    "run": 3,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-manifest-200f-20MB-plain-background-r4-a1-31de",
+    "label": "rust-h3",
+    "run": 4,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-manifest-200f-20MB-plain-background-r5-a1-947f",
+    "label": "rust-h3",
+    "run": 5,
+    "connections": 4,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r1-a1-17ed",
+    "label": "rust-h3-32",
+    "run": 1,
+    "connections": 16,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r2-a1-a8bf",
+    "label": "rust-h3-32",
+    "run": 2,
+    "connections": 16,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r3-a1-856d",
+    "label": "rust-h3-32",
+    "run": 3,
+    "connections": 16,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r4-a1-c715",
+    "label": "rust-h3-32",
+    "run": 4,
+    "connections": 16,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r5-a1-3d7d",
+    "label": "rust-h3-32",
+    "run": 5,
+    "connections": 16,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-8-manifest-200f-20MB-plain-background-r1-a1-bcdb",
+    "label": "rust-h3-8",
+    "run": 1,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977617,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-8-manifest-200f-20MB-plain-background-r2-a1-0b41",
+    "label": "rust-h3-8",
+    "run": 2,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977617,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-8-manifest-200f-20MB-plain-background-r3-a1-b243",
+    "label": "rust-h3-8",
+    "run": 3,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977617,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-8-manifest-200f-20MB-plain-background-r4-a1-b41d",
+    "label": "rust-h3-8",
+    "run": 4,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977617,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "lossy",
+    "version": "rust-h3-8-manifest-200f-20MB-plain-background-r5-a1-f1a1",
+    "label": "rust-h3-8",
+    "run": 5,
+    "connections": 8,
+    "requests": 202,
+    "responseBytes": 20977617,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r1-a1-086b",
+    "label": "rust-h1",
+    "run": 1,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r2-a1-66a9",
+    "label": "rust-h1",
+    "run": 2,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r3-a1-03aa",
+    "label": "rust-h1",
+    "run": 3,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r4-a1-aa01",
+    "label": "rust-h1",
+    "run": 4,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h1-manifest-200f-20MB-plain-background-r5-a1-d666",
+    "label": "rust-h1",
+    "run": 5,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977609,
+    "protocols": {
+      "HTTP/1.1": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r1-a1-e499",
+    "label": "rust-h3-32",
+    "run": 1,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r2-a1-1402",
+    "label": "rust-h3-32",
+    "run": 2,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r3-a1-28eb",
+    "label": "rust-h3-32",
+    "run": 3,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r4-a1-aa21",
+    "label": "rust-h3-32",
+    "run": 4,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  },
+  {
+    "dataset": "retune",
+    "version": "rust-h3-32-manifest-200f-20MB-plain-background-r5-a1-f8a5",
+    "label": "rust-h3-32",
+    "run": 5,
+    "connections": 32,
+    "requests": 202,
+    "responseBytes": 20977621,
+    "protocols": {
+      "HTTP/3.0": 202
+    },
+    "statuses": {
+      "200": 202
+    }
+  }
+]

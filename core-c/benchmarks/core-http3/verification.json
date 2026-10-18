@@ -1,0 +1,42 @@
+{
+  "sourceCommit": "c187ced14a91be716e11df6d78d4f551ba2ae762",
+  "coreTestsPassed": {
+    "c": 275,
+    "rust": 275
+  },
+  "http3CAbiTests": 22,
+  "cSanitizers": [
+    "address",
+    "undefined",
+    "thread"
+  ],
+  "platformVerification": {
+    "c": "iOS build, Android build and JVM tests, Web build passed",
+    "rust": "iOS build, Android build and JVM tests, Web build passed"
+  },
+  "formatLintClippy": "passed",
+  "altSvcFuzzSmoke": {
+    "secondsPerCore": 20,
+    "rustExecutions": 296623,
+    "cExecutions": 2770024
+  },
+  "measuredUpdates": {
+    "normal": 120,
+    "lossyOriginal": 60,
+    "rustPoolCorrection": 10,
+    "failures": 0
+  },
+  "toolchains": {
+    "rust": "1.97.1",
+    "bun": "1.4.2",
+    "xcode": "27.1",
+    "androidNdk": "28.2.13676358"
+  },
+  "notTested": [
+    "physical phones",
+    "carrier networks",
+    "lossy iOS",
+    "battery and memory costs",
+    "sustained QUIC packet fuzzing"
+  ]
+}

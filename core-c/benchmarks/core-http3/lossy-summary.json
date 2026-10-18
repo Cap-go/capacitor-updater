@@ -1,0 +1,278 @@
+[
+  {
+    "platform": "android",
+    "label": "c-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 17546,
+    "minMs": 16492,
+    "maxMs": 22450,
+    "samplesMs": [
+      22450,
+      17546,
+      16492,
+      17406,
+      17890
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 68868,
+    "minMs": 61593,
+    "maxMs": 72950,
+    "samplesMs": [
+      69403,
+      72950,
+      68868,
+      62088,
+      61593
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 34597,
+    "minMs": 28574,
+    "maxMs": 35418,
+    "samplesMs": [
+      32380,
+      34597,
+      35418,
+      34923,
+      28574
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 20006,
+    "minMs": 16907,
+    "maxMs": 21813,
+    "samplesMs": [
+      17289,
+      16907,
+      21232,
+      20006,
+      21813
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3-32",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 4881,
+    "minMs": 4493,
+    "maxMs": 5030,
+    "samplesMs": [
+      4881,
+      5030,
+      4969,
+      4493,
+      4531
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3-8",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 14962,
+    "minMs": 12441,
+    "maxMs": 16149,
+    "samplesMs": [
+      12441,
+      14074,
+      14962,
+      15137,
+      16149
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 16171,
+    "minMs": 15546,
+    "maxMs": 17766,
+    "samplesMs": [
+      17766,
+      15546,
+      16171,
+      15817,
+      16789
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 65558,
+    "minMs": 61132,
+    "maxMs": 69033,
+    "samplesMs": [
+      65558,
+      69033,
+      62258,
+      61132,
+      67452
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 32897,
+    "minMs": 30198,
+    "maxMs": 35652,
+    "samplesMs": [
+      32897,
+      30198,
+      35652,
+      33281,
+      31410
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 18522,
+    "minMs": 2027,
+    "maxMs": 20369,
+    "samplesMs": [
+      20369,
+      2027,
+      18522,
+      18264,
+      19107
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3-32",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 6046,
+    "minMs": 5066,
+    "maxMs": 7282,
+    "samplesMs": [
+      7107,
+      6046,
+      5877,
+      5066,
+      7282
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3-8",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 15526,
+    "minMs": 13931,
+    "maxMs": 16351,
+    "samplesMs": [
+      16351,
+      14370,
+      15526,
+      13931,
+      15662
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  }
+]

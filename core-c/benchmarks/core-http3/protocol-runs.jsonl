@@ -1,0 +1,90 @@
+{"platform": "ios", "core": "rust", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 4413}, "statuses": {"200": 4413}, "responseBytes": 345045411}
+{"platform": "ios", "core": "rust", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 4413}, "statuses": {"200": 4413}, "responseBytes": 345045411}
+{"platform": "ios", "core": "c", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 4413}, "statuses": {"200": 4413}, "responseBytes": 345045363}
+{"platform": "ios", "core": "c", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 4413}, "statuses": {"200": 4413}, "responseBytes": 345045363}
+{"platform": "ios", "core": "c", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "c", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "rust", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "c", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "c", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "c", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "c", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "rust", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "rust", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899132}
+{"platform": "ios", "core": "c", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "ios", "core": "c", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899120}
+{"platform": "android", "core": "rust", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "c", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "c", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "rust", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899126}
+{"network": "main", "platform": "android", "core": "c", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "main", "platform": "android", "core": "c", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 206}, "statuses": {"200": 206}, "responseBytes": 61899114}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-8", "round": 1, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977617}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-32", "round": 1, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3", "round": 1, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-8", "round": 1, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977605}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-32", "round": 1, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-32", "round": 2, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-8", "round": 2, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977605}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-32", "round": 2, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-8", "round": 2, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977617}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3", "round": 2, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-8", "round": 3, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977617}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-32", "round": 3, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3", "round": 3, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-8", "round": 3, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977605}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-32", "round": 3, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-32", "round": 4, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-8", "round": 4, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977605}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-32", "round": 4, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-8", "round": 4, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977617}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3", "round": 4, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128215}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-8", "round": 5, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977617}
+{"network": "lossy", "platform": "android", "core": "rust", "arm": "h3-32", "round": 5, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3", "round": 5, "protocols": {"HTTP/3.0": 203}, "statuses": {"200": 203}, "responseBytes": 24128203}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-8", "round": 5, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977605}
+{"network": "lossy", "platform": "android", "core": "c", "arm": "h3-32", "round": 5, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h1", "round": 1, "protocols": {"HTTP/1.1": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h3-32", "round": 1, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h3-32", "round": 2, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h1", "round": 2, "protocols": {"HTTP/1.1": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h1", "round": 3, "protocols": {"HTTP/1.1": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h3-32", "round": 3, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h3-32", "round": 4, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h1", "round": 4, "protocols": {"HTTP/1.1": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h1", "round": 5, "protocols": {"HTTP/1.1": 202}, "statuses": {"200": 202}, "responseBytes": 20977609}
+{"network": "retune", "platform": "android", "core": "rust", "arm": "h3-32", "round": 5, "protocols": {"HTTP/3.0": 202}, "statuses": {"200": 202}, "responseBytes": 20977621}

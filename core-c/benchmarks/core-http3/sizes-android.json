@@ -1,0 +1,74 @@
+[
+  {
+    "core": "c",
+    "abi": "arm64-v8a",
+    "base": 911224,
+    "quic": 1408696,
+    "delta": 497472,
+    "base_gz": 437650,
+    "quic_gz": 673325
+  },
+  {
+    "core": "c",
+    "abi": "armeabi-v7a",
+    "base": 671548,
+    "quic": 1044080,
+    "delta": 372532,
+    "base_gz": 402774,
+    "quic_gz": 634342
+  },
+  {
+    "core": "c",
+    "abi": "x86",
+    "base": 942516,
+    "quic": 1508888,
+    "delta": 566372,
+    "base_gz": 460691,
+    "quic_gz": 727198
+  },
+  {
+    "core": "c",
+    "abi": "x86_64",
+    "base": 929288,
+    "quic": 1460792,
+    "delta": 531504,
+    "base_gz": 448760,
+    "quic_gz": 695202
+  },
+  {
+    "core": "rust",
+    "abi": "arm64-v8a",
+    "base": 3159616,
+    "quic": 4446064,
+    "delta": 1286448,
+    "base_gz": 1594231,
+    "quic_gz": 2123854
+  },
+  {
+    "core": "rust",
+    "abi": "armeabi-v7a",
+    "base": 2109216,
+    "quic": 2953976,
+    "delta": 844760,
+    "base_gz": 1289848,
+    "quic_gz": 1775338
+  },
+  {
+    "core": "rust",
+    "abi": "x86",
+    "base": 3704608,
+    "quic": 5202784,
+    "delta": 1498176,
+    "base_gz": 1673940,
+    "quic_gz": 2318371
+  },
+  {
+    "core": "rust",
+    "abi": "x86_64",
+    "base": 3606064,
+    "quic": 5000688,
+    "delta": 1394624,
+    "base_gz": 1709807,
+    "quic_gz": 2273452
+  }
+]

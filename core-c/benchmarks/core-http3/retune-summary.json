@@ -1,0 +1,48 @@
+[
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 17378,
+    "minMs": 15844,
+    "maxMs": 23792,
+    "samplesMs": [
+      17378,
+      23792,
+      17321,
+      17756,
+      15844
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3-32",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 4801,
+    "minMs": 4437,
+    "maxMs": 4885,
+    "samplesMs": [
+      4437,
+      4524,
+      4801,
+      4821,
+      4885
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  }
+]

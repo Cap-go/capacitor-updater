@@ -1,0 +1,652 @@
+[
+  {
+    "run": "c-h1-r1",
+    "egress": {
+      "bytes": 714012,
+      "packets": 11719,
+      "drops": 112
+    },
+    "ingress": {
+      "bytes": 25313355,
+      "packets": 17568,
+      "drops": 185
+    }
+  },
+  {
+    "run": "c-h1-r2",
+    "egress": {
+      "bytes": 707471,
+      "packets": 11612,
+      "drops": 102
+    },
+    "ingress": {
+      "bytes": 25311361,
+      "packets": 17489,
+      "drops": 186
+    }
+  },
+  {
+    "run": "c-h1-r3",
+    "egress": {
+      "bytes": 694339,
+      "packets": 11363,
+      "drops": 105
+    },
+    "ingress": {
+      "bytes": 25307331,
+      "packets": 17480,
+      "drops": 171
+    }
+  },
+  {
+    "run": "c-h1-r4",
+    "egress": {
+      "bytes": 696953,
+      "packets": 11417,
+      "drops": 122
+    },
+    "ingress": {
+      "bytes": 25303924,
+      "packets": 17467,
+      "drops": 168
+    }
+  },
+  {
+    "run": "c-h1-r5",
+    "egress": {
+      "bytes": 690617,
+      "packets": 11277,
+      "drops": 113
+    },
+    "ingress": {
+      "bytes": 25308666,
+      "packets": 17490,
+      "drops": 191
+    }
+  },
+  {
+    "run": "c-h3-32-r1",
+    "egress": {
+      "bytes": 719875,
+      "packets": 7177,
+      "drops": 82
+    },
+    "ingress": {
+      "bytes": 22647380,
+      "packets": 18196,
+      "drops": 520
+    }
+  },
+  {
+    "run": "c-h3-32-r2",
+    "egress": {
+      "bytes": 731287,
+      "packets": 7336,
+      "drops": 76
+    },
+    "ingress": {
+      "bytes": 22654529,
+      "packets": 18277,
+      "drops": 488
+    }
+  },
+  {
+    "run": "c-h3-32-r3",
+    "egress": {
+      "bytes": 725519,
+      "packets": 7261,
+      "drops": 79
+    },
+    "ingress": {
+      "bytes": 22652126,
+      "packets": 18203,
+      "drops": 237
+    }
+  },
+  {
+    "run": "c-h3-32-r4",
+    "egress": {
+      "bytes": 750743,
+      "packets": 7648,
+      "drops": 61
+    },
+    "ingress": {
+      "bytes": 22657905,
+      "packets": 18321,
+      "drops": 186
+    }
+  },
+  {
+    "run": "c-h3-32-r5",
+    "egress": {
+      "bytes": 718374,
+      "packets": 7154,
+      "drops": 69
+    },
+    "ingress": {
+      "bytes": 22649599,
+      "packets": 18207,
+      "drops": 301
+    }
+  },
+  {
+    "run": "c-h3-8-r1",
+    "egress": {
+      "bytes": 489460,
+      "packets": 5630,
+      "drops": 54
+    },
+    "ingress": {
+      "bytes": 22334054,
+      "packets": 16061,
+      "drops": 144
+    }
+  },
+  {
+    "run": "c-h3-8-r2",
+    "egress": {
+      "bytes": 507334,
+      "packets": 5866,
+      "drops": 64
+    },
+    "ingress": {
+      "bytes": 22340125,
+      "packets": 16144,
+      "drops": 162
+    }
+  },
+  {
+    "run": "c-h3-8-r3",
+    "egress": {
+      "bytes": 467163,
+      "packets": 5340,
+      "drops": 55
+    },
+    "ingress": {
+      "bytes": 22325364,
+      "packets": 15915,
+      "drops": 146
+    }
+  },
+  {
+    "run": "c-h3-8-r4",
+    "egress": {
+      "bytes": 461006,
+      "packets": 5307,
+      "drops": 57
+    },
+    "ingress": {
+      "bytes": 22315729,
+      "packets": 15807,
+      "drops": 142
+    }
+  },
+  {
+    "run": "c-h3-8-r5",
+    "egress": {
+      "bytes": 438266,
+      "packets": 4985,
+      "drops": 49
+    },
+    "ingress": {
+      "bytes": 22316733,
+      "packets": 15777,
+      "drops": 170
+    }
+  },
+  {
+    "run": "c-h3-r1",
+    "egress": {
+      "bytes": 431522,
+      "packets": 5050,
+      "drops": 40
+    },
+    "ingress": {
+      "bytes": 25597152,
+      "packets": 17829,
+      "drops": 190
+    }
+  },
+  {
+    "run": "c-h3-r2",
+    "egress": {
+      "bytes": 450373,
+      "packets": 5321,
+      "drops": 51
+    },
+    "ingress": {
+      "bytes": 25600838,
+      "packets": 17870,
+      "drops": 196
+    }
+  },
+  {
+    "run": "c-h3-r3",
+    "egress": {
+      "bytes": 432512,
+      "packets": 5120,
+      "drops": 48
+    },
+    "ingress": {
+      "bytes": 25594286,
+      "packets": 17779,
+      "drops": 189
+    }
+  },
+  {
+    "run": "c-h3-r4",
+    "egress": {
+      "bytes": 450564,
+      "packets": 5373,
+      "drops": 50
+    },
+    "ingress": {
+      "bytes": 25594964,
+      "packets": 17785,
+      "drops": 189
+    }
+  },
+  {
+    "run": "c-h3-r5",
+    "egress": {
+      "bytes": 457004,
+      "packets": 5352,
+      "drops": 60
+    },
+    "ingress": {
+      "bytes": 25599061,
+      "packets": 17851,
+      "drops": 174
+    }
+  },
+  {
+    "run": "retune-rust-h1-r1",
+    "egress": {
+      "bytes": 607921,
+      "packets": 9732,
+      "drops": 87
+    },
+    "ingress": {
+      "bytes": 22081266,
+      "packets": 15305,
+      "drops": 123
+    }
+  },
+  {
+    "run": "retune-rust-h1-r2",
+    "egress": {
+      "bytes": 620650,
+      "packets": 10162,
+      "drops": 120
+    },
+    "ingress": {
+      "bytes": 22022132,
+      "packets": 15213,
+      "drops": 155
+    }
+  },
+  {
+    "run": "retune-rust-h1-r3",
+    "egress": {
+      "bytes": 610534,
+      "packets": 9987,
+      "drops": 93
+    },
+    "ingress": {
+      "bytes": 22022986,
+      "packets": 15214,
+      "drops": 170
+    }
+  },
+  {
+    "run": "retune-rust-h1-r4",
+    "egress": {
+      "bytes": 612576,
+      "packets": 10026,
+      "drops": 111
+    },
+    "ingress": {
+      "bytes": 22022020,
+      "packets": 15216,
+      "drops": 167
+    }
+  },
+  {
+    "run": "retune-rust-h1-r5",
+    "egress": {
+      "bytes": 614077,
+      "packets": 10060,
+      "drops": 98
+    },
+    "ingress": {
+      "bytes": 22023077,
+      "packets": 15196,
+      "drops": 151
+    }
+  },
+  {
+    "run": "retune-rust-h3-32-r1",
+    "egress": {
+      "bytes": 820688,
+      "packets": 7383,
+      "drops": 78
+    },
+    "ingress": {
+      "bytes": 22663103,
+      "packets": 18328,
+      "drops": 229
+    }
+  },
+  {
+    "run": "retune-rust-h3-32-r2",
+    "egress": {
+      "bytes": 829734,
+      "packets": 7507,
+      "drops": 82
+    },
+    "ingress": {
+      "bytes": 22655512,
+      "packets": 18210,
+      "drops": 269
+    }
+  },
+  {
+    "run": "retune-rust-h3-32-r3",
+    "egress": {
+      "bytes": 818013,
+      "packets": 7344,
+      "drops": 62
+    },
+    "ingress": {
+      "bytes": 22651556,
+      "packets": 18233,
+      "drops": 270
+    }
+  },
+  {
+    "run": "retune-rust-h3-32-r4",
+    "egress": {
+      "bytes": 835168,
+      "packets": 7570,
+      "drops": 85
+    },
+    "ingress": {
+      "bytes": 22662155,
+      "packets": 18237,
+      "drops": 309
+    }
+  },
+  {
+    "run": "retune-rust-h3-32-r5",
+    "egress": {
+      "bytes": 835560,
+      "packets": 7557,
+      "drops": 77
+    },
+    "ingress": {
+      "bytes": 22656471,
+      "packets": 18226,
+      "drops": 471
+    }
+  },
+  {
+    "run": "rust-h1-r1",
+    "egress": {
+      "bytes": 705734,
+      "packets": 11433,
+      "drops": 114
+    },
+    "ingress": {
+      "bytes": 25329449,
+      "packets": 17619,
+      "drops": 189
+    }
+  },
+  {
+    "run": "rust-h1-r2",
+    "egress": {
+      "bytes": 681127,
+      "packets": 11125,
+      "drops": 132
+    },
+    "ingress": {
+      "bytes": 25306700,
+      "packets": 17446,
+      "drops": 157
+    }
+  },
+  {
+    "run": "rust-h1-r3",
+    "egress": {
+      "bytes": 690885,
+      "packets": 11309,
+      "drops": 112
+    },
+    "ingress": {
+      "bytes": 25306806,
+      "packets": 17454,
+      "drops": 174
+    }
+  },
+  {
+    "run": "rust-h1-r4",
+    "egress": {
+      "bytes": 695194,
+      "packets": 11390,
+      "drops": 111
+    },
+    "ingress": {
+      "bytes": 25303806,
+      "packets": 17443,
+      "drops": 160
+    }
+  },
+  {
+    "run": "rust-h1-r5",
+    "egress": {
+      "bytes": 684067,
+      "packets": 11173,
+      "drops": 106
+    },
+    "ingress": {
+      "bytes": 25310349,
+      "packets": 17443,
+      "drops": 180
+    }
+  },
+  {
+    "run": "rust-h3-32-r1",
+    "egress": {
+      "bytes": 631931,
+      "packets": 6427,
+      "drops": 79
+    },
+    "ingress": {
+      "bytes": 22458033,
+      "packets": 16993,
+      "drops": 187
+    }
+  },
+  {
+    "run": "rust-h3-32-r2",
+    "egress": {
+      "bytes": 659939,
+      "packets": 6844,
+      "drops": 78
+    },
+    "ingress": {
+      "bytes": 22464809,
+      "packets": 17094,
+      "drops": 174
+    }
+  },
+  {
+    "run": "rust-h3-32-r3",
+    "egress": {
+      "bytes": 662953,
+      "packets": 6869,
+      "drops": 81
+    },
+    "ingress": {
+      "bytes": 22472600,
+      "packets": 17227,
+      "drops": 165
+    }
+  },
+  {
+    "run": "rust-h3-32-r4",
+    "egress": {
+      "bytes": 676210,
+      "packets": 7074,
+      "drops": 71
+    },
+    "ingress": {
+      "bytes": 22476154,
+      "packets": 17287,
+      "drops": 153
+    }
+  },
+  {
+    "run": "rust-h3-32-r5",
+    "egress": {
+      "bytes": 615050,
+      "packets": 6170,
+      "drops": 86
+    },
+    "ingress": {
+      "bytes": 22439459,
+      "packets": 16831,
+      "drops": 184
+    }
+  },
+  {
+    "run": "rust-h3-8-r1",
+    "egress": {
+      "bytes": 459141,
+      "packets": 4928,
+      "drops": 52
+    },
+    "ingress": {
+      "bytes": 22324634,
+      "packets": 15956,
+      "drops": 156
+    }
+  },
+  {
+    "run": "rust-h3-8-r2",
+    "egress": {
+      "bytes": 503939,
+      "packets": 5486,
+      "drops": 54
+    },
+    "ingress": {
+      "bytes": 22325547,
+      "packets": 15961,
+      "drops": 165
+    }
+  },
+  {
+    "run": "rust-h3-8-r3",
+    "egress": {
+      "bytes": 474479,
+      "packets": 5107,
+      "drops": 42
+    },
+    "ingress": {
+      "bytes": 22325702,
+      "packets": 15943,
+      "drops": 178
+    }
+  },
+  {
+    "run": "rust-h3-8-r4",
+    "egress": {
+      "bytes": 540941,
+      "packets": 5979,
+      "drops": 61
+    },
+    "ingress": {
+      "bytes": 22342882,
+      "packets": 16194,
+      "drops": 192
+    }
+  },
+  {
+    "run": "rust-h3-8-r5",
+    "egress": {
+      "bytes": 460174,
+      "packets": 4900,
+      "drops": 49
+    },
+    "ingress": {
+      "bytes": 22322751,
+      "packets": 15885,
+      "drops": 177
+    }
+  },
+  {
+    "run": "rust-h3-r1",
+    "egress": {
+      "bytes": 429286,
+      "packets": 4733,
+      "drops": 27
+    },
+    "ingress": {
+      "bytes": 25596486,
+      "packets": 17850,
+      "drops": 170
+    }
+  },
+  {
+    "run": "rust-h3-r2",
+    "egress": {
+      "bytes": 509804,
+      "packets": 5718,
+      "drops": 58
+    },
+    "ingress": {
+      "bytes": 25621919,
+      "packets": 18174,
+      "drops": 170
+    }
+  },
+  {
+    "run": "rust-h3-r3",
+    "egress": {
+      "bytes": 460170,
+      "packets": 5089,
+      "drops": 58
+    },
+    "ingress": {
+      "bytes": 25596670,
+      "packets": 17819,
+      "drops": 214
+    }
+  },
+  {
+    "run": "rust-h3-r4",
+    "egress": {
+      "bytes": 563776,
+      "packets": 5548,
+      "drops": 44
+    },
+    "ingress": {
+      "bytes": 25663127,
+      "packets": 18052,
+      "drops": 166
+    }
+  },
+  {
+    "run": "rust-h3-r5",
+    "egress": {
+      "bytes": 453702,
+      "packets": 5056,
+      "drops": 63
+    },
+    "ingress": {
+      "bytes": 25600936,
+      "packets": 17896,
+      "drops": 180
+    }
+  }
+]

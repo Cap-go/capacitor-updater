@@ -1,0 +1,554 @@
+[
+  {
+    "platform": "android",
+    "label": "c-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 143,
+    "minMs": 123,
+    "maxMs": 171,
+    "samplesMs": [
+      171,
+      123,
+      143,
+      142,
+      155
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h1",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6393,
+    "minMs": 6391,
+    "maxMs": 6403,
+    "samplesMs": [
+      6391,
+      6398,
+      6403,
+      6393,
+      6392
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 65,
+    "minMs": 62,
+    "maxMs": 90,
+    "samplesMs": [
+      63,
+      68,
+      65,
+      90,
+      62
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 193,
+    "minMs": 167,
+    "maxMs": 204,
+    "samplesMs": [
+      198,
+      193,
+      167,
+      204,
+      168
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6394,
+    "minMs": 6389,
+    "maxMs": 6408,
+    "samplesMs": [
+      6389,
+      6394,
+      6402,
+      6390,
+      6408
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "c-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 61,
+    "minMs": 49,
+    "maxMs": 63,
+    "samplesMs": [
+      49,
+      59,
+      63,
+      62,
+      61
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 161,
+    "minMs": 149,
+    "maxMs": 175,
+    "samplesMs": [
+      175,
+      173,
+      161,
+      149,
+      152
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6417,
+    "minMs": 6411,
+    "maxMs": 6420,
+    "samplesMs": [
+      6417,
+      6417,
+      6420,
+      6411,
+      6412
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 59,
+    "minMs": 57,
+    "maxMs": 66,
+    "samplesMs": [
+      59,
+      57,
+      61,
+      57,
+      66
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 190,
+    "minMs": 174,
+    "maxMs": 194,
+    "samplesMs": [
+      174,
+      194,
+      190,
+      179,
+      191
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6418,
+    "minMs": 6412,
+    "maxMs": 6424,
+    "samplesMs": [
+      6424,
+      6412,
+      6418,
+      6423,
+      6418
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "android",
+    "label": "rust-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 61,
+    "minMs": 54,
+    "maxMs": 69,
+    "samplesMs": [
+      54,
+      56,
+      64,
+      69,
+      61
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 1587,
+    "minMs": 613,
+    "maxMs": 1747,
+    "samplesMs": [
+      1587,
+      613,
+      1695,
+      1747,
+      917
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h1",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6428,
+    "minMs": 6417,
+    "maxMs": 6487,
+    "samplesMs": [
+      6428,
+      6435,
+      6417,
+      6487,
+      6422
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 59,
+    "minMs": 14,
+    "maxMs": 122,
+    "samplesMs": [
+      59,
+      14,
+      14,
+      122,
+      70
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 408,
+    "minMs": 220,
+    "maxMs": 1096,
+    "samplesMs": [
+      356,
+      808,
+      408,
+      1096,
+      220
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h3",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6423,
+    "minMs": 6389,
+    "maxMs": 6583,
+    "samplesMs": [
+      6423,
+      6583,
+      6565,
+      6401,
+      6389
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "c-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 89,
+    "minMs": 56,
+    "maxMs": 117,
+    "samplesMs": [
+      89,
+      87,
+      117,
+      101,
+      56
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h1",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 1179,
+    "minMs": 80,
+    "maxMs": 1834,
+    "samplesMs": [
+      167,
+      1179,
+      1253,
+      1834,
+      80
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h1",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6432,
+    "minMs": 6404,
+    "maxMs": 6563,
+    "samplesMs": [
+      6432,
+      6404,
+      6433,
+      6432,
+      6563
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h1",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 113,
+    "minMs": 15,
+    "maxMs": 160,
+    "samplesMs": [
+      156,
+      15,
+      78,
+      113,
+      160
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h3",
+    "case": "manifest-200f-20MB-plain-background",
+    "n": 5,
+    "medianMs": 313,
+    "minMs": 261,
+    "maxMs": 541,
+    "samplesMs": [
+      313,
+      294,
+      261,
+      541,
+      426
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h3",
+    "case": "shaped-zip-30MB-plain-background",
+    "n": 5,
+    "medianMs": 6459,
+    "minMs": 6412,
+    "maxMs": 6567,
+    "samplesMs": [
+      6436,
+      6412,
+      6567,
+      6548,
+      6459
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "platform": "ios",
+    "label": "rust-h3",
+    "case": "zip-3MB-plain-background",
+    "n": 5,
+    "medianMs": 85,
+    "minMs": 27,
+    "maxMs": 162,
+    "samplesMs": [
+      85,
+      116,
+      69,
+      162,
+      27
+    ],
+    "runs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  }
+]
