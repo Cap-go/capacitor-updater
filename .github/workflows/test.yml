@@ -463,12 +463,38 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install Android emulator SDK (retry)
+      - name: Clear Android SDK temp cache
         shell: bash
-        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh 0
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       # Same emulator teardown hazard as the live update job: bound the step below the job cap
       # and let the success marker decide the result.
       - name: Run Maestro smoke tests
+        id: maestro_smoke_flow_1
+        timeout-minutes: 10
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -no-metrics
+          script: >-
+            CAPGO_MAESTRO_SKIP_BUILD=1
+            CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
+            CAPGO_MAESTRO_TIMEOUT_SECONDS=600
+            CAPGO_MAESTRO_TEST_RETRIES=2
+            CAPGO_MAESTRO_APP_UI_TIMEOUT_SECONDS=150
+            CAPGO_MAESTRO_APP_LAUNCH_RETRIES=2
+            MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
+            CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
+            bun run test:maestro:android && : > "$CAPGO_MAESTRO_SUCCESS_MARKER"
+      - name: Clear Android SDK temp cache (retry)
+        if: steps.maestro_smoke_flow_1.outcome == 'failure'
+        shell: bash
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
+      - name: Run Maestro smoke tests (retry after emulator SDK flake)
+        if: steps.maestro_smoke_flow_1.outcome == 'failure'
         timeout-minutes: 10
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
@@ -924,14 +950,39 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install Android emulator SDK (retry)
+      - name: Clear Android SDK temp cache
         shell: bash
-        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh 0
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       # The runner action tears the emulator down inside this step, and that teardown can hang
       # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
       # open). Bound the step below the job cap and let the success marker decide the result,
       # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
+        id: maestro_live_flow_1
+        timeout-minutes: 8
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -no-metrics
+          script: >-
+            CAPGO_MAESTRO_SKIP_BUILD=1
+            CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1
+            MAESTRO_FLOW_TIMEOUT_SECONDS=300
+            CAPGO_MAESTRO_FLOW_RETRIES=2
+            CAPGO_MAESTRO_SPLIT_RETRIES=2
+            CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
+            CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
+            bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
+      - name: Clear Android SDK temp cache (retry)
+        if: steps.maestro_live_flow_1.outcome == 'failure'
+        shell: bash
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
+      - name: Run live update Maestro flow (retry after emulator SDK flake)
+        if: steps.maestro_live_flow_1.outcome == 'failure'
         timeout-minutes: 8
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
