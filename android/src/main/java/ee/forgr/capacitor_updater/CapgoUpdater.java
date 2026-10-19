@@ -3568,20 +3568,21 @@ public class CapgoUpdater {
         if (events.isEmpty()) {
             return true;
         }
+        final List<QueuedStatsEvent> displaced = new ArrayList<>();
         synchronized (statsQueue) {
             if (statsStopped.get()) {
                 return false;
             }
             for (final JSONObject event : events) {
                 while (statsQueue.size() >= MAX_PENDING_STATS) {
-                    statsQueue.remove(0);
+                    displaced.add(0, statsQueue.remove(0));
                 }
                 statsQueue.add(new QueuedStatsEvent(event, null));
             }
         }
         synchronized (statsOwnerLock) {
             if (statsOwner != null && statsOwner != this) {
-                removeLastAdoptedEvents(events.size());
+                rollbackAdoptedEvents(events.size(), displaced);
                 return false;
             }
         }
@@ -3590,10 +3591,13 @@ public class CapgoUpdater {
         return true;
     }
 
-    private void removeLastAdoptedEvents(final int count) {
+    private void rollbackAdoptedEvents(final int adoptedCount, final List<QueuedStatsEvent> displaced) {
         synchronized (statsQueue) {
-            for (int removed = 0; removed < count && !statsQueue.isEmpty(); removed++) {
+            for (int removed = 0; removed < adoptedCount && !statsQueue.isEmpty(); removed++) {
                 statsQueue.remove(statsQueue.size() - 1);
+            }
+            for (int i = 0; i < displaced.size(); i++) {
+                statsQueue.add(i, displaced.get(i));
             }
         }
     }
