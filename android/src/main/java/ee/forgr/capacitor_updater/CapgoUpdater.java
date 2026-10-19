@@ -149,6 +149,7 @@ public class CapgoUpdater {
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static volatile Long statsFlushIntervalOverrideMs = null;
     private static volatile boolean statsFlushSchedulingDisabledForTests = false;
+    /** Unit tests only: runs after queue mutation and before the stats owner check. */
     static volatile Runnable statsAdoptionBeforeOwnerCheckForTests = null;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
