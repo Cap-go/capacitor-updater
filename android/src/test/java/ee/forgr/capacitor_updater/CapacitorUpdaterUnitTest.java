@@ -34,8 +34,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -4711,6 +4713,80 @@ public class CapacitorUpdaterUnitTest {
             live.releaseStatsOwnership();
             live.shutdown(false);
         }
+    }
+
+    @Test
+    public void concurrentHandoverAndPersistDoesNotDeadlockOrDuplicateEvents() throws Exception {
+        final Path liveDir = Files.createTempDirectory("capgo-stats-handover-deadlock");
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = liveDir.toFile();
+        live.claimStatsOwnership();
+
+        final CapgoUpdater headlessA = headlessWithPendingStat("handover_event_a");
+        final CapgoUpdater headlessB = headlessWithPendingStat("handover_event_b");
+
+        try {
+            final CountDownLatch start = new CountDownLatch(1);
+            final CountDownLatch done = new CountDownLatch(3);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            final java.util.function.Consumer<CapgoUpdater> handoverTask = (headless) -> {
+                try {
+                    start.await();
+                    headless.handOverPendingStats();
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            };
+
+            new Thread(() -> handoverTask.accept(headlessA)).start();
+            new Thread(() -> handoverTask.accept(headlessB)).start();
+            new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < 100; i++) {
+                        live.persistPendingStats();
+                    }
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+
+            start.countDown();
+            assertTrue("concurrent handover and persist timed out", done.await(10, TimeUnit.SECONDS));
+            if (failure.get() != null) {
+                throw new AssertionError(failure.get());
+            }
+
+            live.shutdown(false);
+
+            assertEquals(0, headlessA.pendingStatsCount());
+            assertEquals(0, headlessB.pendingStatsCount());
+            assertEquals(2, live.pendingStatsCount());
+
+            final String persisted = new String(Files.readAllBytes(liveDir.resolve("capgo_pending_stats.json")), StandardCharsets.UTF_8);
+            assertEquals(1, countOccurrences(persisted, "handover_event_a"));
+            assertEquals(1, countOccurrences(persisted, "handover_event_b"));
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+            headlessA.shutdown(false);
+            headlessB.shutdown(false);
+        }
+    }
+
+    private static int countOccurrences(final String haystack, final String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = haystack.indexOf(needle, index)) != -1) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 
     @Test
