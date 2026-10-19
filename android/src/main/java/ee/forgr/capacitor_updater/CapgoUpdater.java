@@ -147,6 +147,9 @@ public class CapgoUpdater {
     private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
     private final AtomicBoolean statsStopped = new AtomicBoolean(false);
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+    private static volatile Long statsFlushIntervalOverrideMs = null;
+    private static volatile boolean statsFlushSchedulingDisabledForTests = false;
+    static volatile Runnable statsAdoptionBeforeOwnerCheckForTests = null;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
     // The live plugin instance owns the stats file. A headless worker hands its unsent events to it
@@ -3569,20 +3572,27 @@ public class CapgoUpdater {
             return true;
         }
         final List<QueuedStatsEvent> displaced = new ArrayList<>();
+        final List<QueuedStatsEvent> adopted = new ArrayList<>();
         synchronized (statsQueue) {
             if (statsStopped.get()) {
                 return false;
             }
             for (final JSONObject event : events) {
                 while (statsQueue.size() >= MAX_PENDING_STATS) {
-                    displaced.add(0, statsQueue.remove(0));
+                    displaced.add(statsQueue.remove(0));
                 }
-                statsQueue.add(new QueuedStatsEvent(event, null));
+                final QueuedStatsEvent queued = new QueuedStatsEvent(event, null);
+                statsQueue.add(queued);
+                adopted.add(queued);
             }
+        }
+        final Runnable beforeOwnerCheck = statsAdoptionBeforeOwnerCheckForTests;
+        if (beforeOwnerCheck != null) {
+            beforeOwnerCheck.run();
         }
         synchronized (statsOwnerLock) {
             if (statsOwner != null && statsOwner != this) {
-                rollbackAdoptedEvents(events.size(), displaced);
+                rollbackAdoptedEvents(adopted, displaced);
                 return false;
             }
         }
@@ -3591,19 +3601,50 @@ public class CapgoUpdater {
         return true;
     }
 
-    private void rollbackAdoptedEvents(final int adoptedCount, final List<QueuedStatsEvent> displaced) {
+    private void rollbackAdoptedEvents(final List<QueuedStatsEvent> adopted, final List<QueuedStatsEvent> displaced) {
         synchronized (statsQueue) {
-            for (int removed = 0; removed < adoptedCount && !statsQueue.isEmpty(); removed++) {
-                statsQueue.remove(statsQueue.size() - 1);
-            }
-            for (int i = 0; i < displaced.size(); i++) {
-                statsQueue.add(i, displaced.get(i));
+            statsQueue.removeAll(adopted);
+            if (!displaced.isEmpty()) {
+                statsQueue.addAll(0, displaced);
             }
         }
     }
 
+    static void configureStatsFlushForTests(final Long intervalMs, final boolean schedulingEnabled) {
+        statsFlushIntervalOverrideMs = intervalMs;
+        statsFlushSchedulingDisabledForTests = !schedulingEnabled;
+    }
+
+    static void resetStatsFlushForTests() {
+        statsFlushIntervalOverrideMs = null;
+        statsFlushSchedulingDisabledForTests = false;
+    }
+
     int pendingStatsCount() {
         return statsQueue.size();
+    }
+
+    void enqueuePendingStatsEventForTests(final String action) throws JSONException {
+        final JSONObject json = new JSONObject();
+        json.put("action", action);
+        json.put("timestamp", 1);
+        synchronized (statsQueue) {
+            statsQueue.add(new QueuedStatsEvent(json, null));
+        }
+    }
+
+    List<String> pendingStatsActionsForTests() {
+        final List<String> actions = new ArrayList<>();
+        synchronized (statsQueue) {
+            for (final QueuedStatsEvent queued : statsQueue) {
+                try {
+                    actions.add(queued.event.getString("action"));
+                } catch (final JSONException ignored) {
+                    actions.add("");
+                }
+            }
+        }
+        return actions;
     }
 
     public void persistPendingStats() {
@@ -3724,14 +3765,15 @@ public class CapgoUpdater {
     }
 
     private synchronized void ensureStatsTimerStarted() {
-        if (statsStopped.get()) {
+        if (statsStopped.get() || statsFlushSchedulingDisabledForTests) {
             return;
         }
+        final long intervalMs = statsFlushIntervalOverrideMs != null ? statsFlushIntervalOverrideMs : STATS_FLUSH_INTERVAL_MS;
         if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
             statsFlushTask = statsScheduler.scheduleAtFixedRate(
                 this::flushStatsQueue,
-                STATS_FLUSH_INTERVAL_MS,
-                STATS_FLUSH_INTERVAL_MS,
+                intervalMs,
+                intervalMs,
                 TimeUnit.MILLISECONDS
             );
         }
