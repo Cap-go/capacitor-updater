@@ -4762,6 +4762,8 @@ public class CapacitorUpdaterUnitTest {
                 throw new AssertionError(failure.get());
             }
 
+            live.shutdown(false);
+
             assertEquals(0, headlessA.pendingStatsCount());
             assertEquals(0, headlessB.pendingStatsCount());
             assertEquals(2, live.pendingStatsCount());

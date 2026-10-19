@@ -3579,9 +3579,23 @@ public class CapgoUpdater {
                 statsQueue.add(new QueuedStatsEvent(event, null));
             }
         }
+        synchronized (statsOwnerLock) {
+            if (statsOwner != null && statsOwner != this) {
+                removeLastAdoptedEvents(events.size());
+                return false;
+            }
+        }
         persistStatsQueue();
         ensureStatsTimerStarted();
         return true;
+    }
+
+    private void removeLastAdoptedEvents(final int count) {
+        synchronized (statsQueue) {
+            for (int removed = 0; removed < count && !statsQueue.isEmpty(); removed++) {
+                statsQueue.remove(statsQueue.size() - 1);
+            }
+        }
     }
 
     int pendingStatsCount() {
