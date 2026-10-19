@@ -38,11 +38,41 @@ private final class LifecycleCapgoUpdater: CapgoUpdater {
         nextBundleValue
     }
 
+    var setBundleCalls: [String] = []
+
     override func setNextBundle(next: String?) -> Bool {
         if next == nil {
             nextBundleValue = nil
+        } else if let downloadedBundleValue, downloadedBundleValue.getId() == next {
+            nextBundleValue = downloadedBundleValue
         }
         return true
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        setBundleCalls.append(bundle.getId())
+        currentBundleValue = bundle
+        return true
+    }
+
+    private var savedCurrentForReset: BundleInfo?
+    private var savedNextForReset: BundleInfo?
+
+    override func captureResetState() -> ResetState {
+        savedCurrentForReset = currentBundleValue
+        savedNextForReset = nextBundleValue
+        return ResetState(
+            currentBundlePath: currentBundleValue.getId(),
+            fallbackBundleId: BundleInfo.ID_BUILTIN,
+            nextBundleId: nextBundleValue?.getId()
+        )
+    }
+
+    override func restoreResetState(_ state: ResetState) {
+        if let savedCurrentForReset {
+            currentBundleValue = savedCurrentForReset
+        }
+        nextBundleValue = savedNextForReset
     }
 
     override func getBundleInfo(id: String?) -> BundleInfo {
@@ -111,6 +141,12 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
     private(set) var events: [String] = []
     private(set) var payloads: [String: [String: Any]] = [:]
     private(set) var readyMessages: [String] = []
+    // Matches the real plugin without a bridge: reloads fail unless a test opts in.
+    var reloadResult = false
+
+    override func _reload() -> Bool {
+        reloadResult
+    }
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         events.append(eventName)
@@ -280,6 +316,84 @@ final class UpdateLifecycleTests: XCTestCase {
 
         XCTAssertEqual(updater.getLatestCalls, 2)
         XCTAssertEqual(updater.downloadCalls, 1)
+    }
+
+    // A silent push downloaded the update in the background but only queued it, so the
+    // user opened the old bundle: the install waited for a didEnterBackground that a
+    // background launch never posts.
+    func testBackgroundDownloadInstallsRightAwayWhileInBackground() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.reloadResult = true
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "bundle-2")
+        XCTAssertNil(updater.nextBundleValue)
+        let reported = plugin.payloads["noNeedUpdate"]?["bundle"] as? [String: Any]
+        XCTAssertEqual(reported?["id"] as? String, "bundle-2")
+        XCTAssertEqual(plugin.readyMessages.last, "update downloaded and installed in background")
+    }
+
+    func testFailedBackgroundReloadKeepsThePreviousBundleActive() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "current-id")
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+        let reported = plugin.payloads["noNeedUpdate"]?["bundle"] as? [String: Any]
+        XCTAssertEqual(reported?["id"] as? String, "current-id")
+        XCTAssertEqual(plugin.readyMessages.last, "update downloaded, will install next background")
+    }
+
+    func testForegroundDownloadWaitsForTheNextBackground() {
+        plugin.setAutoUpdateModeForTesting("atBackground")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, [])
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+    }
+
+    func testAlwaysModeDoesNotInstallQueuedBundleWhileInBackground() {
+        plugin.setAutoUpdateModeForTesting("always")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.appMovedToBackground()
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.setBundleCalls, [])
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+    }
+
+    func testOnLaunchRetriesQueuedBundleOnForegroundAfterFailedDirectReload() {
+        plugin.setAutoUpdateModeForTesting("onLaunch")
+        updater.latestResponse = latest(version: "2.0.0")
+        updater.downloadedBundleValue = pendingBundle()
+        plugin.reloadResult = false
+
+        plugin.runPeriodicUpdateCheck(url: updateUrl)
+
+        XCTAssertEqual(updater.currentBundleValue.getId(), "current-id")
+        XCTAssertEqual(updater.nextBundleValue?.getId(), "bundle-2")
+
+        plugin.reloadResult = true
+        plugin.appMovedToForeground()
+
+        XCTAssertEqual(updater.setBundleCalls, ["bundle-2"])
+        XCTAssertEqual(updater.currentBundleValue.getId(), "bundle-2")
+        XCTAssertNil(updater.nextBundleValue)
     }
 
     // triggerUpdateCheck returned "preview_session" (not in the TS union) and never "unavailable".

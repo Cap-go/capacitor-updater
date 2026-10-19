@@ -4619,6 +4619,101 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void shutdownWithoutPersistKeepsAnotherInstanceStatsFile() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-handover");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final String liveQueue = "[{\"action\":\"app_moved_to_foreground\",\"timestamp\":1}]";
+        Files.write(queueFile.toPath(), liveQueue.getBytes(StandardCharsets.UTF_8));
+
+        // A headless updater with an empty queue handing over to the live plugin.
+        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        headless.documentsDir = tempDir.toFile();
+        headless.shutdown(false);
+
+        assertEquals(liveQueue, new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
+    }
+
+    private CapgoUpdater headlessWithPendingStat(final String action) throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-pending-stats-headless");
+        Files.write(
+            dir.resolve("capgo_pending_stats.json"),
+            ("[{\"action\":\"" + action + "\",\"timestamp\":1}]").getBytes(StandardCharsets.UTF_8)
+        );
+        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        headless.documentsDir = dir.toFile();
+        headless.restorePendingStats();
+        return headless;
+    }
+
+    @Test
+    public void headlessHandoverMovesUnsentStatsToTheLivePlugin() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-owner");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = tempDir.toFile();
+        live.claimStatsOwnership();
+        try {
+            final CapgoUpdater headless = headlessWithPendingStat("set_next");
+            assertEquals(1, headless.pendingStatsCount());
+
+            headless.handOverPendingStats();
+            headless.shutdown(false);
+
+            assertEquals(0, headless.pendingStatsCount());
+            assertEquals(1, live.pendingStatsCount());
+            final String persisted = new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8);
+            assertTrue(persisted.contains("set_next"));
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+        }
+    }
+
+    @Test
+    public void statsHandedToAStoppedOwnerWaitForTheNextOwner() throws Exception {
+        final CapgoUpdater stopping = new CapgoUpdater(mock(Logger.class));
+        stopping.documentsDir = Files.createTempDirectory("capgo-pending-stats-stopping").toFile();
+        stopping.claimStatsOwnership();
+        stopping.shutdown(false);
+
+        final CapgoUpdater headless = headlessWithPendingStat("set_next");
+        headless.handOverPendingStats();
+        headless.shutdown(false);
+        stopping.releaseStatsOwnership();
+
+        final CapgoUpdater next = new CapgoUpdater(mock(Logger.class));
+        next.documentsDir = Files.createTempDirectory("capgo-pending-stats-next").toFile();
+        next.claimStatsOwnership();
+        try {
+            assertEquals(0, stopping.pendingStatsCount());
+            assertEquals(1, next.pendingStatsCount());
+        } finally {
+            next.releaseStatsOwnership();
+            next.shutdown(false);
+        }
+    }
+
+    @Test
+    public void statsHandedOverBeforeThePluginLoadsAreAdoptedOnClaim() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-orphan");
+
+        final CapgoUpdater headless = headlessWithPendingStat("set");
+        headless.handOverPendingStats();
+        headless.shutdown(false);
+
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = tempDir.toFile();
+        live.claimStatsOwnership();
+        try {
+            assertEquals(1, live.pendingStatsCount());
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+        }
+    }
+
+    @Test
     public void restorePendingStatsRecoversBackupWhenQueueFileMissing() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-bak");
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
