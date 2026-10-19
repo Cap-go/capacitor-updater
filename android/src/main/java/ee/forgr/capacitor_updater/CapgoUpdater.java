@@ -3610,11 +3610,13 @@ public class CapgoUpdater {
         }
     }
 
+    /** Unit tests only: disable scheduling or override the flush interval. */
     static void configureStatsFlushForTests(final Long intervalMs, final boolean schedulingEnabled) {
         statsFlushIntervalOverrideMs = intervalMs;
         statsFlushSchedulingDisabledForTests = !schedulingEnabled;
     }
 
+    /** Unit tests only: restore default stats flush scheduling. */
     static void resetStatsFlushForTests() {
         statsFlushIntervalOverrideMs = null;
         statsFlushSchedulingDisabledForTests = false;
