@@ -3124,6 +3124,16 @@ import UIKit
         return true
     }
 
+    /// Points the current bundle back at `bundle` without sending stats, after an
+    /// install whose reload failed left the WebView on it.
+    func restoreCurrentBundle(_ bundle: BundleInfo) {
+        if bundle.isBuiltin() {
+            self.setCurrentBundle(bundle: "")
+        } else {
+            _ = self.stagePendingReload(bundle: bundle)
+        }
+    }
+
     func stagePreviewFallbackReload(bundle: BundleInfo) -> Bool {
         guard !bundle.isErrorStatus() else {
             return false
