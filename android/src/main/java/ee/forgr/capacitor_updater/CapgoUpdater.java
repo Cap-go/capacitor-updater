@@ -3580,7 +3580,10 @@ public class CapgoUpdater {
             }
             for (final JSONObject event : events) {
                 while (statsQueue.size() >= MAX_PENDING_STATS) {
-                    displaced.add(statsQueue.remove(0));
+                    final QueuedStatsEvent removed = statsQueue.remove(0);
+                    if (!adopted.contains(removed)) {
+                        displaced.add(removed);
+                    }
                 }
                 final QueuedStatsEvent queued = new QueuedStatsEvent(event, null);
                 statsQueue.add(queued);

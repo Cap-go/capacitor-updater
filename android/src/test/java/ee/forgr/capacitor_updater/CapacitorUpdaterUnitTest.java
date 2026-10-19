@@ -4850,6 +4850,67 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void rejectedAdoptionOverMaxPendingIncomingDoesNotRestoreEvictedAdoptedEvents() throws Exception {
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = Files.createTempDirectory("capgo-stats-adopt-over-max").toFile();
+        live.claimStatsOwnership();
+        final CapgoUpdater other = new CapgoUpdater(mock(Logger.class));
+        CapgoUpdater.configureStatsFlushForTests(null, false);
+        try {
+            assertEquals(0, live.pendingStatsCount());
+
+            final List<JSONObject> toAdopt = new ArrayList<>();
+            for (int i = 0; i < 201; i++) {
+                final JSONObject event = new JSONObject();
+                event.put("action", "incoming_" + i);
+                event.put("timestamp", 1);
+                toAdopt.add(event);
+            }
+
+            final CountDownLatch hookEntered = new CountDownLatch(1);
+            final CountDownLatch hookRelease = new CountDownLatch(1);
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = () -> {
+                hookEntered.countDown();
+                try {
+                    assertTrue("adoption hook timed out", hookRelease.await(10, TimeUnit.SECONDS));
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
+                other.claimStatsOwnership();
+            };
+
+            final AtomicReference<Boolean> adopted = new AtomicReference<>();
+            final Thread adoptThread = new Thread(() -> {
+                try {
+                    adopted.set(invokeAdoptPendingStats(live, toAdopt));
+                } catch (final ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            adoptThread.start();
+            assertTrue("adoption hook never ran", hookEntered.await(10, TimeUnit.SECONDS));
+            hookRelease.countDown();
+            adoptThread.join(10_000);
+
+            assertFalse(adopted.get());
+            assertEquals(0, live.pendingStatsCount());
+            final List<String> actions = live.pendingStatsActionsForTests();
+            for (int i = 0; i < 201; i++) {
+                assertFalse(actions.contains("incoming_" + i));
+            }
+        } finally {
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = null;
+            CapgoUpdater.resetStatsFlushForTests();
+            other.releaseStatsOwnership();
+            live.releaseStatsOwnership();
+            clearStatsOwnerForTests();
+            live.shutdown(false);
+            other.shutdown(false);
+        }
+    }
+
     private static boolean invokeAdoptPendingStats(final CapgoUpdater updater, final List<JSONObject> events)
         throws ReflectiveOperationException {
         final Method method = CapgoUpdater.class.getDeclaredMethod("adoptPendingStats", List.class);
