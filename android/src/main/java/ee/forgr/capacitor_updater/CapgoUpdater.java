@@ -3624,12 +3624,16 @@ public class CapgoUpdater {
         return statsQueue.size();
     }
 
-    void enqueuePendingStatsEventForTests(final String action) throws JSONException {
-        final JSONObject json = new JSONObject();
-        json.put("action", action);
-        json.put("timestamp", 1);
-        synchronized (statsQueue) {
-            statsQueue.add(new QueuedStatsEvent(json, null));
+    void enqueuePendingStatsEventForTests(final String action) {
+        try {
+            final JSONObject json = new JSONObject();
+            json.put("action", action);
+            json.put("timestamp", 1);
+            synchronized (statsQueue) {
+                statsQueue.add(new QueuedStatsEvent(json, null));
+            }
+        } catch (final JSONException e) {
+            throw new IllegalStateException(e);
         }
     }
 
