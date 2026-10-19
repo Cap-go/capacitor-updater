@@ -463,6 +463,9 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install Android emulator SDK (retry)
+        shell: bash
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh 0
       # Same emulator teardown hazard as the live update job: bound the step below the job cap
       # and let the success marker decide the result.
       - name: Run Maestro smoke tests
@@ -921,6 +924,9 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install Android emulator SDK (retry)
+        shell: bash
+        run: bash ./.github/scripts/ensure-android-emulator-sdk.sh 0
       # The runner action tears the emulator down inside this step, and that teardown can hang
       # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
       # open). Bound the step below the job cap and let the success marker decide the result,
