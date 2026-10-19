@@ -3470,44 +3470,68 @@ public class CapgoUpdater {
     void handOverPendingStats() {
         // Stop first so a flush finishing later cannot requeue or persist what we hand over.
         statsStopped.set(true);
+        final CapgoUpdater owner;
+        synchronized (statsOwnerLock) {
+            owner = statsOwner == this ? null : statsOwner;
+        }
         final List<JSONObject> events = new ArrayList<>();
         synchronized (statsQueue) {
-            final List<QueuedStatsEvent> restoredEvents = new ArrayList<>();
-            for (final QueuedStatsEvent queued : statsInFlight) {
-                if (!queued.restored) {
-                    events.add(queued.event);
-                }
-            }
-            for (final QueuedStatsEvent queued : statsQueue) {
-                if (queued.restored) {
-                    restoredEvents.add(queued);
-                } else {
-                    events.add(queued.event);
-                }
-            }
+            collectHandoverEvents(statsInFlight, events, owner);
             statsInFlight.clear();
+            collectHandoverEvents(statsQueue, events, owner);
             statsQueue.clear();
-            statsQueue.addAll(restoredEvents);
         }
         if (events.isEmpty()) {
             return;
         }
+        // adoptPendingStats persists; never call it while holding statsOwnerLock (lock order).
+        if (owner != null && owner.adoptPendingStats(events)) {
+            return;
+        }
+        List<JSONObject> retryEvents = null;
+        CapgoUpdater retryOwner = null;
         synchronized (statsOwnerLock) {
-            CapgoUpdater owner = statsOwner == this ? null : statsOwner;
-            if (owner != null && owner.adoptPendingStats(events)) {
-                return;
-            }
             addOrphanedStats(events);
-            owner = statsOwner == this ? null : statsOwner;
-            if (owner != null && !orphanedStats.isEmpty()) {
-                final List<JSONObject> parked = new ArrayList<>(orphanedStats);
+            retryOwner = statsOwner == this ? null : statsOwner;
+            if (retryOwner != null && !orphanedStats.isEmpty()) {
+                retryEvents = new ArrayList<>(orphanedStats);
                 orphanedStats.clear();
-                if (owner.adoptPendingStats(parked)) {
-                    return;
-                }
-                addOrphanedStats(parked);
             }
         }
+        if (retryOwner != null && retryEvents != null) {
+            if (retryOwner.adoptPendingStats(retryEvents)) {
+                return;
+            }
+            parkOrphanedStats(retryEvents);
+        }
+    }
+
+    private void collectHandoverEvents(final List<QueuedStatsEvent> source, final List<JSONObject> events, final CapgoUpdater owner) {
+        for (final QueuedStatsEvent queued : source) {
+            if (shouldHandOverQueuedEvent(queued, owner)) {
+                events.add(queued.event);
+            }
+        }
+    }
+
+    /**
+     * Restored file events are not re-sent to an owner that shares the same pending-stats path
+     * (the owner already loaded them from disk). They are still handed over when the paths differ.
+     */
+    private boolean shouldHandOverQueuedEvent(final QueuedStatsEvent queued, final CapgoUpdater owner) {
+        if (!queued.restored) {
+            return true;
+        }
+        if (owner == null) {
+            return true;
+        }
+        return !sharesPendingStatsFileWith(owner);
+    }
+
+    private boolean sharesPendingStatsFileWith(final CapgoUpdater other) {
+        final File mine = pendingStatsFile();
+        final File theirs = other.pendingStatsFile();
+        return mine != null && theirs != null && mine.getAbsolutePath().equals(theirs.getAbsolutePath());
     }
 
     private static void addOrphanedStats(final List<JSONObject> events) {
@@ -3528,20 +3552,38 @@ public class CapgoUpdater {
         if (events.isEmpty()) {
             return true;
         }
+        final List<QueuedStatsEvent> displaced = new ArrayList<>();
         synchronized (statsQueue) {
             if (statsStopped.get()) {
                 return false;
             }
             for (final JSONObject event : events) {
                 while (statsQueue.size() >= MAX_PENDING_STATS) {
-                    statsQueue.remove(0);
+                    displaced.add(0, statsQueue.remove(0));
                 }
                 statsQueue.add(new QueuedStatsEvent(event, null));
+            }
+        }
+        synchronized (statsOwnerLock) {
+            if (statsOwner != null && statsOwner != this) {
+                rollbackAdoptedEvents(events.size(), displaced);
+                return false;
             }
         }
         persistStatsQueue();
         ensureStatsTimerStarted();
         return true;
+    }
+
+    private void rollbackAdoptedEvents(final int adoptedCount, final List<QueuedStatsEvent> displaced) {
+        synchronized (statsQueue) {
+            for (int removed = 0; removed < adoptedCount && !statsQueue.isEmpty(); removed++) {
+                statsQueue.remove(statsQueue.size() - 1);
+            }
+            for (int i = 0; i < displaced.size(); i++) {
+                statsQueue.add(i, displaced.get(i));
+            }
+        }
     }
 
     int pendingStatsCount() {
