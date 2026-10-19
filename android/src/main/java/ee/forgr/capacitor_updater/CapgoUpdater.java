@@ -3774,12 +3774,7 @@ public class CapgoUpdater {
         }
         final long intervalMs = statsFlushIntervalOverrideMs != null ? statsFlushIntervalOverrideMs : STATS_FLUSH_INTERVAL_MS;
         if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
-            statsFlushTask = statsScheduler.scheduleAtFixedRate(
-                this::flushStatsQueue,
-                intervalMs,
-                intervalMs,
-                TimeUnit.MILLISECONDS
-            );
+            statsFlushTask = statsScheduler.scheduleAtFixedRate(this::flushStatsQueue, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
         }
     }
 
