@@ -3500,20 +3500,24 @@ public class CapgoUpdater {
         if (events.isEmpty()) {
             return;
         }
+        if (owner != null && owner.adoptPendingStats(events)) {
+            return;
+        }
+        List<JSONObject> retryEvents = null;
+        CapgoUpdater retryOwner = null;
         synchronized (statsOwnerLock) {
-            if (owner != null && owner.adoptPendingStats(events)) {
+            addOrphanedStats(events);
+            retryOwner = statsOwner == this ? null : statsOwner;
+            if (retryOwner != null && !orphanedStats.isEmpty()) {
+                retryEvents = new ArrayList<>(orphanedStats);
+                orphanedStats.clear();
+            }
+        }
+        if (retryOwner != null && retryEvents != null) {
+            if (retryOwner.adoptPendingStats(retryEvents)) {
                 return;
             }
-            addOrphanedStats(events);
-            CapgoUpdater retryOwner = statsOwner == this ? null : statsOwner;
-            if (retryOwner != null && !orphanedStats.isEmpty()) {
-                final List<JSONObject> parked = new ArrayList<>(orphanedStats);
-                orphanedStats.clear();
-                if (retryOwner.adoptPendingStats(parked)) {
-                    return;
-                }
-                addOrphanedStats(parked);
-            }
+            parkOrphanedStats(retryEvents);
         }
     }
 
