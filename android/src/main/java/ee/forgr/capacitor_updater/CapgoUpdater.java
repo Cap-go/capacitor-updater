@@ -3500,6 +3500,7 @@ public class CapgoUpdater {
         if (events.isEmpty()) {
             return;
         }
+        // adoptPendingStats persists; never call it while holding statsOwnerLock (lock order).
         if (owner != null && owner.adoptPendingStats(events)) {
             return;
         }
