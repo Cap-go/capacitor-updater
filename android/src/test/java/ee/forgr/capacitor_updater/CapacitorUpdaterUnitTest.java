@@ -4726,52 +4726,49 @@ public class CapacitorUpdaterUnitTest {
         final CapgoUpdater headlessB = headlessWithPendingStat("handover_event_b");
 
         try {
-        final CountDownLatch start = new CountDownLatch(1);
-        final CountDownLatch done = new CountDownLatch(3);
-        final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final CountDownLatch start = new CountDownLatch(1);
+            final CountDownLatch done = new CountDownLatch(3);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
 
-        final java.util.function.Consumer<CapgoUpdater> handoverTask = headless -> {
-            try {
-                start.await();
-                headless.handOverPendingStats();
-            } catch (final Throwable t) {
-                failure.compareAndSet(null, t);
-            } finally {
-                done.countDown();
-            }
-        };
-
-        new Thread(() -> handoverTask.accept(headlessA)).start();
-        new Thread(() -> handoverTask.accept(headlessB)).start();
-        new Thread(() -> {
-            try {
-                start.await();
-                for (int i = 0; i < 100; i++) {
-                    live.persistPendingStats();
+            final java.util.function.Consumer<CapgoUpdater> handoverTask = (headless) -> {
+                try {
+                    start.await();
+                    headless.handOverPendingStats();
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
                 }
-            } catch (final Throwable t) {
-                failure.compareAndSet(null, t);
-            } finally {
-                done.countDown();
+            };
+
+            new Thread(() -> handoverTask.accept(headlessA)).start();
+            new Thread(() -> handoverTask.accept(headlessB)).start();
+            new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < 100; i++) {
+                        live.persistPendingStats();
+                    }
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+
+            start.countDown();
+            assertTrue("concurrent handover and persist timed out", done.await(10, TimeUnit.SECONDS));
+            if (failure.get() != null) {
+                throw new AssertionError(failure.get());
             }
-        }).start();
 
-        start.countDown();
-        assertTrue("concurrent handover and persist timed out", done.await(10, TimeUnit.SECONDS));
-        if (failure.get() != null) {
-            throw new AssertionError(failure.get());
-        }
+            assertEquals(0, headlessA.pendingStatsCount());
+            assertEquals(0, headlessB.pendingStatsCount());
+            assertEquals(2, live.pendingStatsCount());
 
-        assertEquals(0, headlessA.pendingStatsCount());
-        assertEquals(0, headlessB.pendingStatsCount());
-        assertEquals(2, live.pendingStatsCount());
-
-        final String persisted = new String(
-            Files.readAllBytes(liveDir.resolve("capgo_pending_stats.json")),
-            StandardCharsets.UTF_8
-        );
-        assertEquals(1, countOccurrences(persisted, "handover_event_a"));
-        assertEquals(1, countOccurrences(persisted, "handover_event_b"));
+            final String persisted = new String(Files.readAllBytes(liveDir.resolve("capgo_pending_stats.json")), StandardCharsets.UTF_8);
+            assertEquals(1, countOccurrences(persisted, "handover_event_a"));
+            assertEquals(1, countOccurrences(persisted, "handover_event_b"));
         } finally {
             live.releaseStatsOwnership();
             live.shutdown(false);
