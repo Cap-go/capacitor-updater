@@ -4725,6 +4725,7 @@ public class CapacitorUpdaterUnitTest {
         final CapgoUpdater headlessA = headlessWithPendingStat("handover_event_a");
         final CapgoUpdater headlessB = headlessWithPendingStat("handover_event_b");
 
+        try {
         final CountDownLatch start = new CountDownLatch(1);
         final CountDownLatch done = new CountDownLatch(3);
         final AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -4771,6 +4772,12 @@ public class CapacitorUpdaterUnitTest {
         );
         assertEquals(1, countOccurrences(persisted, "handover_event_a"));
         assertEquals(1, countOccurrences(persisted, "handover_event_b"));
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+            headlessA.shutdown(false);
+            headlessB.shutdown(false);
+        }
     }
 
     private static int countOccurrences(final String haystack, final String needle) {
