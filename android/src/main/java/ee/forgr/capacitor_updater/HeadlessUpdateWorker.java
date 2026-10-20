@@ -132,7 +132,7 @@ public class HeadlessUpdateWorker extends Worker {
                 }
             }
         };
-        configure(updater, context, capConfig, config, prefs, packageInfo, versionCode);
+        configure(updater, context, config, prefs, packageInfo, versionCode);
         try {
             String updateUrl = config.getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault);
             if (config.getBoolean("persistModifyUrl", false) && prefs.contains(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY)) {
@@ -272,7 +272,6 @@ public class HeadlessUpdateWorker extends Worker {
     private static void configure(
         final CapgoUpdater updater,
         final Context context,
-        final CapConfig capConfig,
         final PluginConfig config,
         final SharedPreferences prefs,
         final PackageInfo packageInfo,
@@ -292,7 +291,7 @@ public class HeadlessUpdateWorker extends Worker {
         updater.versionOs = Build.VERSION.RELEASE;
 
         String appId = InternalUtils.getPackageName(context.getPackageManager(), context.getPackageName());
-        appId = capConfig.getString("appId", appId);
+        appId = InternalUtils.getRootConfigString(context, "appId", appId);
         updater.appId = config.getString("appId", appId);
         updater.setPublicKey(config.getString("publicKey", ""));
 
