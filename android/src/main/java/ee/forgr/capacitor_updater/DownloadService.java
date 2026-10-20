@@ -1316,14 +1316,17 @@ public class DownloadService extends Worker {
                 }
             } catch (IOException e) {
                 String msg = e.getMessage();
-                if (resumed) {
+                boolean checksumFailed = msg != null && msg.contains("Checksum verification failed");
+                boolean brotliFailed = isBrotli && msg != null && msg.toLowerCase(java.util.Locale.US).contains("brotli");
+                // Only bad bytes earn a clean GET; local storage errors stay permanent.
+                if (resumed && (checksumFailed || brotliFailed)) {
                     keepPartial = false;
                     throw new DownloadRetryException("resumed_partial_failed_verification", e);
                 }
-                if (msg != null && msg.contains("Checksum verification failed")) {
+                if (checksumFailed) {
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
-                } else if (isBrotli && msg != null && msg.toLowerCase(java.util.Locale.US).contains("brotli")) {
+                } else if (brotliFailed) {
                     sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
                 }

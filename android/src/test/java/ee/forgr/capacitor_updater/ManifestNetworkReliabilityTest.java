@@ -46,6 +46,12 @@ public class ManifestNetworkReliabilityTest {
     }
 
     @Test
+    public void storageFailureAfterResumeStaysPermanent() throws Exception {
+        // A complete partial gets 416, then the install cannot write: no clean GET, no retry.
+        runManifest(-3, 1, false, false, "correct");
+    }
+
+    @Test
     public void lateWriteToSharedPartialNeverReachesInstalledFile() throws Exception {
         // Another download of the same file shares the partial name and may still write after this one installs.
         runManifest(200, 1, true, true, "correct");
@@ -126,9 +132,9 @@ public class ManifestNetworkReliabilityTest {
                     boolean truncated = first && firstStatus == -1;
                     int rangeStart = "zero".equals(rangeMode) ? 0 : "wrong".equals(rangeMode) ? offset + 3 : offset;
                     int status;
-                    if (firstStatus == -2 && offset > 0) status = 416;
+                    if ((firstStatus == -2 || firstStatus == -3) && offset > 0) status = 416;
                     else if (truncated) status = 200;
-                    else if (first && firstStatus != -2) status = firstStatus;
+                    else if (first && firstStatus >= 0) status = firstStatus;
                     else status = offset > 0 ? 206 : 200;
                     byte[] response = truncated
                         ? java.util.Arrays.copyOf(body, 10)
@@ -172,6 +178,12 @@ public class ManifestNetworkReliabilityTest {
                 .getInputData();
             doReturn(false).when(worker).isStopped();
             File target = new File(root, "index.html");
+            if (firstStatus == -3) {
+                File readOnly = new File(root, "read-only");
+                assertTrue(readOnly.mkdirs());
+                assertTrue(readOnly.setWritable(false));
+                target = new File(readOnly, "index.html");
+            }
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             digest.update(body);
             String hash = CryptoCipher.digestToHex(digest);
@@ -188,7 +200,7 @@ public class ManifestNetworkReliabilityTest {
             method.setAccessible(true);
             java.io.FileOutputStream heldPartial = null;
             File partial = DownloadService.manifestPartialFile(new File(root, "capgo_downloads"), "retry-id", hash, "index.html");
-            if (holdPartialOpen || firstStatus == -2) {
+            if (holdPartialOpen || firstStatus == -2 || firstStatus == -3) {
                 assertTrue(partial.getParentFile().mkdirs() || partial.getParentFile().isDirectory());
                 assertTrue(partial.createNewFile());
             }
@@ -197,6 +209,7 @@ public class ManifestNetworkReliabilityTest {
                 corrupt[0] ^= 1;
                 Files.write(partial.toPath(), corrupt);
             }
+            if (firstStatus == -3) Files.write(partial.toPath(), body);
             if (holdPartialOpen) heldPartial = new java.io.FileOutputStream(partial, true);
             try {
                 method.invoke(
@@ -222,6 +235,7 @@ public class ManifestNetworkReliabilityTest {
             }
             assertEquals(expectedRequests, requests.get());
         } finally {
+            new File(root, "read-only").setWritable(true);
             server.close();
             responder.join(2000);
             try (java.util.stream.Stream<java.nio.file.Path> files = Files.walk(root.toPath())) {

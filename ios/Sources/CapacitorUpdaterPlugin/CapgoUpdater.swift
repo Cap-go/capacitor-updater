@@ -2137,7 +2137,8 @@ import UIKit
                     try decryptionSession.decryptFile(filePath: work)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
-                    if !resumed { self.sendStats(action: "decrypt_fail", versionName: version) }
+                    if resumed { throw Self.resumeVerificationError(error, fileName: fileName) }
+                    self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
                 source = work
@@ -2149,7 +2150,8 @@ import UIKit
                     calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
-                    if !resumed { self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)") }
+                    if resumed { throw Self.resumeVerificationError(error, fileName: fileName) }
+                    self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
             } else {
@@ -2164,8 +2166,10 @@ import UIKit
             if calculatedChecksum != fileHash {
                 try? FileManager.default.removeItem(at: destFilePath)
                 try? FileManager.default.removeItem(at: partialURL)
-                if !resumed { self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)") }
-                throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+                let mismatch = NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+                if resumed { throw Self.resumeVerificationError(mismatch, fileName: fileName) }
+                self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
+                throw mismatch
             }
 
             if let cacheFilePath {
@@ -2182,16 +2186,17 @@ import UIKit
         } catch {
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
-            if resumed {
-                try? FileManager.default.removeItem(at: partialURL)
-                throw NSError(
-                    domain: Self.manifestResumeErrorDomain,
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Resumed transfer failed verification for \(fileName)", NSUnderlyingErrorKey: error]
-                )
-            }
             throw error
         }
+    }
+
+    /// Bad bytes after a resume earn a clean GET; local storage errors are not wrapped and stay permanent.
+    private static func resumeVerificationError(_ underlying: Error, fileName: String) -> NSError {
+        NSError(
+            domain: manifestResumeErrorDomain,
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Resumed transfer failed verification for \(fileName)", NSUnderlyingErrorKey: underlying]
+        )
     }
 
     /// Start offset of a `bytes start-end/total` Content-Range header, or nil when absent or malformed.
