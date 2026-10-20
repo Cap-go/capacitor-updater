@@ -4860,16 +4860,8 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(1));
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(4));
-        assertEquals(12, DownloadService.manifestMaxConcurrentFiles(6));
-        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(8));
-        assertEquals(36, DownloadService.manifestMaxConcurrentFiles(18));
-        assertEquals(64, DownloadService.manifestMaxConcurrentFiles(40));
-        int live = DownloadService.manifestMaxConcurrentFiles();
-        assertTrue(live >= 8 && live <= 64);
-        assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
+    public void manifestConcurrencyIsFixedAt32() {
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles());
     }
 
     @Test
@@ -5128,18 +5120,22 @@ public class CapacitorUpdaterUnitTest {
     public void manifestPartialFileUsesStableHashAndPath() throws Exception {
         final Path dir = Files.createTempDirectory("capgo-partial-name");
         String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        File nested = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
-        File root = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
-        File vendor = DownloadService.manifestPartialFile(dir.toFile(), hash, "vendor/app.js");
+        File nested = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "nested/app.js");
+        File root = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "app.js");
+        File vendor = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "vendor/app.js");
         assertNotEquals(nested.getName(), root.getName());
         assertNotEquals(nested.getName(), vendor.getName());
-        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js").getName());
-        assertTrue(nested.getName().startsWith("partial_" + hash + "_"));
+        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "nested/app.js").getName());
+        // Concurrent downloads of the same file never share a partial.
+        assertNotEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), "bundle-b", hash, "nested/app.js").getName());
+        assertTrue(nested.getName().startsWith("partial_"));
+        assertTrue(nested.getName().contains("_" + hash + "_"));
         assertTrue(nested.getName().length() < 255);
         assertTrue(nested.getName().endsWith(".tmp"));
-        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
+        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../../escape", "../evil", "app.js");
         assertTrue(unsafe.getName().startsWith("partial_"));
-        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js").getName());
+        assertEquals(dir.toFile(), unsafe.getParentFile());
+        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../../escape", "../evil", "app.js").getName());
     }
 
     @Test

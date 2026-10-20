@@ -23,12 +23,9 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
-    static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
-
-    static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        min(64, max(8, max(1, processorCount) * 2))
-    }
+    /// 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
+    /// capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
+    static let manifestMaxConcurrentFiles = 32
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
@@ -123,6 +120,13 @@ import UIKit
         let response: HTTPURLResponse?
         let error: Error?
         let timedOut: Bool
+        /// Bytes URLSession kept from an interrupted transfer, usable with downloadTask(withResumeData:).
+        var resumeData: Data?
+    }
+
+    /// Resume data carried between the retry attempts of one manifest file.
+    final class ManifestResumeState {
+        var data: Data?
     }
 
     enum SecurePathError: Error {
@@ -419,18 +423,25 @@ import UIKit
     }
 
     func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
+        performDownloadRequest(request, label: label, resumeData: nil)
+    }
+
+    func performDownloadRequest(_ request: URLRequest, label: String, resumeData: Data?) -> DownloadRequestResult {
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
+        var interruptedResumeData: Data?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let downloadTask = self.urlSession.downloadTask(with: request) { location, response, error in
+        let completion: (URL?, URLResponse?, Error?) -> Void = { location, response, error in
             // URLSession deletes `location` once this handler returns, so move it synchronously here.
             var movedFileURL: URL?
             var resultError: Error?
+            var resultResumeData: Data?
             if let error {
                 resultError = NetworkError.sessionTaskFailed(error)
+                resultResumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
             } else if let location {
                 do {
                     let fileManager = FileManager.default
@@ -453,9 +464,12 @@ import UIKit
                 tempFileURL = movedFileURL
                 httpResponse = taskResponse
                 requestError = resultError
+                interruptedResumeData = resultResumeData
                 semaphore.signal()
             }
         }
+        let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
+            ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
         downloadTask.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
@@ -477,7 +491,8 @@ import UIKit
             fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
-            timedOut: isTimedOutError(requestError)
+            timedOut: isTimedOutError(requestError),
+            resumeData: interruptedResumeData
         )
     }
 
@@ -497,13 +512,15 @@ import UIKit
         CryptoCipher.shortPathKey(fileName)
     }
 
-    static func manifestPartialURL(cacheFolder: URL, hash: String, fileName: String) -> URL {
+    /// Scoped to one download so concurrent downloads of the same file never write one partial.
+    static func manifestPartialURL(cacheFolder: URL, downloadId: String, hash: String, fileName: String) -> URL {
+        let owner = CryptoCipher.shortPathKey(downloadId)
         let token = safePartialToken(fileName)
         if isSafeCacheHash(hash) && hash.count == 64 {
-            return cacheFolder.appendingPathComponent("partial_\(hash)_\(token).tmp")
+            return cacheFolder.appendingPathComponent("partial_\(owner)_\(hash)_\(token).tmp")
         }
         let digest = CryptoCipher.shortPathKey("\(hash)|\(fileName)")
-        return cacheFolder.appendingPathComponent("partial_\(digest)_\(token).tmp")
+        return cacheFolder.appendingPathComponent("partial_\(owner)_\(digest)_\(token).tmp")
     }
 
     private func removePartialManifestBundleDirectory(_ destFolder: URL) {
@@ -1285,7 +1302,7 @@ import UIKit
             }
 
             do {
-                try copyItemAtomically(from: fileURL, to: cacheFile)
+                try linkOrCopyImmutableFile(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -1653,6 +1670,7 @@ import UIKit
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
@@ -1681,7 +1699,9 @@ import UIKit
         let totalFiles = manifest.count
 
         // Thread-safe counters for concurrent operations
-        let completedFiles = AtomicCounter()
+        let progressLock = NSLock()
+        var completedFiles = 0
+        var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
         var downloadError: Error?
         let errorLock = NSLock()
@@ -1870,23 +1890,19 @@ import UIKit
                     }
                     // Download
                     else {
-                        try self.downloadManifestFile(
-                            downloadUrl: task.downloadUrl,
-                            destFilePath: task.destFilePath,
-                            cacheFilePath: task.cacheFilePath,
-                            fileHash: task.finalFileHash,
-                            fileName: task.fileName,
-                            destFileName: task.destFileName,
-                            isBrotli: task.isBrotli,
-                            sessionKey: sessionKey,
-                            version: version,
-                            bundleId: id
-                        )
+                        try self.downloadManifestFile(task, version: version, bundleId: id, decryptionSession: decryptionSession) {
+                            hasError.value
+                        }
                     }
 
-                    let completed = completedFiles.increment()
-                    let percent = self.calcTotalPercent(percent: Int((Double(completed) / Double(totalFiles)) * 100), min: 10, max: 70)
-                    self.notifyDownload(id: id, percent: percent)
+                    progressLock.lock()
+                    completedFiles += 1
+                    let percent = self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70)
+                    if percent > lastProgressPercent {
+                        lastProgressPercent = percent
+                        self.notifyDownload(id: id, percent: percent, bundle: bundleInfo)
+                    }
+                    progressLock.unlock()
 
                 } catch {
                     errorLock.lock()
@@ -1934,17 +1950,73 @@ import UIKit
     /// Downloads a single manifest file synchronously
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
-        downloadUrl: String,
-        destFilePath: URL,
-        cacheFilePath: URL?,
-        fileHash: String,
-        fileName: String,
-        destFileName: String,
-        isBrotli: Bool,
-        sessionKey: String,
-        version: String,
-        bundleId: String
+        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession,
+        shouldStop: () -> Bool
     ) throws {
+        let resume = ManifestResumeState()
+        for attempt in 1...3 {
+            do {
+                try downloadManifestFileOnce(task, version: version, bundleId: bundleId, decryptionSession: decryptionSession, resume: resume)
+                return
+            } catch {
+                guard attempt < 3 && Self.isRetryableManifestError(error) else {
+                    // One failure stat per file, after the last attempt.
+                    if Self.isManifestTransferError(error) {
+                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(task.fileName)")
+                    }
+                    throw error
+                }
+                // Back off in short steps so a failed or cancelled manifest stops retrying promptly.
+                for _ in 0..<(5 * attempt) {
+                    if shouldStop() { throw error }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+            }
+        }
+    }
+
+    /// Transport errors arrive wrapped in NetworkError.sessionTaskFailed; classify the underlying error.
+    static func isRetryableManifestError(_ error: Error) -> Bool {
+        if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
+            return isRetryableManifestError(underlying)
+        }
+        let failure = error as NSError
+        if failure.domain == manifestResumeErrorDomain {
+            return true
+        }
+        if failure.domain == "StatusCodeError" {
+            return failure.code == 408 || (500...599).contains(failure.code)
+        }
+        return failure.domain == NSURLErrorDomain && [
+            NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
+            NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
+        ].contains(failure.code)
+    }
+
+    /// Failures that reach the server or network, as opposed to checksum, decryption or storage errors.
+    private static func isManifestTransferError(_ error: Error) -> Bool {
+        if error is NetworkError {
+            return true
+        }
+        let failure = error as NSError
+        return failure.domain == NSURLErrorDomain || failure.domain == "StatusCodeError" || failure.domain == manifestResumeErrorDomain ||
+            (failure.domain == "ManifestDownloadError" && failure.code == 3)
+    }
+
+    /// A resumed transfer that cannot be trusted: drop the partial and fetch the whole file on the next attempt.
+    static let manifestResumeErrorDomain = "ManifestResumeError"
+
+    private func downloadManifestFileOnce(
+        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession,
+        resume: ManifestResumeState
+    ) throws {
+        let downloadUrl = task.downloadUrl
+        let destFilePath = task.destFilePath
+        let cacheFilePath = task.cacheFilePath
+        let fileHash = task.finalFileHash
+        let fileName = task.fileName
+        let destFileName = task.destFileName
+        let isBrotli = task.isBrotli
         guard let url = URL(string: downloadUrl) else {
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -1962,7 +2034,13 @@ import UIKit
         }
 
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
-        let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, hash: fileHash, fileName: fileName)
+        let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, downloadId: bundleId, hash: fileHash, fileName: fileName)
+        let resumeData = resume.data
+        resume.data = nil
+        if resumeData != nil {
+            // URLSession resumes its own interrupted transfer and returns the whole file.
+            try? FileManager.default.removeItem(at: partialURL)
+        }
         let existingBytes: Int64
         if FileManager.default.fileExists(atPath: partialURL.path) {
             existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
@@ -1972,8 +2050,13 @@ import UIKit
         if existingBytes > 0 {
             request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
         }
+        // True while the bytes on disk come from more than one response; a bad result then earns a clean GET.
+        var resumed = resumeData != nil
 
-        let result = performDownloadRequest(request, label: "downloadManifestFile \(fileName)")
+        let label = "downloadManifestFile \(fileName)"
+        let result = resumeData.map { performDownloadRequest(request, label: label, resumeData: $0) }
+            ?? performDownloadRequest(request, label: label)
+        resume.data = result.resumeData
         defer {
             if let fileURL = result.fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
@@ -1982,7 +2065,6 @@ import UIKit
 
         if result.timedOut {
             persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: NSURLErrorDomain,
                 code: NSURLErrorTimedOut,
@@ -1992,32 +2074,45 @@ import UIKit
 
         if let error = result.error {
             persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             self.logger.error("Manifest file download network error")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
         }
 
         let statusCode = result.response?.statusCode ?? 200
+        var storeOffset = existingBytes
+        if statusCode == 206 && existingBytes > 0 {
+            switch Self.contentRangeStart(result.response?.value(forHTTPHeaderField: "Content-Range")) {
+            case .some(existingBytes):
+                resumed = true
+            case .some(0):
+                storeOffset = 0
+            default:
+                try? FileManager.default.removeItem(at: partialURL)
+                throw NSError(
+                    domain: Self.manifestResumeErrorDomain,
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Content-Range does not continue the partial for \(fileName)"]
+                )
+            }
+        }
         if statusCode == 416 && existingBytes > 0 {
             logger.debug("Range not satisfiable, using existing partial \(partialURL.lastPathComponent)")
+            resumed = true
         } else if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
         } else {
             guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
-                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                 throw NSError(
                     domain: "ManifestDownloadError",
                     code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "Manifest file response was empty for \(fileName) at url \(downloadUrl)"]
                 )
             }
-            try storeDownloadedFile(downloadedFileURL, at: partialURL, existingBytes: existingBytes, response: result.response)
+            try storeDownloadedFile(downloadedFileURL, at: partialURL, existingBytes: storeOffset, response: result.response)
         }
 
         guard FileManager.default.fileExists(atPath: partialURL.path) else {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
                 code: 3,
@@ -2034,14 +2129,15 @@ import UIKit
 
         do {
             var source = partialURL
-            if !self.publicKey.isEmpty && CryptoCipher.isValidSessionKey(sessionKey) {
+            if decryptionSession.isEncrypted {
                 let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
                 try FileManager.default.copyItem(at: partialURL, to: work)
                 workURL = work
                 do {
-                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try decryptionSession.decryptFile(filePath: work)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
+                    if resumed { throw Self.resumeVerificationError(error, fileName: fileName) }
                     self.sendStats(action: "decrypt_fail", versionName: version)
                     throw error
                 }
@@ -2054,14 +2150,13 @@ import UIKit
                     calculatedChecksum = try decompressBrotli(from: source, to: destFilePath, fileName: fileName)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
+                    if resumed { throw Self.resumeVerificationError(error, fileName: fileName) }
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
             } else {
                 let handle = try FileHandle(forReadingFrom: source)
-                defer {
-                    try? handle.close()
-                }
+                defer { try? handle.close() }
                 let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
                 calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
             }
@@ -2071,22 +2166,49 @@ import UIKit
             if calculatedChecksum != fileHash {
                 try? FileManager.default.removeItem(at: destFilePath)
                 try? FileManager.default.removeItem(at: partialURL)
+                let mismatch = NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+                if resumed { throw Self.resumeVerificationError(mismatch, fileName: fileName) }
                 self.sendStats(action: "download_manifest_checksum_fail", versionName: "\(version):\(destFileName)")
-                throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
+                throw mismatch
             }
 
             if let cacheFilePath {
-                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+                do {
+                    try linkOrCopyImmutableFile(from: destFilePath, to: cacheFilePath)
+                } catch {
+                    logger.debug("Delta cache write failed: \(error.localizedDescription)")
+                }
             }
             try? FileManager.default.removeItem(at: partialURL)
 
             self.logger.info("Manifest file downloaded and cached")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(decryptionSession.isEncrypted)")
         } catch {
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    /// Bad bytes after a resume earn a clean GET; local storage errors are not wrapped and stay permanent.
+    private static func resumeVerificationError(_ underlying: Error, fileName: String) -> NSError {
+        NSError(
+            domain: manifestResumeErrorDomain,
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Resumed transfer failed verification for \(fileName)", NSUnderlyingErrorKey: underlying]
+        )
+    }
+
+    /// Start offset of a `bytes start-end/total` Content-Range header, or nil when absent or malformed.
+    static func contentRangeStart(_ header: String?) -> Int64? {
+        guard let header, header.hasPrefix("bytes ") else {
+            return nil
+        }
+        let range = header.dropFirst("bytes ".count)
+        guard let dash = range.firstIndex(of: "-") else {
+            return nil
+        }
+        return Int64(range[range.startIndex..<dash].trimmingCharacters(in: .whitespaces))
     }
 
     /// Copy a file to the destination, replacing any existing file.
@@ -2144,6 +2266,21 @@ import UIKit
         try replaceItemAtomically(at: destination, withItemAt: tempURL)
     }
 
+    /// Only updater-owned verified bundle/cache files, which are never rewritten in place.
+    func linkOrCopyImmutableFile(from source: URL, to destination: URL) throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temp = destination.deletingLastPathComponent().appendingPathComponent("capgo-link-\(UUID().uuidString).tmp")
+        defer { try? manager.removeItem(at: temp) }
+        do {
+            try manager.linkItem(at: source.resolvingSymlinksInPath(), to: temp)
+        } catch {
+            try copyItemAtomically(from: source.resolvingSymlinksInPath(), to: destination)
+            return
+        }
+        try replaceItemAtomically(at: destination, withItemAt: temp)
+    }
+
     /// One-step replace when dest exists, move when it does not. Avoids the
     /// fileExists/removeItem race that can fail a verified install.
     private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
@@ -2169,7 +2306,7 @@ import UIKit
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemAtomically(from: source, to: destination)
+            try linkOrCopyImmutableFile(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead
