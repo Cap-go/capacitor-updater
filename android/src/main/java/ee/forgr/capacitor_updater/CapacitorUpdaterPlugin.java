@@ -819,9 +819,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         DownloadService.setLogger(logger);
         DownloadWorkerManager.setLogger(logger);
 
-        final CapConfig config = CapConfig.loadDefault(this.getActivity());
         this.implementation.appId = InternalUtils.getPackageName(getContext().getPackageManager(), getContext().getPackageName());
-        this.implementation.appId = config.getString("appId", this.implementation.appId);
+        this.implementation.appId = InternalUtils.getRootConfigString(getContext(), "appId", this.implementation.appId);
         this.implementation.appId = this.getConfig().getString("appId", this.implementation.appId);
         if (this.implementation.appId == null || this.implementation.appId.isEmpty()) {
             // crash the app on purpose it should not happen

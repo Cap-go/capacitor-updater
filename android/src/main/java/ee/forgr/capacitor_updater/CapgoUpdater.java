@@ -27,14 +27,12 @@ import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.SecureRandom;
@@ -87,7 +85,6 @@ public class CapgoUpdater {
     private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
-    private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
@@ -1674,21 +1671,6 @@ public class CapgoUpdater {
         return config == null ? null : config.label;
     }
 
-    private String readAssetAsString(final String assetPath) throws IOException {
-        final StringBuilder buffer = new StringBuilder();
-        try (
-            final BufferedReader reader = new BufferedReader(
-                new InputStreamReader(this.context().getAssets().open(assetPath), StandardCharsets.UTF_8)
-            )
-        ) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                buffer.append(line).append('\n');
-            }
-        }
-        return buffer.toString();
-    }
-
     private void copyFileAtomically(final File source, final File dest) throws IOException {
         final File parent = dest.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -1747,7 +1729,9 @@ public class CapgoUpdater {
 
         final BackgroundRunnerWorkConfig config;
         try {
-            config = getBackgroundRunnerWorkConfigFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+            config = getBackgroundRunnerWorkConfigFromConfig(
+                InternalUtils.readAssetAsString(this.context(), InternalUtils.CAPACITOR_CONFIG_ASSET)
+            );
         } catch (IOException ignored) {
             return;
         }
