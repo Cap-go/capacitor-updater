@@ -47,6 +47,38 @@ import UIKit
     public var deviceID = ""
     public var previewSession = false
     public var publicKey: String = ""
+    /// When true every URL the updater talks to must be https, including redirect hops. Config `httpsOnly`.
+    public var httpsOnly: Bool = false {
+        didSet { redirectPolicy.httpsOnly = httpsOnly }
+    }
+    /// When true a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
+    public var builtinMinimum: Bool = false
+    /// Error raised when `httpsOnly` is set and a URL is not https.
+    public static func httpsOnlyError(_ url: URL) -> NSError {
+        return NSError(
+            domain: "CapgoUpdater",
+            code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "httpsOnly is enabled and \(url.absoluteString) is not https"]
+        )
+    }
+
+    /// Returns nil when the URL may be requested, or the `httpsOnly` error to fail with.
+    func checkAllowedScheme(_ url: URL?) -> Error? {
+        guard self.httpsOnly, let url else {
+            return nil
+        }
+        if url.scheme?.lowercased() == "https" {
+            return nil
+        }
+        logger.error("httpsOnly is enabled and \(url.absoluteString) is not https")
+        return Self.httpsOnlyError(url)
+    }
+
+    func assertAllowedScheme(_ url: URL) throws {
+        if let error = checkAllowedScheme(url) {
+            throw error
+        }
+    }
 
     // Cached key ID calculated once from publicKey
     private var cachedKeyId: String?
@@ -259,7 +291,7 @@ import UIKit
         configuration.urlCache = nil
         configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
         redirectPolicy.onBlockedRedirect = { [weak self] source, target in
-            self?.logger?.error("Blocked HTTPS to HTTP redirect; set allowHttpsToHttpRedirect to true to allow it")
+            self?.logger?.error("Blocked redirect to a non-https URL (httpsOnly, or allowHttpsToHttpRedirect is false)")
             self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
         }
         let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
@@ -279,6 +311,12 @@ import UIKit
     /// Runs a raw data task on the updater session (no cookies, no cache, redirect policy applied).
     @discardableResult
     func startRawDataTask(_ request: URLRequest, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionDataTask {
+        if let schemeError = checkAllowedScheme(request.url) {
+            // Never resumed: the session will not call back, so the completion runs exactly once.
+            let idle = self.urlSession.dataTask(with: request) { _, _, _ in }
+            completion(nil, nil, schemeError)
+            return idle
+        }
         let task = self.urlSession.dataTask(with: request, completionHandler: completion)
         task.resume()
         return task
@@ -293,6 +331,14 @@ import UIKit
         completionQueue: DispatchQueue,
         completion: @escaping (Data?, HTTPURLResponse?, Error?) -> Void
     ) -> URLSessionDataTask {
+        if let schemeError = checkAllowedScheme(request.url) {
+            // Never resumed: the session will not call back, so the completion runs exactly once.
+            let idle = self.urlSession.dataTask(with: request) { _, _, _ in }
+            completionQueue.async {
+                completion(nil, nil, schemeError)
+            }
+            return idle
+        }
         let task = self.urlSession.dataTask(with: request) { data, response, error in
             let httpResponse = response as? HTTPURLResponse
             let body = (data?.isEmpty ?? true) ? nil : data
@@ -427,6 +473,9 @@ import UIKit
     }
 
     func performDownloadRequest(_ request: URLRequest, label: String, resumeData: Data?) -> DownloadRequestResult {
+        if let schemeError = checkAllowedScheme(request.url) {
+            return DownloadRequestResult(fileURL: nil, response: nil, error: schemeError, timedOut: false)
+        }
         let waitTimeout = max(self.timeout + 5, 10)
         let semaphore = DispatchSemaphore(value: 0)
         var tempFileURL: URL?
@@ -645,6 +694,34 @@ import UIKit
                 domain: "CapgoUpdater",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
+            )
+        }
+    }
+
+    /// `builtinMinimum`: refuse any bundle version lower than the native app version (`versionBuild`).
+    /// Versions that do not parse as semver skip the check so odd native version strings never block updates.
+    func requireVersionNotBelowBuiltin(_ version: String) throws {
+        guard self.builtinMinimum else {
+            return
+        }
+        // Build metadata (+...) never takes part in ordering, and may contain dots the parser rejects.
+        let bundleCore = String(version.split(separator: "+", maxSplits: 1).first ?? "")
+        let nativeCore = String(self.versionBuild.split(separator: "+", maxSplits: 1).first ?? "")
+        guard let parsedBundle = try? CapgoSemanticVersion(bundleCore),
+              let parsedNative = try? CapgoSemanticVersion(nativeCore) else {
+            logger?.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
+            return
+        }
+        // Only major.minor.patch matter: a prerelease bundle at the native version is not a rollback.
+        let bundleVersion = CapgoSemanticVersion(major: parsedBundle.major, minor: parsedBundle.minor, patch: parsedBundle.patch)
+        let nativeVersion = CapgoSemanticVersion(major: parsedNative.major, minor: parsedNative.minor, patch: parsedNative.patch)
+        if bundleVersion < nativeVersion {
+            logger?.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
+            self.sendStats(action: "version_below_native", versionName: version)
+            throw NSError(
+                domain: "CapgoUpdater",
+                code: 8,
+                userInfo: [NSLocalizedDescriptionKey: "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"]
             )
         }
     }
@@ -1672,6 +1749,12 @@ import UIKit
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
         let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+        try self.requireVersionNotBelowBuiltin(version)
+        for entry in manifest {
+            if let downloadUrl = entry.download_url, let url = URL(string: downloadUrl) {
+                try self.assertAllowedScheme(url)
+            }
+        }
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
         logger.info("downloadManifest start \(id)")
@@ -2512,6 +2595,8 @@ import UIKit
         expectedChecksum: String?
     ) throws -> BundleInfo {
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+        try self.requireVersionNotBelowBuiltin(version)
+        try self.assertAllowedScheme(url)
         let expectedHash = try expectedChecksum.map { try self.resolveExpectedBundleChecksum($0, versionName: version) }
         try self.runBeforeDownload()
         let id: String = self.randomString(length: 10)
