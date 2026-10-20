@@ -25,11 +25,7 @@ import UIKit
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
     /// 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
     /// capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
-    static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
-
-    static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        32
-    }
+    static let manifestMaxConcurrentFiles = 32
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
     private let deleteLock = NSLock()
@@ -1874,18 +1870,7 @@ import UIKit
                     }
                     // Download
                     else {
-                        try self.downloadManifestFile(
-                            downloadUrl: task.downloadUrl,
-                            destFilePath: task.destFilePath,
-                            cacheFilePath: task.cacheFilePath,
-                            fileHash: task.finalFileHash,
-                            fileName: task.fileName,
-                            destFileName: task.destFileName,
-                            isBrotli: task.isBrotli,
-                            version: version,
-                            bundleId: id,
-                            decryptionSession: decryptionSession
-                        )
+                        try self.downloadManifestFile(task, version: version, bundleId: id, decryptionSession: decryptionSession)
                     }
 
                     progressLock.lock()
@@ -1943,43 +1928,60 @@ import UIKit
     /// Downloads a single manifest file synchronously
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
-        downloadUrl: String, destFilePath: URL, cacheFilePath: URL?, fileHash: String,
-        fileName: String, destFileName: String, isBrotli: Bool,
-        version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
+        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
     ) throws {
         for attempt in 1...3 {
             do {
-                try downloadManifestFileOnce(downloadUrl: downloadUrl, destFilePath: destFilePath,
-                                             cacheFilePath: cacheFilePath, fileHash: fileHash, fileName: fileName,
-                                             destFileName: destFileName, isBrotli: isBrotli,
-                                             version: version, bundleId: bundleId, decryptionSession: decryptionSession)
+                try downloadManifestFileOnce(task, version: version, bundleId: bundleId, decryptionSession: decryptionSession)
                 return
             } catch {
-                let failure = error as NSError
-                let retryableStatus = failure.domain == "StatusCodeError" &&
-                    (failure.code == 408 || (500...599).contains(failure.code))
-                let retryableNetwork = failure.domain == NSURLErrorDomain && [
-                    NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
-                    NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
-                ].contains(failure.code)
-                guard attempt < 3 && (retryableStatus || retryableNetwork) else { throw error }
+                guard attempt < 3 && Self.isRetryableManifestError(error) else {
+                    // One failure stat per file, after the last attempt.
+                    if Self.isManifestTransferError(error) {
+                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(task.fileName)")
+                    }
+                    throw error
+                }
                 Thread.sleep(forTimeInterval: 0.25 * Double(attempt))
             }
         }
     }
 
+    /// Transport errors arrive wrapped in NetworkError.sessionTaskFailed; classify the underlying error.
+    static func isRetryableManifestError(_ error: Error) -> Bool {
+        if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
+            return isRetryableManifestError(underlying)
+        }
+        let failure = error as NSError
+        if failure.domain == "StatusCodeError" {
+            return failure.code == 408 || (500...599).contains(failure.code)
+        }
+        return failure.domain == NSURLErrorDomain && [
+            NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
+            NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
+        ].contains(failure.code)
+    }
+
+    /// Failures that reach the server or network, as opposed to checksum, decryption or storage errors.
+    private static func isManifestTransferError(_ error: Error) -> Bool {
+        if error is NetworkError {
+            return true
+        }
+        let failure = error as NSError
+        return failure.domain == NSURLErrorDomain || failure.domain == "StatusCodeError" ||
+            (failure.domain == "ManifestDownloadError" && failure.code == 3)
+    }
+
     private func downloadManifestFileOnce(
-        downloadUrl: String,
-        destFilePath: URL,
-        cacheFilePath: URL?,
-        fileHash: String,
-        fileName: String,
-        destFileName: String,
-        isBrotli: Bool,
-        version: String,
-        bundleId: String,
-        decryptionSession: CryptoCipher.DecryptionSession
+        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
     ) throws {
+        let downloadUrl = task.downloadUrl
+        let destFilePath = task.destFilePath
+        let cacheFilePath = task.cacheFilePath
+        let fileHash = task.finalFileHash
+        let fileName = task.fileName
+        let destFileName = task.destFileName
+        let isBrotli = task.isBrotli
         guard let url = URL(string: downloadUrl) else {
             throw NSError(
                 domain: "ManifestDownloadError",
@@ -2017,7 +2019,6 @@ import UIKit
 
         if result.timedOut {
             persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: NSURLErrorDomain,
                 code: NSURLErrorTimedOut,
@@ -2027,7 +2028,6 @@ import UIKit
 
         if let error = result.error {
             persistPartialDownload(result, id: bundleId, tempPath: partialURL, existingBytes: existingBytes)
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             self.logger.error("Manifest file download network error")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
             throw error
@@ -2037,11 +2037,9 @@ import UIKit
         if statusCode == 416 && existingBytes > 0 {
             logger.debug("Range not satisfiable, using existing partial \(partialURL.lastPathComponent)")
         } else if statusCode < 200 || statusCode >= 300 {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(domain: "StatusCodeError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch. Status code (\(statusCode)) invalid for file \(fileName) at url \(downloadUrl)"])
         } else {
             guard let downloadedFileURL = result.fileURL, FileManager.default.fileExists(atPath: downloadedFileURL.path) else {
-                self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
                 throw NSError(
                     domain: "ManifestDownloadError",
                     code: 3,
@@ -2052,7 +2050,6 @@ import UIKit
         }
 
         guard FileManager.default.fileExists(atPath: partialURL.path) else {
-            self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(fileName)")
             throw NSError(
                 domain: "ManifestDownloadError",
                 code: 3,

@@ -126,7 +126,7 @@ public class DownloadService extends Worker {
     // 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
     // capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
-    private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
+    static final int MANIFEST_MAX_CONCURRENT_FILES = 32;
     private static final int SHARED_MAX_REQUESTS = 64;
     private static final String UPDATE_FILE = "update.dat";
 
@@ -216,11 +216,7 @@ public class DownloadService extends Worker {
     }
 
     static int manifestMaxConcurrentFiles() {
-        return manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors());
-    }
-
-    static int manifestMaxConcurrentFiles(int processors) {
-        return 32;
+        return MANIFEST_MAX_CONCURRENT_FILES;
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
@@ -1259,7 +1255,7 @@ public class DownloadService extends Worker {
                     logger.debug("Range not satisfiable, using existing partial " + partial.getName());
                     keepPartial = true;
                 } else if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
-                    sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    // Reported once after the last attempt by the task catch in handleManifestDownload.
                     if (code != 429 && isRetryableHttpStatus(code)) {
                         throw new DownloadRetryException("Unexpected response code: " + code);
                     }

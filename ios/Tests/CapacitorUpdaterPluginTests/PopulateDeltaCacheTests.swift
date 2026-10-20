@@ -426,17 +426,8 @@ final class IoBufferSizeTests: XCTestCase {
 }
 
 final class ManifestConcurrencyTests: XCTestCase {
-    func testManifestConcurrencyScalesWithCpuAndStaysCapped() {
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 2), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 32)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 32)
-        let live = CapgoUpdater.manifestMaxConcurrentFiles
-        XCTAssertEqual(live, 32)
-        XCTAssertEqual(live, CapgoUpdater.clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount))
+    func testManifestConcurrencyIsFixedAt32() {
+        XCTAssertEqual(CapgoUpdater.manifestMaxConcurrentFiles, 32)
     }
 }
 

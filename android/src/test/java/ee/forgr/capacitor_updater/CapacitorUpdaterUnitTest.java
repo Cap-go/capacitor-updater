@@ -4860,15 +4860,8 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
-        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(1));
-        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(2));
-        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(4));
-        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(8));
-        assertEquals(32, DownloadService.manifestMaxConcurrentFiles(40));
-        int live = DownloadService.manifestMaxConcurrentFiles();
-        assertEquals(32, live);
-        assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
+    public void manifestConcurrencyIsFixedAt32() {
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles());
     }
 
     @Test

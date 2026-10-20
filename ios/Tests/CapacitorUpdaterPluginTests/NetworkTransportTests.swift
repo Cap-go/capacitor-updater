@@ -9,6 +9,8 @@ private final class LoopbackHTTPServer {
         var status: Int
         var body: Data
         var headers: [String: String] = [:]
+        /// Close the connection without a response, like a dropped mobile link.
+        var dropConnection = false
     }
 
     struct RecordedRequest {
@@ -120,6 +122,10 @@ private final class LoopbackHTTPServer {
     }
 
     private func send(_ response: Response, on connection: NWConnection) {
+        if response.dropConnection {
+            connection.cancel()
+            return
+        }
         var head = "HTTP/1.1 \(response.status) Status\r\nContent-Length: \(response.body.count)\r\nConnection: close\r\n"
         for (name, value) in response.headers {
             head += "\(name): \(value)\r\n"
@@ -178,6 +184,48 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(attempts, 2)
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testManifestRetriesDroppedConnections() throws {
+        let body = Data("<html>reconnected \(UUID().uuidString)</html>".utf8)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try body.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let hash = CryptoCipher.calcChecksum(filePath: file)
+        let lock = NSLock()
+        var attempts = 0
+        // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
+        server.respond { _ in
+            lock.lock()
+            attempts += 1
+            let drop = attempts <= 2
+            lock.unlock()
+            return .init(status: 200, body: body, dropConnection: drop)
+        }
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "manifest-drop-test", options: Logger.Options(level: .silent)))
+        let installed = try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: "index.html", file_hash: hash,
+            download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+        )], version: UUID().uuidString, sessionKey: "")
+        defer { _ = updater.delete(id: installed.getId()) }
+        XCTAssertEqual(attempts, 3)
+        let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
+        XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testManifestRetryClassificationUnwrapsTransportErrors() {
+        typealias NetworkError = CapgoUpdater.NetworkError
+        for code in [URLError.Code.networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .timedOut] {
+            XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(code))), "\(code)")
+        }
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(.cancelled))))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(.serverCertificateUntrusted))))
+        XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 503)))
+        XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 408)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 429)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 404)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "ChecksumError", code: 1)))
     }
 
     func testManifestPermanentFailuresAndRetryBudget() throws {
