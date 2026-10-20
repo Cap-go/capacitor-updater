@@ -1240,9 +1240,11 @@ public class DownloadService extends Worker {
         if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
             throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
         }
-        File partial = manifestPartialFile(cacheFolder, expectedHash, relativeName);
+        File partial = manifestPartialFile(cacheFolder, getInputData().getString(ID), expectedHash, relativeName);
         File workFile = null;
         boolean keepPartial = partial.isFile();
+        // True while the bytes on disk come from more than one response; a bad result then earns a clean GET.
+        boolean resumed = false;
         try {
             long existing = partial.isFile() ? partial.length() : 0;
             Request.Builder builder = new Request.Builder().url(downloadUrl);
@@ -1254,6 +1256,7 @@ public class DownloadService extends Worker {
                 if (code == 416 && existing > 0) {
                     logger.debug("Range not satisfiable, using existing partial " + partial.getName());
                     keepPartial = true;
+                    resumed = true;
                 } else if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                     // Reported once after the last attempt by the task catch in handleManifestDownload.
                     if (code != 429 && isRetryableHttpStatus(code)) {
@@ -1265,8 +1268,20 @@ public class DownloadService extends Worker {
                     if (responseBody == null) {
                         throw new IOException("Response body is null");
                     }
+                    int writeCode = code;
+                    if (code == HttpURLConnection.HTTP_PARTIAL && existing > 0) {
+                        long rangeStart = parseContentRangeStart(response.header("Content-Range"));
+                        if (rangeStart == 0) {
+                            writeCode = HttpURLConnection.HTTP_OK;
+                        } else if (rangeStart == existing) {
+                            resumed = true;
+                        } else {
+                            keepPartial = false;
+                            throw new DownloadRetryException("invalid_content_range");
+                        }
+                    }
                     try {
-                        writeHttpBody(partial, responseBody.byteStream(), code, existing);
+                        writeHttpBody(partial, responseBody.byteStream(), writeCode, existing);
                         keepPartial = true;
                     } catch (Exception e) {
                         keepPartial = true;
@@ -1286,6 +1301,7 @@ public class DownloadService extends Worker {
                     source = workFile;
                 } catch (Exception e) {
                     keepPartial = false;
+                    if (resumed) throw new DownloadRetryException("resumed_partial_failed_decryption", e);
                     throw e;
                 }
             }
@@ -1300,6 +1316,10 @@ public class DownloadService extends Worker {
                 }
             } catch (IOException e) {
                 String msg = e.getMessage();
+                if (resumed) {
+                    keepPartial = false;
+                    throw new DownloadRetryException("resumed_partial_failed_verification", e);
+                }
                 if (msg != null && msg.contains("Checksum verification failed")) {
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
@@ -1337,13 +1357,15 @@ public class DownloadService extends Worker {
         return CryptoCipher.shortPathKey(fileName);
     }
 
-    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
+    // Scoped to one download so concurrent downloads of the same file never write one partial.
+    static File manifestPartialFile(File cacheDir, String downloadId, String hash, String fileName) {
+        String owner = CryptoCipher.shortPathKey(downloadId == null ? "" : downloadId);
         String token = safePartialToken(fileName);
         if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
-            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
+            return new File(cacheDir, "partial_" + owner + "_" + hash + "_" + token + ".tmp");
         }
         String digest = CryptoCipher.shortPathKey((hash == null ? "" : hash) + "\0" + (fileName == null ? "" : fileName));
-        return new File(cacheDir, "partial_" + digest + "_" + token + ".tmp");
+        return new File(cacheDir, "partial_" + owner + "_" + digest + "_" + token + ".tmp");
     }
 
     static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {

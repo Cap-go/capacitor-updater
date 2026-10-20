@@ -29,9 +29,26 @@ public class ManifestNetworkReliabilityTest {
     }
 
     @Test
+    public void resumeWithWrongRangeStartRestartsWithCleanGet() throws Exception {
+        // Truncated, then a 206 that starts at the wrong offset: discard it and fetch the whole file.
+        runManifest(-1, 3, true, false, "wrong");
+    }
+
+    @Test
+    public void resumeAnsweredFromByteZeroReplacesThePartial() throws Exception {
+        runManifest(-1, 2, true, false, "zero");
+    }
+
+    @Test
+    public void unsatisfiableRangeOnCorruptPartialRestartsWithCleanGet() throws Exception {
+        // A full-length but corrupt partial gets 416, fails verification, then a clean GET installs.
+        runManifest(-2, 2, true, false, "correct");
+    }
+
+    @Test
     public void lateWriteToSharedPartialNeverReachesInstalledFile() throws Exception {
         // Another download of the same file shares the partial name and may still write after this one installs.
-        runManifest(200, 1, true, true);
+        runManifest(200, 1, true, true, "correct");
     }
 
     @Test
@@ -85,10 +102,13 @@ public class ManifestNetworkReliabilityTest {
     }
 
     private void runManifest(int firstStatus, int expectedRequests, boolean success) throws Exception {
-        runManifest(firstStatus, expectedRequests, success, false);
+        runManifest(firstStatus, expectedRequests, success, false, "correct");
     }
 
-    private void runManifest(int firstStatus, int expectedRequests, boolean success, boolean holdPartialOpen) throws Exception {
+    // firstStatus: an HTTP status for the first response, -1 for a truncated 200, -2 for a pre-seeded corrupt
+    // full-length partial answered with 416. rangeMode controls the Content-Range start of a resumed 206.
+    private void runManifest(int firstStatus, int expectedRequests, boolean success, boolean holdPartialOpen, String rangeMode)
+        throws Exception {
         File root = Files.createTempDirectory("capgo-manifest-retry").toFile();
         byte[] body = "<html>recovered</html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         AtomicInteger requests = new AtomicInteger();
@@ -104,18 +124,29 @@ public class ManifestNetworkReliabilityTest {
                     }
                     boolean first = requests.incrementAndGet() == 1;
                     boolean truncated = first && firstStatus == -1;
-                    int status = truncated ? 200 : first ? firstStatus : offset > 0 ? 206 : 200;
+                    int rangeStart = "zero".equals(rangeMode) ? 0 : "wrong".equals(rangeMode) ? offset + 3 : offset;
+                    int status;
+                    if (firstStatus == -2 && offset > 0) status = 416;
+                    else if (truncated) status = 200;
+                    else if (first && firstStatus != -2) status = firstStatus;
+                    else status = offset > 0 ? 206 : 200;
                     byte[] response = truncated
                         ? java.util.Arrays.copyOf(body, 10)
-                        : status == 200 || status == 206
-                          ? java.util.Arrays.copyOfRange(body, offset, body.length)
-                          : new byte[0];
+                        : status == 206
+                          ? java.util.Arrays.copyOfRange(body, Math.min(rangeStart, body.length), body.length)
+                          : status == 200
+                            ? body
+                            : new byte[0];
+                    String range =
+                        status == 206 ? "Content-Range: bytes " + rangeStart + "-" + (body.length - 1) + "/" + body.length + "\r\n" : "";
                     java.io.OutputStream output = socket.getOutputStream();
                     output.write(
                         (
                             "HTTP/1.1 " +
                             status +
-                            " test\r\nContent-Length: " +
+                            " test\r\n" +
+                            range +
+                            "Content-Length: " +
                             (truncated ? body.length : response.length) +
                             "\r\nConnection: close\r\n\r\n"
                         ).getBytes(java.nio.charset.StandardCharsets.US_ASCII)
@@ -136,7 +167,9 @@ public class ManifestNetworkReliabilityTest {
             when(context.getCacheDir()).thenReturn(root);
             DownloadService worker = mock(DownloadService.class, CALLS_REAL_METHODS);
             doReturn(context).when(worker).getApplicationContext();
-            doReturn(new Data.Builder().putString(DownloadService.VERSION, "retry-test").build()).when(worker).getInputData();
+            doReturn(new Data.Builder().putString(DownloadService.VERSION, "retry-test").putString(DownloadService.ID, "retry-id").build())
+                .when(worker)
+                .getInputData();
             doReturn(false).when(worker).isStopped();
             File target = new File(root, "index.html");
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
@@ -154,12 +187,17 @@ public class ManifestNetworkReliabilityTest {
             );
             method.setAccessible(true);
             java.io.FileOutputStream heldPartial = null;
-            if (holdPartialOpen) {
-                File partial = DownloadService.manifestPartialFile(new File(root, "capgo_downloads"), hash, "index.html");
+            File partial = DownloadService.manifestPartialFile(new File(root, "capgo_downloads"), "retry-id", hash, "index.html");
+            if (holdPartialOpen || firstStatus == -2) {
                 assertTrue(partial.getParentFile().mkdirs() || partial.getParentFile().isDirectory());
                 assertTrue(partial.createNewFile());
-                heldPartial = new java.io.FileOutputStream(partial, true);
             }
+            if (firstStatus == -2) {
+                byte[] corrupt = body.clone();
+                corrupt[0] ^= 1;
+                Files.write(partial.toPath(), corrupt);
+            }
+            if (holdPartialOpen) heldPartial = new java.io.FileOutputStream(partial, true);
             try {
                 method.invoke(
                     worker,
