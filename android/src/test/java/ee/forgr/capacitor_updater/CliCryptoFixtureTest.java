@@ -156,9 +156,17 @@ public class CliCryptoFixtureTest {
         );
         assertArrayEquals(encrypted, Files.readAllBytes(file.toPath()));
         CryptoCipher.DecryptionSession invalid = new CryptoCipher.DecryptionSession(fixture.getString("publicKey"), "AAAA:AAAA");
-        for (int attempt = 0; attempt < 2; attempt++) {
-            org.junit.Assert.assertThrows(IOException.class, () -> invalid.decryptFile(file));
-            assertArrayEquals(encrypted, Files.readAllBytes(file.toPath()));
+        // Key parsing can throw IllegalArgumentException (bad key format, or bad Base64 on devices).
+        // It must fail as IOException on every file, not as an uncached runtime error.
+        CryptoCipher.DecryptionSession malformed = new CryptoCipher.DecryptionSession(
+            "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA\n-----END RSA PUBLIC KEY-----",
+            "AAAAAAAAAAAAAAAAAAAAAA==:AAAA"
+        );
+        for (CryptoCipher.DecryptionSession session : new CryptoCipher.DecryptionSession[] { invalid, malformed }) {
+            for (int attempt = 0; attempt < 2; attempt++) {
+                org.junit.Assert.assertThrows(IOException.class, () -> session.decryptFile(file));
+                assertArrayEquals(encrypted, Files.readAllBytes(file.toPath()));
+            }
         }
         new CryptoCipher.DecryptionSession(fixture.getString("publicKey"), bundle.getString("ivSessionKey")).decryptFile(file);
         assertArrayEquals(Files.readAllBytes(dir.resolve(bundle.getString("zip"))), Files.readAllBytes(file.toPath()));

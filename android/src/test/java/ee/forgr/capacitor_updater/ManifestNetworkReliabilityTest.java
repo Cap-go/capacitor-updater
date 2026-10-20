@@ -29,6 +29,12 @@ public class ManifestNetworkReliabilityTest {
     }
 
     @Test
+    public void lateWriteToSharedPartialNeverReachesInstalledFile() throws Exception {
+        // Another download of the same file shares the partial name and may still write after this one installs.
+        runManifest(200, 1, true, true);
+    }
+
+    @Test
     public void permanentFailureDoesNotRetry() throws Exception {
         runManifest(404, 1, false);
         runManifest(429, 1, false);
@@ -79,6 +85,10 @@ public class ManifestNetworkReliabilityTest {
     }
 
     private void runManifest(int firstStatus, int expectedRequests, boolean success) throws Exception {
+        runManifest(firstStatus, expectedRequests, success, false);
+    }
+
+    private void runManifest(int firstStatus, int expectedRequests, boolean success, boolean holdPartialOpen) throws Exception {
         File root = Files.createTempDirectory("capgo-manifest-retry").toFile();
         byte[] body = "<html>recovered</html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         AtomicInteger requests = new AtomicInteger();
@@ -143,6 +153,13 @@ public class ManifestNetworkReliabilityTest {
                 String.class
             );
             method.setAccessible(true);
+            java.io.FileOutputStream heldPartial = null;
+            if (holdPartialOpen) {
+                File partial = DownloadService.manifestPartialFile(new File(root, "capgo_downloads"), hash, "index.html");
+                assertTrue(partial.getParentFile().mkdirs() || partial.getParentFile().isDirectory());
+                assertTrue(partial.createNewFile());
+                heldPartial = new java.io.FileOutputStream(partial, true);
+            }
             try {
                 method.invoke(
                     worker,
@@ -156,6 +173,11 @@ public class ManifestNetworkReliabilityTest {
                 );
                 assertTrue(success);
                 assertArrayEquals(body, Files.readAllBytes(target.toPath()));
+                if (heldPartial != null) {
+                    heldPartial.write("late bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    heldPartial.close();
+                    assertArrayEquals(body, Files.readAllBytes(target.toPath()));
+                }
             } catch (InvocationTargetException error) {
                 if (success) throw error;
                 assertFalse(target.exists());

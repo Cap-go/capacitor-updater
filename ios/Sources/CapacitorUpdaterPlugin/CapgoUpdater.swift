@@ -1870,7 +1870,9 @@ import UIKit
                     }
                     // Download
                     else {
-                        try self.downloadManifestFile(task, version: version, bundleId: id, decryptionSession: decryptionSession)
+                        try self.downloadManifestFile(task, version: version, bundleId: id, decryptionSession: decryptionSession) {
+                            hasError.value
+                        }
                     }
 
                     progressLock.lock()
@@ -1928,7 +1930,8 @@ import UIKit
     /// Downloads a single manifest file synchronously
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
-        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
+        _ task: ManifestDownloadTask, version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession,
+        shouldStop: () -> Bool
     ) throws {
         for attempt in 1...3 {
             do {
@@ -1942,7 +1945,11 @@ import UIKit
                     }
                     throw error
                 }
-                Thread.sleep(forTimeInterval: 0.25 * Double(attempt))
+                // Back off in short steps so a failed or cancelled manifest stops retrying promptly.
+                for _ in 0..<(5 * attempt) {
+                    if shouldStop() { throw error }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
             }
         }
     }
@@ -2089,9 +2096,6 @@ import UIKit
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
-            } else if workURL == nil {
-                // URLSession already wrote the payload. Verify it before moving it into the bundle.
-                calculatedChecksum = try CryptoCipher.calcChecksumOrThrow(filePath: source)
             } else {
                 let handle = try FileHandle(forReadingFrom: source)
                 defer { try? handle.close() }
@@ -2108,10 +2112,6 @@ import UIKit
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
-            if !isBrotli && workURL == nil {
-                try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try replaceItemAtomically(at: destFilePath, withItemAt: partialURL)
-            }
             if let cacheFilePath {
                 do {
                     try linkOrCopyImmutableFile(from: destFilePath, to: cacheFilePath)

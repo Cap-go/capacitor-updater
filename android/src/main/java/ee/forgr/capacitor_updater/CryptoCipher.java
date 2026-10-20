@@ -172,6 +172,10 @@ public class CryptoCipher {
                 } catch (IOException error) {
                     failure = error;
                     throw error;
+                } catch (RuntimeException error) {
+                    // Malformed Base64 throws IllegalArgumentException: cache it like any other bad key.
+                    failure = new IOException("AES file decryption failed: invalid session key", error);
+                    throw failure;
                 }
             }
             return prepared;

@@ -1293,12 +1293,6 @@ public class DownloadService extends Worker {
             try {
                 if (isBrotli) {
                     decompressBrotli(source, finalTargetFile, targetFile.getName(), expectedHash);
-                } else if (!needDecrypt) {
-                    // The partial is already on disk. Verify it, then move it without a second write.
-                    if (!expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksumOrThrow(source))) {
-                        throw new IOException("Checksum verification failed");
-                    }
-                    CryptoCipher.replaceFile(source, finalTargetFile);
                 } else {
                     try (FileInputStream fis = new FileInputStream(source)) {
                         writeFileAtomic(finalTargetFile, fis, expectedHash);
