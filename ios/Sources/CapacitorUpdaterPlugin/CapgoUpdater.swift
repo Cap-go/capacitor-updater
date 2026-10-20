@@ -23,11 +23,12 @@ import UIKit
     private let PENDING_DELETE_IDS: String = "pendingDeleteIds"
     private var unzipPercent = 0
     private let TEMP_UNZIP_PREFIX: String = "capgo_unzip_"
-    /// HTTP + decode share one pool. Cap by CPU: 8 on 4 cores, 16 on 8 cores, 64 max.
+    /// 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
+    /// capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
     static let manifestMaxConcurrentFiles = clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount)
 
     static func clampedManifestConcurrency(processorCount: Int) -> Int {
-        min(64, max(8, max(1, processorCount) * 2))
+        32
     }
     private static let emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let deletePaceSeconds: TimeInterval = 0.075
@@ -1285,7 +1286,7 @@ import UIKit
             }
 
             do {
-                try copyItemAtomically(from: fileURL, to: cacheFile)
+                try linkOrCopyImmutableFile(from: fileURL, to: cacheFile)
             } catch {
                 logger.debug("Delta cache copy failed: \(fileURL.path)")
             }
@@ -1653,6 +1654,7 @@ import UIKit
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
+        let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
         try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
         try self.runBeforeDownload()
         let id = self.randomString(length: 10)
@@ -1681,7 +1683,9 @@ import UIKit
         let totalFiles = manifest.count
 
         // Thread-safe counters for concurrent operations
-        let completedFiles = AtomicCounter()
+        let progressLock = NSLock()
+        var completedFiles = 0
+        var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
         var downloadError: Error?
         let errorLock = NSLock()
@@ -1878,15 +1882,20 @@ import UIKit
                             fileName: task.fileName,
                             destFileName: task.destFileName,
                             isBrotli: task.isBrotli,
-                            sessionKey: sessionKey,
                             version: version,
-                            bundleId: id
+                            bundleId: id,
+                            decryptionSession: decryptionSession
                         )
                     }
 
-                    let completed = completedFiles.increment()
-                    let percent = self.calcTotalPercent(percent: Int((Double(completed) / Double(totalFiles)) * 100), min: 10, max: 70)
-                    self.notifyDownload(id: id, percent: percent)
+                    progressLock.lock()
+                    completedFiles += 1
+                    let percent = self.calcTotalPercent(percent: Int((Double(completedFiles) / Double(totalFiles)) * 100), min: 10, max: 70)
+                    if percent > lastProgressPercent {
+                        lastProgressPercent = percent
+                        self.notifyDownload(id: id, percent: percent, bundle: bundleInfo)
+                    }
+                    progressLock.unlock()
 
                 } catch {
                     errorLock.lock()
@@ -1934,6 +1943,32 @@ import UIKit
     /// Downloads a single manifest file synchronously
     /// Used by downloadManifest for concurrent file downloads
     private func downloadManifestFile(
+        downloadUrl: String, destFilePath: URL, cacheFilePath: URL?, fileHash: String,
+        fileName: String, destFileName: String, isBrotli: Bool,
+        version: String, bundleId: String, decryptionSession: CryptoCipher.DecryptionSession
+    ) throws {
+        for attempt in 1...3 {
+            do {
+                try downloadManifestFileOnce(downloadUrl: downloadUrl, destFilePath: destFilePath,
+                                             cacheFilePath: cacheFilePath, fileHash: fileHash, fileName: fileName,
+                                             destFileName: destFileName, isBrotli: isBrotli,
+                                             version: version, bundleId: bundleId, decryptionSession: decryptionSession)
+                return
+            } catch {
+                let failure = error as NSError
+                let retryableStatus = failure.domain == "StatusCodeError" &&
+                    (failure.code == 408 || (500...599).contains(failure.code))
+                let retryableNetwork = failure.domain == NSURLErrorDomain && [
+                    NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
+                    NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
+                ].contains(failure.code)
+                guard attempt < 3 && (retryableStatus || retryableNetwork) else { throw error }
+                Thread.sleep(forTimeInterval: 0.25 * Double(attempt))
+            }
+        }
+    }
+
+    private func downloadManifestFileOnce(
         downloadUrl: String,
         destFilePath: URL,
         cacheFilePath: URL?,
@@ -1941,9 +1976,9 @@ import UIKit
         fileName: String,
         destFileName: String,
         isBrotli: Bool,
-        sessionKey: String,
         version: String,
-        bundleId: String
+        bundleId: String,
+        decryptionSession: CryptoCipher.DecryptionSession
     ) throws {
         guard let url = URL(string: downloadUrl) else {
             throw NSError(
@@ -2034,12 +2069,12 @@ import UIKit
 
         do {
             var source = partialURL
-            if !self.publicKey.isEmpty && CryptoCipher.isValidSessionKey(sessionKey) {
+            if decryptionSession.isEncrypted {
                 let work = cacheFolder.appendingPathComponent("work_\(UUID().uuidString)_\((fileName as NSString).lastPathComponent)")
                 try FileManager.default.copyItem(at: partialURL, to: work)
                 workURL = work
                 do {
-                    try CryptoCipher.decryptFile(filePath: work, publicKey: self.publicKey, sessionKey: sessionKey, version: version)
+                    try decryptionSession.decryptFile(filePath: work)
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
                     self.sendStats(action: "decrypt_fail", versionName: version)
@@ -2057,11 +2092,12 @@ import UIKit
                     self.sendStats(action: "download_manifest_brotli_fail", versionName: "\(version):\(destFileName)")
                     throw error
                 }
+            } else if workURL == nil {
+                // URLSession already wrote the payload. Verify it before moving it into the bundle.
+                calculatedChecksum = try CryptoCipher.calcChecksumOrThrow(filePath: source)
             } else {
                 let handle = try FileHandle(forReadingFrom: source)
-                defer {
-                    try? handle.close()
-                }
+                defer { try? handle.close() }
                 let length = (try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? NSNumber)?.uint64Value ?? 0
                 calculatedChecksum = try streamCopy(from: handle, count: length, to: destFilePath)
             }
@@ -2075,13 +2111,21 @@ import UIKit
                 throw NSError(domain: "ChecksumError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Computed checksum is not equal to required checksum (\(calculatedChecksum) != \(fileHash)) for file \(fileName) at url \(downloadUrl)"])
             }
 
+            if !isBrotli && workURL == nil {
+                try FileManager.default.createDirectory(at: destFilePath.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try replaceItemAtomically(at: destFilePath, withItemAt: partialURL)
+            }
             if let cacheFilePath {
-                try copyItemAtomically(from: destFilePath, to: cacheFilePath)
+                do {
+                    try linkOrCopyImmutableFile(from: destFilePath, to: cacheFilePath)
+                } catch {
+                    logger.debug("Delta cache write failed: \(error.localizedDescription)")
+                }
             }
             try? FileManager.default.removeItem(at: partialURL)
 
             self.logger.info("Manifest file downloaded and cached")
-            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(!self.publicKey.isEmpty && !sessionKey.isEmpty)")
+            self.logger.debug("Bundle: \(bundleId), File: \(fileName), Brotli: \(isBrotli), Encrypted: \(decryptionSession.isEncrypted)")
         } catch {
             self.logger.error("Manifest file download failed")
             self.logger.debug("Bundle: \(bundleId), File: \(fileName), Error: \(error.localizedDescription)")
@@ -2144,6 +2188,21 @@ import UIKit
         try replaceItemAtomically(at: destination, withItemAt: tempURL)
     }
 
+    /// Only updater-owned verified bundle/cache files, which are never rewritten in place.
+    func linkOrCopyImmutableFile(from source: URL, to destination: URL) throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temp = destination.deletingLastPathComponent().appendingPathComponent("capgo-link-\(UUID().uuidString).tmp")
+        defer { try? manager.removeItem(at: temp) }
+        do {
+            try manager.linkItem(at: source.resolvingSymlinksInPath(), to: temp)
+        } catch {
+            try copyItemAtomically(from: source.resolvingSymlinksInPath(), to: destination)
+            return
+        }
+        try replaceItemAtomically(at: destination, withItemAt: temp)
+    }
+
     /// One-step replace when dest exists, move when it does not. Avoids the
     /// fileExists/removeItem race that can fail a verified install.
     private func replaceItemAtomically(at destination: URL, withItemAt tempURL: URL) throws {
@@ -2169,7 +2228,7 @@ import UIKit
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         do {
-            try copyItemAtomically(from: source, to: destination)
+            try linkOrCopyImmutableFile(from: source, to: destination)
             return true
         } catch {
             // File was deleted between check and copy, or other IO error - caller should download instead

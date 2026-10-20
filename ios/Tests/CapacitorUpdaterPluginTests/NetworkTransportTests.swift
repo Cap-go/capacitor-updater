@@ -153,6 +153,57 @@ final class NetworkTransportTests: XCTestCase {
         return updater
     }
 
+    func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
+        let body = Data("<html>recovered \(UUID().uuidString)</html>".utf8)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try body.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let hash = CryptoCipher.calcChecksum(filePath: file)
+        let lock = NSLock()
+        var attempts = 0
+        server.respond { _ in
+            lock.lock()
+            attempts += 1
+            let status = attempts == 1 ? 503 : 200
+            lock.unlock()
+            return .init(status: status, body: status == 200 ? body : Data())
+        }
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "manifest-retry-test", options: Logger.Options(level: .silent)))
+        let installed = try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: "index.html", file_hash: hash,
+            download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+        )], version: UUID().uuidString, sessionKey: "")
+        defer { _ = updater.delete(id: installed.getId()) }
+        XCTAssertEqual(attempts, 2)
+        let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
+        XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testManifestPermanentFailuresAndRetryBudget() throws {
+        for status in [404, 429, 503, 200] {
+            let updater = makeUpdater()
+            CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
+            let version = UUID().uuidString
+            defer {
+                for bundle in updater.list(raw: true) where bundle.getVersionName() == version {
+                    _ = updater.delete(id: bundle.getId())
+                }
+            }
+            let expected = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try Data(UUID().uuidString.utf8).write(to: expected)
+            defer { try? FileManager.default.removeItem(at: expected) }
+            let hash = CryptoCipher.calcChecksum(filePath: expected)
+            let before = server.requests.count
+            server.respond { _ in .init(status: status, body: Data("incorrect".utf8)) }
+            XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
+                file_name: "index.html", file_hash: hash,
+                download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+            )], version: version, sessionKey: ""))
+            XCTAssertEqual(server.requests.count - before, status == 503 ? 3 : 1)
+        }
+    }
+
     private func request(_ path: String, method: String = "GET") -> URLRequest {
         var request = URLRequest(url: server.baseURL.appendingPathComponent(path))
         request.httpMethod = method
