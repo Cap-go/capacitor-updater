@@ -289,6 +289,10 @@ final class WebsiteModeUpdaterTests: XCTestCase {
             WebsiteModeUpdater.rebase(asset, downloadBase: URL(string: "https://cdn.example.com/site/")!).absoluteString,
             "https://cdn.example.com/site/assets/a.js?v=2"
         )
+        XCTAssertEqual(
+            WebsiteModeUpdater.rebase(asset, downloadBase: URL(string: "https://cdn.example.com/site/?token=abc")!).absoluteString,
+            "https://cdn.example.com/site/assets/a.js?token=abc&v=2"
+        )
     }
 
     // MARK: - Download

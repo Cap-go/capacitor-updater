@@ -3107,7 +3107,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     public func triggerBackgroundUpdateCheck() -> String {
-        guard !self.updateUrl.isEmpty, URL(string: self.updateUrl) != nil else {
+        // Website mode checks websiteLiveUrl, so the classic updateUrl is not required.
+        guard self.websiteMode || (!self.updateUrl.isEmpty && URL(string: self.updateUrl) != nil) else {
             logger.error("Error no url or wrong format")
             return "unavailable"
         }
@@ -3590,7 +3591,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         if instanceDescriptor?.serverURL != nil {
             logger.warn("AutoUpdate is automatic disabled when serverUrl is set.")
         }
-        return self.autoUpdate && self.updateUrl != "" && instanceDescriptor?.serverURL == nil
+        return self.autoUpdate && (self.websiteMode || self.updateUrl != "") && instanceDescriptor?.serverURL == nil
     }
 
     @objc func isAutoUpdateEnabled(_ call: CAPPluginCall) {
@@ -5019,6 +5020,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             try self.waitForCleanupIfNeeded()
+            // Cleanup can change the active bundle: compare and apply against the bundle that runs now.
+            let active = self.implementation.getCurrentBundle()
+            if version == active.getVersionName() {
+                logger.info("Website is up to date: \(version)")
+                self.endBackGroundTaskWithNotif(
+                    msg: "No need to update",
+                    latestVersionName: version,
+                    current: active,
+                    error: false,
+                    plannedDirectUpdate: true
+                )
+                return
+            }
 
             var target = self.implementation.getBundleInfoByVersionName(version: version)
             if target == nil || target!.isErrorStatus() || !self.implementation.canSet(bundle: target!) {
@@ -5055,7 +5069,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 throw WebsiteModeUpdater.WebsiteModeError.failed("Website bundle missing after download")
             }
             self.notifyListenersOnMain("downloadComplete", data: ["bundle": bundle.toJSON()])
-            self.applyWebsiteBundle(bundle, current: current)
+            self.applyWebsiteBundle(bundle, current: active)
         } catch {
             logger.error("Website download failed: \(error.localizedDescription)")
             if let tempDir {

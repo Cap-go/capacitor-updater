@@ -144,9 +144,11 @@ declare module '@capacitor/cli' {
        * `websiteLiveUrl` whether the app may update and which website URL to use,
        * then downloads the entry HTML and the same-origin assets it references (HTML, SVG sprites, linked `.html` pages, CSS `url()`, JS asset refs)
        * directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they
-       * keep loading from the network) and a single download is capped at 300 MB.
+       * keep loading from the network). Each file is capped at 100 MB and the whole website download at 300 MB.
        *
-       * The bundle version is `web-<first 12 hex of sha256(website URL + "\n" + entry HTML)>`. A new version is applied immediately
+       * The bundle version is `web-<first 12 hex of sha256(normalized website URL + "\n" + entry HTML bytes)>`. The normalized URL
+       * lowercases scheme and host, drops the default port, uses `/` for an empty path, keeps the query and drops the fragment.
+       * A new version is applied immediately
        * (like `directUpdate: 'always'`). The website does not need to call `notifyAppReady()`: with
        * `websiteAutoNotifyReady` (default `true`) the plugin calls it once the page loaded and shows content. If the
        * bundle is not marked ready within `appReadyTimeout` (failed or blank load), the plugin rolls back to the
@@ -166,7 +168,13 @@ declare module '@capacitor/cli' {
 
       /**
        * Configure the URL / endpoint used by website mode to know whether the app may update from its website.
-       * Only `app_id` is sent as query parameter; the response is device independent and can be edge cached.
+       * The plugin keeps query parameters already present in this URL and only sets (replaces or appends) `app_id`;
+       * no device data is sent, so the response is device independent and can be edge cached.
+       *
+       * The endpoint answers JSON: `allowed` (boolean), `mode` (`"website"` or `"capgo"`) and, for website mode,
+       * `website_url` (HTTPS, served from its root). Optional: `download_base_url` (HTTPS base the same paths are fetched
+       * from, its query parameters are kept), `check_interval_seconds` (minimum delay between live checks, clamped to 300 seconds to 24 hours) and `reason`
+       * (logged when `allowed` is `false`). Unknown fields are ignored.
        *
        * Only available for Android and iOS. Ignored unless `websiteMode` is `true`.
        *
@@ -516,7 +524,7 @@ declare module '@capacitor/cli' {
        *
        * Defaults to `true` when `websiteMode` is enabled, so a website update keeps the current route.
        *
-       * @default false
+       * @default false (true when websiteMode is enabled)
        * @since  6.8.0
        */
       keepUrlPathAfterReload?: boolean;

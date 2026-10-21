@@ -392,6 +392,10 @@ public class WebsiteModeUpdaterTest {
             "https://cdn.example.com/site/assets/a.js?v=2",
             WebsiteModeUpdater.rebase(asset, new URL("https://cdn.example.com/site/")).toString()
         );
+        assertEquals(
+            "https://cdn.example.com/site/assets/a.js?token=abc&v=2",
+            WebsiteModeUpdater.rebase(asset, new URL("https://cdn.example.com/site/?token=abc")).toString()
+        );
     }
 
     // ---- Download ----

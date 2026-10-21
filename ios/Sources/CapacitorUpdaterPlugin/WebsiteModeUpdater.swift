@@ -232,7 +232,7 @@ final class WebsiteModeUpdater {
               let host = components.host?.lowercased(), !host.isEmpty else {
             return nil
         }
-        return "\(scheme)://\(host):\(components.port ?? -1)"
+        return "\(scheme)://\(host):\(components.port ?? (scheme == "http" ? 80 : 443))"
     }
 
     private static func stripQueryAndFragment(_ url: URL) -> String {
@@ -311,16 +311,16 @@ final class WebsiteModeUpdater {
         }
     }
 
-    /// Crawls same-origin assets referenced by the entry HTML, CSS and JS into `targetDir`.
-    /// Paths stay identical to the website so the bundle behaves like the webDir build.
-    /// Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
-    /// missing; every other asset is skipped on any failure.
-    /// - Returns: number of files written (entry included)
     /// Crawl progress, 5...95 (the queue grows while files are parsed).
     static func crawlPercent(processed: Int, remaining: Int) -> Int {
         min(95, 5 + Int(Double(processed) / Double(max(processed + remaining, 1)) * 90))
     }
 
+    /// Crawls same-origin assets referenced by the entry HTML, CSS and JS into `targetDir`.
+    /// Paths stay identical to the website so the bundle behaves like the webDir build.
+    /// Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
+    /// missing; every other asset is skipped on any failure.
+    /// - Returns: number of files written (entry included)
     /// - Parameter progress: called with a never decreasing percent (5...95) while files are fetched
     @discardableResult
     func downloadWebsite(
@@ -465,17 +465,23 @@ final class WebsiteModeUpdater {
             if crawl.writtenPaths.contains(relativePath) {
                 return false
             }
-            do {
-                try Self.save(response.data, relativePath: relativePath, root: root)
-            } catch CocoaError.fileWriteFileExists {
-                return false
+        }
+        let isCaseVariant = crawl.saved[key] != nil
+        do {
+            try Self.save(response.data, relativePath: relativePath, root: root)
+        } catch CocoaError.fileWriteFileExists where isCaseVariant {
+            return false
+        } catch {
+            // e.g. "/images" saved as a file and "/images/logo.png" needing it as a directory.
+            if asset.required {
+                throw error
             }
-            crawl.writtenPaths.insert(relativePath)
-            return true
-        } else {
+            log("Skipping website asset \(asset.url.path): \(error.localizedDescription)")
+            return false
+        }
+        if !isCaseVariant {
             crawl.saved[key] = (relativePath, asset.url, hash)
         }
-        try Self.save(response.data, relativePath: relativePath, root: root)
         crawl.writtenPaths.insert(relativePath)
         return true
     }
@@ -485,7 +491,11 @@ final class WebsiteModeUpdater {
         for file in crawl.textFiles {
             let target = root.appendingPathComponent(file.path)
             let data = try Data(contentsOf: target)
-            let text = Self.text(data)
+            // Only UTF-8 files are rewritten: re-encoding a Latin-1 decoded file would change its bytes.
+            guard let text = String(bytes: data, encoding: .utf8) else {
+                log("Not rewriting non UTF-8 file \(file.path)")
+                continue
+            }
             let base = file.baseUrl
             let rewritten = file.isJavaScript
                 ? Self.rewriteJavaScriptAssetUrls(text, baseUrl: base, rootUrl: websiteUrl, isSaved: crawl.isSaved)
@@ -538,7 +548,7 @@ extension WebsiteModeUpdater {
     }
     private static let javaScriptAssetPattern =
         #"["'`]([^"'`\s]+\.(?:js|mjs|css|json|wasm|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf|otf|txt)"#
-            + #"(?:\?[^"'`\s]*)?)["'`]"#
+        + #"(?:\?[^"'`\s]*)?)["'`]"#
     /// Video and audio are never bundled: they stay loaded from the network.
     private static let mediaExtensions: Set<String> = ["mp4", "webm", "mov", "mp3", "m4a", "ogg", "wav"]
     /// Data files referenced from JS may be API responses, so their URLs in JS are never rewritten.
@@ -694,7 +704,7 @@ extension WebsiteModeUpdater {
             let token = rest.prefix { !$0.isWhitespace }
             guard !token.isEmpty,
                   let rewritten = rewriteAbsoluteValue(
-                      String(token), baseUrl: baseUrl, rootUrl: rootUrl, accept: accept
+                    String(token), baseUrl: baseUrl, rootUrl: rootUrl, accept: accept
                   ) else {
                 return item
             }
@@ -745,7 +755,7 @@ extension WebsiteModeUpdater {
         return parts.isEmpty ? "index.html" : parts.joined(separator: "/")
     }
 
-    /// When download_base_url is set, fetch the same path (and query) from that base instead.
+    /// When download_base_url is set, fetch the same path (and query) from that base, keeping the base query.
     static func rebase(_ url: URL, downloadBase: URL?) -> URL {
         guard let downloadBase,
               var base = URLComponents(url: downloadBase, resolvingAgainstBaseURL: false),
@@ -758,7 +768,9 @@ extension WebsiteModeUpdater {
         }
         let path = source.percentEncodedPath.isEmpty ? "/" : source.percentEncodedPath
         base.percentEncodedPath = basePath + path
-        base.percentEncodedQuery = source.percentEncodedQuery
+        // Query parameters of the base (e.g. a signed CDN token) are kept, followed by the asset's own query.
+        let queries = [base.percentEncodedQuery, source.percentEncodedQuery].compactMap { $0 }.filter { !$0.isEmpty }
+        base.percentEncodedQuery = queries.isEmpty ? nil : queries.joined(separator: "&")
         base.fragment = nil
         return base.url ?? url
     }

@@ -110,7 +110,8 @@ final class WebsiteFetchDelegate: NSObject, URLSessionDataDelegate {
 
     private func update(_ task: URLSessionTask, _ change: (inout TaskState) -> Void) {
         lock.lock()
-        if var state = states[task.taskIdentifier] {
+        // Removed first so the accumulated Data has a single owner and appends happen in place.
+        if var state = states.removeValue(forKey: task.taskIdentifier) {
             change(&state)
             states[task.taskIdentifier] = state
         }

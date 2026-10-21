@@ -4479,7 +4479,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     public String triggerBackgroundUpdateCheck() {
-        if (this.updateUrl == null || this.updateUrl.isEmpty() || !this.isValidURL(this.updateUrl)) {
+        // Website mode checks websiteLiveUrl, so the classic updateUrl is not required.
+        if (!this.websiteMode && (this.updateUrl == null || this.updateUrl.isEmpty() || !this.isValidURL(this.updateUrl))) {
             logger.error("Error no url or wrong format");
             return "unavailable";
         }
@@ -4922,7 +4923,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         return (
             CapacitorUpdaterPlugin.this.autoUpdate &&
-            !"".equals(CapacitorUpdaterPlugin.this.updateUrl) &&
+            (CapacitorUpdaterPlugin.this.websiteMode || !"".equals(CapacitorUpdaterPlugin.this.updateUrl)) &&
             (serverUrl == null || serverUrl.isEmpty())
         );
     }
@@ -5377,6 +5378,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
             this.waitForCleanupIfNeeded();
+            // Cleanup can change the active bundle: compare and apply against the bundle that runs now.
+            final BundleInfo active = this.implementation.getCurrentBundle();
+            if (version.equals(active.getVersionName())) {
+                logger.info("Website is up to date: " + version);
+                this.endBackGroundTaskWithNotif("No need to update", version, active, false, true);
+                return;
+            }
 
             BundleInfo target = this.implementation.getBundleInfoByName(version);
             if (target == null || !this.implementation.canSet(target) || target.isErrorStatus()) {
@@ -5405,7 +5413,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final JSObject downloaded = new JSObject();
             downloaded.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));
             this.notifyListeners("downloadComplete", downloaded, false);
-            this.applyWebsiteBundle(target, current);
+            this.applyWebsiteBundle(target, active);
         } catch (final Exception e) {
             logger.error("Website download failed: " + e.getMessage());
             if (tempDir != null) {

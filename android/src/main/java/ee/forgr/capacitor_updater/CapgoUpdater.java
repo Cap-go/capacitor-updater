@@ -1933,7 +1933,10 @@ public class CapgoUpdater {
         }
         final BundleInfo existing = this.getBundleInfoByName(version);
         if (existing != null && (existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting())) {
-            this.delete(existing.getId(), true);
+            if (!Boolean.TRUE.equals(this.delete(existing.getId(), true))) {
+                this.safeDelete(tempDir);
+                throw new IOException("Failed to delete existing website bundle before retry");
+            }
         }
         final File target = this.getBundleDirectory(id);
         final File parent = target.getParentFile();
@@ -1946,7 +1949,10 @@ public class CapgoUpdater {
             throw new IOException("Unable to promote website download into bundle storage");
         }
         final BundleInfo info = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), "");
-        this.saveBundleInfo(id, info);
+        if (!this.saveBundleInfo(id, info)) {
+            this.safeDelete(target);
+            throw new IOException("Unable to persist website bundle info");
+        }
         return info;
     }
 

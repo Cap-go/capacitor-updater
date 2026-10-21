@@ -16,6 +16,9 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -567,7 +570,9 @@ final class WebsiteModeUpdater {
             if (scheme == null || host == null) {
                 return null;
             }
-            return scheme.toLowerCase(Locale.ROOT) + "://" + host.toLowerCase(Locale.ROOT) + ":" + uri.getPort();
+            final String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+            final int port = uri.getPort() != -1 ? uri.getPort() : "http".equals(normalizedScheme) ? 80 : 443;
+            return normalizedScheme + "://" + host.toLowerCase(Locale.ROOT) + ":" + port;
         } catch (final Exception e) {
             return null;
         }
@@ -761,10 +766,20 @@ final class WebsiteModeUpdater {
                 if (writtenPaths.contains(relativePath)) {
                     continue;
                 }
-            } else {
+            }
+            try {
+                save(response.data, new File(targetDir, relativePath), targetDir);
+            } catch (IOException e) {
+                // e.g. "/images" saved as a file and "/images/logo.png" needing it as a directory.
+                if (asset.required) {
+                    throw e;
+                }
+                this.log.info("Skipping website asset " + asset.url.getPath() + ": " + e.getMessage());
+                continue;
+            }
+            if (existing == null) {
                 saved.put(key, new SavedFile(relativePath, asset.url, hash));
             }
-            save(response.data, new File(targetDir, relativePath), targetDir);
             writtenPaths.add(relativePath);
 
             if (isCss(asset.url, response.contentType)) {
@@ -816,7 +831,12 @@ final class WebsiteModeUpdater {
         // Same-origin absolute URLs of saved files become root-relative so the app loads them from the bundle.
         for (TextFile textFile : textFiles) {
             final File file = new File(targetDir, textFile.path);
-            final String text = new String(readFile(file), StandardCharsets.UTF_8);
+            // Only UTF-8 files are rewritten: decoding with replacement and re-encoding would change other bytes.
+            final String text = decodeUtf8(readFile(file));
+            if (text == null) {
+                this.log.info("Not rewriting non UTF-8 file " + textFile.path);
+                continue;
+            }
             final String rewritten = textFile.javaScript
                 ? rewriteJavaScriptAssetUrls(text, textFile.baseUrl, websiteUrl, isSaved)
                 : rewriteAbsoluteAssetUrls(text, textFile.baseUrl, websiteUrl, isSaved);
@@ -1125,7 +1145,7 @@ final class WebsiteModeUpdater {
         return String.join("/", parts);
     }
 
-    /** When download_base_url is set, fetch the same path (and query) from that base instead. */
+    /** When download_base_url is set, fetch the same path (and query) from that base, keeping the base query. */
     static URL rebase(final URL url, final URL downloadBase) throws MalformedURLException {
         if (downloadBase == null) {
             return url;
@@ -1135,7 +1155,11 @@ final class WebsiteModeUpdater {
             basePath = basePath.substring(0, basePath.length() - 1);
         }
         final String path = url.getPath() == null || url.getPath().isEmpty() ? "/" : url.getPath();
-        final String query = url.getQuery() == null ? "" : "?" + url.getQuery();
+        // Query parameters of the base (e.g. a signed CDN token) are kept, followed by the asset's own query.
+        final String baseQuery = downloadBase.getQuery() == null ? "" : downloadBase.getQuery();
+        final String assetQuery = url.getQuery() == null ? "" : url.getQuery();
+        final String joined = baseQuery.isEmpty() ? assetQuery : assetQuery.isEmpty() ? baseQuery : baseQuery + "&" + assetQuery;
+        final String query = joined.isEmpty() ? "" : "?" + joined;
         return new URL(downloadBase.getProtocol(), downloadBase.getHost(), downloadBase.getPort(), basePath + path + query);
     }
 
@@ -1154,6 +1178,18 @@ final class WebsiteModeUpdater {
             }
             return url;
         } catch (MalformedURLException e) {
+            return null;
+        }
+    }
+
+    private static String decodeUtf8(final byte[] data) {
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(data))
+                .toString();
+        } catch (CharacterCodingException e) {
             return null;
         }
     }

@@ -3256,13 +3256,13 @@ import UIKit
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
-    /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
     /// A fresh bundle id, reserved before a website download so its events name the installed bundle.
     func newWebsiteBundleId() -> String {
         randomString(length: 10)
     }
 
+    /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
+    /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
     func installWebsiteBundle(tempDir: URL, version: String, id: String? = nil) throws -> BundleInfo {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: tempDir.appendingPathComponent("index.html").path) else {
@@ -3271,7 +3271,14 @@ import UIKit
         }
         if let existing = getBundleInfoByVersionName(version: version),
            existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting() {
-            _ = delete(id: existing.getId(), removeInfo: true)
+            guard delete(id: existing.getId(), removeInfo: true) else {
+                discardWebsiteTempDir(tempDir)
+                throw NSError(
+                    domain: "WebsiteMode",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to delete existing website bundle before retry"]
+                )
+            }
         }
         let id = id ?? randomString(length: 10)
         let target = try getBundleDirectory(id: id)
@@ -3283,7 +3290,10 @@ import UIKit
             throw error
         }
         let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
-        saveBundleInfo(id: id, bundle: info)
+        guard saveBundleInfo(id: id, bundle: info) else {
+            try? fileManager.removeItem(at: target)
+            throw NSError(domain: "WebsiteMode", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to persist website bundle info"])
+        }
         return info
     }
 
