@@ -202,7 +202,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
-    private boolean lastReloadFailedDueToAppReadyTimeout = false;
+    static final ThreadLocal<Boolean> reloadFailedDueToAppReadyTimeout = ThreadLocal.withInitial(() -> false);
 
     String getUpdateUrl() {
         return this.updateUrl;
@@ -1080,6 +1080,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean semaphoreWait(final int phase, Number waitTime) {
+        return this.semaphoreWait(phase, waitTime, false);
+    }
+
+    private boolean semaphoreWait(final int phase, Number waitTime, final boolean trackReloadAppReadyTimeout) {
+        if (trackReloadAppReadyTimeout) {
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        }
         try {
             semaphoreReady.awaitAdvanceInterruptibly(phase, waitTime.longValue(), TimeUnit.MILLISECONDS);
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
@@ -1092,31 +1099,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
             cleanupTimedOutSemaphoreWait(phase);
+            if (trackReloadAppReadyTimeout) {
+                CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+            }
             return false;
         }
     }
 
-    private boolean semaphoreWaitForReload(final int phase, final long waitTimeMs) {
-        try {
-            semaphoreReady.awaitAdvanceInterruptibly(phase, waitTimeMs, TimeUnit.MILLISECONDS);
-            logger.info("semaphoreReady count " + semaphoreReady.getPhase());
+    static boolean shouldRestoreStateAfterPendingBundleReloadFailure(
+        final boolean reloadFailedDueToAppReadyTimeout,
+        final BundleInfo pendingBundle
+    ) {
+        if (!reloadFailedDueToAppReadyTimeout) {
             return true;
-        } catch (InterruptedException e) {
-            logger.info("semaphoreWait InterruptedException");
-            cleanupTimedOutSemaphoreWait(phase);
-            Thread.currentThread().interrupt(); // Restore interrupted status
-            return false;
-        } catch (TimeoutException e) {
-            logger.error("Semaphore timeout: " + e.getMessage());
-            cleanupTimedOutSemaphoreWait(phase);
-            this.lastReloadFailedDueToAppReadyTimeout = true;
-            return false;
         }
-    }
-
-    static boolean shouldRestoreStateAfterPendingBundleReloadFailure(final boolean reloadFailedDueToAppReadyTimeout) {
+        // checkRevert skips builtin bundles, so reload() must restore on its own.
+        if (pendingBundle != null && pendingBundle.isBuiltin()) {
+            return true;
+        }
         // App-ready watchdog and reload() share the same timeout. Restoring here races performReset.
-        return !reloadFailedDueToAppReadyTimeout;
+        return false;
     }
 
     private int semaphoreUp() {
@@ -2575,8 +2577,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         }
 
-        this.implementation.restoreResetState(previousState);
-        this.restoreLiveBundleStateAfterFailedReload();
+        if (
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                latest
+            )
+        ) {
+            this.implementation.restoreResetState(previousState);
+            this.restoreLiveBundleStateAfterFailedReload();
+        }
         logger.error("Direct update reload failed after staging bundle: " + latest.toString());
         return false;
     }
@@ -3249,7 +3258,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
         this.clearPendingNotifyAppReadyWait();
-        this.lastReloadFailedDueToAppReadyTimeout = false;
         final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
@@ -3258,7 +3266,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.notifyListeners("appReloaded", new JSObject(), false);
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWaitForReload(phase, waitTimeMs);
+        return this.semaphoreWait(phase, waitTimeMs, true);
     }
 
     /**
@@ -3312,7 +3320,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     if (
-                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(this.lastReloadFailedDueToAppReadyTimeout)
+                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                            next
+                        )
                     ) {
                         this.implementation.restoreResetState(previousState);
                         this.restoreLiveBundleStateAfterFailedReload();

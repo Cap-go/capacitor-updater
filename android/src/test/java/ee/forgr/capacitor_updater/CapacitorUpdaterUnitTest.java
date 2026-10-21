@@ -843,11 +843,7 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         protected boolean _reload() {
-            try {
-                setPrivateField(this, "lastReloadFailedDueToAppReadyTimeout", true);
-            } catch (final Exception e) {
-                throw new RuntimeException(e);
-            }
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
             return false;
         }
 
@@ -2672,8 +2668,17 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testShouldRestoreStateAfterPendingBundleReloadFailureSkipsRestoreOnAppReadyTimeout() {
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false));
+        final BundleInfo pending = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+        final BundleInfo builtin = new BundleInfo(
+            BundleInfo.ID_BUILTIN,
+            "builtin",
+            BundleStatus.SUCCESS,
+            BundleInfo.DOWNLOADED_BUILTIN,
+            "builtin"
+        );
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin));
     }
 
     @Test
