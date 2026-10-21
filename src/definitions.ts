@@ -144,7 +144,8 @@ declare module '@capacitor/cli' {
        * `websiteLiveUrl` whether the app may update and which website URL to use,
        * then downloads the entry HTML and the same-origin assets it references (HTML, SVG sprites, linked `.html` pages, CSS `url()`, JS asset refs)
        * directly from your website. Capgo serves no bundle bytes. Video and audio files are not bundled (they
-       * keep loading from the network). Each file is capped at 100 MB and the whole website download at 300 MB.
+       * keep loading from the network). Each file is capped at 100 MB, the whole website download at 300 MB, and a
+       * website that references more than 1,000 assets fails the update.
        *
        * The bundle version is `web-<first 12 hex of sha256(normalized website URL + "\n" + entry HTML bytes)>`. The normalized URL
        * lowercases scheme and host, drops the default port, uses `/` for an empty path, keeps the query and drops the fragment.
