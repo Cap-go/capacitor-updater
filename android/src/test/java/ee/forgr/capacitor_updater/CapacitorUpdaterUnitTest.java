@@ -2718,24 +2718,21 @@ public class CapacitorUpdaterUnitTest {
             };
             plugin.setLoggerForTesting(mock(Logger.class));
 
-            final Thread reloadThread = new Thread(
-                () -> {
-                    plugin._reload();
-                    try {
-                        assertTrue(watchdogMayRun.await(5, TimeUnit.SECONDS));
-                    } catch (final InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(e);
-                    }
-                    reloadThreadShouldRestore.set(
-                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
-                            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
-                            pending
-                        )
-                    );
-                },
-                "reload-thread"
-            );
+            final Thread reloadThread = new Thread(() -> {
+                plugin._reload();
+                try {
+                    assertTrue(watchdogMayRun.await(5, TimeUnit.SECONDS));
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
+                reloadThreadShouldRestore.set(
+                    CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                        pending
+                    )
+                );
+            }, "reload-thread");
             reloadThread.start();
             assertTrue(reloadTimedOut.await(5, TimeUnit.SECONDS));
 
