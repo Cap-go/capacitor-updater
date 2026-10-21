@@ -9,6 +9,10 @@ private final class LoopbackHTTPServer {
         var status: Int
         var body: Data
         var headers: [String: String] = [:]
+        /// Close the connection without a response, like a dropped mobile link.
+        var dropConnection = false
+        /// Send only this many body bytes, then close, while Content-Length announces the whole body.
+        var truncateBodyAt: Int?
     }
 
     struct RecordedRequest {
@@ -120,13 +124,17 @@ private final class LoopbackHTTPServer {
     }
 
     private func send(_ response: Response, on connection: NWConnection) {
+        if response.dropConnection {
+            connection.cancel()
+            return
+        }
         var head = "HTTP/1.1 \(response.status) Status\r\nContent-Length: \(response.body.count)\r\nConnection: close\r\n"
         for (name, value) in response.headers {
             head += "\(name): \(value)\r\n"
         }
         head += "\r\n"
         var payload = Data(head.utf8)
-        payload.append(response.body)
+        payload.append(response.truncateBodyAt.map { response.body.prefix($0) } ?? response.body)
         connection.send(content: payload, completion: .contentProcessed { _ in
             connection.cancel()
         })
@@ -150,7 +158,157 @@ final class NetworkTransportTests: XCTestCase {
         let updater = CapgoUpdater()
         updater.setLogger(Logger(withTag: "network-transport-tests", options: Logger.Options(level: .silent)))
         updater.timeout = 5
+        // The loopback test server is plain http.
+        updater.httpsOnly = false
         return updater
+    }
+
+    func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
+        let body = Data("<html>recovered \(UUID().uuidString)</html>".utf8)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try body.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let hash = CryptoCipher.calcChecksum(filePath: file)
+        let lock = NSLock()
+        var attempts = 0
+        server.respond { _ in
+            lock.lock()
+            attempts += 1
+            let status = attempts == 1 ? 503 : 200
+            lock.unlock()
+            return .init(status: status, body: status == 200 ? body : Data())
+        }
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "manifest-retry-test", options: Logger.Options(level: .silent)))
+        let installed = try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: "index.html", file_hash: hash,
+            download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+        )], version: UUID().uuidString, sessionKey: "")
+        defer { _ = updater.delete(id: installed.getId()) }
+        XCTAssertEqual(attempts, 2)
+        let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
+        XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testManifestRetriesDroppedConnections() throws {
+        let body = Data("<html>reconnected \(UUID().uuidString)</html>".utf8)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try body.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let hash = CryptoCipher.calcChecksum(filePath: file)
+        let lock = NSLock()
+        var attempts = 0
+        // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
+        server.respond { _ in
+            lock.lock()
+            attempts += 1
+            let drop = attempts <= 2
+            lock.unlock()
+            return .init(status: 200, body: body, dropConnection: drop)
+        }
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "manifest-drop-test", options: Logger.Options(level: .silent)))
+        let installed = try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: "index.html", file_hash: hash,
+            download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+        )], version: UUID().uuidString, sessionKey: "")
+        defer { _ = updater.delete(id: installed.getId()) }
+        XCTAssertEqual(attempts, 3)
+        let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
+        XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testManifestResumesInterruptedTransferInsteadOfRestarting() throws {
+        var body = Data()
+        for index in 0..<4096 {
+            body.append(contentsOf: Array("line \(index) \(UUID().uuidString)\n".utf8))
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try body.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let hash = CryptoCipher.calcChecksum(filePath: file)
+        let cut = body.count / 2
+        let lock = NSLock()
+        var attempts = 0
+        var resumedFrom: String?
+        server.respond { request in
+            lock.lock()
+            attempts += 1
+            let first = attempts == 1
+            if !first { resumedFrom = request.headers["range"] }
+            lock.unlock()
+            let validators = ["ETag": "\"capgo-resume\"", "Accept-Ranges": "bytes"]
+            if first {
+                return .init(status: 200, body: body, headers: validators, truncateBodyAt: cut)
+            }
+            guard let range = request.headers["range"], range.hasPrefix("bytes="),
+                  let start = Int(range.dropFirst("bytes=".count).split(separator: "-").first ?? "") else {
+                return .init(status: 200, body: body, headers: validators)
+            }
+            var headers = validators
+            headers["Content-Range"] = "bytes \(start)-\(body.count - 1)/\(body.count)"
+            return .init(status: 206, body: body.subdata(in: start..<body.count), headers: headers)
+        }
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "manifest-resume-test", options: Logger.Options(level: .silent)))
+        let installed = try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: "app.js", file_hash: hash,
+            download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+        )], version: UUID().uuidString, sessionKey: "")
+        defer { _ = updater.delete(id: installed.getId()) }
+        XCTAssertEqual(attempts, 2)
+        // The retry continued the interrupted transfer rather than fetching from byte 0.
+        let start = Int(resumedFrom?.dropFirst("bytes=".count).split(separator: "-").first ?? "") ?? 0
+        XCTAssertGreaterThan(start, 0, "retry did not resume: \(resumedFrom ?? "no Range header")")
+        let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("app.js")
+        XCTAssertEqual(try Data(contentsOf: target), body)
+    }
+
+    func testContentRangeStartParsing() {
+        XCTAssertEqual(CapgoUpdater.contentRangeStart("bytes 100-199/200"), 100)
+        XCTAssertEqual(CapgoUpdater.contentRangeStart("bytes 0-9/10"), 0)
+        XCTAssertNil(CapgoUpdater.contentRangeStart(nil))
+        XCTAssertNil(CapgoUpdater.contentRangeStart("bytes */200"))
+        XCTAssertNil(CapgoUpdater.contentRangeStart("items 1-2/3"))
+    }
+
+    func testManifestRetryClassificationUnwrapsTransportErrors() {
+        typealias NetworkError = CapgoUpdater.NetworkError
+        for code in [URLError.Code.networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .timedOut] {
+            XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(code))), "\(code)")
+        }
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(.cancelled))))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NetworkError.sessionTaskFailed(URLError(.serverCertificateUntrusted))))
+        XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 503)))
+        XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 408)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 429)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "StatusCodeError", code: 404)))
+        XCTAssertFalse(CapgoUpdater.isRetryableManifestError(NSError(domain: "ChecksumError", code: 1)))
+        XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: CapgoUpdater.manifestResumeErrorDomain, code: 1)))
+    }
+
+    func testManifestPermanentFailuresAndRetryBudget() throws {
+        for status in [404, 429, 503, 200] {
+            let updater = makeUpdater()
+            CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
+            let version = UUID().uuidString
+            defer {
+                for bundle in updater.list(raw: true) where bundle.getVersionName() == version {
+                    _ = updater.delete(id: bundle.getId())
+                }
+            }
+            let expected = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try Data(UUID().uuidString.utf8).write(to: expected)
+            defer { try? FileManager.default.removeItem(at: expected) }
+            let hash = CryptoCipher.calcChecksum(filePath: expected)
+            let before = server.requests.count
+            server.respond { _ in .init(status: status, body: Data("incorrect".utf8)) }
+            XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
+                file_name: "index.html", file_hash: hash,
+                download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
+            )], version: version, sessionKey: ""))
+            XCTAssertEqual(server.requests.count - before, status == 503 ? 3 : 1)
+        }
     }
 
     private func request(_ path: String, method: String = "GET") -> URLRequest {
