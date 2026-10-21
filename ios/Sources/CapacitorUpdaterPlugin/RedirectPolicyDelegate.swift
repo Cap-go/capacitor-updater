@@ -11,7 +11,7 @@ import Foundation
 final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
     private let lock = NSLock()
     private var allowDowngrade = false
-    private var httpsOnlyEnabled = false
+    private var httpsOnlyEnabled = true
     /// When true every redirect target must be https, whatever `allowHttpsToHttpRedirect` says.
     var httpsOnly: Bool {
         get {

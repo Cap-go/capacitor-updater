@@ -138,9 +138,9 @@ public class DownloadService extends Worker {
     private static volatile int httpTimeoutMs = 20_000;
     // Off by default: a redirect must never downgrade updater traffic from HTTPS to plain HTTP.
     private static volatile boolean allowHttpsToHttpRedirect = false;
-    // Config httpsOnly (default false): every request and every redirect hop through sharedClient must be https.
+    // Config httpsOnly (default true): every request and every redirect hop through sharedClient must be https.
     // When true it overrides allowHttpsToHttpRedirect: an https -> http redirect is rejected even if that flag is set.
-    static volatile boolean httpsOnly = false;
+    static volatile boolean httpsOnly = true;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
     private static String currentVersionOs = "unknown";

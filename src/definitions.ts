@@ -313,9 +313,9 @@ declare module '@capacitor/cli' {
        *
        * Blocked by default so a redirect can never downgrade updater traffic to an unencrypted connection.
        * Only enable this if your self-hosted update server or CDN must redirect to an HTTP URL.
-       * Direct HTTP URLs (for example `localApi` during development) are not affected unless `httpsOnly` is
-       * enabled. When `httpsOnly` is `true` it rejects every non-https URL and redirect hop regardless of this
-       * setting.
+       * `httpsOnly` (default `true`) rejects every non-https URL and redirect hop regardless of this setting, so an
+       * HTTP redirect also needs `httpsOnly: false`. Direct HTTP URLs (for example `localApi` during development) are
+       * only allowed with `httpsOnly: false` as well.
        *
        * Only available for Android and iOS.
        *
@@ -331,14 +331,13 @@ declare module '@capacitor/cli' {
        * `allowHttpsToHttpRedirect`. A non-https URL fails the call or download with
        * `httpsOnly is enabled and <url> is not https`.
        *
-       * Leave it off only for local development servers (for example a plain-http `localApi` on loopback) or a
-       * self-hosted plain-http update server you control.
-       *
-       * Future-major default candidate: `true`.
+       * Set to `false` only for local development servers (for example a plain-http `localApi` on loopback) or a
+       * self-hosted plain-http update server you control. Upgrading with a plain-http `updateUrl`, `statsUrl`,
+       * `channelUrl` or `allowHttpsToHttpRedirect: true` requires setting this to `false` explicitly.
        *
        * Only available for Android and iOS.
        *
-       * @default false
+       * @default true
        * @since 8.54.0
        */
       httpsOnly?: boolean;

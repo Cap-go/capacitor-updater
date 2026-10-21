@@ -47,8 +47,8 @@ import UIKit
     public var deviceID = ""
     public var previewSession = false
     public var publicKey: String = ""
-    /// When true every URL the updater talks to must be https, including redirect hops. Config `httpsOnly`.
-    public var httpsOnly: Bool = false {
+    /// When true (default) every URL the updater talks to must be https, including redirect hops. Config `httpsOnly`.
+    public var httpsOnly: Bool = true {
         didSet { redirectPolicy.httpsOnly = httpsOnly }
     }
     /// When true a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.

@@ -31,7 +31,7 @@ public class HttpsOnlyBuiltinMinimumTest {
 
     @After
     public void tearDown() {
-        DownloadService.setHttpsOnly(false);
+        DownloadService.setHttpsOnly(true);
         DownloadService.setAllowHttpsToHttpRedirect(false);
     }
 
@@ -52,13 +52,14 @@ public class HttpsOnlyBuiltinMinimumTest {
     // --- defaults ---
 
     @Test
-    public void gatesAreOffByDefault() throws Exception {
+    public void defaultsAreHttpsOnlyOnAndBuiltinMinimumOff() throws Exception {
         StatsCapturingUpdater updater = new StatsCapturingUpdater();
-        assertFalse(updater.httpsOnly);
+        assertTrue(updater.httpsOnly);
         assertFalse(updater.builtinMinimum);
-        assertFalse(DownloadService.httpsOnly);
+        assertTrue(DownloadService.httpsOnly);
         updater.versionBuild = "2.0.0";
-        updater.runPreDownloadSecurityGates("http://example.com/a.zip", "1.0.0", null);
+        updater.runPreDownloadSecurityGates("https://example.com/a.zip", "1.0.0", null);
+        assertThrows(IOException.class, () -> updater.runPreDownloadSecurityGates("http://example.com/a.zip", "3.0.0", null));
         assertTrue(updater.stats.isEmpty());
     }
 

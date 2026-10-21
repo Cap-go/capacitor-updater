@@ -120,10 +120,10 @@ public class CapgoUpdater {
     /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default false. */
     public volatile boolean builtinMinimum = false;
     /**
-     * Require https for every URL the updater downloads from. Config httpsOnly, default false. Mirrors
+     * Require https for every URL the updater downloads from. Config httpsOnly, default true. Mirrors
      * DownloadService.httpsOnly (the OkHttp interceptor); this field gates URLs before any network IO.
      */
-    public volatile boolean httpsOnly = false;
+    public volatile boolean httpsOnly = true;
 
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
