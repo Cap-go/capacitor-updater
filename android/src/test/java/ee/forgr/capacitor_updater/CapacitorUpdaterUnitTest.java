@@ -45,12 +45,18 @@ import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.After;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 public class CapacitorUpdaterUnitTest {
+
+    @After
+    public void tearDownReloadTimeoutThreadLocal() {
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.remove();
+    }
 
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
@@ -870,6 +876,7 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         protected boolean _reload() {
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
             return false;
         }
 
