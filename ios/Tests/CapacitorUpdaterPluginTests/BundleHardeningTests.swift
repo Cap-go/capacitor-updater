@@ -57,6 +57,8 @@ final class BundleHardeningTests: XCTestCase {
     private func makeDownloadUpdater(payload: Data) -> LocalDownloadCapgoUpdater {
         let updater = LocalDownloadCapgoUpdater()
         updater.setLogger(Logger(withTag: "hardening-tests", options: Logger.Options(level: .silent)))
+        // Payloads are served from file:// URLs.
+        updater.httpsOnly = false
         updater.payload = payload
         return updater
     }

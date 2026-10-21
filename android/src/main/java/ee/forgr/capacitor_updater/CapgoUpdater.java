@@ -117,6 +117,13 @@ public class CapgoUpdater {
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
+    /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default false. */
+    public volatile boolean builtinMinimum = false;
+    /**
+     * Require https for every URL the updater downloads from. Config httpsOnly, default true. Mirrors
+     * DownloadService.httpsOnly (the OkHttp interceptor); this field gates URLs before any network IO.
+     */
+    public volatile boolean httpsOnly = true;
 
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
@@ -642,6 +649,96 @@ public class CapgoUpdater {
             this.sendStats("checksum_required");
             throw new IOException("Checksum required");
         }
+    }
+
+    static boolean isHttpsUrl(final String url) {
+        if (url == null) {
+            return false;
+        }
+        final String trimmed = url.trim();
+        return trimmed.regionMatches(true, 0, "https://", 0, "https://".length());
+    }
+
+    static String httpsOnlyMessage(final String url) {
+        return "httpsOnly is enabled and " + url + " is not https";
+    }
+
+    /** httpsOnly gate for the zip url and every manifest download_url, run before any network IO. */
+    void requireHttpsUrls(final String url, final JSONArray manifest) throws IOException {
+        if (!this.httpsOnly) {
+            return;
+        }
+        if (manifest == null || manifest.length() == 0) {
+            if (!isHttpsUrl(url)) {
+                logger.error(httpsOnlyMessage(url));
+                throw new IOException(httpsOnlyMessage(url));
+            }
+            return;
+        }
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = manifest.optJSONObject(i);
+            final String downloadUrl = entry == null ? null : entry.optString("download_url", "");
+            if (!isHttpsUrl(downloadUrl)) {
+                logger.error(httpsOnlyMessage(downloadUrl));
+                throw new IOException(httpsOnlyMessage(downloadUrl));
+            }
+        }
+    }
+
+    static String stripBuildMetadata(final String version) {
+        if (version == null) {
+            return null;
+        }
+        final int plus = version.indexOf('+');
+        return plus >= 0 ? version.substring(0, plus) : version;
+    }
+
+    /** Compares major.minor.patch only (missing components count as 0); suffix and extra components are ignored. */
+    static int compareCoreVersion(final Version left, final Version right) {
+        for (int i = 0; i < 3; i++) {
+            final long a = i < left.getSubversionNumbers().size() ? left.getSubversionNumbers().get(i) : 0L;
+            final long b = i < right.getSubversionNumbers().size() ? right.getSubversionNumbers().get(i) : 0L;
+            if (a != b) {
+                return Long.compare(a, b);
+            }
+        }
+        return 0;
+    }
+
+    static boolean isParsableVersion(final Version version) {
+        return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
+    }
+
+    /**
+     * builtinMinimum gate: a bundle may never roll the app below its native version. Skipped (debug log) when
+     * either version string does not parse, so unversioned bundles keep working.
+     */
+    void requireVersionNotBelowBuiltin(final String version) throws IOException {
+        if (!this.builtinMinimum) {
+            return;
+        }
+        // Build metadata (+...) never takes part in ordering.
+        final Version bundle = new Version(stripBuildMetadata(version));
+        final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
+        if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
+            logger.debug(
+                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
+            );
+            return;
+        }
+        // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.
+        if (compareCoreVersion(bundle, nativeVersion) < 0) {
+            final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
+            logger.error(message);
+            this.sendStats("version_below_native", version);
+            throw new IOException(message);
+        }
+    }
+
+    /** Pre-network download gates shared by every entry point: httpsOnly and builtinMinimum. */
+    void runPreDownloadSecurityGates(final String url, final String version, final JSONArray manifest) throws IOException {
+        this.requireHttpsUrls(url, manifest);
+        this.requireVersionNotBelowBuiltin(version);
     }
 
     static boolean containsPathTraversalSegment(final String relativePath) {
@@ -1858,6 +1955,7 @@ public class CapgoUpdater {
             if (manifest == null) {
                 this.requireBundleChecksum(checksum);
             }
+            this.runPreDownloadSecurityGates(url, version, manifest);
         } catch (final IOException e) {
             logger.error("Download blocked: " + e.getMessage());
             return null;
@@ -1914,6 +2012,7 @@ public class CapgoUpdater {
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
         this.requireSessionKeyForEncryptedUpdate(sessionKey);
         this.requireBundleChecksum(checksum);
+        this.runPreDownloadSecurityGates(url, version, null);
         this.runDownloadGate();
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
@@ -1971,6 +2070,7 @@ public class CapgoUpdater {
         if (manifest == null) {
             return download(url, version, sessionKey, checksum);
         }
+        this.runPreDownloadSecurityGates(url, version, manifest);
 
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);

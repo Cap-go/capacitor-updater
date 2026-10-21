@@ -14,9 +14,22 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class ManifestNetworkReliabilityTest {
+
+    @Before
+    public void disableHttpsOnly() {
+        // The loopback test server is plain http: opt out of the default httpsOnly policy.
+        DownloadService.setHttpsOnly(false);
+    }
+
+    @After
+    public void restoreHttpsOnly() {
+        DownloadService.setHttpsOnly(true);
+    }
 
     @Test
     public void transientFailureRetriesOnlyTheFileAndVerifiesBytes() throws Exception {

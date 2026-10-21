@@ -952,6 +952,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
         DownloadService.applyHttpTimeouts(this.implementation.timeout);
         DownloadService.setAllowHttpsToHttpRedirect(this.getConfig().getBoolean("allowHttpsToHttpRedirect", false));
+        // httpsOnly overrides allowHttpsToHttpRedirect: no hop may leave https while it is on.
+        final boolean httpsOnly = this.getConfig().getBoolean("httpsOnly", true);
+        this.implementation.httpsOnly = httpsOnly;
+        DownloadService.setHttpsOnly(httpsOnly);
+        this.implementation.builtinMinimum = this.getConfig().getBoolean("builtinMinimum", false);
+        // Do not crash at load: requests to a non-https URL fail later with the same message.
+        this.warnIfNotHttps("updateUrl", this.updateUrl);
+        this.warnIfNotHttps("statsUrl", this.implementation.statsUrl);
+        this.warnIfNotHttps("channelUrl", this.implementation.channelUrl);
         this.shakeMenuEnabled = this.getConfig().getBoolean("shakeMenu", false);
         this.shakeChannelSelectorEnabled = this.getConfig().getBoolean("allowShakeChannelSelector", false);
         this.shakeMenuGesture = normalizedShakeMenuGesture(this.getConfig().getString("shakeMenuGesture", SHAKE_MENU_GESTURE_SHAKE));
@@ -2700,6 +2709,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setUpdateUrl called without url");
             return;
         }
+        if (this.rejectIfNotHttps(call, url)) {
+            return;
+        }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(UPDATE_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
@@ -2725,6 +2737,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             call.reject("setStatsUrl called without url");
             return;
         }
+        if (this.rejectIfNotHttps(call, url)) {
+            return;
+        }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
             this.editor.putString(STATS_URL_PREF_KEY, url);
             if (!this.editor.commit()) {
@@ -2748,6 +2763,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (url == null) {
             logger.error("setChannelUrl called without url");
             call.reject("setChannelUrl called without url");
+            return;
+        }
+        if (this.rejectIfNotHttps(call, url)) {
             return;
         }
         if (Boolean.TRUE.equals(this.persistModifyUrl)) {
@@ -3020,6 +3038,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.sendStats("checksum_required");
             throw new IOException("Checksum required");
         }
+        // https / builtinMinimum gates run before any network IO and before waiting on cleanup.
+        this.implementation.runPreDownloadSecurityGates(url, version, manifest);
         // Manual/preview downloads must wait too — launch orphan sweep can delete their temps.
         waitForCleanupIfNeeded();
         if (manifest != null) {
@@ -4943,10 +4963,31 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean isValidURL(String urlStr) {
         try {
             new URL(urlStr);
-            return true;
         } catch (MalformedURLException e) {
             return false;
         }
+        if (this.implementation.httpsOnly && !CapgoUpdater.isHttpsUrl(urlStr)) {
+            logger.error(CapgoUpdater.httpsOnlyMessage(urlStr));
+            return false;
+        }
+        return true;
+    }
+
+    private void warnIfNotHttps(final String name, final String url) {
+        if (this.implementation.httpsOnly && url != null && !url.isEmpty() && !CapgoUpdater.isHttpsUrl(url)) {
+            logger.error(CapgoUpdater.httpsOnlyMessage(url) + " (" + name + ")");
+        }
+    }
+
+    /** httpsOnly check for setUpdateUrl / setStatsUrl / setChannelUrl: rejects the call and returns true. */
+    private boolean rejectIfNotHttps(final PluginCall call, final String url) {
+        if (this.implementation.httpsOnly && !CapgoUpdater.isHttpsUrl(url)) {
+            final String message = CapgoUpdater.httpsOnlyMessage(url);
+            logger.error(message);
+            call.reject(message);
+            return true;
+        }
+        return false;
     }
 
     static String normalizedUpdateResponseKind(final String kind) {
@@ -5119,6 +5160,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.sendStats("checksum_required", latestVersionName);
             return "Checksum required";
         }
+        try {
+            this.implementation.runPreDownloadSecurityGates(
+                latest.getString("url", ""),
+                latestVersionName,
+                latest.optJSONArray("manifest")
+            );
+        } catch (final IOException e) {
+            return e.getMessage() == null ? "Download blocked" : e.getMessage();
+        }
         return null;
     }
 
@@ -5283,6 +5333,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         if (
                             latestVersionName != null && !latestVersionName.isEmpty() && !current.getVersionName().equals(latestVersionName)
                         ) {
+                            // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                            try {
+                                CapacitorUpdaterPlugin.this.implementation.requireVersionNotBelowBuiltin(latestVersionName);
+                            } catch (final IOException e) {
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    e.getMessage() == null ? "Download blocked" : e.getMessage(),
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate
+                                );
+                                return;
+                            }
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest != null) {
                                 final JSObject ret = new JSObject();
