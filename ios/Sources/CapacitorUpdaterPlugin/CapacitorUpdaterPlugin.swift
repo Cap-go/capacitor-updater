@@ -96,7 +96,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         websiteLoadingObservation?.invalidate()
         implementation.shutdown()
     }
-    private let pluginVersion: String = "8.53.0"
+    private let pluginVersion: String = "8.53.1"
     private let launchStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
     static let updateUrlDefault = "https://plugin.capgo.app/updates"
     static let statsUrlDefault = "https://plugin.capgo.app/stats"
@@ -326,6 +326,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
+        implementation.httpsOnly = getConfig().getBoolean("httpsOnly", true)
+        implementation.builtinMinimum = getConfig().getBoolean("builtinMinimum", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -390,6 +392,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if let storedChannelUrl = UserDefaults.standard.object(forKey: channelUrlDefaultsKey) as? String {
                 implementation.channelUrl = storedChannelUrl
                 logger.info("Loaded persisted channelUrl")
+            }
+        }
+        if implementation.httpsOnly {
+            for (label, value) in [("updateUrl", updateUrl), ("statsUrl", implementation.statsUrl), ("channelUrl", implementation.channelUrl)]
+            where !value.isEmpty && !Self.isHttpsUrl(value) {
+                logger.error("httpsOnly is enabled and \(label) \(value) is not https; requests to it will fail")
             }
         }
         self.configureWebsiteMode()
@@ -1354,6 +1362,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    static func isHttpsUrl(_ value: String) -> Bool {
+        return URL(string: value)?.scheme?.lowercased() == "https"
+    }
+
+    /// Rejects the call when `httpsOnly` is set and the URL is not https. Returns true when the URL is allowed.
+    private func allowUrlScheme(_ url: String, call: CAPPluginCall, method: String) -> Bool {
+        if implementation.httpsOnly && !Self.isHttpsUrl(url) {
+            logger.error("\(method): httpsOnly is enabled and \(url) is not https")
+            call.reject("httpsOnly is enabled and \(url) is not https")
+            return false
+        }
+        return true
+    }
+
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
         if !getConfig().getBoolean("allowModifyUrl", false) {
             logger.error("setUpdateUrl called without allowModifyUrl")
@@ -1363,6 +1385,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url = call.getString("url") else {
             logger.error("setUpdateUrl called without url")
             call.reject("setUpdateUrl called without url")
+            return
+        }
+        guard allowUrlScheme(url, call: call, method: "setUpdateUrl") else {
             return
         }
         self.updateUrl = url
@@ -1388,6 +1413,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setStatsUrl called without url")
             return
         }
+        guard allowUrlScheme(url, call: call, method: "setStatsUrl") else {
+            return
+        }
         self.configuredStatsUrl = url
         self.implementation.statsUrl = self.effectiveTelemetryUrl(url)
         if persistModifyUrl {
@@ -1406,6 +1434,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url = call.getString("url") else {
             logger.error("setChannelUrl called without url")
             call.reject("setChannelUrl called without url")
+            return
+        }
+        guard allowUrlScheme(url, call: call, method: "setChannelUrl") else {
             return
         }
         self.configuredChannelUrl = url
@@ -5234,6 +5265,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
+                    // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                    do {
+                        try self.implementation.requireVersionNotBelowBuiltin(latestVersionName)
+                    } catch {
+                        self.endBackGroundTaskWithNotif(
+                            msg: error.localizedDescription,
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
+                    }
                     var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                     let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
                     if needsDownload {
@@ -5370,10 +5413,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                         if self.queueBundleForNextBackgroundInstall(next) {
                             self.notifyListenersOnMain("updateAvailable", data: ["bundle": next.toJSON()])
+                            let installed = self.installNextIfInBackground()
                             self.endBackGroundTaskWithNotif(
-                                msg: "update downloaded, will install next background",
+                                msg: installed ? "update downloaded and installed in background" : "update downloaded, will install next background",
                                 latestVersionName: latestVersionName,
-                                current: current,
+                                current: self.implementation.getCurrentBundle(),
                                 error: false,
                                 plannedDirectUpdate: plannedDirectUpdate
                             )
@@ -5423,29 +5467,85 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func installNext() {
-        if self.shouldBlockAutoUpdateForPreviewSession() {
+    /// A download that finishes while the app is in the background (silent push,
+    /// background fetch, cold background launch) would otherwise wait for the next
+    /// didEnterBackground, which a background launch never posts, so the user would
+    /// open the old bundle. Install now; the notifyAppReady check stays deferred
+    /// until the app reaches the foreground.
+    @discardableResult
+    func installNextIfInBackground() -> Bool {
+        let install = {
+            self.appInBackground && self.shouldInstallQueuedBundleWhileInBackground() && self.installNext()
+        }
+        if Thread.isMainThread {
+            return install()
+        }
+        return DispatchQueue.main.sync(execute: install)
+    }
+
+    /// Immediate background install applies to deferred (`atBackground`) updates only.
+    /// Direct-update modes retry from `appMovedToForeground` when a reload failed earlier.
+    private func shouldInstallQueuedBundleWhileInBackground() -> Bool {
+        autoUpdateMode == Self.autoUpdateModeBackground
+    }
+
+    /// Direct-update modes queue `next` when an immediate reload fails; retry once the app is active again.
+    private func shouldInstallQueuedBundleOnForeground() -> Bool {
+        switch directUpdateMode {
+        case Self.autoUpdateModeAlways, Self.autoUpdateModeLaunch:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func installQueuedBundleOnForegroundIfNeeded() {
+        guard shouldInstallQueuedBundleOnForeground() else {
             return
+        }
+        let current = self.implementation.getCurrentBundle()
+        guard let next = self.implementation.getNextBundle(),
+              !next.isErrorStatus(),
+              next.getVersionName() != current.getVersionName() else {
+            return
+        }
+        _ = self.installNext()
+    }
+
+    /// Returns true when the next bundle became the active WebView bundle.
+    @discardableResult
+    private func installNext() -> Bool {
+        if self.shouldBlockAutoUpdateForPreviewSession() {
+            return false
         }
         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
         let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
         if !delayConditionList.isEmpty {
             logger.info("Update delayed until delay conditions met")
-            return
+            return false
         }
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
 
         if next != nil && !next!.isErrorStatus() && next!.getVersionName() != current.getVersionName() {
             logger.info("Next bundle is: \(next!.toString())")
-            if self.implementation.set(bundle: next!) && self._reload() {
-                logger.info("Updated to bundle: \(next!.toString())")
-                self.notifyBundleSet(next!)
-                _ = self.implementation.setNextBundle(next: Optional<String>.none)
-            } else {
+            let resetState = self.implementation.captureResetState()
+            guard self.implementation.set(bundle: next!) else {
                 logger.error("Update to bundle: \(next!.toString()) Failed!")
+                return false
             }
+            guard self._reload() else {
+                // Built-in `set` may reset fallback/next; restore the full pre-install state for retry.
+                self.implementation.restoreResetState(resetState)
+                logger.error("Update to bundle: \(next!.toString()) Failed! Reload failed, keeping it as next")
+                return false
+            }
+            logger.info("Updated to bundle: \(next!.toString())")
+            self.notifyBundleSet(next!)
+            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+            return true
         }
+        return false
     }
 
     @objc private func toJson(object: Any) -> String {
@@ -5466,6 +5566,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             backgroundWork!.cancel()
             logger.info("Background Timer Task canceled, Activity resumed before timer completes")
         }
+        self.installQueuedBundleOnForegroundIfNeeded()
         if self._isAutoUpdateEnabled() {
             // Check if download is already in progress (with timeout protection)
             if !isDownloadStuckOrTimedOut() {

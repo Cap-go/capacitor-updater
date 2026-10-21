@@ -145,11 +145,69 @@ public class CryptoCipher {
 
     public static void decryptFile(final File file, final String publicKey, final String ivSessionKey) throws IOException {
         if (publicKey.isEmpty() || !isValidSessionKey(ivSessionKey)) {
-            if (logger != null) {
-                logger.info("Encryption not set, no public key or session, ignored");
-            }
+            if (logger != null) logger.info("Encryption not set, no public key or session, ignored");
             return;
         }
+        new DecryptionSession(publicKey, ivSessionKey).decryptFile(file);
+    }
+
+    // A manifest shares key setup, while each file still creates its own CBC cipher.
+    static final class DecryptionSession {
+
+        private final String publicKey;
+        private final String ivSessionKey;
+        private PreparedKey prepared;
+        private IOException failure;
+
+        DecryptionSession(String publicKey, String ivSessionKey) {
+            this.publicKey = publicKey;
+            this.ivSessionKey = ivSessionKey;
+        }
+
+        private synchronized PreparedKey key() throws IOException {
+            if (failure != null) throw new IOException(failure.getMessage(), failure);
+            if (prepared == null) {
+                try {
+                    prepared = prepareDecryptionKey(publicKey, ivSessionKey);
+                } catch (IOException error) {
+                    failure = error;
+                    throw error;
+                } catch (RuntimeException error) {
+                    // Malformed Base64 throws IllegalArgumentException: cache it like any other bad key.
+                    failure = new IOException("AES file decryption failed: invalid session key", error);
+                    throw failure;
+                }
+            }
+            return prepared;
+        }
+
+        boolean isEncrypted() {
+            return publicKey != null && !publicKey.isEmpty();
+        }
+
+        void decryptFile(File file) throws IOException {
+            if (!isEncrypted()) {
+                if (logger != null) logger.info("Encryption not set, no public key or session, ignored");
+                return;
+            }
+            PreparedKey key = key();
+            decryptAesFile(file, key.key, key.iv);
+        }
+    }
+
+    private static final class PreparedKey {
+
+        final SecretKey key;
+        final byte[] iv;
+
+        PreparedKey(SecretKey key, byte[] iv) {
+            this.key = key;
+            this.iv = iv;
+        }
+    }
+
+    private static PreparedKey prepareDecryptionKey(String publicKey, String ivSessionKey) throws IOException {
+        if (!isValidSessionKey(ivSessionKey)) throw new IOException("AES file decryption failed: session key is required");
         // The bundle is encrypted from here on: an unusable key must fail, never leave it encrypted.
         if (!publicKey.startsWith("-----BEGIN RSA PUBLIC KEY-----")) {
             if (logger != null) {
@@ -173,7 +231,7 @@ public class CryptoCipher {
             }
 
             SecretKey sKey = CryptoCipher.byteToSessionKey(decryptedSessionKey);
-            decryptAesFile(file, sKey, iv);
+            return new PreparedKey(sKey, iv);
         } catch (GeneralSecurityException e) {
             if (logger != null) {
                 logger.info("decryptFile fail");
@@ -395,27 +453,32 @@ public class CryptoCipher {
     }
 
     public static String calcChecksum(InputStream inputStream) {
-        final int BUFFER_SIZE = checksumBufferBytes();
-        MessageDigest digest;
+        try {
+            return calcChecksumOrThrow(inputStream);
+        } catch (IOException error) {
+            logger.error("Cannot calculate checksum");
+            logger.debug("Error: " + error.getMessage());
+            return "";
+        }
+    }
+
+    static String calcChecksumOrThrow(File file) throws IOException {
+        try (FileInputStream input = new FileInputStream(file)) {
+            return calcChecksumOrThrow(input);
+        }
+    }
+
+    static String calcChecksumOrThrow(InputStream input) throws IOException {
+        final MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
-        } catch (java.security.NoSuchAlgorithmException e) {
-            logger.error("SHA-256 algorithm not available");
-            return "";
+        } catch (java.security.NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 algorithm not available", error);
         }
-
-        try {
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int length;
-            while ((length = inputStream.read(buffer)) != -1) {
-                digest.update(buffer, 0, length);
-            }
-            return digestToHex(digest);
-        } catch (IOException e) {
-            logger.error("Cannot calculate checksum");
-            logger.debug("Error: " + e.getMessage());
-            return "";
-        }
+        byte[] buffer = new byte[checksumBufferBytes()];
+        int length;
+        while ((length = input.read(buffer)) != -1) digest.update(buffer, 0, length);
+        return digestToHex(digest);
     }
 
     static String digestToHex(MessageDigest digest) {

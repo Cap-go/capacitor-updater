@@ -192,7 +192,14 @@ declare module '@capacitor/cli' {
       websiteAutoNotifyReady?: boolean;
 
       /**
-       * Configure the public key for end to end live update encryption Version 2
+       * Configure the public key for end to end live update encryption Version 2.
+       *
+       * What it guarantees: a bundle can only be installed when its checksum and session key were produced with
+       * the matching private key. Capgo never holds that key, so Capgo cannot create, modify or decrypt an update
+       * for your app. It does NOT make the bundle unreadable to someone who has your app binary: the public key
+       * ships inside the app, and anyone holding the app can recover the session key and read the bundle. If you
+       * also need Capgo to be unable to find your app (and so its public key), use a Capgo app id that is not your
+       * store bundle id (`appId` in this plugin config) so the app is not identifiable from the dashboard.
        *
        * Only available for Android and iOS.
        *
@@ -361,7 +368,9 @@ declare module '@capacitor/cli' {
        *
        * Blocked by default so a redirect can never downgrade updater traffic to an unencrypted connection.
        * Only enable this if your self-hosted update server or CDN must redirect to an HTTP URL.
-       * Direct HTTP URLs (for example `localApi` during development) are not affected.
+       * `httpsOnly` (default `true`) rejects every non-https URL and redirect hop regardless of this setting, so an
+       * HTTP redirect also needs `httpsOnly: false`. Direct HTTP URLs (for example `localApi` during development) are
+       * only allowed with `httpsOnly: false` as well.
        *
        * Only available for Android and iOS.
        *
@@ -369,6 +378,43 @@ declare module '@capacitor/cli' {
        * @since  8.52.0
        */
       allowHttpsToHttpRedirect?: boolean;
+
+      /**
+       * Require https for every URL the plugin talks to: `updateUrl`, `statsUrl`, `channelUrl` (from config,
+       * persisted values and `setUpdateUrl` / `setStatsUrl` / `setChannelUrl`), bundle zip URLs, every manifest
+       * `download_url`, preview payload URLs and every redirect hop. When enabled it overrides
+       * `allowHttpsToHttpRedirect`. A non-https URL fails the call or download with
+       * `httpsOnly is enabled and <url> is not https`.
+       *
+       * Set to `false` only for local development servers (for example a plain-http `localApi` on loopback) or a
+       * self-hosted plain-http update server you control. Upgrading with a plain-http `updateUrl`, `statsUrl`,
+       * `channelUrl` or `allowHttpsToHttpRedirect: true` requires setting this to `false` explicitly.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since 8.54.0
+       */
+      httpsOnly?: boolean;
+
+      /**
+       * Refuse to download or install a bundle whose version is lower than the native app version
+       * (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device
+       * counterpart of the Capgo channel setting "disable auto update under native" and protects against a
+       * replayed old update response rolling the app back below its store version. Only the numeric
+       * `major.minor.patch` part is compared (a `1.2.3-beta.1` bundle is accepted on native `1.2.3`), and
+       * versions that do not parse as semver skip the check. Rejections are reported as the
+       * `version_below_native` stat. Keep it off if you version web bundles independently of the native app
+       * (for example native `2.0.0` with bundle `1.4.7`).
+       *
+       * Future-major default candidate: `true`.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default false
+       * @since 8.54.0
+       */
+      builtinMinimum?: boolean;
 
       /**
        * Allow the plugin to modify the appId dynamically from the JavaScript side.

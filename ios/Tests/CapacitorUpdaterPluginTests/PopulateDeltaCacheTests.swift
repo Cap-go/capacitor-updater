@@ -128,6 +128,49 @@ final class PopulateDeltaCacheTests: XCTestCase {
         return file
     }
 
+    func testManifestProgressIsMonotonicAndDoesNotRepeatPercentages() throws {
+        let updater = try XCTUnwrap(implementation)
+        updater.setLogger(Logger(withTag: "manifest-progress-test", options: Logger.Options(level: .silent)))
+        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
+        let content = "<html>progress-\(UUID().uuidString)</html>"
+        let source = try write(content, named: "source.html", in: bundleDir)
+        let hash = CryptoCipher.calcChecksum(filePath: source)
+        var entries: [ManifestEntry] = []
+        for index in 0..<120 {
+            let name = index == 0 ? "index.html" : "file-\(index).txt"
+            try Data(content.utf8).write(to: expectedCacheFile(hash: hash, name: name))
+            entries.append(ManifestEntry(file_name: name, file_hash: hash, download_url: "https://cached-fixture.invalid/\(name)"))
+        }
+        let completed = expectation(description: "manifest completed")
+        var percents: [Int] = []
+        var installedId: String?
+        updater.notifyDownloadRaw = { _, percent, _, bundle in
+            percents.append(percent)
+            if percent == 100 {
+                installedId = bundle?.getId()
+                completed.fulfill()
+            }
+        }
+        let manifest = entries
+        DispatchQueue.global().async {
+            do {
+                _ = try updater.downloadManifest(manifest: manifest, version: "progress-test", sessionKey: "")
+            } catch {
+                DispatchQueue.main.async {
+                    XCTFail("Manifest failed: \(error)")
+                    completed.fulfill()
+                }
+            }
+        }
+        wait(for: [completed], timeout: 10)
+        if let installedId { _ = updater.delete(id: installedId) }
+        XCTAssertEqual(percents.first, 0)
+        XCTAssertEqual(percents.last, 100)
+        XCTAssertEqual(percents, percents.sorted())
+        XCTAssertEqual(Set(percents).count, percents.count)
+        XCTAssertLessThanOrEqual(percents.count, 63)
+    }
+
     // MARK: - manifestHashLookup
 
     func testManifestHashLookupStripsBrotliSuffixAndReturnsPlainHash() {
@@ -383,17 +426,8 @@ final class IoBufferSizeTests: XCTestCase {
 }
 
 final class ManifestConcurrencyTests: XCTestCase {
-    func testManifestConcurrencyScalesWithCpuAndStaysCapped() {
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 1), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 4), 8)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 6), 12)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 8), 16)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 18), 36)
-        XCTAssertEqual(CapgoUpdater.clampedManifestConcurrency(processorCount: 40), 64)
-        let live = CapgoUpdater.manifestMaxConcurrentFiles
-        XCTAssertGreaterThanOrEqual(live, 8)
-        XCTAssertLessThanOrEqual(live, 64)
-        XCTAssertEqual(live, CapgoUpdater.clampedManifestConcurrency(processorCount: ProcessInfo.processInfo.processorCount))
+    func testManifestConcurrencyIsFixedAt32() {
+        XCTAssertEqual(CapgoUpdater.manifestMaxConcurrentFiles, 32)
     }
 }
 
@@ -450,16 +484,21 @@ final class StreamDecodeTests: XCTestCase {
     func testManifestPartialURLIsStableForSha256AndPath() {
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-partial-\(UUID().uuidString)")
         let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let nested = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js")
-        let root = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "app.js")
-        let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "vendor/app.js")
+        let nested = CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-a", hash: hash, fileName: "nested/app.js")
+        let root = CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-a", hash: hash, fileName: "app.js")
+        let vendor = CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-a", hash: hash, fileName: "vendor/app.js")
         XCTAssertNotEqual(nested.lastPathComponent, root.lastPathComponent)
         XCTAssertNotEqual(nested.lastPathComponent, vendor.lastPathComponent)
-        XCTAssertEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: hash, fileName: "nested/app.js").lastPathComponent)
-        XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_\(hash)_"))
+        XCTAssertEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-a", hash: hash, fileName: "nested/app.js").lastPathComponent)
+        // Concurrent downloads of the same file never share a partial.
+        XCTAssertNotEqual(nested.lastPathComponent, CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-b", hash: hash, fileName: "nested/app.js").lastPathComponent)
+        XCTAssertTrue(nested.lastPathComponent.hasPrefix("partial_"))
+        XCTAssertTrue(nested.lastPathComponent.contains("_\(hash)_"))
+        let escaping = CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "../../escape", hash: hash, fileName: "app.js")
+        XCTAssertTrue(escaping.standardizedFileURL.path.hasPrefix(cache.standardizedFileURL.path + "/"))
         XCTAssertLessThan(nested.lastPathComponent.count, 255)
         XCTAssertTrue(nested.lastPathComponent.hasSuffix(".tmp"))
-        let unsafe = CapgoUpdater.manifestPartialURL(cacheFolder: cache, hash: "../evil", fileName: "app.js")
+        let unsafe = CapgoUpdater.manifestPartialURL(cacheFolder: cache, downloadId: "bundle-a", hash: "../evil", fileName: "app.js")
         XCTAssertTrue(unsafe.lastPathComponent.hasPrefix("partial_"))
         XCTAssertTrue(unsafe.standardizedFileURL.path.hasPrefix(cache.standardizedFileURL.path + "/"))
         XCTAssertFalse(unsafe.lastPathComponent.contains(".."))
@@ -505,5 +544,30 @@ final class StreamDecodeTests: XCTestCase {
             index = next
         }
         return data
+    }
+}
+
+final class ImmutableCacheLinkTests: XCTestCase {
+    func testLinkedCacheSurvivesDeletingBundleAndAtomicReplacement() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let source = root.appendingPathComponent("bundle.js")
+        let cache = root.appendingPathComponent("cache/app.js")
+        let restored = root.appendingPathComponent("restored.js")
+        let original = Data("verified content".utf8)
+        try original.write(to: source)
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "cache-link-test", options: Logger.Options(level: .silent)))
+        let alias = root.appendingPathComponent("alias.js")
+        try manager.createSymbolicLink(at: alias, withDestinationURL: source)
+        try updater.linkOrCopyImmutableFile(from: alias, to: cache)
+        try manager.removeItem(at: source)
+        XCTAssertEqual(try Data(contentsOf: cache), original)
+        try updater.linkOrCopyImmutableFile(from: cache, to: restored)
+        try Data("replacement".utf8).write(to: restored, options: .atomic)
+        XCTAssertEqual(try Data(contentsOf: cache), original)
+        XCTAssertEqual(try manager.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("capgo-link-") }.count, 0)
     }
 }

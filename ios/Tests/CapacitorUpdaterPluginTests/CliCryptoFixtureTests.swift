@@ -116,6 +116,8 @@ final class CliCryptoFixtureTests: XCTestCase {
         for bundle in fixture.bundles {
             let updater = FixtureDownloadCapgoUpdater()
             updater.setLogger(Logger(withTag: "cli-fixture-tests", options: Logger.Options(level: .silent)))
+            // Payloads are served from file:// URLs.
+            updater.httpsOnly = false
             updater.setPublicKey(fixture.publicKey)
             updater.payload = bundle.encrypted
             defer { updater.shutdown() }
@@ -137,4 +139,44 @@ final class CliCryptoFixtureTests: XCTestCase {
             }
         }
     }
+    func testConcurrentManifestSessionsResetCipherAndKeepKeysSeparate() throws {
+        let (publicKey, bundles) = try loadFixture()
+        let sessions = bundles.map { CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: $0.ivSessionKey) }
+        let lock = NSLock()
+        var failures: [String] = []
+        DispatchQueue.concurrentPerform(iterations: 24) { index in
+            do {
+                let selected = index % bundles.count
+                let file = root.appendingPathComponent("session-file-\(index)")
+                try bundles[selected].encrypted.write(to: file)
+                try sessions[selected].decryptFile(filePath: file)
+                let actual = try Data(contentsOf: file)
+                if actual != bundles[selected].zip {
+                    throw NSError(domain: "SessionTest", code: 1)
+                }
+            } catch {
+                lock.lock()
+                failures.append(error.localizedDescription)
+                lock.unlock()
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "; "))
+    }
+
+    func testInvalidSessionDoesNotModifyFilesOrPoisonAnotherSession() throws {
+        let (publicKey, bundles) = try loadFixture()
+        let bundle = try XCTUnwrap(bundles.first)
+        let file = root.appendingPathComponent("invalid-session")
+        try bundle.encrypted.write(to: file)
+        XCTAssertThrowsError(try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "").decryptFile(filePath: file))
+        XCTAssertEqual(try Data(contentsOf: file), bundle.encrypted)
+        let invalid = CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "AAAA:AAAA")
+        for _ in 0..<2 {
+            XCTAssertThrowsError(try invalid.decryptFile(filePath: file))
+            XCTAssertEqual(try Data(contentsOf: file), bundle.encrypted)
+        }
+        try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: bundle.ivSessionKey).decryptFile(filePath: file)
+        XCTAssertEqual(try Data(contentsOf: file), bundle.zip)
+    }
+
 }

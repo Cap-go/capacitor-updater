@@ -428,25 +428,6 @@ extension CustomError: LocalizedError {
     }
 }
 
-/// Thread-safe atomic counter for concurrent operations
-final class AtomicCounter {
-    private var value: Int = 0
-    private let lock = NSLock()
-
-    func increment() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        value += 1
-        return value
-    }
-
-    var current: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
-    }
-}
-
 /// Thread-safe atomic boolean for concurrent operations
 final class AtomicBool {
     private var _value: Bool

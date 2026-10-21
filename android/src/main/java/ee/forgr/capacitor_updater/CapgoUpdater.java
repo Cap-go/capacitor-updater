@@ -27,14 +27,12 @@ import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.SecureRandom;
@@ -87,7 +85,6 @@ public class CapgoUpdater {
     private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
-    private static final String CAPACITOR_CONFIG_ASSET = "capacitor.config.json";
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
@@ -120,6 +117,13 @@ public class CapgoUpdater {
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
+    /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default false. */
+    public volatile boolean builtinMinimum = false;
+    /**
+     * Require https for every URL the updater downloads from. Config httpsOnly, default true. Mirrors
+     * DownloadService.httpsOnly (the OkHttp interceptor); this field gates URLs before any network IO.
+     */
+    public volatile boolean httpsOnly = true;
 
     // Cached key ID calculated once from publicKey
     private String cachedKeyId = "";
@@ -147,17 +151,33 @@ public class CapgoUpdater {
     private final AtomicBoolean statsFlushInFlight = new AtomicBoolean(false);
     private final AtomicBoolean statsStopped = new AtomicBoolean(false);
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
+    private static volatile Long statsFlushIntervalOverrideMs = null;
+    private static volatile boolean statsFlushSchedulingDisabledForTests = false;
+    /** Unit tests only: runs after queue mutation and before the stats owner check. */
+    static volatile Runnable statsAdoptionBeforeOwnerCheckForTests = null;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
     private static final int MAX_PENDING_STATS = 200;
+    // The live plugin instance owns the stats file. A headless worker hands its unsent events to it
+    // instead of writing the file; events handed over before the plugin claims ownership wait here.
+    private static final Object statsOwnerLock = new Object();
+    private static CapgoUpdater statsOwner = null;
+    private static final List<JSONObject> orphanedStats = new ArrayList<>();
 
     private static final class QueuedStatsEvent {
 
         private final JSONObject event;
         private final Runnable onSent;
+        /** True when the event was loaded from the shared pending-stats file (not created by this instance). */
+        private final boolean restored;
 
         private QueuedStatsEvent(final JSONObject event, final Runnable onSent) {
+            this(event, onSent, false);
+        }
+
+        private QueuedStatsEvent(final JSONObject event, final Runnable onSent, final boolean restored) {
             this.event = event;
             this.onSent = onSent;
+            this.restored = restored;
         }
     }
 
@@ -631,6 +651,96 @@ public class CapgoUpdater {
         }
     }
 
+    static boolean isHttpsUrl(final String url) {
+        if (url == null) {
+            return false;
+        }
+        final String trimmed = url.trim();
+        return trimmed.regionMatches(true, 0, "https://", 0, "https://".length());
+    }
+
+    static String httpsOnlyMessage(final String url) {
+        return "httpsOnly is enabled and " + url + " is not https";
+    }
+
+    /** httpsOnly gate for the zip url and every manifest download_url, run before any network IO. */
+    void requireHttpsUrls(final String url, final JSONArray manifest) throws IOException {
+        if (!this.httpsOnly) {
+            return;
+        }
+        if (manifest == null || manifest.length() == 0) {
+            if (!isHttpsUrl(url)) {
+                logger.error(httpsOnlyMessage(url));
+                throw new IOException(httpsOnlyMessage(url));
+            }
+            return;
+        }
+        for (int i = 0; i < manifest.length(); i++) {
+            final JSONObject entry = manifest.optJSONObject(i);
+            final String downloadUrl = entry == null ? null : entry.optString("download_url", "");
+            if (!isHttpsUrl(downloadUrl)) {
+                logger.error(httpsOnlyMessage(downloadUrl));
+                throw new IOException(httpsOnlyMessage(downloadUrl));
+            }
+        }
+    }
+
+    static String stripBuildMetadata(final String version) {
+        if (version == null) {
+            return null;
+        }
+        final int plus = version.indexOf('+');
+        return plus >= 0 ? version.substring(0, plus) : version;
+    }
+
+    /** Compares major.minor.patch only (missing components count as 0); suffix and extra components are ignored. */
+    static int compareCoreVersion(final Version left, final Version right) {
+        for (int i = 0; i < 3; i++) {
+            final long a = i < left.getSubversionNumbers().size() ? left.getSubversionNumbers().get(i) : 0L;
+            final long b = i < right.getSubversionNumbers().size() ? right.getSubversionNumbers().get(i) : 0L;
+            if (a != b) {
+                return Long.compare(a, b);
+            }
+        }
+        return 0;
+    }
+
+    static boolean isParsableVersion(final Version version) {
+        return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
+    }
+
+    /**
+     * builtinMinimum gate: a bundle may never roll the app below its native version. Skipped (debug log) when
+     * either version string does not parse, so unversioned bundles keep working.
+     */
+    void requireVersionNotBelowBuiltin(final String version) throws IOException {
+        if (!this.builtinMinimum) {
+            return;
+        }
+        // Build metadata (+...) never takes part in ordering.
+        final Version bundle = new Version(stripBuildMetadata(version));
+        final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
+        if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
+            logger.debug(
+                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
+            );
+            return;
+        }
+        // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.
+        if (compareCoreVersion(bundle, nativeVersion) < 0) {
+            final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
+            logger.error(message);
+            this.sendStats("version_below_native", version);
+            throw new IOException(message);
+        }
+    }
+
+    /** Pre-network download gates shared by every entry point: httpsOnly and builtinMinimum. */
+    void runPreDownloadSecurityGates(final String url, final String version, final JSONArray manifest) throws IOException {
+        this.requireHttpsUrls(url, manifest);
+        this.requireVersionNotBelowBuiltin(version);
+    }
+
     static boolean containsPathTraversalSegment(final String relativePath) {
         for (final String segment : relativePath.split("/")) {
             if ("..".equals(segment)) {
@@ -819,7 +929,7 @@ public class CapgoUpdater {
                 continue;
             }
             try {
-                copyFileAtomically(file, cacheFile);
+                DownloadService.linkOrCopyImmutableFile(file, cacheFile);
             } catch (IOException e) {
                 logger.debug("Delta cache copy failed: " + file.getPath());
             }
@@ -1662,21 +1772,6 @@ public class CapgoUpdater {
         return config == null ? null : config.label;
     }
 
-    private String readAssetAsString(final String assetPath) throws IOException {
-        final StringBuilder buffer = new StringBuilder();
-        try (
-            final BufferedReader reader = new BufferedReader(
-                new InputStreamReader(this.context().getAssets().open(assetPath), StandardCharsets.UTF_8)
-            )
-        ) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                buffer.append(line).append('\n');
-            }
-        }
-        return buffer.toString();
-    }
-
     private void copyFileAtomically(final File source, final File dest) throws IOException {
         final File parent = dest.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -1735,7 +1830,9 @@ public class CapgoUpdater {
 
         final BackgroundRunnerWorkConfig config;
         try {
-            config = getBackgroundRunnerWorkConfigFromConfig(this.readAssetAsString(CAPACITOR_CONFIG_ASSET));
+            config = getBackgroundRunnerWorkConfigFromConfig(
+                InternalUtils.readAssetAsString(this.context(), InternalUtils.CAPACITOR_CONFIG_ASSET)
+            );
         } catch (IOException ignored) {
             return;
         }
@@ -1907,6 +2004,7 @@ public class CapgoUpdater {
             if (manifest == null) {
                 this.requireBundleChecksum(checksum);
             }
+            this.runPreDownloadSecurityGates(url, version, manifest);
         } catch (final IOException e) {
             logger.error("Download blocked: " + e.getMessage());
             return null;
@@ -1963,6 +2061,7 @@ public class CapgoUpdater {
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {
         this.requireSessionKeyForEncryptedUpdate(sessionKey);
         this.requireBundleChecksum(checksum);
+        this.runPreDownloadSecurityGates(url, version, null);
         this.runDownloadGate();
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
@@ -2020,6 +2119,7 @@ public class CapgoUpdater {
         if (manifest == null) {
             return download(url, version, sessionKey, checksum);
         }
+        this.runPreDownloadSecurityGates(url, version, manifest);
 
         // Check for existing bundle with same version and clean up if in error state
         BundleInfo existingBundle = this.getBundleInfoByName(version);
@@ -3476,7 +3576,7 @@ public class CapgoUpdater {
                     if (statsQueue.size() >= MAX_PENDING_STATS) {
                         break;
                     }
-                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null));
+                    statsQueue.add(new QueuedStatsEvent(arr.getJSONObject(i), null, true));
                 }
             }
             if (backup.exists() && !backup.delete()) {
@@ -3498,8 +3598,196 @@ public class CapgoUpdater {
         }
     }
 
+    /** Makes this instance the stats file owner and adopts events handed over before it loaded. */
+    public void claimStatsOwnership() {
+        final List<JSONObject> adopted;
+        synchronized (statsOwnerLock) {
+            statsOwner = this;
+            adopted = new ArrayList<>(orphanedStats);
+            orphanedStats.clear();
+        }
+        if (!adoptPendingStats(adopted)) {
+            parkOrphanedStats(adopted);
+        }
+    }
+
+    public void releaseStatsOwnership() {
+        synchronized (statsOwnerLock) {
+            if (statsOwner == this) {
+                statsOwner = null;
+            }
+        }
+    }
+
+    /** Moves this instance's unsent events to the stats file owner (or parks them until one claims). */
+    void handOverPendingStats() {
+        // Stop first so a flush finishing later cannot requeue or persist what we hand over.
+        statsStopped.set(true);
+        final CapgoUpdater owner;
+        synchronized (statsOwnerLock) {
+            owner = statsOwner == this ? null : statsOwner;
+        }
+        final List<JSONObject> events = new ArrayList<>();
+        synchronized (statsQueue) {
+            collectHandoverEvents(statsInFlight, events, owner);
+            statsInFlight.clear();
+            collectHandoverEvents(statsQueue, events, owner);
+            statsQueue.clear();
+        }
+        if (events.isEmpty()) {
+            return;
+        }
+        // adoptPendingStats persists; never call it while holding statsOwnerLock (lock order).
+        if (owner != null && owner.adoptPendingStats(events)) {
+            return;
+        }
+        List<JSONObject> retryEvents = null;
+        CapgoUpdater retryOwner = null;
+        synchronized (statsOwnerLock) {
+            addOrphanedStats(events);
+            retryOwner = statsOwner == this ? null : statsOwner;
+            if (retryOwner != null && !orphanedStats.isEmpty()) {
+                retryEvents = new ArrayList<>(orphanedStats);
+                orphanedStats.clear();
+            }
+        }
+        if (retryOwner != null && retryEvents != null) {
+            if (retryOwner.adoptPendingStats(retryEvents)) {
+                return;
+            }
+            parkOrphanedStats(retryEvents);
+        }
+    }
+
+    private void collectHandoverEvents(final List<QueuedStatsEvent> source, final List<JSONObject> events, final CapgoUpdater owner) {
+        for (final QueuedStatsEvent queued : source) {
+            if (shouldHandOverQueuedEvent(queued, owner)) {
+                events.add(queued.event);
+            }
+        }
+    }
+
+    /**
+     * Restored file events are not re-sent to an owner that shares the same pending-stats path
+     * (the owner already loaded them from disk). They are still handed over when the paths differ.
+     */
+    private boolean shouldHandOverQueuedEvent(final QueuedStatsEvent queued, final CapgoUpdater owner) {
+        if (!queued.restored) {
+            return true;
+        }
+        if (owner == null) {
+            return true;
+        }
+        return !sharesPendingStatsFileWith(owner);
+    }
+
+    private boolean sharesPendingStatsFileWith(final CapgoUpdater other) {
+        final File mine = pendingStatsFile();
+        final File theirs = other.pendingStatsFile();
+        return mine != null && theirs != null && mine.getAbsolutePath().equals(theirs.getAbsolutePath());
+    }
+
+    private static void addOrphanedStats(final List<JSONObject> events) {
+        orphanedStats.addAll(events);
+        while (orphanedStats.size() > MAX_PENDING_STATS) {
+            orphanedStats.remove(0);
+        }
+    }
+
+    private static void parkOrphanedStats(final List<JSONObject> events) {
+        synchronized (statsOwnerLock) {
+            addOrphanedStats(events);
+        }
+    }
+
+    /** Returns false (keeping nothing) when this instance has stopped and can no longer send the events. */
+    private boolean adoptPendingStats(final List<JSONObject> events) {
+        if (events.isEmpty()) {
+            return true;
+        }
+        final List<QueuedStatsEvent> displaced = new ArrayList<>();
+        final List<QueuedStatsEvent> adopted = new ArrayList<>();
+        synchronized (statsQueue) {
+            if (statsStopped.get()) {
+                return false;
+            }
+            for (final JSONObject event : events) {
+                while (statsQueue.size() >= MAX_PENDING_STATS) {
+                    final QueuedStatsEvent removed = statsQueue.remove(0);
+                    if (!adopted.contains(removed)) {
+                        displaced.add(removed);
+                    }
+                }
+                final QueuedStatsEvent queued = new QueuedStatsEvent(event, null);
+                statsQueue.add(queued);
+                adopted.add(queued);
+            }
+        }
+        final Runnable beforeOwnerCheck = statsAdoptionBeforeOwnerCheckForTests;
+        if (beforeOwnerCheck != null) {
+            beforeOwnerCheck.run();
+        }
+        synchronized (statsOwnerLock) {
+            if (statsOwner != null && statsOwner != this) {
+                rollbackAdoptedEvents(adopted, displaced);
+                return false;
+            }
+        }
+        persistStatsQueue();
+        ensureStatsTimerStarted();
+        return true;
+    }
+
+    private void rollbackAdoptedEvents(final List<QueuedStatsEvent> adopted, final List<QueuedStatsEvent> displaced) {
+        synchronized (statsQueue) {
+            statsQueue.removeAll(adopted);
+            if (!displaced.isEmpty()) {
+                statsQueue.addAll(0, displaced);
+            }
+        }
+    }
+
+    /** Unit tests only: disable scheduling or override the flush interval. */
+    static void configureStatsFlushForTests(final Long intervalMs, final boolean schedulingEnabled) {
+        statsFlushIntervalOverrideMs = intervalMs;
+        statsFlushSchedulingDisabledForTests = !schedulingEnabled;
+    }
+
+    /** Unit tests only: restore default stats flush scheduling. */
+    static void resetStatsFlushForTests() {
+        statsFlushIntervalOverrideMs = null;
+        statsFlushSchedulingDisabledForTests = false;
+    }
+
     int pendingStatsCount() {
         return statsQueue.size();
+    }
+
+    void enqueuePendingStatsEventForTests(final String action) {
+        try {
+            final JSONObject json = new JSONObject();
+            json.put("action", action);
+            json.put("timestamp", 1);
+            synchronized (statsQueue) {
+                statsQueue.add(new QueuedStatsEvent(json, null));
+            }
+        } catch (final JSONException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    List<String> pendingStatsActionsForTests() {
+        final List<String> actions = new ArrayList<>();
+        synchronized (statsQueue) {
+            for (final QueuedStatsEvent queued : statsQueue) {
+                try {
+                    actions.add(queued.event.getString("action"));
+                } catch (final JSONException ignored) {
+                    actions.add("");
+                }
+            }
+        }
+        return actions;
     }
 
     public void persistPendingStats() {
@@ -3524,6 +3812,11 @@ public class CapgoUpdater {
             return;
         }
         synchronized (pendingStatsPersistLock) {
+            synchronized (statsOwnerLock) {
+                if (statsOwner != null && statsOwner != this) {
+                    return;
+                }
+            }
             if (statsStopped.get() && !force) {
                 return;
             }
@@ -3615,16 +3908,12 @@ public class CapgoUpdater {
     }
 
     private synchronized void ensureStatsTimerStarted() {
-        if (statsStopped.get()) {
+        if (statsStopped.get() || statsFlushSchedulingDisabledForTests) {
             return;
         }
+        final long intervalMs = statsFlushIntervalOverrideMs != null ? statsFlushIntervalOverrideMs : STATS_FLUSH_INTERVAL_MS;
         if (statsFlushTask == null || statsFlushTask.isCancelled() || statsFlushTask.isDone()) {
-            statsFlushTask = statsScheduler.scheduleAtFixedRate(
-                this::flushStatsQueue,
-                STATS_FLUSH_INTERVAL_MS,
-                STATS_FLUSH_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-            );
+            statsFlushTask = statsScheduler.scheduleAtFixedRate(this::flushStatsQueue, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -3972,6 +4261,14 @@ public class CapgoUpdater {
      * Should be called when the plugin is destroyed to prevent resource leaks.
      */
     public void shutdown() {
+        shutdown(true);
+    }
+
+    /**
+     * @param persistStats false when another live instance owns the stats file (headless worker
+     *     handing over to the plugin): writing this instance's queue would replace the newer file.
+     */
+    public void shutdown(final boolean persistStats) {
         statsStopped.set(true);
         // Cancel the scheduled task
         if (statsFlushTask != null) {
@@ -3980,7 +4277,9 @@ public class CapgoUpdater {
         }
 
         // Write once, then ignore later callbacks so they cannot delete a newer instance's file.
-        persistStatsQueue(true);
+        if (persistStats) {
+            persistStatsQueue(true);
+        }
 
         // Shutdown the scheduler
         statsScheduler.shutdown();

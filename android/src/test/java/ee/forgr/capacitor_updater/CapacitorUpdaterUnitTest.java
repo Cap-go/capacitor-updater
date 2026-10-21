@@ -34,8 +34,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -4619,6 +4621,323 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void shutdownWithoutPersistKeepsAnotherInstanceStatsFile() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-handover");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+        final String liveQueue = "[{\"action\":\"app_moved_to_foreground\",\"timestamp\":1}]";
+        Files.write(queueFile.toPath(), liveQueue.getBytes(StandardCharsets.UTF_8));
+
+        // A headless updater with an empty queue handing over to the live plugin.
+        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        headless.documentsDir = tempDir.toFile();
+        headless.shutdown(false);
+
+        assertEquals(liveQueue, new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8));
+    }
+
+    private CapgoUpdater headlessWithPendingStat(final String action) throws Exception {
+        final Path dir = Files.createTempDirectory("capgo-pending-stats-headless");
+        Files.write(
+            dir.resolve("capgo_pending_stats.json"),
+            ("[{\"action\":\"" + action + "\",\"timestamp\":1}]").getBytes(StandardCharsets.UTF_8)
+        );
+        final CapgoUpdater headless = new CapgoUpdater(mock(Logger.class));
+        headless.documentsDir = dir.toFile();
+        headless.restorePendingStats();
+        return headless;
+    }
+
+    @Test
+    public void headlessHandoverMovesUnsentStatsToTheLivePlugin() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-owner");
+        final File queueFile = tempDir.resolve("capgo_pending_stats.json").toFile();
+
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = tempDir.toFile();
+        live.claimStatsOwnership();
+        try {
+            final CapgoUpdater headless = headlessWithPendingStat("set_next");
+            assertEquals(1, headless.pendingStatsCount());
+
+            headless.handOverPendingStats();
+            headless.shutdown(false);
+
+            assertEquals(0, headless.pendingStatsCount());
+            assertEquals(1, live.pendingStatsCount());
+            final String persisted = new String(Files.readAllBytes(queueFile.toPath()), StandardCharsets.UTF_8);
+            assertTrue(persisted.contains("set_next"));
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+        }
+    }
+
+    @Test
+    public void statsHandedToAStoppedOwnerWaitForTheNextOwner() throws Exception {
+        final CapgoUpdater stopping = new CapgoUpdater(mock(Logger.class));
+        stopping.documentsDir = Files.createTempDirectory("capgo-pending-stats-stopping").toFile();
+        stopping.claimStatsOwnership();
+        stopping.shutdown(false);
+
+        final CapgoUpdater headless = headlessWithPendingStat("set_next");
+        headless.handOverPendingStats();
+        headless.shutdown(false);
+        stopping.releaseStatsOwnership();
+
+        final CapgoUpdater next = new CapgoUpdater(mock(Logger.class));
+        next.documentsDir = Files.createTempDirectory("capgo-pending-stats-next").toFile();
+        next.claimStatsOwnership();
+        try {
+            assertEquals(0, stopping.pendingStatsCount());
+            assertEquals(1, next.pendingStatsCount());
+        } finally {
+            next.releaseStatsOwnership();
+            next.shutdown(false);
+        }
+    }
+
+    @Test
+    public void statsHandedOverBeforeThePluginLoadsAreAdoptedOnClaim() throws Exception {
+        final Path tempDir = Files.createTempDirectory("capgo-pending-stats-orphan");
+
+        final CapgoUpdater headless = headlessWithPendingStat("set");
+        headless.handOverPendingStats();
+        headless.shutdown(false);
+
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = tempDir.toFile();
+        live.claimStatsOwnership();
+        try {
+            assertEquals(1, live.pendingStatsCount());
+        } finally {
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+        }
+    }
+
+    @Test
+    public void concurrentHandoverAndPersistDoesNotDeadlockOrDuplicateEvents() throws Exception {
+        final Path liveDir = Files.createTempDirectory("capgo-stats-handover-deadlock");
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = liveDir.toFile();
+        live.claimStatsOwnership();
+        CapgoUpdater.configureStatsFlushForTests(null, false);
+
+        final CapgoUpdater headlessA = headlessWithPendingStat("handover_event_a");
+        final CapgoUpdater headlessB = headlessWithPendingStat("handover_event_b");
+
+        try {
+            final CountDownLatch start = new CountDownLatch(1);
+            final CountDownLatch done = new CountDownLatch(3);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            final java.util.function.Consumer<CapgoUpdater> handoverTask = (headless) -> {
+                try {
+                    start.await();
+                    headless.handOverPendingStats();
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            };
+
+            new Thread(() -> handoverTask.accept(headlessA)).start();
+            new Thread(() -> handoverTask.accept(headlessB)).start();
+            new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < 100; i++) {
+                        live.persistPendingStats();
+                    }
+                } catch (final Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+
+            start.countDown();
+            assertTrue("concurrent handover and persist timed out", done.await(10, TimeUnit.SECONDS));
+            if (failure.get() != null) {
+                throw new AssertionError(failure.get());
+            }
+
+            live.shutdown(false);
+
+            assertEquals(0, headlessA.pendingStatsCount());
+            assertEquals(0, headlessB.pendingStatsCount());
+            assertEquals(2, live.pendingStatsCount());
+
+            final String persisted = new String(Files.readAllBytes(liveDir.resolve("capgo_pending_stats.json")), StandardCharsets.UTF_8);
+            assertEquals(1, countOccurrences(persisted, "handover_event_a"));
+            assertEquals(1, countOccurrences(persisted, "handover_event_b"));
+        } finally {
+            CapgoUpdater.resetStatsFlushForTests();
+            live.releaseStatsOwnership();
+            live.shutdown(false);
+            headlessA.shutdown(false);
+            headlessB.shutdown(false);
+        }
+    }
+
+    @Test
+    public void rejectedAdoptionRollbackPreservesQueueOrderAndIdentity() throws Exception {
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = Files.createTempDirectory("capgo-stats-adopt-rollback").toFile();
+        live.claimStatsOwnership();
+        final CapgoUpdater other = new CapgoUpdater(mock(Logger.class));
+        CapgoUpdater.configureStatsFlushForTests(null, false);
+        try {
+            live.enqueuePendingStatsEventForTests("marker_keep");
+            for (int i = 0; i < 199; i++) {
+                live.enqueuePendingStatsEventForTests("slot_" + i);
+            }
+            assertEquals(200, live.pendingStatsCount());
+
+            final JSONObject incomingA = new JSONObject();
+            incomingA.put("action", "incoming_a");
+            incomingA.put("timestamp", 1);
+            final JSONObject incomingB = new JSONObject();
+            incomingB.put("action", "incoming_b");
+            incomingB.put("timestamp", 1);
+            final List<JSONObject> toAdopt = Arrays.asList(incomingA, incomingB);
+
+            final CountDownLatch hookEntered = new CountDownLatch(1);
+            final CountDownLatch hookRelease = new CountDownLatch(1);
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = () -> {
+                hookEntered.countDown();
+                try {
+                    assertTrue("adoption hook timed out", hookRelease.await(10, TimeUnit.SECONDS));
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
+                live.enqueuePendingStatsEventForTests("concurrent_during_adopt");
+                other.claimStatsOwnership();
+            };
+
+            final AtomicReference<Boolean> adopted = new AtomicReference<>();
+            final Thread adoptThread = new Thread(() -> {
+                try {
+                    adopted.set(invokeAdoptPendingStats(live, toAdopt));
+                } catch (final ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            adoptThread.start();
+            assertTrue("adoption hook never ran", hookEntered.await(10, TimeUnit.SECONDS));
+            hookRelease.countDown();
+            adoptThread.join(10_000);
+
+            assertFalse(adopted.get());
+            final List<String> actions = live.pendingStatsActionsForTests();
+            assertEquals(201, actions.size());
+            assertEquals("marker_keep", actions.get(0));
+            assertEquals("slot_0", actions.get(1));
+            assertEquals("slot_198", actions.get(199));
+            assertEquals("concurrent_during_adopt", actions.get(200));
+            assertFalse(actions.contains("incoming_a"));
+            assertFalse(actions.contains("incoming_b"));
+        } finally {
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = null;
+            CapgoUpdater.resetStatsFlushForTests();
+            other.releaseStatsOwnership();
+            live.releaseStatsOwnership();
+            clearStatsOwnerForTests();
+            live.shutdown(false);
+            other.shutdown(false);
+        }
+    }
+
+    @Test
+    public void rejectedAdoptionOverMaxPendingIncomingDoesNotRestoreEvictedAdoptedEvents() throws Exception {
+        final CapgoUpdater live = new CapgoUpdater(mock(Logger.class));
+        live.documentsDir = Files.createTempDirectory("capgo-stats-adopt-over-max").toFile();
+        live.claimStatsOwnership();
+        final CapgoUpdater other = new CapgoUpdater(mock(Logger.class));
+        CapgoUpdater.configureStatsFlushForTests(null, false);
+        try {
+            assertEquals(0, live.pendingStatsCount());
+
+            final List<JSONObject> toAdopt = new ArrayList<>();
+            for (int i = 0; i < 201; i++) {
+                final JSONObject event = new JSONObject();
+                event.put("action", "incoming_" + i);
+                event.put("timestamp", 1);
+                toAdopt.add(event);
+            }
+
+            final CountDownLatch hookEntered = new CountDownLatch(1);
+            final CountDownLatch hookRelease = new CountDownLatch(1);
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = () -> {
+                hookEntered.countDown();
+                try {
+                    assertTrue("adoption hook timed out", hookRelease.await(10, TimeUnit.SECONDS));
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
+                other.claimStatsOwnership();
+            };
+
+            final AtomicReference<Boolean> adopted = new AtomicReference<>();
+            final Thread adoptThread = new Thread(() -> {
+                try {
+                    adopted.set(invokeAdoptPendingStats(live, toAdopt));
+                } catch (final ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            adoptThread.start();
+            assertTrue("adoption hook never ran", hookEntered.await(10, TimeUnit.SECONDS));
+            hookRelease.countDown();
+            adoptThread.join(10_000);
+
+            assertFalse(adopted.get());
+            assertEquals(0, live.pendingStatsCount());
+            final List<String> actions = live.pendingStatsActionsForTests();
+            for (int i = 0; i < 201; i++) {
+                assertFalse(actions.contains("incoming_" + i));
+            }
+        } finally {
+            CapgoUpdater.statsAdoptionBeforeOwnerCheckForTests = null;
+            CapgoUpdater.resetStatsFlushForTests();
+            other.releaseStatsOwnership();
+            live.releaseStatsOwnership();
+            clearStatsOwnerForTests();
+            live.shutdown(false);
+            other.shutdown(false);
+        }
+    }
+
+    private static boolean invokeAdoptPendingStats(final CapgoUpdater updater, final List<JSONObject> events)
+        throws ReflectiveOperationException {
+        final Method method = CapgoUpdater.class.getDeclaredMethod("adoptPendingStats", List.class);
+        method.setAccessible(true);
+        return (boolean) method.invoke(updater, events);
+    }
+
+    private static void clearStatsOwnerForTests() throws ReflectiveOperationException {
+        final Field owner = CapgoUpdater.class.getDeclaredField("statsOwner");
+        owner.setAccessible(true);
+        owner.set(null, null);
+        final Field orphaned = CapgoUpdater.class.getDeclaredField("orphanedStats");
+        orphaned.setAccessible(true);
+        ((List<?>) orphaned.get(null)).clear();
+    }
+
+    private static int countOccurrences(final String haystack, final String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = haystack.indexOf(needle, index)) != -1) {
+            count++;
+            index += needle.length();
+        }
+        return count;
+    }
+
+    @Test
     public void restorePendingStatsRecoversBackupWhenQueueFileMissing() throws Exception {
         final Path tempDir = Files.createTempDirectory("capgo-pending-stats-bak");
         final File backup = tempDir.resolve("capgo_pending_stats.json.bak").toFile();
@@ -4689,16 +5008,8 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void manifestConcurrencyScalesWithCpuAndStaysCapped() {
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(1));
-        assertEquals(8, DownloadService.manifestMaxConcurrentFiles(4));
-        assertEquals(12, DownloadService.manifestMaxConcurrentFiles(6));
-        assertEquals(16, DownloadService.manifestMaxConcurrentFiles(8));
-        assertEquals(36, DownloadService.manifestMaxConcurrentFiles(18));
-        assertEquals(64, DownloadService.manifestMaxConcurrentFiles(40));
-        int live = DownloadService.manifestMaxConcurrentFiles();
-        assertTrue(live >= 8 && live <= 64);
-        assertEquals(DownloadService.manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors()), live);
+    public void manifestConcurrencyIsFixedAt32() {
+        assertEquals(32, DownloadService.manifestMaxConcurrentFiles());
     }
 
     @Test
@@ -4957,18 +5268,22 @@ public class CapacitorUpdaterUnitTest {
     public void manifestPartialFileUsesStableHashAndPath() throws Exception {
         final Path dir = Files.createTempDirectory("capgo-partial-name");
         String hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        File nested = DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js");
-        File root = DownloadService.manifestPartialFile(dir.toFile(), hash, "app.js");
-        File vendor = DownloadService.manifestPartialFile(dir.toFile(), hash, "vendor/app.js");
+        File nested = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "nested/app.js");
+        File root = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "app.js");
+        File vendor = DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "vendor/app.js");
         assertNotEquals(nested.getName(), root.getName());
         assertNotEquals(nested.getName(), vendor.getName());
-        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), hash, "nested/app.js").getName());
-        assertTrue(nested.getName().startsWith("partial_" + hash + "_"));
+        assertEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), "bundle-a", hash, "nested/app.js").getName());
+        // Concurrent downloads of the same file never share a partial.
+        assertNotEquals(nested.getName(), DownloadService.manifestPartialFile(dir.toFile(), "bundle-b", hash, "nested/app.js").getName());
+        assertTrue(nested.getName().startsWith("partial_"));
+        assertTrue(nested.getName().contains("_" + hash + "_"));
         assertTrue(nested.getName().length() < 255);
         assertTrue(nested.getName().endsWith(".tmp"));
-        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js");
+        File unsafe = DownloadService.manifestPartialFile(dir.toFile(), "../../escape", "../evil", "app.js");
         assertTrue(unsafe.getName().startsWith("partial_"));
-        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../evil", "app.js").getName());
+        assertEquals(dir.toFile(), unsafe.getParentFile());
+        assertEquals(unsafe.getName(), DownloadService.manifestPartialFile(dir.toFile(), "../../escape", "../evil", "app.js").getName());
     }
 
     @Test
