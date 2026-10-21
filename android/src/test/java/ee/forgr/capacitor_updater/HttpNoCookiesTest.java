@@ -90,6 +90,8 @@ public class HttpNoCookiesTest {
 
     @Before
     public void setUp() throws IOException {
+        // Loopback server is plain http: opt out of the default httpsOnly policy for this test.
+        DownloadService.setHttpsOnly(false);
         previousHandler = CookieHandler.getDefault();
         cookieHandler = new RecordingCookieHandler();
         CookieHandler.setDefault(cookieHandler);
@@ -111,6 +113,7 @@ public class HttpNoCookiesTest {
 
     @After
     public void tearDown() throws IOException {
+        DownloadService.setHttpsOnly(true);
         CookieHandler.setDefault(previousHandler);
         serverSocket.close();
         serverPool.shutdownNow();

@@ -315,6 +315,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
+        implementation.httpsOnly = getConfig().getBoolean("httpsOnly", true)
+        implementation.builtinMinimum = getConfig().getBoolean("builtinMinimum", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -379,6 +381,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             if let storedChannelUrl = UserDefaults.standard.object(forKey: channelUrlDefaultsKey) as? String {
                 implementation.channelUrl = storedChannelUrl
                 logger.info("Loaded persisted channelUrl")
+            }
+        }
+        if implementation.httpsOnly {
+            for (label, value) in [("updateUrl", updateUrl), ("statsUrl", implementation.statsUrl), ("channelUrl", implementation.channelUrl)]
+            where !value.isEmpty && !Self.isHttpsUrl(value) {
+                logger.error("httpsOnly is enabled and \(label) \(value) is not https; requests to it will fail")
             }
         }
         implementation.restorePendingStats()
@@ -1341,6 +1349,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    static func isHttpsUrl(_ value: String) -> Bool {
+        return URL(string: value)?.scheme?.lowercased() == "https"
+    }
+
+    /// Rejects the call when `httpsOnly` is set and the URL is not https. Returns true when the URL is allowed.
+    private func allowUrlScheme(_ url: String, call: CAPPluginCall, method: String) -> Bool {
+        if implementation.httpsOnly && !Self.isHttpsUrl(url) {
+            logger.error("\(method): httpsOnly is enabled and \(url) is not https")
+            call.reject("httpsOnly is enabled and \(url) is not https")
+            return false
+        }
+        return true
+    }
+
     @objc func setUpdateUrl(_ call: CAPPluginCall) {
         if !getConfig().getBoolean("allowModifyUrl", false) {
             logger.error("setUpdateUrl called without allowModifyUrl")
@@ -1350,6 +1372,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url = call.getString("url") else {
             logger.error("setUpdateUrl called without url")
             call.reject("setUpdateUrl called without url")
+            return
+        }
+        guard allowUrlScheme(url, call: call, method: "setUpdateUrl") else {
             return
         }
         self.updateUrl = url
@@ -1375,6 +1400,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("setStatsUrl called without url")
             return
         }
+        guard allowUrlScheme(url, call: call, method: "setStatsUrl") else {
+            return
+        }
         self.implementation.statsUrl = url
         if persistModifyUrl {
             UserDefaults.standard.set(url, forKey: statsUrlDefaultsKey)
@@ -1392,6 +1420,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let url = call.getString("url") else {
             logger.error("setChannelUrl called without url")
             call.reject("setChannelUrl called without url")
+            return
+        }
+        guard allowUrlScheme(url, call: call, method: "setChannelUrl") else {
             return
         }
         self.implementation.channelUrl = url
@@ -4799,6 +4830,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.implementation.sendStats(action: "session_key_required", versionName: latestVersionName)
                         self.endBackGroundTaskWithNotif(
                             msg: "Session key required when public key is present",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
+                    }
+                    // builtinMinimum also covers an already-downloaded bundle reused without a new download.
+                    do {
+                        try self.implementation.requireVersionNotBelowBuiltin(latestVersionName)
+                    } catch {
+                        self.endBackGroundTaskWithNotif(
+                            msg: error.localizedDescription,
                             latestVersionName: latestVersionName,
                             current: current,
                             plannedDirectUpdate: plannedDirectUpdate
