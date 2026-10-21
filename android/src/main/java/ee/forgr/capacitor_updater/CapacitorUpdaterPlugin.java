@@ -202,6 +202,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowManualBundleError = false;
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
+    private boolean lastReloadFailedDueToAppReadyTimeout = false;
 
     String getUpdateUrl() {
         return this.updateUrl;
@@ -1093,6 +1094,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
             cleanupTimedOutSemaphoreWait(phase);
             return false;
         }
+    }
+
+    private boolean semaphoreWaitForReload(final int phase, final long waitTimeMs) {
+        try {
+            semaphoreReady.awaitAdvanceInterruptibly(phase, waitTimeMs, TimeUnit.MILLISECONDS);
+            logger.info("semaphoreReady count " + semaphoreReady.getPhase());
+            return true;
+        } catch (InterruptedException e) {
+            logger.info("semaphoreWait InterruptedException");
+            cleanupTimedOutSemaphoreWait(phase);
+            Thread.currentThread().interrupt(); // Restore interrupted status
+            return false;
+        } catch (TimeoutException e) {
+            logger.error("Semaphore timeout: " + e.getMessage());
+            cleanupTimedOutSemaphoreWait(phase);
+            this.lastReloadFailedDueToAppReadyTimeout = true;
+            return false;
+        }
+    }
+
+    static boolean shouldRestoreStateAfterPendingBundleReloadFailure(final boolean reloadFailedDueToAppReadyTimeout) {
+        // App-ready watchdog and reload() share the same timeout. Restoring here races performReset.
+        return !reloadFailedDueToAppReadyTimeout;
     }
 
     private int semaphoreUp() {
@@ -3225,6 +3249,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
         this.clearPendingNotifyAppReadyWait();
+        this.lastReloadFailedDueToAppReadyTimeout = false;
         final int phase = this.semaphoreUp();
         this.applyCurrentBundleToBridge();
 
@@ -3233,7 +3258,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.notifyListeners("appReloaded", new JSObject(), false);
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWait(phase, waitTimeMs);
+        return this.semaphoreWaitForReload(phase, waitTimeMs);
     }
 
     /**
@@ -3286,8 +3311,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         call.resolve();
                         return;
                     }
-                    this.implementation.restoreResetState(previousState);
-                    this.restoreLiveBundleStateAfterFailedReload();
+                    if (
+                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(this.lastReloadFailedDueToAppReadyTimeout)
+                    ) {
+                        this.implementation.restoreResetState(previousState);
+                        this.restoreLiveBundleStateAfterFailedReload();
+                    }
                     logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
                     call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
                     return;

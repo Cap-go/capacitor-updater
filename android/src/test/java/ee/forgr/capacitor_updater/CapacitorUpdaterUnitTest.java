@@ -826,6 +826,19 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class ReloadAppReadyTimeoutCapacitorUpdaterPlugin extends ReloadFailureCapacitorUpdaterPlugin {
+
+        @Override
+        protected boolean _reload() {
+            try {
+                setPrivateField(this, "lastReloadFailedDueToAppReadyTimeout", true);
+            } catch (final Exception e) {
+                throw new RuntimeException(e);
+            }
+            return false;
+        }
+    }
+
     private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
@@ -2637,6 +2650,36 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("set", updater.lastStatsAction);
         assertEquals("2.0.0", updater.lastStatsVersionName);
         assertEquals("1.0.0", updater.lastStatsOldVersionName);
+    }
+
+    @Test
+    public void testShouldRestoreStateAfterPendingBundleReloadFailureSkipsRestoreOnAppReadyTimeout() {
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false));
+    }
+
+    @Test
+    public void testReloadSkipsRestoreWhenPendingApplyReloadTimesOutWaitingForAppReady() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
     }
 
     @Test
