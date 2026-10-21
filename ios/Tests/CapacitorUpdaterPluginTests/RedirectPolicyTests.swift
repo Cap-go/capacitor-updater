@@ -40,6 +40,7 @@ final class RedirectPolicyTests: XCTestCase {
 
     func testAllowsHttpsToHttpRedirectWhenEnabled() {
         let delegate = RedirectPolicyDelegate()
+        delegate.httpsOnly = false
         delegate.allowHttpsToHttpRedirect = true
         let (request, _) = redirect(delegate, from: "https://api.capgo.app/updates", to: "http://example.com/bundle.zip")
         XCTAssertEqual(request?.url?.absoluteString, "http://example.com/bundle.zip")
@@ -48,6 +49,7 @@ final class RedirectPolicyTests: XCTestCase {
     func testAllowsSafeRedirects() {
         let delegate = RedirectPolicyDelegate()
         XCTAssertNotNil(redirect(delegate, from: "https://a.com/x", to: "https://b.com/y").0)
+        delegate.httpsOnly = false
         XCTAssertNotNil(redirect(delegate, from: "http://a.com/x", to: "https://b.com/y").0)
         XCTAssertNotNil(redirect(delegate, from: "http://a.com/x", to: "http://b.com/y").0)
     }

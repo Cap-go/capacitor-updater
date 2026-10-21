@@ -123,9 +123,10 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
-    // HTTP + decode share one pool. Cap per host by CPU: 8 on 4 cores, 16 on 8 cores.
+    // 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
+    // capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
-    private static final int MANIFEST_MAX_CONCURRENT_FILES = manifestMaxConcurrentFiles();
+    static final int MANIFEST_MAX_CONCURRENT_FILES = 32;
     private static final int SHARED_MAX_REQUESTS = 64;
     private static final String UPDATE_FILE = "update.dat";
 
@@ -137,6 +138,9 @@ public class DownloadService extends Worker {
     private static volatile int httpTimeoutMs = 20_000;
     // Off by default: a redirect must never downgrade updater traffic from HTTPS to plain HTTP.
     private static volatile boolean allowHttpsToHttpRedirect = false;
+    // Config httpsOnly (default true): every request and every redirect hop through sharedClient must be https.
+    // When true it overrides allowHttpsToHttpRedirect: an https -> http redirect is rejected even if that flag is set.
+    static volatile boolean httpsOnly = true;
     private static String currentAppId = "unknown";
     private static String currentPluginVersion = "unknown";
     private static String currentVersionOs = "unknown";
@@ -157,15 +161,26 @@ public class DownloadService extends Worker {
             .writeTimeout(httpTimeoutMs, TimeUnit.MILLISECONDS)
             .addInterceptor((chain) -> {
                 Request originalRequest = chain.request();
+                // Reject plain http before OkHttp opens a connection (the network interceptor below covers redirect hops).
+                assertHttpsAllowed(originalRequest);
                 String userAgent = buildUserAgent(currentAppId, currentPluginVersion, currentVersionOs);
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
             .addNetworkInterceptor((chain) -> {
+                // Network interceptor: runs once per hop, so a redirect to http is rejected here too.
+                assertHttpsAllowed(chain.request());
                 Response response = chain.proceed(chain.request());
-                if (!allowHttpsToHttpRedirect && isHttpsToHttpRedirect(response)) {
-                    response.close();
-                    throw new BlockedRedirectException();
+                if (isHttpsToHttpRedirect(response)) {
+                    if (httpsOnly) {
+                        String location = response.header("Location");
+                        response.close();
+                        throw new IOException(CapgoUpdater.httpsOnlyMessage(location));
+                    }
+                    if (!allowHttpsToHttpRedirect) {
+                        response.close();
+                        throw new BlockedRedirectException();
+                    }
                 }
                 return response;
             })
@@ -174,6 +189,21 @@ public class DownloadService extends Worker {
 
     static void setAllowHttpsToHttpRedirect(boolean allow) {
         allowHttpsToHttpRedirect = allow;
+    }
+
+    static void setHttpsOnly(boolean enabled) {
+        httpsOnly = enabled;
+    }
+
+    /** httpsOnly gate shared by both interceptors; throws for any non-https request when enabled. */
+    static void assertHttpsAllowed(Request request) throws IOException {
+        if (httpsOnly && !request.isHttps()) {
+            String message = CapgoUpdater.httpsOnlyMessage(request.url().toString());
+            if (logger != null) {
+                logger.error(message);
+            }
+            throw new IOException(message);
+        }
     }
 
     static boolean isHttpsToHttpRedirect(Response response) {
@@ -215,12 +245,7 @@ public class DownloadService extends Worker {
     }
 
     static int manifestMaxConcurrentFiles() {
-        return manifestMaxConcurrentFiles(Runtime.getRuntime().availableProcessors());
-    }
-
-    static int manifestMaxConcurrentFiles(int processors) {
-        int cores = Math.max(1, processors);
-        return Math.min(64, Math.max(8, cores * 2));
+        return MANIFEST_MAX_CONCURRENT_FILES;
     }
 
     static String buildUserAgent(String appId, String pluginVersion, String versionOs) {
@@ -262,6 +287,8 @@ public class DownloadService extends Worker {
         }
     }
 
+    private int lastProgressPercent = -1;
+
     public DownloadService(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
         // Use shared client - no need to create new instances
@@ -271,7 +298,9 @@ public class DownloadService extends Worker {
         cleanupOldTempFiles(new File(getApplicationContext().getCacheDir(), "capgo_downloads"));
     }
 
-    private void setProgress(int percent) {
+    private synchronized void setProgress(int percent) {
+        if (percent <= lastProgressPercent) return;
+        lastProgressPercent = percent;
         Data progress = new Data.Builder().putInt(PERCENT, percent).build();
         setProgressAsync(progress);
     }
@@ -715,6 +744,7 @@ public class DownloadService extends Worker {
                 }
             }
 
+            CryptoCipher.DecryptionSession decryptionSession = new CryptoCipher.DecryptionSession(publicKey, sessionKey);
             ExecutorService executor = Executors.newFixedThreadPool(Math.min(MANIFEST_MAX_CONCURRENT_FILES, Math.max(1, totalFiles)));
             List<Future<?>> futures = new ArrayList<>();
 
@@ -736,8 +766,7 @@ public class DownloadService extends Worker {
                                 task.targetFile,
                                 task.cacheFile,
                                 task.finalFileHash,
-                                sessionKey,
-                                publicKey,
+                                decryptionSession,
                                 task.isBrotli,
                                 task.fileName
                             );
@@ -1119,12 +1148,33 @@ public class DownloadService extends Worker {
         // Hash is in the cache file name and was verified when written.
         // Re-hashing here would re-read every reused file on low-RAM devices.
         try {
-            copyFile(source, dest);
+            linkOrCopyImmutableFile(source, dest);
             return true;
         } catch (IOException e) {
             // File was deleted between check and copy, or other IO error - caller should download instead
             logger.debug("Cache copy failed (likely OS eviction): " + e.getMessage());
             return false;
+        }
+    }
+
+    // Only updater-owned verified bundle/cache files, which are never rewritten in place.
+    static void linkOrCopyImmutableFile(File source, File dest) throws IOException {
+        File parent = dest.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create cache directory");
+        File temp = File.createTempFile("capgo-link-", ".tmp", parent);
+        try {
+            if (!temp.delete()) throw new IOException("Cannot prepare cache link");
+            try {
+                android.system.Os.link(source.getCanonicalPath(), temp.getAbsolutePath());
+            } catch (Exception unsupported) {
+                try (FileInputStream input = new FileInputStream(source)) {
+                    writeFileAtomic(dest, input, null);
+                }
+                return;
+            }
+            CryptoCipher.replaceFile(temp, dest);
+        } finally {
+            if (temp.exists() && !temp.delete()) temp.deleteOnExit();
         }
     }
 
@@ -1169,8 +1219,46 @@ public class DownloadService extends Worker {
         File targetFile,
         File cacheFile,
         String expectedHash,
-        String sessionKey,
-        String publicKey,
+        CryptoCipher.DecryptionSession decryptionSession,
+        boolean isBrotli,
+        String relativeName
+    ) throws Exception {
+        for (int attempt = 1; ; attempt++) {
+            if (isStopped()) throw new IOException("download_stopped");
+            try {
+                downloadAndVerifyOnce(downloadUrl, targetFile, cacheFile, expectedHash, decryptionSession, isBrotli, relativeName);
+                return;
+            } catch (Exception error) {
+                if (attempt >= 3 || !isRetryableManifestError(error)) throw error;
+                for (int tick = 0; tick < 5 * attempt; tick++) {
+                    if (isStopped()) throw new IOException("download_stopped");
+                    Thread.sleep(50);
+                }
+            }
+        }
+    }
+
+    static boolean isRetryableManifestError(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof BlockedRedirectException || cause instanceof javax.net.ssl.SSLException) return false;
+            if (
+                cause instanceof DownloadRetryException ||
+                cause instanceof java.net.SocketException ||
+                cause instanceof java.net.SocketTimeoutException ||
+                cause instanceof java.net.UnknownHostException ||
+                cause instanceof java.net.ProtocolException ||
+                cause instanceof java.io.EOFException
+            ) return true;
+        }
+        return false;
+    }
+
+    private void downloadAndVerifyOnce(
+        String downloadUrl,
+        File targetFile,
+        File cacheFile,
+        String expectedHash,
+        CryptoCipher.DecryptionSession decryptionSession,
         boolean isBrotli,
         String relativeName
     ) throws Exception {
@@ -1181,9 +1269,11 @@ public class DownloadService extends Worker {
         if (!cacheFolder.exists() && !cacheFolder.mkdirs()) {
             throw new IOException("Failed to create cache directory: " + cacheFolder.getAbsolutePath());
         }
-        File partial = manifestPartialFile(cacheFolder, expectedHash, relativeName);
+        File partial = manifestPartialFile(cacheFolder, getInputData().getString(ID), expectedHash, relativeName);
         File workFile = null;
         boolean keepPartial = partial.isFile();
+        // True while the bytes on disk come from more than one response; a bad result then earns a clean GET.
+        boolean resumed = false;
         try {
             long existing = partial.isFile() ? partial.length() : 0;
             Request.Builder builder = new Request.Builder().url(downloadUrl);
@@ -1195,16 +1285,32 @@ public class DownloadService extends Worker {
                 if (code == 416 && existing > 0) {
                     logger.debug("Range not satisfiable, using existing partial " + partial.getName());
                     keepPartial = true;
+                    resumed = true;
                 } else if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
-                    sendStatsAsync("download_manifest_file_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
+                    // Reported once after the last attempt by the task catch in handleManifestDownload.
+                    if (code != 429 && isRetryableHttpStatus(code)) {
+                        throw new DownloadRetryException("Unexpected response code: " + code);
+                    }
                     throw new IOException("Unexpected response code: " + code);
                 } else {
                     ResponseBody responseBody = response.body();
                     if (responseBody == null) {
                         throw new IOException("Response body is null");
                     }
+                    int writeCode = code;
+                    if (code == HttpURLConnection.HTTP_PARTIAL && existing > 0) {
+                        long rangeStart = parseContentRangeStart(response.header("Content-Range"));
+                        if (rangeStart == 0) {
+                            writeCode = HttpURLConnection.HTTP_OK;
+                        } else if (rangeStart == existing) {
+                            resumed = true;
+                        } else {
+                            keepPartial = false;
+                            throw new DownloadRetryException("invalid_content_range");
+                        }
+                    }
                     try {
-                        writeHttpBody(partial, responseBody.byteStream(), code, existing);
+                        writeHttpBody(partial, responseBody.byteStream(), writeCode, existing);
                         keepPartial = true;
                     } catch (Exception e) {
                         keepPartial = true;
@@ -1213,17 +1319,18 @@ public class DownloadService extends Worker {
                 }
             }
 
-            boolean needDecrypt = publicKey != null && !publicKey.isEmpty() && CryptoCipher.isValidSessionKey(sessionKey);
+            boolean needDecrypt = decryptionSession.isEncrypted();
             File source = partial;
             if (needDecrypt) {
                 workFile = new File(cacheFolder, "work_" + UUID.randomUUID() + "_" + targetFile.getName() + ".tmp");
                 copyFile(partial, workFile);
                 try {
                     logger.debug("Decrypting file " + targetFile.getName());
-                    CryptoCipher.decryptFile(workFile, publicKey, sessionKey);
+                    decryptionSession.decryptFile(workFile);
                     source = workFile;
                 } catch (Exception e) {
                     keepPartial = false;
+                    if (resumed) throw new DownloadRetryException("resumed_partial_failed_decryption", e);
                     throw e;
                 }
             }
@@ -1238,10 +1345,17 @@ public class DownloadService extends Worker {
                 }
             } catch (IOException e) {
                 String msg = e.getMessage();
-                if (msg != null && msg.contains("Checksum verification failed")) {
+                boolean checksumFailed = msg != null && msg.contains("Checksum verification failed");
+                boolean brotliFailed = isBrotli && msg != null && msg.toLowerCase(java.util.Locale.US).contains("brotli");
+                // Only bad bytes earn a clean GET; local storage errors stay permanent.
+                if (resumed && (checksumFailed || brotliFailed)) {
+                    keepPartial = false;
+                    throw new DownloadRetryException("resumed_partial_failed_verification", e);
+                }
+                if (checksumFailed) {
                     sendStatsAsync("download_manifest_checksum_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
-                } else if (isBrotli && msg != null && msg.toLowerCase(java.util.Locale.US).contains("brotli")) {
+                } else if (brotliFailed) {
                     sendStatsAsync("download_manifest_brotli_fail", getInputData().getString(VERSION) + ":" + finalTargetFile.getName());
                     keepPartial = false;
                 }
@@ -1252,8 +1366,10 @@ public class DownloadService extends Worker {
             CryptoCipher.logChecksumInfo("Expected checksum", expectedHash);
 
             if (cacheFile != null) {
-                try (FileInputStream fis = new FileInputStream(finalTargetFile)) {
-                    writeFileAtomic(cacheFile, fis, null);
+                try {
+                    linkOrCopyImmutableFile(finalTargetFile, cacheFile);
+                } catch (IOException error) {
+                    logger.debug("Delta cache write failed: " + error.getMessage());
                 }
             }
             keepPartial = false;
@@ -1273,13 +1389,15 @@ public class DownloadService extends Worker {
         return CryptoCipher.shortPathKey(fileName);
     }
 
-    static File manifestPartialFile(File cacheDir, String hash, String fileName) {
+    // Scoped to one download so concurrent downloads of the same file never write one partial.
+    static File manifestPartialFile(File cacheDir, String downloadId, String hash, String fileName) {
+        String owner = CryptoCipher.shortPathKey(downloadId == null ? "" : downloadId);
         String token = safePartialToken(fileName);
         if (CapgoUpdater.isSafeCacheHash(hash) && hash.length() == 64) {
-            return new File(cacheDir, "partial_" + hash + "_" + token + ".tmp");
+            return new File(cacheDir, "partial_" + owner + "_" + hash + "_" + token + ".tmp");
         }
         String digest = CryptoCipher.shortPathKey((hash == null ? "" : hash) + "\0" + (fileName == null ? "" : fileName));
-        return new File(cacheDir, "partial_" + digest + "_" + token + ".tmp");
+        return new File(cacheDir, "partial_" + owner + "_" + digest + "_" + token + ".tmp");
     }
 
     static boolean shouldAppendHttpBody(int statusCode, long existingBytes) {
