@@ -2838,6 +2838,7 @@ public class CapacitorUpdaterUnitTest {
             final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
             final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
             updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.simulatePendingActiveBundleOnSet = true;
 
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
