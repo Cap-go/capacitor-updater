@@ -548,6 +548,7 @@ public class CapacitorUpdaterUnitTest {
         private boolean finalizeResetTransitionInternal = true;
         private boolean canSetResult = true;
         private boolean setResult = true;
+        private boolean simulatePendingActiveBundleOnSet = false;
         private int canSetCalls = 0;
         private int setCalls = 0;
         private boolean stagePendingReloadResult = true;
@@ -645,6 +646,15 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public Boolean set(final BundleInfo bundle) {
             this.setCalls++;
+            if (this.setResult && this.simulatePendingActiveBundleOnSet && bundle != null && !bundle.isBuiltin()) {
+                this.currentBundle = new BundleInfo(
+                    bundle.getId(),
+                    bundle.getVersionName(),
+                    BundleStatus.PENDING,
+                    bundle.getDownloaded(),
+                    bundle.getChecksum()
+                );
+            }
             return this.setResult;
         }
 
@@ -2853,22 +2863,8 @@ public class CapacitorUpdaterUnitTest {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
             final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
-            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater() {
-                @Override
-                public Boolean set(final BundleInfo bundle) {
-                    final Boolean result = super.set(bundle);
-                    if (Boolean.TRUE.equals(result) && bundle != null && !bundle.isBuiltin()) {
-                        this.currentBundle = new BundleInfo(
-                            bundle.getId(),
-                            bundle.getVersionName(),
-                            BundleStatus.PENDING,
-                            bundle.getDownloaded(),
-                            bundle.getChecksum()
-                        );
-                    }
-                    return result;
-                }
-            };
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
             updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
 
             plugin.implementation = updater;
