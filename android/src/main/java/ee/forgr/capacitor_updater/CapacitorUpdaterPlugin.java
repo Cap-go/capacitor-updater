@@ -4620,6 +4620,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.implementation.restoreResetStateRollbackTargets(previousState);
                         return false;
                     }
+                } else if (!internal) {
+                    this.implementation.restoreResetState(previousState);
+                    return false;
                 }
                 logger.warn("Fallback reload failed during internal reset, resetting to native instead");
             } else {
