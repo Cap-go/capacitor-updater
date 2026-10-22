@@ -2394,6 +2394,13 @@ public class CapgoUpdater {
         this.editor.commit();
     }
 
+    void preserveFallbackForWatchdog(final ResetState state) {
+        final String fallbackBundleId =
+            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
+        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
+        this.editor.commit();
+    }
+
     void prepareResetStateForTransition() {
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
