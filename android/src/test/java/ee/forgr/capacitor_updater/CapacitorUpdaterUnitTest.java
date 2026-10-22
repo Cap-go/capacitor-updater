@@ -665,6 +665,9 @@ public class CapacitorUpdaterUnitTest {
         @Override
         boolean stagePendingReload(final BundleInfo bundle) {
             this.stagePendingReloadCalls++;
+            if (this.stagePendingReloadResult && bundle != null) {
+                this.currentBundle = bundle;
+            }
             return this.stagePendingReloadResult;
         }
 
