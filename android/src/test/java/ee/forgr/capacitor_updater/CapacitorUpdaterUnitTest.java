@@ -2940,10 +2940,46 @@ public class CapacitorUpdaterUnitTest {
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
+            assertTrue(CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get());
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
             assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
             verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+        }
+    }
+
+    @Test
+    public void testReloadClearsStaleAppReadyTimeoutFlagBeforeSuccessfulTrackedWait() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper()).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            final PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+
+            final Method semaphoreUp = CapacitorUpdaterPlugin.class.getDeclaredMethod("semaphoreUp");
+            semaphoreUp.setAccessible(true);
+            final int phase = (int) semaphoreUp.invoke(plugin);
+
+            plugin.notifyAppReady(call);
+
+            final Method semaphoreWait = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+                "semaphoreWait",
+                int.class,
+                Number.class,
+                boolean.class
+            );
+            semaphoreWait.setAccessible(true);
+            assertTrue((boolean) semaphoreWait.invoke(plugin, phase, 1000, true));
+            assertFalse(CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get());
+            verify(call).resolve(any(JSObject.class));
         }
     }
 
