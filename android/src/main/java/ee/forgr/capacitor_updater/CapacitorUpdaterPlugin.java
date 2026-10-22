@@ -4584,6 +4584,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ) {
                 this.implementation.restoreResetState(previousState);
                 this.restoreLiveBundleStateAfterFailedReload();
+            } else if (CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                // prepareResetStateForTransition cleared fallback; checkRevert needs the previous target.
+                this.implementation.restoreResetStateRollbackTargets(previousState);
             }
             return false;
         }

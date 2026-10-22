@@ -2378,6 +2378,13 @@ public class CapgoUpdater {
             state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
 
         this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
+        this.restoreResetStateRollbackTargets(state);
+    }
+
+    void restoreResetStateRollbackTargets(final ResetState state) {
+        final String fallbackBundleId =
+            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
+
         this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
         if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
             this.editor.remove(NEXT_VERSION);

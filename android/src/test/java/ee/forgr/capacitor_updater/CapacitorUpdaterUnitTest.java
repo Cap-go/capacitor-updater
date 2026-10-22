@@ -560,8 +560,10 @@ public class CapacitorUpdaterUnitTest {
         private int setPreviewFallbackBundleCalls = 0;
         private String lastPreviewFallbackBundle;
         private int restoreResetStateCalls = 0;
+        private int restoreResetStateRollbackTargetsCalls = 0;
         private final ResetState capturedState = new ResetState("/stored/current", "fallback-id", "next-id");
         private ResetState restoredState;
+        private ResetState restoredRollbackTargets;
 
         ResetTrackingCapgoUpdater() {
             super(null);
@@ -624,6 +626,12 @@ public class CapacitorUpdaterUnitTest {
         void restoreResetState(final ResetState state) {
             this.restoreResetStateCalls++;
             this.restoredState = state;
+        }
+
+        @Override
+        void restoreResetStateRollbackTargets(final ResetState state) {
+            this.restoreResetStateRollbackTargetsCalls++;
+            this.restoredRollbackTargets = state;
         }
 
         @Override
@@ -2812,6 +2820,8 @@ public class CapacitorUpdaterUnitTest {
 
             assertFalse(result);
             assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(1, updater.restoreResetStateRollbackTargetsCalls);
+            assertSame(updater.capturedState, updater.restoredRollbackTargets);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
         }
     }
