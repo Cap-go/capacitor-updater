@@ -2583,7 +2583,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
-                this.implementation.getCurrentBundle()
+                latest
             )
         ) {
             this.implementation.restoreResetState(previousState);
@@ -4598,21 +4598,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (this.implementation.canSet(fallback)) {
                 this.implementation.prepareResetStateForTransition();
                 logger.info("Resetting to: " + fallback);
-                if (this.implementation.set(fallback) && this._reload()) {
-                    this.implementation.finalizeResetTransition(previousBundleName, internal);
-                    this.notifyBundleSet(fallback);
-                    return true;
-                }
-                if (
-                    !internal &&
-                    CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
-                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
-                        this.implementation.getCurrentBundle()
-                    )
-                ) {
-                    this.implementation.restoreResetState(previousState);
-                    this.restoreLiveBundleStateAfterFailedReload();
-                    return false;
+                if (this.implementation.set(fallback)) {
+                    this.implementation.preserveFallbackForWatchdog(previousState);
+                    if (this._reload()) {
+                        this.implementation.finalizeResetTransition(previousBundleName, internal);
+                        this.notifyBundleSet(fallback);
+                        return true;
+                    }
+                    if (
+                        !internal &&
+                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                            this.implementation.getCurrentBundle()
+                        )
+                    ) {
+                        this.implementation.restoreResetState(previousState);
+                        this.restoreLiveBundleStateAfterFailedReload();
+                        return false;
+                    }
+                    if (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                        this.implementation.restoreResetStateRollbackTargets(previousState);
+                        return false;
+                    }
                 }
                 logger.warn("Fallback reload failed during internal reset, resetting to native instead");
             } else {

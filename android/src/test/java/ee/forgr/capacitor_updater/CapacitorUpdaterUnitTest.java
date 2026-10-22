@@ -2869,8 +2869,10 @@ public class CapacitorUpdaterUnitTest {
 
             assertFalse(result);
             assertEquals(0, updater.restoreResetStateCalls);
-            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(1, updater.preserveFallbackForWatchdogCalls);
+            assertEquals(1, updater.restoreResetStateRollbackTargetsCalls);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            assertFalse(updater.resetCalled);
         }
     }
 
