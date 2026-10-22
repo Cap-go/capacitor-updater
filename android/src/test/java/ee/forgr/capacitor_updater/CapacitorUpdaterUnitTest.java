@@ -2951,7 +2951,7 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testReloadClearsStaleAppReadyTimeoutFlagBeforeSuccessfulTrackedWait() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
-            looperMock.when(Looper::getMainLooper()).thenReturn(mock(Looper.class));
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
             final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
             final CapgoUpdater updater = mock(CapgoUpdater.class);
