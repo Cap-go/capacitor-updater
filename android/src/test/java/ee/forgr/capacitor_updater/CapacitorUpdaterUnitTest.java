@@ -2717,11 +2717,54 @@ public class CapacitorUpdaterUnitTest {
         );
         final BundleInfo successfulNext = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
         final BundleInfo activeAfterSet = new BundleInfo("success-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext));
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet));
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending)
+        );
+        assertTrue(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending, false, pending)
+        );
+        assertTrue(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin, false, builtin)
+        );
+        assertTrue(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                true,
+                successfulNext,
+                false,
+                successfulNext
+            )
+        );
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                true,
+                activeAfterSet,
+                false,
+                pending
+            )
+        );
+        final BundleInfo fallbackAfterWatchdog = new BundleInfo(
+            "fallback-id",
+            "1.5.0",
+            BundleStatus.SUCCESS,
+            new Date(),
+            "fallback"
+        );
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                true,
+                fallbackAfterWatchdog,
+                false,
+                pending
+            )
+        );
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                true,
+                successfulNext,
+                true,
+                successfulNext
+            )
+        );
     }
 
     @Test
@@ -2763,6 +2806,8 @@ public class CapacitorUpdaterUnitTest {
                 reloadThreadShouldRestore.set(
                     CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                         CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                        pending,
+                        false,
                         pending
                     )
                 );
@@ -2824,6 +2869,34 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.restoreResetStateCalls);
             assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testResetToPendingBuiltinPendingDoesNotPreserveFallbackForWatchdog() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertTrue(result);
+            assertEquals(0, updater.preserveFallbackForWatchdogCalls);
         }
     }
 
