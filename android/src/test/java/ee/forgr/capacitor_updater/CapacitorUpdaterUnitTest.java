@@ -864,7 +864,7 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class ReloadAppReadyTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+    private static class ReloadAppReadyTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
         int restoreLiveBundleStateAfterFailedReloadCalls = 0;
 
@@ -2799,13 +2799,10 @@ public class CapacitorUpdaterUnitTest {
             final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin() {
                 @Override
                 public Thread startNewThread(final Runnable function) {
-                    final Thread thread = new Thread(
-                        () -> {
-                            function.run();
-                            userReloadFinished.countDown();
-                        },
-                        "user-reload-thread"
-                    );
+                    final Thread thread = new Thread(() -> {
+                        function.run();
+                        userReloadFinished.countDown();
+                    }, "user-reload-thread");
                     thread.start();
                     return thread;
                 }
@@ -2833,16 +2830,13 @@ public class CapacitorUpdaterUnitTest {
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
 
-            final Thread internalWatchdogThread = new Thread(
-                () -> {
-                    try {
-                        invokePrivateInternalResetMethod(plugin, true, false, true);
-                    } catch (final Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                },
-                "internal-watchdog-thread"
-            );
+            final Thread internalWatchdogThread = new Thread(() -> {
+                try {
+                    invokePrivateInternalResetMethod(plugin, true, false, true);
+                } catch (final Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }, "internal-watchdog-thread");
             internalWatchdogThread.start();
             assertTrue(internalResetInReload.await(5, TimeUnit.SECONDS));
 
