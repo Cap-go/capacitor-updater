@@ -2800,8 +2800,11 @@ public class CapacitorUpdaterUnitTest {
                 @Override
                 public Thread startNewThread(final Runnable function) {
                     final Thread thread = new Thread(() -> {
-                        function.run();
-                        userReloadFinished.countDown();
+                        try {
+                            function.run();
+                        } finally {
+                            userReloadFinished.countDown();
+                        }
                     }, "user-reload-thread");
                     thread.start();
                     return thread;
