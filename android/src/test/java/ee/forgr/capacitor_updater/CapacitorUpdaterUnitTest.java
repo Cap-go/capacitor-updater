@@ -2785,6 +2785,72 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testUserReloadRestoresStateWhileConcurrentInternalWatchdogResetWaitsForAppReady() throws Exception {
+        final CountDownLatch internalResetInReload = new CountDownLatch(1);
+        final CountDownLatch userReloadMayFinish = new CountDownLatch(1);
+
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin() {
+                @Override
+                public Thread startNewThread(final Runnable function) {
+                    final Thread thread = new Thread(function, "user-reload-thread");
+                    thread.start();
+                    return thread;
+                }
+
+                @Override
+                protected boolean _reload() {
+                    if ("internal-watchdog-thread".equals(Thread.currentThread().getName())) {
+                        internalResetInReload.countDown();
+                        try {
+                            assertTrue(userReloadMayFinish.await(5, TimeUnit.SECONDS));
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
+                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+                        return false;
+                    }
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+                    return false;
+                }
+            };
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+            updater.nextBundle = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final Thread internalWatchdogThread = new Thread(
+                () -> {
+                    try {
+                        invokePrivateInternalResetMethod(plugin, true, false, true);
+                    } catch (final Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                "internal-watchdog-thread"
+            );
+            internalWatchdogThread.start();
+            assertTrue(internalResetInReload.await(5, TimeUnit.SECONDS));
+
+            final PluginCall call = mock(PluginCall.class);
+            plugin.reload(call);
+            userReloadMayFinish.countDown();
+            internalWatchdogThread.join(5000);
+
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
     public void testReloadSkipsRestoreWhenPendingApplyReloadTimesOutWaitingForAppReady() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

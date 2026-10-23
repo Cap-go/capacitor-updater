@@ -203,7 +203,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean allowPreview = false;
     Boolean allowSetDefaultChannel = true;
     static final ThreadLocal<Boolean> reloadFailedDueToAppReadyTimeout = ThreadLocal.withInitial(() -> false);
-    private volatile boolean watchdogRollbackInProgress = false;
 
     String getUpdateUrl() {
         return this.updateUrl;
@@ -2593,7 +2592,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 latest,
-                this.watchdogRollbackInProgress,
+                false,
                 latest
             )
         ) {
@@ -3337,7 +3336,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
-                            this.watchdogRollbackInProgress,
+                            false,
                             next
                         )
                     ) {
@@ -4561,16 +4560,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean performReset(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
-        if (internal) {
-            this.watchdogRollbackInProgress = true;
-        }
-        try {
-            return this.performResetBody(toLastSuccessful, usePendingBundle, internal);
-        } finally {
-            if (internal) {
-                this.watchdogRollbackInProgress = false;
-            }
-        }
+        return this.performResetBody(toLastSuccessful, usePendingBundle, internal);
     }
 
     private boolean performResetBody(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
@@ -4609,7 +4599,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                     CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                     this.implementation.getCurrentBundle(),
-                    this.watchdogRollbackInProgress,
+                    internal,
                     pending
                 )
             ) {
@@ -4638,7 +4628,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
-                            this.watchdogRollbackInProgress,
+                            internal,
                             fallback
                         )
                     ) {
@@ -4671,7 +4661,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 this.implementation.getCurrentBundle(),
-                this.watchdogRollbackInProgress,
+                internal,
                 null
             )
         ) {
