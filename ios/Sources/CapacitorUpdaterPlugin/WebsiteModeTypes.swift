@@ -82,7 +82,7 @@ extension WebsiteModeUpdater {
     struct WebsiteDownloadResult: Equatable {
         let fileCount: Int
         /// Sorted SHA-256 hex digests of the fetched bytes of each unique saved file (including `index.html`).
-        /// Text files are rewritten after hashing, so these do not match their on-disk bytes.
+        /// Digests are taken before any rewrite; on-disk bytes differ only when a successful UTF-8 rewrite changes the file.
         let fileDigests: [String]
     }
 }

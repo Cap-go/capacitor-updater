@@ -5367,12 +5367,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final byte[] entryHtml = updater.fetchEntryHtml(websiteUrl, downloadBase);
             tempDir = this.implementation.createWebsiteTempDir();
-            // Version needs crawl digests, so reserve the install id before crawling and
-            // forward progress under that id (version in events is filled in at install).
+            // Version needs crawl digests. Reserve the install id and emit progress under it
+            // with an empty version so listeners do not show the active bundle's version.
             final String reservedId = this.implementation.randomString();
             final BundleInfo downloading = new BundleInfo(
                 reservedId,
-                current.getVersionName(),
+                "",
                 BundleStatus.DOWNLOADING,
                 new Date(System.currentTimeMillis()),
                 ""
