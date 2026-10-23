@@ -2788,6 +2788,7 @@ public class CapacitorUpdaterUnitTest {
     public void testUserReloadRestoresStateWhileConcurrentInternalWatchdogResetWaitsForAppReady() throws Exception {
         final CountDownLatch internalResetInReload = new CountDownLatch(1);
         final CountDownLatch userReloadMayFinish = new CountDownLatch(1);
+        final CountDownLatch userReloadFinished = new CountDownLatch(1);
 
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -2798,7 +2799,13 @@ public class CapacitorUpdaterUnitTest {
             final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin() {
                 @Override
                 public Thread startNewThread(final Runnable function) {
-                    final Thread thread = new Thread(function, "user-reload-thread");
+                    final Thread thread = new Thread(
+                        () -> {
+                            function.run();
+                            userReloadFinished.countDown();
+                        },
+                        "user-reload-thread"
+                    );
                     thread.start();
                     return thread;
                 }
@@ -2841,6 +2848,7 @@ public class CapacitorUpdaterUnitTest {
 
             final PluginCall call = mock(PluginCall.class);
             plugin.reload(call);
+            assertTrue(userReloadFinished.await(5, TimeUnit.SECONDS));
             userReloadMayFinish.countDown();
             internalWatchdogThread.join(5000);
 
