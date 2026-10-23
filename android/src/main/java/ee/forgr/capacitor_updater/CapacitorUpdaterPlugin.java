@@ -5367,12 +5367,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
         try {
             final byte[] entryHtml = updater.fetchEntryHtml(websiteUrl, downloadBase);
             tempDir = this.implementation.createWebsiteTempDir();
+            // Version needs crawl digests, so reserve the install id before crawling and
+            // forward progress under that id (version in events is filled in at install).
+            final String reservedId = this.implementation.randomString();
+            final BundleInfo downloading = new BundleInfo(
+                reservedId,
+                current.getVersionName(),
+                BundleStatus.DOWNLOADING,
+                new Date(System.currentTimeMillis()),
+                ""
+            );
+            this.notifyWebsiteDownload(downloading, 0);
             final WebsiteModeUpdater.WebsiteDownloadResult crawl = updater.downloadWebsite(
                 entryHtml,
                 websiteUrl,
                 downloadBase,
                 tempDir,
-                null
+                (percent) -> this.notifyWebsiteDownload(downloading, percent)
             );
             version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml, crawl.fileDigests);
             if (version.equals(current.getVersionName())) {
@@ -5403,18 +5414,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             BundleInfo target = this.implementation.getBundleInfoByName(version);
             if (target == null || !this.implementation.canSet(target) || target.isErrorStatus()) {
                 logger.info("New website version found: " + version + ". Installing from website crawl.");
-                // Same download events as a classic bundle: the id is reserved now so listeners
-                // see the bundle that is eventually installed.
-                final BundleInfo downloading = new BundleInfo(
-                    this.implementation.randomString(),
-                    version,
-                    BundleStatus.DOWNLOADING,
-                    new Date(System.currentTimeMillis()),
-                    ""
-                );
-                this.notifyWebsiteDownload(downloading, 0);
-                this.notifyWebsiteDownload(downloading, 100);
-                target = this.implementation.installWebsiteBundle(tempDir, version, downloading.getId());
+                target = this.implementation.installWebsiteBundle(tempDir, version, reservedId);
                 this.notifyWebsiteDownload(target, 100);
                 tempDir = null;
                 logger.info("Website version " + version + " downloaded (" + crawl.fileCount + " files)");

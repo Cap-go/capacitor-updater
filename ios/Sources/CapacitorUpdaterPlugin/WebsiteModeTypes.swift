@@ -81,7 +81,8 @@ extension WebsiteModeUpdater {
     /// Result of crawling a website into a bundle directory.
     struct WebsiteDownloadResult: Equatable {
         let fileCount: Int
-        /// Sorted SHA-256 hex digests of every file saved by the crawl (including `index.html`).
+        /// Sorted SHA-256 hex digests of the fetched bytes of each unique saved file (including `index.html`).
+        /// Text files are rewritten after hashing, so these do not match their on-disk bytes.
         let fileDigests: [String]
     }
 }

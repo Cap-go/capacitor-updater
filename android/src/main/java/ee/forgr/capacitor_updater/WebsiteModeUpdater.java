@@ -586,7 +586,11 @@ final class WebsiteModeUpdater {
     static final class WebsiteDownloadResult {
 
         final int fileCount;
-        /** Sorted SHA-256 hex digests of every file saved by the crawl (including {@code index.html}). */
+        /**
+         * Sorted SHA-256 hex digests of the fetched bytes of each unique saved file (including
+         * {@code index.html}). Text files are rewritten after hashing, so these do not match their
+         * on-disk bytes.
+         */
         final List<String> fileDigests;
 
         WebsiteDownloadResult(final int fileCount, final List<String> fileDigests) {
@@ -596,8 +600,8 @@ final class WebsiteModeUpdater {
     }
 
     /**
-     * Deterministic bundle version: {@code web-}<first 12 hex of sha256(normalized URL + "\n" + entry HTML +
-     * "\n" + sorted file digests…)>. The URL is part of the hash so moving the app to another domain also
+     * Deterministic bundle version: {@code web-}&lt;first 12 hex of sha256(normalized URL + "\n" + entry HTML +
+     * "\n" + sorted file digests…)&gt;. The URL is part of the hash so moving the app to another domain also
      * produces a new version.
      */
     static String versionForWebsite(final URL websiteUrl, final byte[] html, final List<String> fileDigests) {

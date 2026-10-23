@@ -218,12 +218,25 @@ public class WebsiteModeUpdaterTest {
         final String version = WebsiteModeUpdater.versionForWebsite(site, html, Collections.singletonList(entryDigest));
         // sha256("https://app.example.com/\n<html></html>\n" + sha256(entry)), identical on iOS.
         assertEquals("web-a3d99df0cc7d", version);
-        assertEquals(version, WebsiteModeUpdater.versionForWebsite(new URL("HTTPS://App.Example.com:443"), html.clone(), Collections.singletonList(entryDigest)));
+        assertEquals(
+            version,
+            WebsiteModeUpdater.versionForWebsite(
+                new URL("HTTPS://App.Example.com:443"),
+                html.clone(),
+                Collections.singletonList(entryDigest)
+            )
+        );
         final byte[] spaced = "<html> </html>".getBytes(StandardCharsets.UTF_8);
         assertFalse(
-            version.equals(WebsiteModeUpdater.versionForWebsite(site, spaced, Collections.singletonList(WebsiteModeUpdater.sha256Hex(spaced))))
+            version.equals(
+                WebsiteModeUpdater.versionForWebsite(site, spaced, Collections.singletonList(WebsiteModeUpdater.sha256Hex(spaced)))
+            )
         );
-        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(new URL("https://new.example.com/"), html, Collections.singletonList(entryDigest))));
+        assertFalse(
+            version.equals(
+                WebsiteModeUpdater.versionForWebsite(new URL("https://new.example.com/"), html, Collections.singletonList(entryDigest))
+            )
+        );
         assertEquals(
             "https://app.example.com:8443/index.html?a=1",
             WebsiteModeUpdater.normalizedWebsiteUrl(new URL("https://APP.example.com:8443/index.html?a=1#x"))
@@ -237,7 +250,9 @@ public class WebsiteModeUpdaterTest {
         final String entryDigest = WebsiteModeUpdater.sha256Hex(html);
         final List<String> withA = Arrays.asList(entryDigest, WebsiteModeUpdater.sha256Hex("PNG-A".getBytes(StandardCharsets.UTF_8)));
         final List<String> withB = Arrays.asList(entryDigest, WebsiteModeUpdater.sha256Hex("PNG-B".getBytes(StandardCharsets.UTF_8)));
-        assertFalse(WebsiteModeUpdater.versionForWebsite(site, html, withA).equals(WebsiteModeUpdater.versionForWebsite(site, html, withB)));
+        assertFalse(
+            WebsiteModeUpdater.versionForWebsite(site, html, withA).equals(WebsiteModeUpdater.versionForWebsite(site, html, withB))
+        );
     }
 
     // ---- Asset discovery ----
@@ -672,7 +687,12 @@ public class WebsiteModeUpdaterTest {
         html.append("</html>");
         final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
         final IOException error = assertThrows(IOException.class, () ->
-            updater.downloadWebsite(html.toString().getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, tmp.newFolder("manyassets"))
+            updater.downloadWebsite(
+                html.toString().getBytes(StandardCharsets.UTF_8),
+                new URL("https://app.example.com/"),
+                null,
+                tmp.newFolder("manyassets")
+            )
         );
         assertTrue(error.getMessage().contains("more than 1000 assets"));
         assertEquals(1000, WebsiteModeUpdater.MAX_ASSET_COUNT);

@@ -4998,12 +4998,25 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let entryHtml = try updater.fetchEntryHtml(websiteUrl: websiteUrl, downloadBase: downloadBase)
             let temp = try self.implementation.createWebsiteTempDir()
             tempDir = temp
+            // Version needs crawl digests, so reserve the install id before crawling and
+            // forward progress under that id (version in events is filled in at install).
+            let reservedId = self.implementation.newWebsiteBundleId()
+            let downloading = BundleInfo(
+                id: reservedId,
+                version: current.getVersionName(),
+                status: BundleStatus.DOWNLOADING,
+                downloaded: Date(),
+                checksum: ""
+            )
+            self.notifyWebsiteDownload(downloading, percent: 0)
             let crawl = try updater.downloadWebsite(
                 entryHtml: entryHtml,
                 websiteUrl: websiteUrl,
                 downloadBase: downloadBase,
                 targetDir: temp,
-                progress: nil
+                progress: { [weak self] percent in
+                    self?.notifyWebsiteDownload(downloading, percent: percent)
+                }
             )
             version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml: entryHtml, fileDigests: crawl.fileDigests)
             if version == current.getVersionName() {
@@ -5052,18 +5065,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             var target = self.implementation.getBundleInfoByVersionName(version: version)
             if target == nil || target!.isErrorStatus() || !self.implementation.canSet(bundle: target!) {
                 logger.info("New website version found: \(version). Installing from website crawl.")
-                // Same download events as a classic bundle: the id is reserved now so listeners
-                // see the bundle that is eventually installed.
-                let downloading = BundleInfo(
-                    id: self.implementation.newWebsiteBundleId(),
-                    version: version,
-                    status: BundleStatus.DOWNLOADING,
-                    downloaded: Date(),
-                    checksum: ""
-                )
-                self.notifyWebsiteDownload(downloading, percent: 0)
-                self.notifyWebsiteDownload(downloading, percent: 100)
-                let installed = try self.implementation.installWebsiteBundle(tempDir: temp, version: version, id: downloading.getId())
+                let installed = try self.implementation.installWebsiteBundle(tempDir: temp, version: version, id: reservedId)
                 target = installed
                 self.notifyWebsiteDownload(installed, percent: 100)
                 tempDir = nil
