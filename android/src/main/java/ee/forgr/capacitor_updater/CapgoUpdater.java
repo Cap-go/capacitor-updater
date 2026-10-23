@@ -1901,6 +1901,61 @@ public class CapgoUpdater {
         }
     }
 
+    /** Temp folder for a website-mode download. Uses the unzip prefix so orphans are cleaned at launch. */
+    File createWebsiteTempDir() throws IOException {
+        if (this.documentsDir == null) {
+            throw new IOException("Documents directory unavailable");
+        }
+        final File temp = new File(this.documentsDir, TEMP_UNZIP_PREFIX + "web_" + this.randomString());
+        if (!temp.mkdirs()) {
+            throw new IOException("Unable to create website temp directory");
+        }
+        return temp;
+    }
+
+    void discardWebsiteTempDir(final File tempDir) {
+        this.safeDelete(tempDir);
+    }
+
+    /**
+     * Atomically promotes a fully downloaded website folder into a regular bundle folder and
+     * registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
+     */
+    BundleInfo installWebsiteBundle(final File tempDir, final String version) throws IOException {
+        return this.installWebsiteBundle(tempDir, version, this.randomString());
+    }
+
+    BundleInfo installWebsiteBundle(final File tempDir, final String version, final String id) throws IOException {
+        this.assertPathInsideDocumentsDir(tempDir);
+        if (!new File(tempDir, "index.html").isFile()) {
+            this.safeDelete(tempDir);
+            throw new IOException("Website download has no index.html");
+        }
+        final BundleInfo existing = this.getBundleInfoByName(version);
+        if (existing != null && (existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting())) {
+            if (!Boolean.TRUE.equals(this.delete(existing.getId(), true))) {
+                this.safeDelete(tempDir);
+                throw new IOException("Failed to delete existing website bundle before retry");
+            }
+        }
+        final File target = this.getBundleDirectory(id);
+        final File parent = target.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            this.safeDelete(tempDir);
+            throw new IOException("Unable to create bundle directory");
+        }
+        if (!tempDir.renameTo(target)) {
+            this.safeDelete(tempDir);
+            throw new IOException("Unable to promote website download into bundle storage");
+        }
+        final BundleInfo info = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), "");
+        if (!this.saveBundleInfo(id, info)) {
+            this.safeDelete(target);
+            throw new IOException("Unable to persist website bundle info");
+        }
+        return info;
+    }
+
     private boolean hasStoredBundleInfo(final String id) {
         return (
             id != null &&
