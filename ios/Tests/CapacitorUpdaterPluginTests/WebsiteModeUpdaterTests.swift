@@ -128,16 +128,35 @@ final class WebsiteModeUpdaterTests: XCTestCase {
     func testVersionIdHashesWebsiteUrlAndEntryHtml() {
         let site = URL(string: "https://app.example.com/")!
         let html = Data("<html></html>".utf8)
-        let version = WebsiteModeUpdater.versionForWebsite(site, entryHtml: html)
-        // sha256("https://app.example.com/\n<html></html>"), identical on Android.
-        XCTAssertEqual(version, "web-1fa8d47e9e84")
-        XCTAssertEqual(version, WebsiteModeUpdater.versionForWebsite(URL(string: "HTTPS://App.Example.com:443")!, entryHtml: html))
-        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForWebsite(site, entryHtml: Data("<html> </html>".utf8)))
-        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForWebsite(URL(string: "https://new.example.com/")!, entryHtml: html))
+        let entryDigest = WebsiteModeUpdater.sha256Hex(html)
+        let version = WebsiteModeUpdater.versionForWebsite(site, entryHtml: html, fileDigests: [entryDigest])
+        // sha256("https://app.example.com/\n<html></html>\n" + sha256(entry)), identical on Android.
+        XCTAssertEqual(version, "web-a3d99df0cc7d")
+        XCTAssertEqual(
+            version,
+            WebsiteModeUpdater.versionForWebsite(URL(string: "HTTPS://App.Example.com:443")!, entryHtml: html, fileDigests: [entryDigest])
+        )
+        let spaced = Data("<html> </html>".utf8)
+        XCTAssertNotEqual(
+            version,
+            WebsiteModeUpdater.versionForWebsite(site, entryHtml: spaced, fileDigests: [WebsiteModeUpdater.sha256Hex(spaced)])
+        )
+        XCTAssertNotEqual(version, WebsiteModeUpdater.versionForWebsite(URL(string: "https://new.example.com/")!, entryHtml: html, fileDigests: [entryDigest]))
         XCTAssertEqual(
             WebsiteModeUpdater.normalizedWebsiteUrl(URL(string: "https://APP.example.com:8443/index.html?a=1#x")!),
             "https://app.example.com:8443/index.html?a=1"
         )
+    }
+
+    func testVersionChangesWhenAssetBytesChange() {
+        let site = URL(string: "https://app.example.com/")!
+        let html = Data("<html><img src=\"/a.png\"></html>".utf8)
+        let entryDigest = WebsiteModeUpdater.sha256Hex(html)
+        let assetA = WebsiteModeUpdater.sha256Hex(Data("PNG-A".utf8))
+        let assetB = WebsiteModeUpdater.sha256Hex(Data("PNG-B".utf8))
+        let base = WebsiteModeUpdater.versionForWebsite(site, entryHtml: html, fileDigests: [entryDigest, assetA].sorted())
+        let changed = WebsiteModeUpdater.versionForWebsite(site, entryHtml: html, fileDigests: [entryDigest, assetB].sorted())
+        XCTAssertNotEqual(base, changed)
     }
 
     // MARK: - Asset discovery
@@ -308,9 +327,9 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         site.put("https://app.example.com/assets/bg.png", "PNG", "image/png")
 
         let dir = tempRoot.appendingPathComponent("site", isDirectory: true)
-        let files = try makeUpdater(site).downloadWebsite(entryHtml: Data(html.utf8), websiteUrl: URL(string: "https://app.example.com/")!, downloadBase: nil, targetDir: dir)
+        let result = try makeUpdater(site).downloadWebsite(entryHtml: Data(html.utf8), websiteUrl: URL(string: "https://app.example.com/")!, downloadBase: nil, targetDir: dir)
 
-        XCTAssertEqual(files, 6)
+        XCTAssertEqual(result.fileCount, 6)
         XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent("index.html"), encoding: .utf8), html)
         for path in ["assets/index.js", "assets/chunk.js", "assets/chunk.css", "assets/bg.png"] {
             XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent(path).path), path)
@@ -435,13 +454,13 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         let html = #"<script src="/assets/index.js"></script><link rel=manifest href="/manifest.webmanifest">"#
             + #"<link rel=icon href="/icon.png"><img src="/big.png"><img src="/ok.png">"#
         let dir = tempRoot.appendingPathComponent("optional", isDirectory: true)
-        let files = try updater.downloadWebsite(
+        let result = try updater.downloadWebsite(
             entryHtml: Data(html.utf8),
             websiteUrl: URL(string: "https://app.example.com/")!,
             downloadBase: nil,
             targetDir: dir
         )
-        XCTAssertEqual(files, 3)
+        XCTAssertEqual(result.fileCount, 3)
         XCTAssertTrue(exists(dir, "ok.png"))
         XCTAssertFalse(exists(dir, "assets/pdf.worker.js"))
         XCTAssertFalse(exists(dir, "manifest.webmanifest"))
@@ -515,6 +534,33 @@ final class WebsiteModeUpdaterTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("budget"), error.localizedDescription)
         }
         XCTAssertEqual(WebsiteModeUpdater.maxTotalBytes, 300 * 1024 * 1024)
+    }
+
+    func testDownloadFailsWhenSingleAssetExceedsMaxBytes() {
+        let site = FakeSite()
+        site.put("https://app.example.com/big.png", String(repeating: "x", count: 20), "image/png")
+        let updater = makeUpdater(site)
+        updater.maxAssetBytes = 10
+        let html = #"<img src="/big.png">"#
+        XCTAssertThrowsError(try download(site, html, "bigasset", updater: updater)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Asset too large"), error.localizedDescription)
+        }
+        XCTAssertEqual(WebsiteModeUpdater.maxAssetBytes, 100 * 1024 * 1024)
+    }
+
+    func testDownloadFailsWhenMoreThan1000AssetsReferenced() {
+        var html = "<html>"
+        let site = FakeSite()
+        for index in 0..<1001 {
+            let path = "/a\(index).png"
+            html += #"<img src="\#(path)">"#
+            site.put("https://app.example.com\(path)", "p", "image/png")
+        }
+        html += "</html>"
+        XCTAssertThrowsError(try download(site, html, "manyassets")) { error in
+            XCTAssertTrue(error.localizedDescription.contains("more than 1000 assets"), error.localizedDescription)
+        }
+        XCTAssertEqual(WebsiteModeUpdater.maxAssetCount, 1000)
     }
 
     func testDownloadFailsOnCaseInsensitivePathCollisionWithDifferentBytes() {
@@ -704,11 +750,11 @@ final class WebsiteModeUpdaterTests: XCTestCase {
         site.put("https://app.example.com/missing.html", html, "text/html")
 
         let dir = tempRoot.appendingPathComponent("pages", isDirectory: true)
-        let files = try makeUpdater(site).downloadWebsite(
+        let result = try makeUpdater(site).downloadWebsite(
             entryHtml: Data(html.utf8), websiteUrl: URL(string: "https://app.example.com/")!, downloadBase: nil, targetDir: dir
         )
 
-        XCTAssertEqual(files, 3)
+        XCTAssertEqual(result.fileCount, 3)
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("about.html").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("img/team.png").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("missing.html").path))

@@ -322,6 +322,8 @@ final class WebsiteModeUpdater {
     private Log log = (message) -> {};
     /** Crawl byte budget; only lowered by tests. */
     long maxTotalBytes = MAX_TOTAL_BYTES;
+    /** Per-asset size cap; only lowered by tests. */
+    long maxAssetBytes = MAX_ASSET_BYTES;
 
     WebsiteModeUpdater(final String websiteLiveUrl, final Fetcher fetcher, final Store store) {
         this.websiteLiveUrl = websiteLiveUrl == null || websiteLiveUrl.trim().isEmpty() ? DEFAULT_WEBSITE_LIVE_URL : websiteLiveUrl.trim();
@@ -580,17 +582,48 @@ final class WebsiteModeUpdater {
 
     // ---- Website download ----
 
+    /** Result of crawling a website into a bundle directory. */
+    static final class WebsiteDownloadResult {
+
+        final int fileCount;
+        /** Sorted SHA-256 hex digests of every file saved by the crawl (including {@code index.html}). */
+        final List<String> fileDigests;
+
+        WebsiteDownloadResult(final int fileCount, final List<String> fileDigests) {
+            this.fileCount = fileCount;
+            this.fileDigests = fileDigests;
+        }
+    }
+
     /**
-     * Deterministic bundle version: web-&lt;first 12 hex chars of sha256(normalized website URL + "\n" +
-     * entry HTML bytes)&gt;. The URL is part of the hash so moving the app to another domain also
+     * Deterministic bundle version: {@code web-}<first 12 hex of sha256(normalized URL + "\n" + entry HTML +
+     * "\n" + sorted file digests…)>. The URL is part of the hash so moving the app to another domain also
      * produces a new version.
      */
-    static String versionForWebsite(final URL websiteUrl, final byte[] html) {
+    static String versionForWebsite(final URL websiteUrl, final byte[] html, final List<String> fileDigests) {
+        final List<String> sorted = new ArrayList<>(fileDigests == null ? Collections.emptyList() : fileDigests);
+        Collections.sort(sorted);
         final byte[] prefix = (normalizedWebsiteUrl(websiteUrl) + "\n").getBytes(StandardCharsets.UTF_8);
-        final byte[] input = new byte[prefix.length + html.length];
+        int extra = 0;
+        for (String digest : sorted) {
+            extra += 1 + digest.getBytes(StandardCharsets.UTF_8).length;
+        }
+        final byte[] input = new byte[prefix.length + html.length + extra];
         System.arraycopy(prefix, 0, input, 0, prefix.length);
         System.arraycopy(html, 0, input, prefix.length, html.length);
+        int offset = prefix.length + html.length;
+        for (String digest : sorted) {
+            input[offset++] = '\n';
+            final byte[] bytes = digest.getBytes(StandardCharsets.UTF_8);
+            System.arraycopy(bytes, 0, input, offset, bytes.length);
+            offset += bytes.length;
+        }
         return VERSION_PREFIX + sha256Hex(input).substring(0, 12);
+    }
+
+    /** URL and entry HTML only (no crawled assets). Used to assert URL normalization in unit tests. */
+    static String versionForWebsite(final URL websiteUrl, final byte[] html) {
+        return versionForWebsite(websiteUrl, html, Collections.emptyList());
     }
 
     /** Lowercase scheme and host, default port dropped, empty path as "/", query kept, fragment dropped. */
@@ -611,6 +644,9 @@ final class WebsiteModeUpdater {
         }
         if (response.data.length == 0) {
             throw new IOException("Website entry is empty");
+        }
+        if (response.data.length > this.maxAssetBytes) {
+            throw new IOException("Asset too large");
         }
         return response.data;
     }
@@ -649,9 +685,10 @@ final class WebsiteModeUpdater {
      * Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
      * missing; every other asset is skipped on any failure.
      *
-     * @return number of files written (entry included)
+     * @return crawl result (file count and sorted per-file digests)
      */
-    int downloadWebsite(final byte[] entryHtml, final URL websiteUrl, final URL downloadBase, final File targetDir) throws IOException {
+    WebsiteDownloadResult downloadWebsite(final byte[] entryHtml, final URL websiteUrl, final URL downloadBase, final File targetDir)
+        throws IOException {
         return downloadWebsite(entryHtml, websiteUrl, downloadBase, targetDir, null);
     }
 
@@ -664,7 +701,7 @@ final class WebsiteModeUpdater {
         return Math.min(95, 5 + (int) ((processed / (double) Math.max(processed + remaining, 1)) * 90));
     }
 
-    int downloadWebsite(
+    WebsiteDownloadResult downloadWebsite(
         final byte[] entryHtml,
         final URL websiteUrl,
         final URL downloadBase,
@@ -727,6 +764,9 @@ final class WebsiteModeUpdater {
                 failure = e.getMessage();
             }
             if (response != null) {
+                if (response.data.length > this.maxAssetBytes) {
+                    throw new IOException("Asset too large");
+                }
                 totalBytes += response.data.length;
                 if (totalBytes > this.maxTotalBytes) {
                     throw new IOException("Website is larger than the " + this.maxTotalBytes + " bytes download budget");
@@ -844,7 +884,12 @@ final class WebsiteModeUpdater {
                 save(rewritten.getBytes(StandardCharsets.UTF_8), file, targetDir);
             }
         }
-        return writtenPaths.size();
+        final List<String> digests = new ArrayList<>();
+        for (SavedFile file : saved.values()) {
+            digests.add(file.sha256);
+        }
+        Collections.sort(digests);
+        return new WebsiteDownloadResult(writtenPaths.size(), digests);
     }
 
     /**

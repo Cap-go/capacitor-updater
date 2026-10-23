@@ -13,6 +13,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -212,16 +214,30 @@ public class WebsiteModeUpdaterTest {
     public void versionIdHashesWebsiteUrlAndEntryHtml() throws Exception {
         final URL site = new URL("https://app.example.com/");
         final byte[] html = "<html></html>".getBytes(StandardCharsets.UTF_8);
-        final String version = WebsiteModeUpdater.versionForWebsite(site, html);
-        // sha256("https://app.example.com/\n<html></html>"), identical on iOS.
-        assertEquals("web-1fa8d47e9e84", version);
-        assertEquals(version, WebsiteModeUpdater.versionForWebsite(new URL("HTTPS://App.Example.com:443"), html.clone()));
-        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(site, "<html> </html>".getBytes(StandardCharsets.UTF_8))));
-        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(new URL("https://new.example.com/"), html)));
+        final String entryDigest = WebsiteModeUpdater.sha256Hex(html);
+        final String version = WebsiteModeUpdater.versionForWebsite(site, html, Collections.singletonList(entryDigest));
+        // sha256("https://app.example.com/\n<html></html>\n" + sha256(entry)), identical on iOS.
+        assertEquals("web-a3d99df0cc7d", version);
+        assertEquals(version, WebsiteModeUpdater.versionForWebsite(new URL("HTTPS://App.Example.com:443"), html.clone(), Collections.singletonList(entryDigest)));
+        final byte[] spaced = "<html> </html>".getBytes(StandardCharsets.UTF_8);
+        assertFalse(
+            version.equals(WebsiteModeUpdater.versionForWebsite(site, spaced, Collections.singletonList(WebsiteModeUpdater.sha256Hex(spaced))))
+        );
+        assertFalse(version.equals(WebsiteModeUpdater.versionForWebsite(new URL("https://new.example.com/"), html, Collections.singletonList(entryDigest))));
         assertEquals(
             "https://app.example.com:8443/index.html?a=1",
             WebsiteModeUpdater.normalizedWebsiteUrl(new URL("https://APP.example.com:8443/index.html?a=1#x"))
         );
+    }
+
+    @Test
+    public void versionChangesWhenAssetBytesChange() throws Exception {
+        final URL site = new URL("https://app.example.com/");
+        final byte[] html = "<html><img src=\"/a.png\"></html>".getBytes(StandardCharsets.UTF_8);
+        final String entryDigest = WebsiteModeUpdater.sha256Hex(html);
+        final List<String> withA = Arrays.asList(entryDigest, WebsiteModeUpdater.sha256Hex("PNG-A".getBytes(StandardCharsets.UTF_8)));
+        final List<String> withB = Arrays.asList(entryDigest, WebsiteModeUpdater.sha256Hex("PNG-B".getBytes(StandardCharsets.UTF_8)));
+        assertFalse(WebsiteModeUpdater.versionForWebsite(site, html, withA).equals(WebsiteModeUpdater.versionForWebsite(site, html, withB)));
     }
 
     // ---- Asset discovery ----
@@ -413,9 +429,14 @@ public class WebsiteModeUpdaterTest {
 
         final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
         final File dir = tmp.newFolder("site");
-        final int files = updater.downloadWebsite(html.getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, dir);
+        final WebsiteModeUpdater.WebsiteDownloadResult result = updater.downloadWebsite(
+            html.getBytes(StandardCharsets.UTF_8),
+            new URL("https://app.example.com/"),
+            null,
+            dir
+        );
 
-        assertEquals(6, files);
+        assertEquals(6, result.fileCount);
         assertEquals(html, new String(Files.readAllBytes(new File(dir, "index.html").toPath()), StandardCharsets.UTF_8));
         assertTrue(new File(dir, "assets/index.js").isFile());
         assertTrue(new File(dir, "assets/chunk.js").isFile());
@@ -525,8 +546,13 @@ public class WebsiteModeUpdaterTest {
             "<script src=\"/assets/index.js\"></script><link rel=manifest href=\"/manifest.webmanifest\">" +
             "<link rel=icon href=\"/icon.png\"><img src=\"/big.png\"><img src=\"/ok.png\">";
         final File dir = tmp.newFolder("optional");
-        final int files = updater.downloadWebsite(html.getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, dir);
-        assertEquals(3, files);
+        final WebsiteModeUpdater.WebsiteDownloadResult result = updater.downloadWebsite(
+            html.getBytes(StandardCharsets.UTF_8),
+            new URL("https://app.example.com/"),
+            null,
+            dir
+        );
+        assertEquals(3, result.fileCount);
         assertTrue(new File(dir, "ok.png").isFile());
         assertFalse(new File(dir, "assets/pdf.worker.js").exists());
         assertFalse(new File(dir, "manifest.webmanifest").exists());
@@ -618,6 +644,38 @@ public class WebsiteModeUpdaterTest {
         );
         assertTrue(error.getMessage().contains("budget"));
         assertEquals(300L * 1024L * 1024L, WebsiteModeUpdater.MAX_TOTAL_BYTES);
+    }
+
+    @Test
+    public void downloadFailsWhenSingleAssetExceedsMaxBytes() throws Exception {
+        final FakeSite site = new FakeSite();
+        site.put("https://app.example.com/big.png", "xxxxxxxxxxxxxxxxxxxx", "image/png");
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        updater.maxAssetBytes = 10;
+        final byte[] html = "<img src=\"/big.png\">".getBytes(StandardCharsets.UTF_8);
+        final IOException error = assertThrows(IOException.class, () ->
+            updater.downloadWebsite(html, new URL("https://app.example.com/"), null, tmp.newFolder("bigasset"))
+        );
+        assertTrue(error.getMessage().contains("Asset too large"));
+        assertEquals(100L * 1024L * 1024L, WebsiteModeUpdater.MAX_ASSET_BYTES);
+    }
+
+    @Test
+    public void downloadFailsWhenMoreThan1000AssetsReferenced() throws Exception {
+        final FakeSite site = new FakeSite();
+        final StringBuilder html = new StringBuilder("<html>");
+        for (int index = 0; index < 1001; index++) {
+            final String path = "/a" + index + ".png";
+            html.append("<img src=\"").append(path).append("\">");
+            site.put("https://app.example.com" + path, "p", "image/png");
+        }
+        html.append("</html>");
+        final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
+        final IOException error = assertThrows(IOException.class, () ->
+            updater.downloadWebsite(html.toString().getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, tmp.newFolder("manyassets"))
+        );
+        assertTrue(error.getMessage().contains("more than 1000 assets"));
+        assertEquals(1000, WebsiteModeUpdater.MAX_ASSET_COUNT);
     }
 
     @Test
@@ -828,9 +886,14 @@ public class WebsiteModeUpdaterTest {
 
         final WebsiteModeUpdater updater = new WebsiteModeUpdater(null, site, new MemoryStore());
         final File dir = tmp.newFolder("pages");
-        final int files = updater.downloadWebsite(html.getBytes(StandardCharsets.UTF_8), new URL("https://app.example.com/"), null, dir);
+        final WebsiteModeUpdater.WebsiteDownloadResult crawl = updater.downloadWebsite(
+            html.getBytes(StandardCharsets.UTF_8),
+            new URL("https://app.example.com/"),
+            null,
+            dir
+        );
 
-        assertEquals(3, files);
+        assertEquals(3, crawl.fileCount);
         assertTrue(new File(dir, "about.html").isFile());
         assertTrue(new File(dir, "img/team.png").isFile());
         assertFalse(new File(dir, "missing.html").exists());

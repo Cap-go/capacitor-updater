@@ -77,6 +77,13 @@ extension WebsiteModeUpdater {
         /// unless at least one of them downloads; each single candidate may still 404.
         var requiredCandidates: [URL] = []
     }
+
+    /// Result of crawling a website into a bundle directory.
+    struct WebsiteDownloadResult: Equatable {
+        let fileCount: Int
+        /// Sorted SHA-256 hex digests of every file saved by the crawl (including `index.html`).
+        let fileDigests: [String]
+    }
 }
 
 /// Session delegate for website-mode fetches:
@@ -91,6 +98,7 @@ final class WebsiteFetchDelegate: NSObject, URLSessionDataDelegate {
         var data = Data()
         var response: URLResponse?
         var tooLarge = false
+        var crossOriginRejected = false
         let completion: Completion
     }
 
@@ -128,6 +136,9 @@ final class WebsiteFetchDelegate: NSObject, URLSessionDataDelegate {
         guard let original = task.originalRequest?.url,
               let target = request.url,
               WebsiteModeUpdater.isSameOrigin(original, target) else {
+            update(task) { state in
+                state.crossOriginRejected = true
+            }
             completionHandler(nil)
             task.cancel()
             return
@@ -177,6 +188,10 @@ final class WebsiteFetchDelegate: NSObject, URLSessionDataDelegate {
         }
         if state.tooLarge {
             state.completion(nil, state.response, WebsiteModeUpdater.WebsiteModeError.failed("Asset too large"))
+            return
+        }
+        if state.crossOriginRejected {
+            state.completion(nil, state.response, WebsiteModeUpdater.WebsiteModeError.failed("Cross-origin redirect"))
             return
         }
         state.completion(error == nil ? state.data : nil, state.response ?? task.response, error)

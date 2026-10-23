@@ -43,6 +43,8 @@ final class WebsiteModeUpdater {
     var log: (String) -> Void = { _ in }
     /// Crawl byte budget; only lowered by tests.
     var totalBytesBudget = WebsiteModeUpdater.maxTotalBytes
+    /// Per-asset size cap; only lowered by tests.
+    var maxAssetBytes = WebsiteModeUpdater.maxAssetBytes
 
     init(websiteLiveUrl: String?, fetcher: @escaping Fetcher, defaults: UserDefaults = .standard) {
         let trimmed = websiteLiveUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -247,12 +249,21 @@ final class WebsiteModeUpdater {
     // MARK: - Website download
 
     /// Deterministic bundle version:
-    /// web-<first 12 hex chars of sha256(normalized website URL + "\n" + entry HTML bytes)>.
+    /// `web-<first 12 hex of sha256(normalized URL + "\n" + entry HTML + "\n" + sorted file digests…)`.
     /// The URL is part of the hash so moving the app to another domain also produces a new version.
-    static func versionForWebsite(_ websiteUrl: URL, entryHtml: Data) -> String {
+    static func versionForWebsite(_ websiteUrl: URL, entryHtml: Data, fileDigests: [String]) -> String {
         var input = Data((normalizedWebsiteUrl(websiteUrl) + "\n").utf8)
         input.append(entryHtml)
+        for digest in fileDigests.sorted() {
+            input.append(Data("\n".utf8))
+            input.append(Data(digest.utf8))
+        }
         return versionPrefix + String(sha256Hex(input).prefix(12))
+    }
+
+    /// URL and entry HTML only (no crawled assets). Used to assert URL normalization in unit tests.
+    static func versionForWebsite(_ websiteUrl: URL, entryHtml: Data) -> String {
+        versionForWebsite(websiteUrl, entryHtml: entryHtml, fileDigests: [])
     }
 
     /// Lowercase scheme and host, default port dropped, empty path as "/", query kept, fragment dropped.
@@ -274,6 +285,9 @@ final class WebsiteModeUpdater {
         }
         guard !response.data.isEmpty else {
             throw WebsiteModeError.failed("Website entry is empty")
+        }
+        if response.data.count > maxAssetBytes {
+            throw WebsiteModeError.failed("Asset too large")
         }
         return response.data
     }
@@ -320,16 +334,14 @@ final class WebsiteModeUpdater {
     /// Paths stay identical to the website so the bundle behaves like the webDir build.
     /// Required assets (scripts and stylesheets of the entry HTML, JS code chunks) fail the update when
     /// missing; every other asset is skipped on any failure.
-    /// - Returns: number of files written (entry included)
     /// - Parameter progress: called with a never decreasing percent (5...95) while files are fetched
-    @discardableResult
     func downloadWebsite(
         entryHtml: Data,
         websiteUrl: URL,
         downloadBase: URL?,
         targetDir: URL,
         progress: ((Int) -> Void)? = nil
-    ) throws -> Int {
+    ) throws -> WebsiteDownloadResult {
         try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
         try Self.save(entryHtml, relativePath: "index.html", root: targetDir)
         var crawl = Crawl()
@@ -395,7 +407,8 @@ final class WebsiteModeUpdater {
             }
         }
         try rewriteSavedTextFiles(crawl, websiteUrl: websiteUrl, root: targetDir)
-        return crawl.writtenPaths.count
+        let digests = crawl.saved.values.map(\.sha256).sorted()
+        return WebsiteDownloadResult(fileCount: crawl.writtenPaths.count, fileDigests: digests)
     }
 
     /// Fetches one asset. Returns nil when an optional asset failed (logged and skipped).
@@ -408,6 +421,9 @@ final class WebsiteModeUpdater {
             failure = error.localizedDescription
         }
         if let response {
+            if response.data.count > maxAssetBytes {
+                throw WebsiteModeError.failed("Asset too large")
+            }
             crawl.totalBytes += response.data.count
             if crawl.totalBytes > totalBytesBudget {
                 throw WebsiteModeError.failed("Website is larger than the \(totalBytesBudget) bytes download budget")

@@ -147,7 +147,7 @@ declare module '@capacitor/cli' {
        * keep loading from the network). Each file is capped at 100 MB, the whole website download at 300 MB, and a
        * website that references more than 1,000 assets fails the update.
        *
-       * The bundle version is `web-<first 12 hex of sha256(normalized website URL + "\n" + entry HTML bytes)>`. The normalized URL
+       * The bundle version is `web-<first 12 hex of sha256(normalized website URL + "\n" + entry HTML bytes + "\n" + sorted SHA-256 hex digests of every file saved by the crawl, including index.html)>`. The normalized URL
        * lowercases scheme and host, drops the default port, uses `/` for an empty path, keeps the query and drops the fragment.
        * A new version is applied immediately
        * (like `directUpdate: 'always'`). The website does not need to call `notifyAppReady()`: with

@@ -5366,14 +5366,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         File tempDir = null;
         try {
             final byte[] entryHtml = updater.fetchEntryHtml(websiteUrl, downloadBase);
-            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml);
+            tempDir = this.implementation.createWebsiteTempDir();
+            final WebsiteModeUpdater.WebsiteDownloadResult crawl = updater.downloadWebsite(
+                entryHtml,
+                websiteUrl,
+                downloadBase,
+                tempDir,
+                null
+            );
+            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml, crawl.fileDigests);
             if (version.equals(current.getVersionName())) {
                 logger.info("Website is up to date: " + version);
+                this.implementation.discardWebsiteTempDir(tempDir);
+                tempDir = null;
                 this.endBackGroundTaskWithNotif("No need to update", version, current, false, true);
                 return;
             }
             if (updater.isFailedVersion(version)) {
                 logger.info("Website version previously failed, skipping: " + version);
+                this.implementation.discardWebsiteTempDir(tempDir);
+                tempDir = null;
                 this.endBackGroundTaskWithNotif("Website version previously failed", version, current, false, true);
                 return;
             }
@@ -5382,14 +5394,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo active = this.implementation.getCurrentBundle();
             if (version.equals(active.getVersionName())) {
                 logger.info("Website is up to date: " + version);
+                this.implementation.discardWebsiteTempDir(tempDir);
+                tempDir = null;
                 this.endBackGroundTaskWithNotif("No need to update", version, active, false, true);
                 return;
             }
 
             BundleInfo target = this.implementation.getBundleInfoByName(version);
             if (target == null || !this.implementation.canSet(target) || target.isErrorStatus()) {
-                logger.info("New website version found: " + version + ". Downloading from website.");
-                tempDir = this.implementation.createWebsiteTempDir();
+                logger.info("New website version found: " + version + ". Installing from website crawl.");
                 // Same download events as a classic bundle: the id is reserved now so listeners
                 // see the bundle that is eventually installed.
                 final BundleInfo downloading = new BundleInfo(
@@ -5400,15 +5413,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     ""
                 );
                 this.notifyWebsiteDownload(downloading, 0);
-                final int files = updater.downloadWebsite(entryHtml, websiteUrl, downloadBase, tempDir, (percent) ->
-                    this.notifyWebsiteDownload(downloading, percent)
-                );
+                this.notifyWebsiteDownload(downloading, 100);
                 target = this.implementation.installWebsiteBundle(tempDir, version, downloading.getId());
                 this.notifyWebsiteDownload(target, 100);
                 tempDir = null;
-                logger.info("Website version " + version + " downloaded (" + files + " files)");
+                logger.info("Website version " + version + " downloaded (" + crawl.fileCount + " files)");
             } else {
                 logger.info("Website version already downloaded: " + version);
+                this.implementation.discardWebsiteTempDir(tempDir);
+                tempDir = null;
             }
             final JSObject downloaded = new JSObject();
             downloaded.put("bundle", InternalUtils.mapToJSObject(target.toJSONMap()));

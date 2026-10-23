@@ -4996,9 +4996,20 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         var tempDir: URL?
         do {
             let entryHtml = try updater.fetchEntryHtml(websiteUrl: websiteUrl, downloadBase: downloadBase)
-            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml: entryHtml)
+            let temp = try self.implementation.createWebsiteTempDir()
+            tempDir = temp
+            let crawl = try updater.downloadWebsite(
+                entryHtml: entryHtml,
+                websiteUrl: websiteUrl,
+                downloadBase: downloadBase,
+                targetDir: temp,
+                progress: nil
+            )
+            version = WebsiteModeUpdater.versionForWebsite(websiteUrl, entryHtml: entryHtml, fileDigests: crawl.fileDigests)
             if version == current.getVersionName() {
                 logger.info("Website is up to date: \(version)")
+                self.implementation.discardWebsiteTempDir(temp)
+                tempDir = nil
                 self.endBackGroundTaskWithNotif(
                     msg: "No need to update",
                     latestVersionName: version,
@@ -5010,6 +5021,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if updater.isFailedVersion(version) {
                 logger.info("Website version previously failed, skipping: \(version)")
+                self.implementation.discardWebsiteTempDir(temp)
+                tempDir = nil
                 self.endBackGroundTaskWithNotif(
                     msg: "Website version previously failed",
                     latestVersionName: version,
@@ -5024,6 +5037,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let active = self.implementation.getCurrentBundle()
             if version == active.getVersionName() {
                 logger.info("Website is up to date: \(version)")
+                self.implementation.discardWebsiteTempDir(temp)
+                tempDir = nil
                 self.endBackGroundTaskWithNotif(
                     msg: "No need to update",
                     latestVersionName: version,
@@ -5036,9 +5051,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             var target = self.implementation.getBundleInfoByVersionName(version: version)
             if target == nil || target!.isErrorStatus() || !self.implementation.canSet(bundle: target!) {
-                logger.info("New website version found: \(version). Downloading from website.")
-                let temp = try self.implementation.createWebsiteTempDir()
-                tempDir = temp
+                logger.info("New website version found: \(version). Installing from website crawl.")
                 // Same download events as a classic bundle: the id is reserved now so listeners
                 // see the bundle that is eventually installed.
                 let downloading = BundleInfo(
@@ -5049,21 +5062,16 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     checksum: ""
                 )
                 self.notifyWebsiteDownload(downloading, percent: 0)
-                let files = try updater.downloadWebsite(
-                    entryHtml: entryHtml,
-                    websiteUrl: websiteUrl,
-                    downloadBase: downloadBase,
-                    targetDir: temp
-                ) { [weak self] percent in
-                    self?.notifyWebsiteDownload(downloading, percent: percent)
-                }
+                self.notifyWebsiteDownload(downloading, percent: 100)
                 let installed = try self.implementation.installWebsiteBundle(tempDir: temp, version: version, id: downloading.getId())
                 target = installed
                 self.notifyWebsiteDownload(installed, percent: 100)
                 tempDir = nil
-                logger.info("Website version \(version) downloaded (\(files) files)")
+                logger.info("Website version \(version) downloaded (\(crawl.fileCount) files)")
             } else {
                 logger.info("Website version already downloaded: \(version)")
+                self.implementation.discardWebsiteTempDir(temp)
+                tempDir = nil
             }
             guard let bundle = target else {
                 throw WebsiteModeUpdater.WebsiteModeError.failed("Website bundle missing after download")

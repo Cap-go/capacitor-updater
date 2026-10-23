@@ -83,5 +83,6 @@ final class WebsiteFetchDelegateTests: XCTestCase {
         let (data, error) = fetch(URL(string: "https://app.example.com/a.js")!, maxBytes: 4096)
         XCTAssertNotEqual(data, Data("evil".utf8))
         XCTAssertNotNil(error)
+        XCTAssertEqual((error as? WebsiteModeUpdater.WebsiteModeError)?.errorDescription, "Cross-origin redirect")
     }
 }
