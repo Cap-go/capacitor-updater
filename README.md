@@ -299,27 +299,25 @@ TIP: If you prefer a secure and automated way to update your app, you can use [c
 
 ### Store Guideline Compliance
 
-Android Google Play and iOS App Store have corresponding guidelines that have rules you should be aware of before integrating the Capacitor-updater solution within your application.
+Live updates of JavaScript, HTML, and CSS are allowed on Google Play and the App Store. This plugin replaces the web bundle that already runs in the WebView. It does not download or install native executable code.
 
-#### Google play
+#### Google Play
 
-Third paragraph of [Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/9888379?hl=en) topic describe that updating source code by any method besides Google Play's update mechanism is restricted. But this restriction does not apply to updating JavaScript bundles.
-> This restriction does not apply to code that runs in a virtual machine and has limited access to Android APIs (such as JavaScript in a web view or browser).
+[Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/13315670) forbids an app from updating itself outside Google Play or from downloading executable code (dex, JAR, `.so`). The same policy exempts the web layer:
 
-That fully allow Capacitor-updater as it updates just JS bundles and can't update native code part.
+> This restriction does not apply to code that runs in a virtual machine or an interpreter where either provides indirect access to Android APIs (such as JavaScript in a webview or browser).
+
+JavaScript loaded at runtime must still respect the rest of the Play policies. Capacitor-updater only ships that JavaScript bundle. It cannot change native code, permissions, or the store binary.
 
 #### App Store
 
-Paragraph **3.3.2**, since back in 2015's [Apple Developer Program License Agreement](https://developer.apple.com/programs/ios/information/) fully allowed performing over-the-air updates of JavaScript and assets.
+Section **3.3.1(B) Executable Code** of the [Apple Developer Program License Agreement](https://developer.apple.com/support/terms/apple-developer-program-license-agreement/) allows interpreted code:
 
-And in its latest version (20170605) [downloadable here](https://developer.apple.com/terms/) this ruling is even broader:
+> Except as set forth in the next paragraph, an Application may not download or install executable code. Interpreted code may be downloaded to an Application but only so long as such code: (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application (b) does not bypass signing, sandbox, or other security features of the OS; and (c) for Applications distributed on the App Store, does not create a store or storefront for other Applications.
 
-> Interpreted code may be downloaded to an Application, but only so long as such code:
-- (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application as submitted to the App Store
-- (b) does not create a store or storefront for other code or applications
-- (c) does not bypass signing, sandbox, or other security features of the OS.
+A bundle that keeps the app's reviewed purpose, stays in the sandbox, and does not open a store for other apps is inside that rule.
 
-Capacitor-updater allows you to respect these rules in full compliance, so long as the update you push does not significantly deviate your product from its original App Store approved intent.
+A reviewer can still misread the binary or the launch UI and reject the build. On iOS that usually arrives as [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). It is rare. Reply in the store console and explain that the plugin downloads interpreted JavaScript, HTML, and CSS for the existing WebView, which the rules above permit, and that it does not download native executable code. Following the recommendations in this README is what keeps that from happening: ship a plugin build new enough that the old `autoSplashscreen` selector code is gone, and do not tell the user the app is downloading an update.
 
 To further remain in compliance with Apple's guidelines, we suggest that App Store-distributed apps don't enable the `Force update` scenario, since in the [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) it is written that:
 
