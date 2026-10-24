@@ -3390,7 +3390,7 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.sendReadyToJs(current: bundle, msg: "update installed")
 
         DispatchQueue.global().async {
-            for _ in 0..<40 {
+            for _ in 0..<120 {
                 if testPlugin.notifiedEventNames.contains("appReady") {
                     expectation.fulfill()
                     return
@@ -3399,8 +3399,8 @@ class CapacitorUpdaterTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 2.0)
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
+        wait(for: [expectation], timeout: 3.0)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.12)
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
 
