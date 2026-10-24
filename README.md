@@ -317,7 +317,7 @@ Section **3.3.1(B) Executable Code** of the [Apple Developer Program License Agr
 
 A bundle that keeps the app's reviewed purpose, stays in the sandbox, and does not open a store for other apps is inside that rule.
 
-A reviewer can still misread the binary or the launch UI and reject the build. On iOS that usually arrives as [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). It is rare. Reply in the store console and explain that the plugin downloads interpreted JavaScript, HTML, and CSS for the existing WebView, which the rules above permit, and that it does not download native executable code. Following the recommendations in this README is what keeps that from happening: ship a plugin build new enough that the old `autoSplashscreen` selector code is gone, and do not tell the user the app is downloading an update.
+A reviewer can still misread the binary or the launch UI and reject the build. On iOS that usually arrives as [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). It is rare. Reply in the store console and explain that the plugin downloads interpreted JavaScript, HTML, and CSS for the existing WebView, which the rules above permit, and that it does not download native executable code. Following the recommendations in this README is what keeps that from happening: ship a plugin build new enough that the old `autoSplashscreen` selector code is gone, and do not mention updates, live updates, or remote updates anywhere in the app.
 
 To further remain in compliance with Apple's guidelines, we suggest that App Store-distributed apps don't enable the `Force update` scenario, since in the [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) it is written that:
 
@@ -327,7 +327,9 @@ This is not a problem for the default behavior of background update, since it wo
 
 #### Good practice for App Store review
 
-Do not tell the user the app is updating. In any UI shown while a bundle downloads or applies, including copy on top of the splash screen, do not say "update", "downloading", or "installing". A progress bar is fine when its label describes tailoring the experience, for example "Tailoring your experience…". Calling that wait an update reads as the app installing behavior that was not in the reviewed binary.
+Do not tell the user the app is updating. In any UI the user can see, including copy on top of the splash screen, settings, and buttons, do not say "update", "live update", "remote update", "OTA", "downloading", or "installing". A progress bar is fine when its label describes tailoring the experience, for example "Tailoring your experience…". Calling that wait an update reads as the app installing behavior that was not in the reviewed binary.
+
+Do not add a button such as "Update the app" or "Apply update" to trigger the bundle. If you need the user to continue, the furthest the UI should go is asking them to reopen the app, for example "Please reopen the app". Do not say that reopening applies an update.
 
 For the iOS plugin version that removes the `autoSplashscreen` code App Review flags, see [Instant apply](#instant-apply-always-atinstall-onlaunch).
 
@@ -3099,7 +3101,7 @@ CapacitorUpdater.addListener('download', (info: any) => {
 });
 ```
 
-On iOS, a progress bar is fine. Do not label it as an update or a download. Describe the wait as tailoring the experience, for example "Tailoring your experience…". See [Good practice for App Store review](#good-practice-for-app-store-review).
+On iOS, a progress bar is fine. Do not label it as an update, a live update, a remote update, or a download, and do not add an "Apply update" button. Describe the wait as tailoring the experience, for example "Tailoring your experience…". If the user must continue, ask them to reopen the app. See [Good practice for App Store review](#good-practice-for-app-store-review).
 
 ### Inspiration
 
