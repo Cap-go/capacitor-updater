@@ -3400,7 +3400,7 @@ class CapacitorUpdaterTests: XCTestCase {
         }
 
         wait(for: [expectation], timeout: 3.0)
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.12)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.15)
         XCTAssertFalse(testPlugin.isPendingNotifyAppReadyForTesting)
     }
 
