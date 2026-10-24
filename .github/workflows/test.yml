@@ -960,7 +960,7 @@ jobs:
       # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
         id: maestro_live_flow_1
-        timeout-minutes: 9
+        timeout-minutes: 8
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -978,22 +978,12 @@ jobs:
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
-      - name: Detect fast emulator flake
-        id: maestro_fast_emulator_failure
-        if: steps.maestro_live_flow_1.outcome == 'failure'
-        shell: bash
-        run: |
-          if [[ -f .maestro-artifacts/fast-emulator-failure ]]; then
-            echo "retry=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "retry=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Clear Android SDK temp cache (retry)
-        if: steps.maestro_live_flow_1.outcome == 'failure' && steps.maestro_fast_emulator_failure.outputs.retry == 'true'
+        if: steps.maestro_live_flow_1.outcome == 'failure'
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       - name: Run live update Maestro flow (retry after emulator SDK flake)
-        if: steps.maestro_live_flow_1.outcome == 'failure' && steps.maestro_fast_emulator_failure.outputs.retry == 'true'
+        if: steps.maestro_live_flow_1.outcome == 'failure'
         timeout-minutes: 8
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2

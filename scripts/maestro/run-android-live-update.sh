@@ -36,7 +36,6 @@ TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 EDGE_CASE_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS:-150}"
-FLOW_STARTED_AT_EPOCH=""
 
 # shellcheck source=scripts/maestro/edge-cases.sh
 source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
@@ -53,14 +52,6 @@ cleanup() {
     kill "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   stop_stale_fake_server
-  if [[ -n "$FLOW_STARTED_AT_EPOCH" ]] && [[ "${MAESTRO_FLOW_EXIT_CODE:-0}" != "0" ]]; then
-    local elapsed_seconds
-    elapsed_seconds="$(($(date +%s) - FLOW_STARTED_AT_EPOCH))"
-    if [[ "$elapsed_seconds" -lt 240 ]]; then
-      mkdir -p "$ARTIFACT_DIR"
-      : >"$ARTIFACT_DIR/fast-emulator-failure"
-    fi
-  fi
   return 0
 }
 
@@ -1207,8 +1198,7 @@ prepare_scenario() {
 }
 
 mkdir -p "$ARTIFACT_DIR"
-FLOW_STARTED_AT_EPOCH="$(date +%s)"
-trap 'MAESTRO_FLOW_EXIT_CODE=$?; cleanup' EXIT
+trap cleanup EXIT
 
 if [[ -z "$TIMEOUT_CMD" ]]; then
   echo "GNU timeout is required to run Maestro flows. Install coreutils (gtimeout) on macOS or make sure timeout is available." >&2
