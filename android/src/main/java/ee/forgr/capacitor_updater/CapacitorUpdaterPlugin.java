@@ -1110,7 +1110,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final boolean reloadFailedDueToAppReadyTimeout,
         final BundleInfo activeBundle,
         final boolean watchdogRollbackInProgress,
-        final BundleInfo attemptedBundle
+        final BundleInfo attemptedBundle,
+        final boolean previewModeSkipsWatchdogRollback
     ) {
         if (!reloadFailedDueToAppReadyTimeout) {
             return true;
@@ -1120,6 +1121,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         if (attemptedBundle != null && activeBundle != null && !attemptedBundle.getId().equals(activeBundle.getId())) {
             return false;
+        }
+        if (previewModeSkipsWatchdogRollback) {
+            return true;
         }
         // checkRevert skips builtin bundles and SUCCESS current bundles, so reload() must restore on its own.
         if (activeBundle != null && activeBundle.isBuiltin()) {
@@ -2593,7 +2597,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 latest,
                 false,
-                latest
+                latest,
+                false
             )
         ) {
             this.implementation.restoreResetState(previousState);
@@ -3337,7 +3342,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
                             false,
-                            next
+                            next,
+                            false
                         )
                     ) {
                         this.implementation.restoreResetState(previousState);
@@ -4600,7 +4606,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                     this.implementation.getCurrentBundle(),
                     internal,
-                    pending
+                    pending,
+                    this.isPreviewSessionStateActive()
                 )
             ) {
                 this.implementation.restoreResetState(previousState);
@@ -4629,7 +4636,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
                             internal,
-                            fallback
+                            fallback,
+                            this.isPreviewSessionStateActive()
                         )
                     ) {
                         this.implementation.restoreResetState(previousState);
@@ -4662,7 +4670,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 this.implementation.getCurrentBundle(),
                 internal,
-                null
+                null,
+                this.isPreviewSessionStateActive()
             )
         ) {
             this.implementation.restoreResetState(previousState);

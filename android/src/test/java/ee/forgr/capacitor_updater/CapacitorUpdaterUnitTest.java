@@ -2717,14 +2717,16 @@ public class CapacitorUpdaterUnitTest {
         );
         final BundleInfo successfulNext = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
         final BundleInfo activeAfterSet = new BundleInfo("success-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending, false, pending));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin, false, builtin));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, false, successfulNext));
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending, false, pending, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin, false, builtin, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, false, successfulNext, false));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, false));
         final BundleInfo fallbackAfterWatchdog = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, fallbackAfterWatchdog, false, pending));
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, true, successfulNext));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, fallbackAfterWatchdog, false, pending, false));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, true, successfulNext, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, true));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, true));
     }
 
     @Test
@@ -2768,7 +2770,8 @@ public class CapacitorUpdaterUnitTest {
                         CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                         pending,
                         false,
-                        pending
+                        pending,
+                        false
                     )
                 );
             }, "reload-thread");
@@ -2956,6 +2959,33 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.restoreResetStateRollbackTargetsCalls);
             assertSame(updater.capturedState, updater.restoredRollbackTargets);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testResetToPendingRestoresStateWhenReloadTimesOutDuringPreviewSession() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.simulatePendingActiveBundleOnSet = true;
+
+            plugin.implementation = updater;
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertEquals(1, updater.preserveFallbackForWatchdogCalls);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
         }
     }
 
