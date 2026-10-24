@@ -2417,7 +2417,7 @@ public class CapgoUpdater {
     }
 
     boolean canSet(final BundleInfo bundle) {
-        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+        return bundle != null && !bundle.isErrorStatus() && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
     }
 
     public Boolean set(final BundleInfo bundle) {

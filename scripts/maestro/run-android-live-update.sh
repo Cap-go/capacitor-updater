@@ -682,11 +682,14 @@ run_edge_case_once() {
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
     EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
   fi
-  wait_for_edge_recovery_with_wait_seconds \
+  if ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
-    "${recovery_fragments[@]}" || return 1
+    "${recovery_fragments[@]}"; then
+    EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
+    return 1
+  fi
   EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
 
   assert_edge_case_recovered "$edge_case_id" "$app_scenario" || return 1

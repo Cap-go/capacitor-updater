@@ -2960,10 +2960,9 @@ public class CapacitorUpdaterUnitTest {
 
             assertFalse(result);
             assertEquals(0, updater.restoreResetStateCalls);
-            assertEquals(1, updater.preserveFallbackForWatchdogCalls);
+            assertEquals(2, updater.preserveFallbackForWatchdogCalls);
             assertSame(updater.capturedState, updater.preservedFallbackState);
-            assertEquals(1, updater.restoreResetStateRollbackTargetsCalls);
-            assertSame(updater.capturedState, updater.restoredRollbackTargets);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
         }
     }
@@ -3016,10 +3015,17 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(result);
             assertEquals(0, updater.restoreResetStateCalls);
             assertEquals(1, updater.preserveFallbackForWatchdogCalls);
-            assertEquals(1, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
             assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
             assertFalse(updater.resetCalled);
         }
+    }
+
+    @Test
+    public void testCanSetRejectsErrorStatusBundle() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final BundleInfo errorBundle = new BundleInfo("failed-id", "1.0.0", BundleStatus.ERROR, new Date(), "checksum");
+        assertFalse(updater.canSet(errorBundle));
     }
 
     @Test

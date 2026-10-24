@@ -4614,7 +4614,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.restoreLiveBundleStateAfterFailedReload();
             } else if (CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
                 // prepareResetStateForTransition cleared fallback; checkRevert needs the previous target.
-                this.implementation.restoreResetStateRollbackTargets(previousState);
+                this.implementation.preserveFallbackForWatchdog(previousState);
             }
             return false;
         }
@@ -4645,7 +4645,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return false;
                     }
                     if (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
-                        this.implementation.restoreResetStateRollbackTargets(previousState);
                         return false;
                     }
                 } else if (!internal) {
