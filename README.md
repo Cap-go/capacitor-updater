@@ -230,7 +230,9 @@ npx @capgo/cli@latest bundle upload --delta
 
 They also require `@capacitor/splash-screen` and `autoSplashscreen: true` with `SplashScreen.launchAutoHide: false`. See [Update Behavior](https://capgo.app/docs/live-updates/update-behavior/).
 
-On iOS, use at least `@capgo/capacitor-updater@8.51.22`. The same fix is in the LTS lines from `7.51.21`, `6.51.21`, and `5.51.21`. Earlier versions compiled `autoSplashscreen` so it built the splash screen `show` / `hide` selector at runtime with `NSSelectorFromString`, then called it with `responds(to:)` and `perform`. [App Review Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements) rejects that pattern: it is code that can change the app's behavior after approval, and it ships next to a plugin that downloads a remote bundle. The calls stay in the binary when `autoSplashscreen` is off, so turning the option off does not clear the rejection. Upgrade to the latest plugin for your Capacitor major and submit a new native build. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913).
+On iOS, use at least `@capgo/capacitor-updater@8.51.22`. The same fix is in the LTS lines from `7.51.21`, `6.51.21`, and `5.51.21`. The Capacitor 4 line (`@lts-v4`) never shipped `autoSplashscreen`, so this rejection does not apply there.
+
+Earlier 5, 6, 7, and 8 builds compiled `autoSplashscreen` so it built the splash screen `show` / `hide` selector at runtime with `NSSelectorFromString`, then called it with `responds(to:)` and `perform`. App Review rejected that binary under [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). The rejection names code that passes arbitrary parameters to dynamic methods such as `respondsToSelector:` and `performSelector:`, next to a plugin that downloads a remote bundle. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913). Those calls stay in the binary when `autoSplashscreen` is off, so turning the option off does not clear the rejection. Upgrade to the latest plugin for your Capacitor major and submit a new native build.
 
 ## No Cloud setup
 
