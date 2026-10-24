@@ -329,7 +329,7 @@ This is not a problem for the default behavior of background update, since it wo
 
 #### Good practice for App Store review
 
-Do not tell the user the app is updating. In any UI shown while a bundle downloads or applies, including copy on top of the splash screen, do not say "update", "downloading", or "installing", and do not show an update progress bar. Describe the wait as tailoring the experience, for example "Tailoring your experience…". An in-app update message reads as the app installing behavior that was not in the reviewed binary.
+Do not tell the user the app is updating. In any UI shown while a bundle downloads or applies, including copy on top of the splash screen, do not say "update", "downloading", or "installing". A progress bar is fine when its label describes tailoring the experience, for example "Tailoring your experience…". Calling that wait an update reads as the app installing behavior that was not in the reviewed binary.
 
 For the iOS plugin version that removes the `autoSplashscreen` code App Review flags, see [Instant apply](#instant-apply-always-atinstall-onlaunch).
 
@@ -3101,7 +3101,7 @@ CapacitorUpdater.addListener('download', (info: any) => {
 });
 ```
 
-On iOS, do not tell the user an update is in progress, and do not show a progress bar for it. Describe the wait as tailoring the experience. See [Good practice for App Store review](#good-practice-for-app-store-review).
+On iOS, a progress bar is fine. Do not label it as an update or a download. Describe the wait as tailoring the experience, for example "Tailoring your experience…". See [Good practice for App Store review](#good-practice-for-app-store-review).
 
 ### Inspiration
 
