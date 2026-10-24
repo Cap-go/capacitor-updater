@@ -2720,11 +2720,17 @@ public class CapacitorUpdaterUnitTest {
         assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, false));
         assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending, false, pending, false));
         assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin, false, builtin, false));
-        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, false, successfulNext, false));
+        assertTrue(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, false, successfulNext, false)
+        );
         assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, false));
         final BundleInfo fallbackAfterWatchdog = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, fallbackAfterWatchdog, false, pending, false));
-        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, true, successfulNext, false));
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, fallbackAfterWatchdog, false, pending, false)
+        );
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, true, successfulNext, false)
+        );
         assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, true));
         assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, true));
     }
