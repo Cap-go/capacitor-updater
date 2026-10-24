@@ -228,7 +228,9 @@ These modes apply the update while the user is waiting. Upload with `--delta` so
 npx @capgo/cli@latest bundle upload --delta
 ```
 
-They also require `@capacitor/splash-screen` and `autoSplashscreen: true` with `SplashScreen.launchAutoHide: false`. See [Update Behavior](https://capgo.app/docs/live-updates/update-behavior/). On iOS, ship the latest plugin and do not tell the user an update is running. See [Good practice for App Store review](#good-practice-for-app-store-review).
+They also require `@capacitor/splash-screen` and `autoSplashscreen: true` with `SplashScreen.launchAutoHide: false`. See [Update Behavior](https://capgo.app/docs/live-updates/update-behavior/).
+
+On iOS, use at least `@capgo/capacitor-updater@8.51.22`. The same fix is in the LTS lines from `7.51.21`, `6.51.21`, and `5.51.21`. Earlier versions compiled `autoSplashscreen` so it built the splash screen `show` / `hide` selector at runtime with `NSSelectorFromString`, then called it with `responds(to:)` and `perform`. [App Review Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements) rejects that pattern: it is code that can change the app's behavior after approval, and it ships next to a plugin that downloads a remote bundle. The calls stay in the binary when `autoSplashscreen` is off, so turning the option off does not clear the rejection. Upgrade to the latest plugin for your Capacitor major and submit a new native build. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913).
 
 ## No Cloud setup
 
@@ -327,23 +329,9 @@ This is not a problem for the default behavior of background update, since it wo
 
 #### Good practice for App Store review
 
-Two habits keep a live update from looking, to App Review, like code that changes the app after approval.
+Do not tell the user the app is updating. In any UI shown while a bundle downloads or applies, including copy on top of the splash screen, do not say "update", "downloading", or "installing", and do not show an update progress bar. Describe the wait as tailoring the experience, for example "Tailoring your experience…". An in-app update message reads as the app installing behavior that was not in the reviewed binary.
 
-**Ship the latest plugin.** [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements) rejects apps that contain code designed to change behavior after review, including runtime calls such as `responds(to:)` and `perform(_:)`. Plugin versions before `8.51.22` (and the matching LTS releases before `7.51.21`, `6.51.21`, and `5.51.21`) compiled that pattern on the `autoSplashscreen` path: the splash screen `show` / `hide` selector was built at runtime with `NSSelectorFromString`, then invoked with `responds(to:)` and `perform`. The path is in the binary even when `autoSplashscreen` is left off, so turning the option off does not clear the rejection. Install the latest release for your Capacitor major and ship a new native build:
-
-```bash
-# Capacitor 8
-npm install @capgo/capacitor-updater@latest
-
-# Older Capacitor majors
-npm install @capgo/capacitor-updater@lts-v7
-npm install @capgo/capacitor-updater@lts-v6
-npm install @capgo/capacitor-updater@lts-v5
-```
-
-Current releases do not use `NSSelectorFromString`, `responds(to:)`, or `perform` to show or hide the splash screen. An app already on the store keeps the old binary until you submit a new one. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913).
-
-**Do not say the app is updating.** In any UI the user sees while a bundle downloads or applies, including copy on top of the splash screen, do not say "update", "downloading", or "installing", and do not show an update progress bar. Describe the wait as tailoring the experience, for example "Tailoring your experience…". Reviewers treat an in-app update message as the app installing behavior that was not in the reviewed binary.
+For the iOS plugin version that removes the `autoSplashscreen` code App Review flags, see [Instant apply](#instant-apply-always-atinstall-onlaunch).
 
 ### Packaging `dist.zip` update bundles
 
