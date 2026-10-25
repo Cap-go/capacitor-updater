@@ -2378,12 +2378,26 @@ public class CapgoUpdater {
             state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
 
         this.editor.putString(this.CAP_SERVER_PATH, currentBundlePath);
+        this.restoreResetStateRollbackTargets(state);
+    }
+
+    void restoreResetStateRollbackTargets(final ResetState state) {
+        final String fallbackBundleId =
+            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
+
         this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
         if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
             this.editor.remove(NEXT_VERSION);
         } else {
             this.editor.putString(NEXT_VERSION, state.nextBundleId);
         }
+        this.editor.commit();
+    }
+
+    void preserveFallbackForWatchdog(final ResetState state) {
+        final String fallbackBundleId =
+            state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
+        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
         this.editor.commit();
     }
 
@@ -2403,7 +2417,7 @@ public class CapgoUpdater {
     }
 
     boolean canSet(final BundleInfo bundle) {
-        return bundle != null && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
+        return bundle != null && !bundle.isErrorStatus() && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
     }
 
     public Boolean set(final BundleInfo bundle) {

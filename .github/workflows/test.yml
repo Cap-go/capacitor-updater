@@ -737,14 +737,19 @@ jobs:
         include:
           - scenario: edge-network-drop
             app: edge-deferred
+            edge_case_retries: 2
           - scenario: edge-kill-download
             app: edge-deferred
+            edge_case_retries: 1
           - scenario: edge-corrupt-bundle
             app: edge-deferred
+            edge_case_retries: 1
           - scenario: edge-offline-check
             app: edge-deferred
+            edge_case_retries: 1
           - scenario: edge-direct-network-drop
             app: edge-direct
+            edge_case_retries: 1
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -777,7 +782,8 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      # A full case takes most of the 10 minute cap on hosted macOS runners, so no case-level retry here.
+      # A full case takes most of the 10 minute cap on hosted macOS runners. edge-network-drop
+      # alone gets one retry for simulator crashes during recovery; other cases stay at one attempt.
       # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
       - name: Run edge case Maestro flows
         run: |
@@ -788,7 +794,7 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=360 \
-          CAPGO_MAESTRO_EDGE_CASE_RETRIES=1 \
+          CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts
