@@ -3241,6 +3241,62 @@ import UIKit
         return try Self.resolveBundleDirectory(libraryDir: libraryDir, bundleId: id)
     }
 
+    /// Temp folder for a website-mode download. Uses the unzip prefix so orphans are cleaned at launch.
+    func createWebsiteTempDir() throws -> URL {
+        let temp = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + "web_" + randomString(length: 10), isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp
+    }
+
+    func discardWebsiteTempDir(_ tempDir: URL) {
+        guard tempDir.standardizedFileURL.path.hasPrefix(libraryDir.standardizedFileURL.path + "/"),
+              tempDir.lastPathComponent.hasPrefix(TEMP_UNZIP_PREFIX) else {
+            return
+        }
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    /// A fresh bundle id, reserved before a website download so its events name the installed bundle.
+    func newWebsiteBundleId() -> String {
+        randomString(length: 10)
+    }
+
+    /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
+    /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
+    func installWebsiteBundle(tempDir: URL, version: String, id: String? = nil) throws -> BundleInfo {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: tempDir.appendingPathComponent("index.html").path) else {
+            discardWebsiteTempDir(tempDir)
+            throw NSError(domain: "WebsiteMode", code: 1, userInfo: [NSLocalizedDescriptionKey: "Website download has no index.html"])
+        }
+        if let existing = getBundleInfoByVersionName(version: version),
+           existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting() {
+            guard delete(id: existing.getId(), removeInfo: true) else {
+                discardWebsiteTempDir(tempDir)
+                throw NSError(
+                    domain: "WebsiteMode",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to delete existing website bundle before retry"]
+                )
+            }
+        }
+        let id = id ?? randomString(length: 10)
+        let target = try getBundleDirectory(id: id)
+        do {
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: tempDir, to: target)
+        } catch {
+            discardWebsiteTempDir(tempDir)
+            throw error
+        }
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
+        guard saveBundleInfo(id: id, bundle: info) else {
+            try? fileManager.removeItem(at: target)
+            throw NSError(domain: "WebsiteMode", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to persist website bundle info"])
+        }
+        return info
+    }
+
     struct ResetState {
         let currentBundlePath: String
         let fallbackBundleId: String
