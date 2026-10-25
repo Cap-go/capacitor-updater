@@ -209,6 +209,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private WebViewListener websiteAutoReadyListener;
     private String configuredStatsUrl = "";
     private String configuredChannelUrl = "";
+    static final ThreadLocal<Boolean> reloadFailedDueToAppReadyTimeout = ThreadLocal.withInitial(() -> false);
 
     String getUpdateUrl() {
         return this.updateUrl;
@@ -1091,6 +1092,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean semaphoreWait(final int phase, Number waitTime) {
+        return this.semaphoreWait(phase, waitTime, false);
+    }
+
+    private boolean semaphoreWait(final int phase, Number waitTime, final boolean trackReloadAppReadyTimeout) {
+        if (trackReloadAppReadyTimeout) {
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        }
         try {
             semaphoreReady.awaitAdvanceInterruptibly(phase, waitTime.longValue(), TimeUnit.MILLISECONDS);
             logger.info("semaphoreReady count " + semaphoreReady.getPhase());
@@ -1103,8 +1111,41 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
             cleanupTimedOutSemaphoreWait(phase);
+            if (trackReloadAppReadyTimeout) {
+                CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+            }
             return false;
         }
+    }
+
+    static boolean shouldRestoreStateAfterPendingBundleReloadFailure(
+        final boolean reloadFailedDueToAppReadyTimeout,
+        final BundleInfo activeBundle,
+        final boolean watchdogRollbackInProgress,
+        final BundleInfo attemptedBundle,
+        final boolean previewModeSkipsWatchdogRollback
+    ) {
+        if (!reloadFailedDueToAppReadyTimeout) {
+            return true;
+        }
+        if (watchdogRollbackInProgress) {
+            return false;
+        }
+        if (attemptedBundle != null && activeBundle != null && !attemptedBundle.getId().equals(activeBundle.getId())) {
+            return false;
+        }
+        if (previewModeSkipsWatchdogRollback) {
+            return true;
+        }
+        // checkRevert skips builtin bundles and SUCCESS current bundles, so reload() must restore on its own.
+        if (activeBundle != null && activeBundle.isBuiltin()) {
+            return true;
+        }
+        if (activeBundle != null && BundleStatus.SUCCESS == activeBundle.getStatus()) {
+            return true;
+        }
+        // App-ready watchdog and reload()/performReset share the same timeout. Restoring here races performReset.
+        return false;
     }
 
     private int semaphoreUp() {
@@ -2563,8 +2604,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         }
 
-        this.implementation.restoreResetState(previousState);
-        this.restoreLiveBundleStateAfterFailedReload();
+        if (
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                latest,
+                false,
+                latest,
+                false
+            )
+        ) {
+            this.implementation.restoreResetState(previousState);
+            this.restoreLiveBundleStateAfterFailedReload();
+        }
         logger.error("Direct update reload failed after staging bundle: " + latest.toString());
         return false;
     }
@@ -3247,7 +3298,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.notifyListeners("appReloaded", new JSObject(), false);
 
         // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWait(phase, waitTimeMs);
+        return this.semaphoreWait(phase, waitTimeMs, true);
     }
 
     /**
@@ -3300,8 +3351,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         call.resolve();
                         return;
                     }
-                    this.implementation.restoreResetState(previousState);
-                    this.restoreLiveBundleStateAfterFailedReload();
+                    if (
+                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                            this.implementation.getCurrentBundle(),
+                            false,
+                            next,
+                            false
+                        )
+                    ) {
+                        this.implementation.restoreResetState(previousState);
+                        this.restoreLiveBundleStateAfterFailedReload();
+                    }
                     logger.error("Reload failed after applying pending bundle: " + next.getVersionName());
                     call.reject("Reload failed after applying pending bundle: " + next.getVersionName());
                     return;
@@ -4520,6 +4581,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean performReset(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
+        return this.performResetBody(toLastSuccessful, usePendingBundle, internal);
+    }
+
+    private boolean performResetBody(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
@@ -4542,14 +4607,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
                 didApplyPendingBundle = this.implementation.set(pending);
             }
+            if (didApplyPendingBundle && !pending.isBuiltin()) {
+                this.implementation.preserveFallbackForWatchdog(previousState);
+            }
             if (didApplyPendingBundle && this._reload()) {
                 this.implementation.finalizeResetTransition(previousBundleName, internal);
                 this.notifyBundleSet(pending);
                 this.implementation.setNextBundle(null);
                 return true;
             }
-            this.implementation.restoreResetState(previousState);
-            this.restoreLiveBundleStateAfterFailedReload();
+            if (
+                CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                    this.implementation.getCurrentBundle(),
+                    internal,
+                    pending,
+                    this.isPreviewSessionStateActive()
+                )
+            ) {
+                this.implementation.restoreResetState(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
+            } else if (CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                // prepareResetStateForTransition cleared fallback; checkRevert needs the previous target.
+                this.implementation.preserveFallbackForWatchdog(previousState);
+            }
             return false;
         }
 
@@ -4557,14 +4638,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (this.implementation.canSet(fallback)) {
                 this.implementation.prepareResetStateForTransition();
                 logger.info("Resetting to: " + fallback);
-                if (this.implementation.set(fallback) && this._reload()) {
-                    this.implementation.finalizeResetTransition(previousBundleName, internal);
-                    this.notifyBundleSet(fallback);
-                    return true;
-                }
-                if (!internal) {
+                if (this.implementation.set(fallback)) {
+                    this.implementation.preserveFallbackForWatchdog(previousState);
+                    if (this._reload()) {
+                        this.implementation.finalizeResetTransition(previousBundleName, internal);
+                        this.notifyBundleSet(fallback);
+                        return true;
+                    }
+                    if (
+                        !internal &&
+                        CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                            this.implementation.getCurrentBundle(),
+                            internal,
+                            fallback,
+                            this.isPreviewSessionStateActive()
+                        )
+                    ) {
+                        this.implementation.restoreResetState(previousState);
+                        this.restoreLiveBundleStateAfterFailedReload();
+                        return false;
+                    }
+                    if (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                        return false;
+                    }
+                } else if (!internal) {
                     this.implementation.restoreResetState(previousState);
-                    this.restoreLiveBundleStateAfterFailedReload();
                     return false;
                 }
                 logger.warn("Fallback reload failed during internal reset, resetting to native instead");
@@ -4579,7 +4678,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.finalizeResetTransition(previousBundleName, internal);
             return true;
         }
-        if (!internal) {
+        if (
+            !internal &&
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                this.implementation.getCurrentBundle(),
+                internal,
+                null,
+                this.isPreviewSessionStateActive()
+            )
+        ) {
             this.implementation.restoreResetState(previousState);
             this.restoreLiveBundleStateAfterFailedReload();
         }

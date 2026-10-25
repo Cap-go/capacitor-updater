@@ -664,7 +664,7 @@ run_edge_case_once() {
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-120}"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
   fi
 
   local -a recovery_fragments=(
@@ -678,11 +678,19 @@ run_edge_case_once() {
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
-  wait_for_edge_recovery_with_wait_seconds \
+  local previous_recovery_cycles="$EDGE_CASE_RECOVERY_CYCLES"
+  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
+  fi
+  if ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
-    "${recovery_fragments[@]}" || return 1
+    "${recovery_fragments[@]}"; then
+    EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
+    return 1
+  fi
+  EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
 
   assert_edge_case_recovered "$edge_case_id" "$app_scenario" || return 1
 
