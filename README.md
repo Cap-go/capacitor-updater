@@ -230,6 +230,10 @@ npx @capgo/cli@latest bundle upload --delta
 
 They also require `@capacitor/splash-screen` and `autoSplashscreen: true` with `SplashScreen.launchAutoHide: false`. See [Update Behavior](https://capgo.app/docs/live-updates/update-behavior/).
 
+On iOS, use at least `@capgo/capacitor-updater@8.51.22`. The same fix is in the LTS lines from `7.51.21`, `6.51.21`, and `5.51.21`. The Capacitor 4 line (`@lts-v4`) never shipped `autoSplashscreen`, so this rejection does not apply there.
+
+Earlier 5, 6, 7, and 8 builds compiled `autoSplashscreen` so it built the splash screen `show` / `hide` selector at runtime with `NSSelectorFromString`, then called it with `responds(to:)` and `perform`. App Review rejected that binary under [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). The rejection names code that passes arbitrary parameters to dynamic methods such as `respondsToSelector:` and `performSelector:`, next to a plugin that downloads a remote bundle. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913). Those calls stay in the binary when `autoSplashscreen` is off, so turning the option off does not clear the rejection. Upgrade to the latest plugin for your Capacitor major and submit a new native build.
+
 ## No Cloud setup
 
 Download update distribution zipfiles from a custom URL. Manually control the entire update process.
@@ -297,33 +301,39 @@ TIP: If you prefer a secure and automated way to update your app, you can use [c
 
 ### Store Guideline Compliance
 
-Android Google Play and iOS App Store have corresponding guidelines that have rules you should be aware of before integrating the Capacitor-updater solution within your application.
+Live updates of JavaScript, HTML, and CSS are allowed on Google Play and the App Store. This plugin replaces the web bundle that already runs in the WebView. It does not download or install native executable code.
 
-#### Google play
+#### Google Play
 
-Third paragraph of [Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/9888379?hl=en) topic describe that updating source code by any method besides Google Play's update mechanism is restricted. But this restriction does not apply to updating JavaScript bundles.
-> This restriction does not apply to code that runs in a virtual machine and has limited access to Android APIs (such as JavaScript in a web view or browser).
+[Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/13315670) forbids an app from updating itself outside Google Play or from downloading executable code (dex, JAR, `.so`). The same policy exempts the web layer:
 
-That fully allow Capacitor-updater as it updates just JS bundles and can't update native code part.
+> This restriction does not apply to code that runs in a virtual machine or an interpreter where either provides indirect access to Android APIs (such as JavaScript in a webview or browser).
+
+JavaScript loaded at runtime must still respect the rest of the Play policies. Capacitor-updater only ships that JavaScript bundle. It cannot change native code, permissions, or the store binary.
 
 #### App Store
 
-Paragraph **3.3.2**, since back in 2015's [Apple Developer Program License Agreement](https://developer.apple.com/programs/ios/information/) fully allowed performing over-the-air updates of JavaScript and assets.
+Section **3.3.1(B) Executable Code** of the [Apple Developer Program License Agreement](https://developer.apple.com/support/terms/apple-developer-program-license-agreement/) allows interpreted code:
 
-And in its latest version (20170605) [downloadable here](https://developer.apple.com/terms/) this ruling is even broader:
+> Except as set forth in the next paragraph, an Application may not download or install executable code. Interpreted code may be downloaded to an Application but only so long as such code: (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application (b) does not bypass signing, sandbox, or other security features of the OS; and (c) for Applications distributed on the App Store, does not create a store or storefront for other Applications.
 
-> Interpreted code may be downloaded to an Application, but only so long as such code:
-- (a) does not change the primary purpose of the Application by providing features or functionality that are inconsistent with the intended and advertised purpose of the Application as submitted to the App Store
-- (b) does not create a store or storefront for other code or applications
-- (c) does not bypass signing, sandbox, or other security features of the OS.
+A bundle that keeps the app's reviewed purpose, stays in the sandbox, and does not open a store for other apps is inside that rule.
 
-Capacitor-updater allows you to respect these rules in full compliance, so long as the update you push does not significantly deviate your product from its original App Store approved intent.
+A reviewer can still misread the binary or the launch UI and reject the build. On iOS that usually arrives as [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). It is rare. Reply in the store console and explain that the plugin downloads interpreted JavaScript, HTML, and CSS for the existing WebView, which the rules above permit, and that it does not download native executable code. Following the recommendations in this README is what keeps that from happening: ship a plugin build new enough that the old `autoSplashscreen` selector code is gone, and do not mention updates, live updates, or remote updates anywhere in the app.
 
 To further remain in compliance with Apple's guidelines, we suggest that App Store-distributed apps don't enable the `Force update` scenario, since in the [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) it is written that:
 
 > Apps must not force users to rate the app, review the app, download other apps, or other similar actions to access functionality, content, or use of the app.
 
 This is not a problem for the default behavior of background update, since it won't force the user to apply the new version until the next app close, but at least you should be aware of that ruling if you decide to show it.
+
+#### Good practice for App Store review
+
+Do not tell the user the app is updating. In any UI the user can see, including copy on top of the splash screen, settings, and buttons, do not say "update", "live update", "remote update", "OTA", "downloading", or "installing". A progress bar is fine when its label describes tailoring the experience, for example "Tailoring your experience…". Calling that wait an update reads as the app installing behavior that was not in the reviewed binary.
+
+Do not add a button such as "Update the app" or "Apply update" to trigger the bundle. If you need the user to continue, the furthest the UI should go is asking them to reopen the app, for example "Please reopen the app". Do not say that reopening applies an update.
+
+For the iOS plugin version that removes the `autoSplashscreen` code App Review flags, see [Instant apply](#instant-apply-always-atinstall-onlaunch).
 
 ### Packaging `dist.zip` update bundles
 
@@ -3093,7 +3103,7 @@ CapacitorUpdater.addListener('download', (info: any) => {
 });
 ```
 
-On iOS, Apple don't allow you to show a message when the app is updated, so you can't show a progress bar.
+On iOS, a progress bar is fine. Do not label it as an update, a live update, a remote update, or a download, and do not add an "Apply update" button. Describe the wait as tailoring the experience, for example "Tailoring your experience…". If the user must continue, ask them to reopen the app. See [Good practice for App Store review](#good-practice-for-app-store-review).
 
 ### Inspiration
 
