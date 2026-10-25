@@ -45,12 +45,18 @@ import okhttp3.OkHttpClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.After;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 public class CapacitorUpdaterUnitTest {
+
+    @After
+    public void tearDownReloadTimeoutThreadLocal() {
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.remove();
+    }
 
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
@@ -542,6 +548,7 @@ public class CapacitorUpdaterUnitTest {
         private boolean finalizeResetTransitionInternal = true;
         private boolean canSetResult = true;
         private boolean setResult = true;
+        private boolean simulatePendingActiveBundleOnSet = false;
         private int canSetCalls = 0;
         private int setCalls = 0;
         private boolean stagePendingReloadResult = true;
@@ -554,8 +561,12 @@ public class CapacitorUpdaterUnitTest {
         private int setPreviewFallbackBundleCalls = 0;
         private String lastPreviewFallbackBundle;
         private int restoreResetStateCalls = 0;
+        private int restoreResetStateRollbackTargetsCalls = 0;
+        private int preserveFallbackForWatchdogCalls = 0;
+        private ResetState preservedFallbackState;
         private final ResetState capturedState = new ResetState("/stored/current", "fallback-id", "next-id");
         private ResetState restoredState;
+        private ResetState restoredRollbackTargets;
 
         ResetTrackingCapgoUpdater() {
             super(null);
@@ -621,8 +632,29 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        void restoreResetStateRollbackTargets(final ResetState state) {
+            this.restoreResetStateRollbackTargetsCalls++;
+            this.restoredRollbackTargets = state;
+        }
+
+        @Override
+        void preserveFallbackForWatchdog(final ResetState state) {
+            this.preserveFallbackForWatchdogCalls++;
+            this.preservedFallbackState = state;
+        }
+
+        @Override
         public Boolean set(final BundleInfo bundle) {
             this.setCalls++;
+            if (this.setResult && this.simulatePendingActiveBundleOnSet && bundle != null && !bundle.isBuiltin()) {
+                this.currentBundle = new BundleInfo(
+                    bundle.getId(),
+                    bundle.getVersionName(),
+                    BundleStatus.PENDING,
+                    bundle.getDownloaded(),
+                    bundle.getChecksum()
+                );
+            }
             return this.setResult;
         }
 
@@ -634,6 +666,9 @@ public class CapacitorUpdaterUnitTest {
         @Override
         boolean stagePendingReload(final BundleInfo bundle) {
             this.stagePendingReloadCalls++;
+            if (this.stagePendingReloadResult && bundle != null) {
+                this.currentBundle = bundle;
+            }
             return this.stagePendingReloadResult;
         }
 
@@ -794,6 +829,9 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        void preserveFallbackForWatchdog(final ResetState state) {}
+
+        @Override
         public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) {
             return true;
         }
@@ -826,9 +864,9 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+    private static class ReloadAppReadyTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
 
-        private int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+        int restoreLiveBundleStateAfterFailedReloadCalls = 0;
 
         @Override
         public Thread startNewThread(final Runnable function, Number waitTime) {
@@ -843,6 +881,34 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         protected boolean _reload() {
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+            return false;
+        }
+
+        @Override
+        protected void restoreLiveBundleStateAfterFailedReload() {
+            this.restoreLiveBundleStateAfterFailedReloadCalls++;
+        }
+    }
+
+    private static class ReloadFailureCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
+
+        int restoreLiveBundleStateAfterFailedReloadCalls = 0;
+
+        @Override
+        public Thread startNewThread(final Runnable function, Number waitTime) {
+            return this.startNewThread(function);
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            function.run();
+            return new Thread();
+        }
+
+        @Override
+        protected boolean _reload() {
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
             return false;
         }
 
@@ -2640,6 +2706,329 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testShouldRestoreStateAfterPendingBundleReloadFailureSkipsRestoreOnAppReadyTimeout() {
+        final BundleInfo pending = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+        final BundleInfo builtin = new BundleInfo(
+            BundleInfo.ID_BUILTIN,
+            "builtin",
+            BundleStatus.SUCCESS,
+            BundleInfo.DOWNLOADED_BUILTIN,
+            "builtin"
+        );
+        final BundleInfo successfulNext = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+        final BundleInfo activeAfterSet = new BundleInfo("success-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(false, pending, false, pending, false));
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, builtin, false, builtin, false));
+        assertTrue(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, false, successfulNext, false)
+        );
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, false));
+        final BundleInfo fallbackAfterWatchdog = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, fallbackAfterWatchdog, false, pending, false)
+        );
+        assertFalse(
+            CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, successfulNext, true, successfulNext, false)
+        );
+        assertTrue(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, pending, false, pending, true));
+        assertFalse(CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(true, activeAfterSet, false, pending, true));
+    }
+
+    @Test
+    public void testReloadAppReadyTimeoutFlagIsNotClearedByWatchdogReloadOnAnotherThread() throws Exception {
+        final BundleInfo pending = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+        final CountDownLatch reloadTimedOut = new CountDownLatch(1);
+        final CountDownLatch watchdogMayRun = new CountDownLatch(1);
+        final AtomicReference<Boolean> reloadThreadShouldRestore = new AtomicReference<>();
+
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin() {
+                @Override
+                protected boolean _reload() {
+                    if (Thread.currentThread().getName().startsWith("watchdog")) {
+                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+                        watchdogMayRun.countDown();
+                        return true;
+                    }
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+                    reloadTimedOut.countDown();
+                    return false;
+                }
+            };
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final Thread reloadThread = new Thread(() -> {
+                plugin._reload();
+                try {
+                    assertTrue(watchdogMayRun.await(5, TimeUnit.SECONDS));
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
+                reloadThreadShouldRestore.set(
+                    CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                        pending,
+                        false,
+                        pending,
+                        false
+                    )
+                );
+            }, "reload-thread");
+            reloadThread.start();
+            assertTrue(reloadTimedOut.await(5, TimeUnit.SECONDS));
+
+            final Thread watchdogThread = new Thread(() -> plugin._reload(), "watchdog-thread");
+            watchdogThread.start();
+            reloadThread.join(5000);
+            watchdogThread.join(5000);
+
+            assertFalse(reloadThreadShouldRestore.get());
+        }
+    }
+
+    @Test
+    public void testUserReloadRestoresStateWhileConcurrentInternalWatchdogResetWaitsForAppReady() throws Exception {
+        final CountDownLatch internalResetInReload = new CountDownLatch(1);
+        final CountDownLatch userReloadMayFinish = new CountDownLatch(1);
+        final CountDownLatch userReloadFinished = new CountDownLatch(1);
+
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin() {
+                @Override
+                public Thread startNewThread(final Runnable function) {
+                    final Thread thread = new Thread(() -> {
+                        try {
+                            function.run();
+                        } finally {
+                            userReloadFinished.countDown();
+                        }
+                    }, "user-reload-thread");
+                    thread.start();
+                    return thread;
+                }
+
+                @Override
+                protected boolean _reload() {
+                    if ("internal-watchdog-thread".equals(Thread.currentThread().getName())) {
+                        internalResetInReload.countDown();
+                        try {
+                            assertTrue(userReloadMayFinish.await(5, TimeUnit.SECONDS));
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
+                        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+                        return false;
+                    }
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+                    return false;
+                }
+            };
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+            updater.nextBundle = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final Thread internalWatchdogThread = new Thread(() -> {
+                try {
+                    invokePrivateInternalResetMethod(plugin, true, false, true);
+                } catch (final Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }, "internal-watchdog-thread");
+            internalWatchdogThread.start();
+            assertTrue(internalResetInReload.await(5, TimeUnit.SECONDS));
+
+            final PluginCall call = mock(PluginCall.class);
+            plugin.reload(call);
+            assertTrue(userReloadFinished.await(5, TimeUnit.SECONDS));
+            userReloadMayFinish.countDown();
+            internalWatchdogThread.join(5000);
+
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testReloadSkipsRestoreWhenPendingApplyReloadTimesOutWaitingForAppReady() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testReloadRestoresStateWhenSuccessfulPendingBundleReloadTimesOutWaitingForAppReady() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final PluginCall call = mock(PluginCall.class);
+            updater.nextBundle = new BundleInfo("success-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            plugin.reload(call);
+
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            verify(call).reject("Reload failed after applying pending bundle: 2.0.0");
+        }
+    }
+
+    @Test
+    public void testResetToPendingBuiltinPendingDoesNotPreserveFallbackForWatchdog() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadBypassCapacitorUpdaterPlugin plugin = new ReloadBypassCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo(
+                BundleInfo.ID_BUILTIN,
+                "builtin",
+                BundleStatus.SUCCESS,
+                BundleInfo.DOWNLOADED_BUILTIN,
+                "builtin"
+            );
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertTrue(result);
+            assertEquals(0, updater.preserveFallbackForWatchdogCalls);
+        }
+    }
+
+    @Test
+    public void testResetToPendingSkipsRestoreWhenReloadTimesOutWaitingForAppReady() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.simulatePendingActiveBundleOnSet = true;
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(2, updater.preserveFallbackForWatchdogCalls);
+            assertSame(updater.capturedState, updater.preservedFallbackState);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testResetToPendingRestoresStateWhenReloadTimesOutDuringPreviewSession() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.nextBundle = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "pending");
+            updater.simulatePendingActiveBundleOnSet = true;
+
+            plugin.implementation = updater;
+            plugin.previewSessionEnabled = true;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, false, true);
+
+            assertFalse(result);
+            assertEquals(1, updater.restoreResetStateCalls);
+            assertEquals(1, updater.preserveFallbackForWatchdogCalls);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(1, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+        }
+    }
+
+    @Test
+    public void testResetToFallbackSkipsRestoreWhenReloadTimesOutAfterSetMarksBundlePending() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ReloadAppReadyTimeoutCapacitorUpdaterPlugin plugin = new ReloadAppReadyTimeoutCapacitorUpdaterPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
+            updater.fallbackBundle = new BundleInfo("fallback-id", "1.5.0", BundleStatus.SUCCESS, new Date(), "fallback");
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final boolean result = invokePrivateResetMethod(plugin, true, false);
+
+            assertFalse(result);
+            assertEquals(0, updater.restoreResetStateCalls);
+            assertEquals(1, updater.preserveFallbackForWatchdogCalls);
+            assertEquals(0, updater.restoreResetStateRollbackTargetsCalls);
+            assertEquals(0, plugin.restoreLiveBundleStateAfterFailedReloadCalls);
+            assertFalse(updater.resetCalled);
+        }
+    }
+
+    @Test
+    public void testCanSetRejectsErrorStatusBundle() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final BundleInfo errorBundle = new BundleInfo("failed-id", "1.0.0", BundleStatus.ERROR, new Date(), "checksum");
+        assertFalse(updater.canSet(errorBundle));
+    }
+
+    @Test
     public void testReloadRestoresStateWhenPendingApplyReloadFails() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -2753,10 +3142,46 @@ public class CapacitorUpdaterUnitTest {
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
+            assertTrue(CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get());
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
             assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
             verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+        }
+    }
+
+    @Test
+    public void testReloadClearsStaleAppReadyTimeoutFlagBeforeSuccessfulTrackedWait() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final CapgoUpdater updater = mock(CapgoUpdater.class);
+            final BundleInfo bundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            final PluginCall call = mock(PluginCall.class);
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            when(updater.getCurrentBundle()).thenReturn(bundle);
+
+            CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
+
+            final Method semaphoreUp = CapacitorUpdaterPlugin.class.getDeclaredMethod("semaphoreUp");
+            semaphoreUp.setAccessible(true);
+            final int phase = (int) semaphoreUp.invoke(plugin);
+
+            plugin.notifyAppReady(call);
+
+            final Method semaphoreWait = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+                "semaphoreWait",
+                int.class,
+                Number.class,
+                boolean.class
+            );
+            semaphoreWait.setAccessible(true);
+            assertTrue((boolean) semaphoreWait.invoke(plugin, phase, 1000, true));
+            assertFalse(CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get());
+            verify(call).resolve(any(JSObject.class));
         }
     }
 
