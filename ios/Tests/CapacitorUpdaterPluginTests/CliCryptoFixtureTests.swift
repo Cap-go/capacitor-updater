@@ -99,7 +99,12 @@ final class CliCryptoFixtureTests: XCTestCase {
 
         override func sendStats(action _: String, versionName _: String? = nil, oldVersionName _: String? = "") {}
 
-        override func performDownloadRequest(_ request: URLRequest, label _: String) -> DownloadRequestResult {
+        override func performDownloadRequest(
+            _ request: URLRequest,
+            label _: String,
+            resumeData _: Data? = nil,
+            onProgress _: ((Int64, Int64) -> Void)? = nil
+        ) -> DownloadRequestResult {
             let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-cli-fixture-\(UUID().uuidString).zip")
             do {
                 try payload.write(to: fileURL)

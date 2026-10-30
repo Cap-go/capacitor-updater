@@ -4,11 +4,14 @@ import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
 import androidx.work.Data;
 import com.google.common.util.concurrent.ListenableFuture;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -48,14 +51,20 @@ public class DownloadProgressTest {
         assertEquals(Arrays.asList(10, 11, 70), writes);
     }
 
+    /** Verifies that single-file zip downloads emit 1%-granularity progress updates between 10% and 70%. */
     @Test
     public void singleFileDownloadEmitsOnePercentGranularityBetweenTenAndSeventy() throws Exception {
         DownloadService.setHttpsOnly(false);
         File root = Files.createTempDirectory("capgo-zip-progress").toFile();
-        byte[] payload = new byte[512 * 1024];
+        byte[] payload = new byte[1000 * 1024];
         ServerSocket server = new ServerSocket(0, 4, InetAddress.getLoopbackAddress());
         Thread responder = new Thread(() -> {
             try (Socket socket = server.accept()) {
+                BufferedReader input = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII)
+                );
+                String line;
+                while ((line = input.readLine()) != null && !line.isEmpty()) {}
                 OutputStream out = socket.getOutputStream();
                 String headers =
                     "HTTP/1.1 200 OK\r\nContent-Length: " +
@@ -73,6 +82,8 @@ public class DownloadProgressTest {
         try {
             DownloadService.setLogger(mock(Logger.class));
             DownloadService worker = mock(DownloadService.class, CALLS_REAL_METHODS);
+            doReturn(Data.EMPTY).when(worker).getInputData();
+            doReturn(false).when(worker).isStopped();
             Field lastProgressField = DownloadService.class.getDeclaredField("lastProgressPercent");
             lastProgressField.setAccessible(true);
             lastProgressField.setInt(worker, -1);
@@ -93,6 +104,8 @@ public class DownloadProgressTest {
                 String.class,
                 String.class,
                 String.class,
+                String.class,
+                String.class,
                 String.class
             );
             singleFileDownload.setAccessible(true);
@@ -103,6 +116,8 @@ public class DownloadProgressTest {
                 root.getAbsolutePath(),
                 "bundle.zip",
                 "1.0.0",
+                "",
+                "sha256-checksum",
                 ""
             );
 
@@ -112,6 +127,7 @@ public class DownloadProgressTest {
         } finally {
             DownloadService.setHttpsOnly(true);
             server.close();
+            responder.join(2000);
             try (Stream<java.nio.file.Path> files = Files.walk(root.toPath())) {
                 files.sorted(Comparator.reverseOrder()).forEach((file) -> file.toFile().delete());
             }

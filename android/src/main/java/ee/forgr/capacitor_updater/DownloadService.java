@@ -817,6 +817,7 @@ public class DownloadService extends Worker {
         }
     }
 
+    /** Downloads and verifies a single zip bundle archive while reporting progress from 10% to 70%. */
     private void handleSingleFileDownload(
         String url,
         String id,

@@ -13,6 +13,9 @@ private final class LoopbackHTTPServer {
         var dropConnection = false
         /// Send only this many body bytes, then close, while Content-Length announces the whole body.
         var truncateBodyAt: Int?
+        /// Stream the response body in chunks of this size with `chunkDelay` between writes.
+        var chunkSize: Int?
+        var chunkDelay: TimeInterval = 0.01
     }
 
     struct RecordedRequest {
@@ -123,6 +126,7 @@ private final class LoopbackHTTPServer {
         )
     }
 
+    /// Sends an HTTP response, optionally streaming the body in delayed chunks.
     private func send(_ response: Response, on connection: NWConnection) {
         if response.dropConnection {
             connection.cancel()
@@ -133,10 +137,40 @@ private final class LoopbackHTTPServer {
             head += "\(name): \(value)\r\n"
         }
         head += "\r\n"
-        var payload = Data(head.utf8)
-        payload.append(response.truncateBodyAt.map { response.body.prefix($0) } ?? response.body)
-        connection.send(content: payload, completion: .contentProcessed { _ in
+        let body = response.truncateBodyAt.map { Data(response.body.prefix($0)) } ?? response.body
+        guard let chunkSize = response.chunkSize, chunkSize > 0, body.count > chunkSize else {
+            var payload = Data(head.utf8)
+            payload.append(body)
+            connection.send(content: payload, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return
+        }
+        connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
+            self?.sendChunks(of: body, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay, on: connection)
+        })
+    }
+
+    /// Recursively writes slices of `body` over `connection` separated by `delay`.
+    private func sendChunks(of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval, on connection: NWConnection) {
+        guard offset < body.count else {
             connection.cancel()
+            return
+        }
+        let end = min(offset + chunkSize, body.count)
+        let chunk = body.subdata(in: offset..<end)
+        connection.send(content: chunk, completion: .contentProcessed { [weak self] _ in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            if end < body.count {
+                self.queue.asyncAfter(deadline: .now() + delay) {
+                    self.sendChunks(of: body, offset: end, chunkSize: chunkSize, delay: delay, on: connection)
+                }
+            } else {
+                connection.cancel()
+            }
         })
     }
 }
@@ -405,9 +439,10 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), payload)
     }
 
+    /// Verifies that chunked download responses report intermediate byte progress samples.
     func testPerformDownloadRequestReportsProgressCallbacks() throws {
         let payload = Data((0..<250_000).map { UInt8($0 % 251) })
-        server.respond { _ in .init(status: 200, body: payload) }
+        server.respond { _ in .init(status: 200, body: payload, chunkSize: 50_000, chunkDelay: 0.01) }
 
         let lock = NSLock()
         var samples: [(Int64, Int64)] = []
@@ -423,7 +458,10 @@ final class NetworkTransportTests: XCTestCase {
         }
 
         XCTAssertNil(result.error)
-        XCTAssertFalse(samples.isEmpty)
+        XCTAssertTrue(
+            samples.contains(where: { $0.0 > 0 && $0.0 < $0.1 }),
+            "expected at least one intermediate sample with 0 < received < expected, got \(samples)"
+        )
         if let lastSample = samples.last {
             XCTAssertEqual(lastSample.1, Int64(payload.count))
             XCTAssertGreaterThan(lastSample.0, 0)
@@ -431,11 +469,17 @@ final class NetworkTransportTests: XCTestCase {
         }
     }
 
-
+    /// Verifies that HTTP error bodies are preserved on disk without reporting download progress.
     func testPerformDownloadRequestKeepsHttpErrorsAsResponses() throws {
-        server.respond { _ in .init(status: 404, body: Data("missing".utf8)) }
+        server.respond { _ in .init(status: 404, body: Data(repeating: 0x41, count: 64_000), chunkSize: 16_000, chunkDelay: 0.01) }
 
-        let result = makeUpdater().performDownloadRequest(request("missing.zip"), label: "test")
+        let lock = NSLock()
+        var samples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(request("missing.zip"), label: "test") { received, expected in
+            lock.lock()
+            samples.append((received, expected))
+            lock.unlock()
+        }
         defer {
             if let fileURL = result.fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
@@ -445,20 +489,106 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertNil(result.error)
         XCTAssertEqual(result.response?.statusCode, 404)
         XCTAssertNotNil(result.fileURL)
+        XCTAssertTrue(samples.isEmpty, "non-2xx responses must not report download progress")
     }
 
+    /// Verifies that `downloadVerified` emits rising intermediate percentages in `10..<70` before `70%` and `100%`.
+    func testDownloadZipEmitsProgressEventsFromZeroThroughOneHundred() throws {
+        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        }
+        var writer = TestZipWriter()
+        writer.addFile("index.html", Data("<html>zip-progress</html>".utf8))
+        writer.addFile("assets/bundle.bin", Data((0..<300_000).map { UInt8($0 % 251) }))
+        let zipPayload = writer.build()
+        let tempZip = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-zip-\(UUID().uuidString).zip")
+        try zipPayload.write(to: tempZip)
+        defer { try? FileManager.default.removeItem(at: tempZip) }
+        let expectedChecksum = CryptoCipher.calcChecksum(filePath: tempZip)
+        server.respond { _ in .init(status: 200, body: zipPayload, chunkSize: 60_000, chunkDelay: 0.01) }
+
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "zip-progress-test", options: Logger.Options(level: .silent)))
+        var percents: [Int] = []
+        updater.notifyDownloadRaw = { _, percent, _, _ in
+            percents.append(percent)
+        }
+
+        let done = expectation(description: "zip download complete")
+        var downloadedBundle: BundleInfo?
+        var downloadError: Error?
+        let downloadURL = server.baseURL.appendingPathComponent("bundle-\(UUID().uuidString).zip")
+        let version = UUID().uuidString
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                downloadedBundle = try updater.downloadVerified(
+                    url: downloadURL,
+                    version: version,
+                    sessionKey: "",
+                    expectedChecksum: expectedChecksum
+                )
+            } catch {
+                downloadError = error
+            }
+            DispatchQueue.main.async {
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 10)
+        defer {
+            if let installed = downloadedBundle {
+                _ = updater.delete(id: installed.getId())
+            }
+        }
+        XCTAssertNil(downloadError)
+        XCTAssertEqual(percents.first, 0)
+        XCTAssertTrue(percents.contains(where: { (10..<70).contains($0) }), "expected transfer progress in 10..<70, got \(percents)")
+        XCTAssertTrue(percents.contains(70), "expected 70% completion tick, got \(percents)")
+        XCTAssertTrue(percents.contains(75), "expected 75% unzip start tick, got \(percents)")
+        XCTAssertTrue(percents.contains(90), "expected 90% wrap-up tick, got \(percents)")
+        XCTAssertEqual(percents.last, 100)
+        XCTAssertEqual(percents, percents.sorted(), "progress percentages must be non-decreasing: \(percents)")
+    }
+
+    /// Verifies that `Range` requests offset progress only when the server responds with `206 Partial Content`.
     func testPerformDownloadRequestSendsRangeHeader() {
-        server.respond { _ in .init(status: 206, body: Data("tail".utf8)) }
+        let tail = Data(repeating: 0x42, count: 100_000)
+        server.respond { _ in .init(status: 206, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
 
-        let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test")
+        let sampleLock = NSLock()
+        var partialSamples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+            sampleLock.lock()
+            partialSamples.append((received, expected))
+            sampleLock.unlock()
+        }
         if let fileURL = result.fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
         XCTAssertEqual(result.response?.statusCode, 206)
         XCTAssertEqual(server.requests.first?.headers["range"], "bytes=10-")
+        XCTAssertFalse(partialSamples.isEmpty)
+        if let lastPartial = partialSamples.last {
+            XCTAssertEqual(lastPartial.1, Int64(10 + tail.count))
+        }
+
+        server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
+        var fullSamples: [(Int64, Int64)] = []
+        let fullResult = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+            sampleLock.lock()
+            fullSamples.append((received, expected))
+            sampleLock.unlock()
+        }
+        if let fileURL = fullResult.fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        XCTAssertFalse(fullSamples.isEmpty)
+        if let lastFull = fullSamples.last {
+            XCTAssertEqual(lastFull.1, Int64(tail.count))
+        }
     }
 
     func testMakeJSONPostRequestMatchesJSONEncoding() throws {
