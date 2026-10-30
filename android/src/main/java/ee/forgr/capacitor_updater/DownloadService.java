@@ -817,6 +817,7 @@ public class DownloadService extends Worker {
         }
     }
 
+    /** Downloads and verifies a single zip bundle archive while reporting progress from 10% to 70%. */
     private void handleSingleFileDownload(
         String url,
         String id,
@@ -927,9 +928,9 @@ public class DownloadService extends Worker {
                     String contentRangeHeader = response.header("Content-Range");
                     writeHttpBody(tempFile, inputStream, writePlan.statusCode, writePlan.writeOffset, this::isStopped, (written) -> {
                         int percent = calcTotalPercent(written, totalContentLength);
-                        if (percent >= lastNotifiedPercent[0] + 10) {
-                            lastNotifiedPercent[0] = (percent / 10) * 10;
-                            setProgress(lastNotifiedPercent[0]);
+                        if (percent > lastNotifiedPercent[0]) {
+                            lastNotifiedPercent[0] = percent;
+                            setProgress(percent);
                         }
                     });
 
