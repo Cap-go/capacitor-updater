@@ -24,6 +24,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -56,7 +60,9 @@ public class DownloadProgressTest {
     public void singleFileDownloadEmitsOnePercentGranularityBetweenTenAndSeventy() throws Exception {
         DownloadService.setHttpsOnly(false);
         File root = Files.createTempDirectory("capgo-zip-progress").toFile();
-        byte[] payload = new byte[1000 * 1024];
+        int stepBytes = 400;
+        byte[] payload = new byte[100 * stepBytes];
+        Semaphore progressAck = new Semaphore(0);
         ServerSocket server = new ServerSocket(0, 4, InetAddress.getLoopbackAddress());
         Thread responder = new Thread(() -> {
             try (Socket socket = server.accept()) {
@@ -71,11 +77,18 @@ public class DownloadProgressTest {
                     payload.length +
                     "\r\nConnection: close\r\n\r\n";
                 out.write(headers.getBytes(StandardCharsets.US_ASCII));
-                int chunk = 16 * 1024;
-                for (int offset = 0; offset < payload.length; offset += chunk) {
-                    out.write(payload, offset, Math.min(chunk, payload.length - offset));
+                int sent = 0;
+                for (int pct = 10; pct <= 70; pct++) {
+                    int targetSent = pct * stepBytes + 1;
+                    out.write(payload, sent, targetSent - sent);
                     out.flush();
+                    sent = targetSent;
+                    if (!progressAck.tryAcquire(2, TimeUnit.SECONDS)) {
+                        break;
+                    }
                 }
+                out.write(payload, sent, payload.length - sent);
+                out.flush();
             } catch (Exception ignored) {}
         });
         responder.start();
@@ -92,6 +105,7 @@ public class DownloadProgressTest {
             doAnswer((call) -> {
                 Data value = call.getArgument(0);
                 writes.add(value.getInt(DownloadService.PERCENT, -1));
+                progressAck.release();
                 return mock(ListenableFuture.class);
             })
                 .when(worker)
@@ -121,9 +135,8 @@ public class DownloadProgressTest {
                 ""
             );
 
-            boolean sawNonMultipleOfTen = writes.stream().anyMatch((p) -> p > 10 && p < 70 && p % 10 != 0);
-            assertEquals(true, sawNonMultipleOfTen);
-            assertEquals(Integer.valueOf(70), writes.get(writes.size() - 1));
+            List<Integer> expected = IntStream.rangeClosed(10, 70).boxed().collect(Collectors.toList());
+            assertEquals(expected, writes);
         } finally {
             DownloadService.setHttpsOnly(true);
             server.close();
