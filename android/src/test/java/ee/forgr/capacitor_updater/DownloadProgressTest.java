@@ -1,6 +1,7 @@
 package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doAnswer;
@@ -14,6 +15,7 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -26,6 +28,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -63,6 +66,7 @@ public class DownloadProgressTest {
         int stepBytes = 400;
         byte[] payload = new byte[100 * stepBytes];
         Semaphore progressAck = new Semaphore(0);
+        AtomicBoolean ackTimedOut = new AtomicBoolean(false);
         ServerSocket server = new ServerSocket(0, 4, InetAddress.getLoopbackAddress());
         Thread responder = new Thread(() -> {
             try (Socket socket = server.accept()) {
@@ -83,8 +87,9 @@ public class DownloadProgressTest {
                     out.write(payload, sent, targetSent - sent);
                     out.flush();
                     sent = targetSent;
-                    if (!progressAck.tryAcquire(2, TimeUnit.SECONDS)) {
-                        break;
+                    if (!progressAck.tryAcquire(5, TimeUnit.SECONDS)) {
+                        ackTimedOut.set(true);
+                        return;
                     }
                 }
                 out.write(payload, sent, payload.length - sent);
@@ -123,18 +128,24 @@ public class DownloadProgressTest {
                 String.class
             );
             singleFileDownload.setAccessible(true);
-            singleFileDownload.invoke(
-                worker,
-                "http://127.0.0.1:" + server.getLocalPort() + "/bundle.zip",
-                "bundle-id",
-                root.getAbsolutePath(),
-                "bundle.zip",
-                "1.0.0",
-                "",
-                "sha256-checksum",
-                ""
-            );
+            try {
+                singleFileDownload.invoke(
+                    worker,
+                    "http://127.0.0.1:" + server.getLocalPort() + "/bundle.zip",
+                    "bundle-id",
+                    root.getAbsolutePath(),
+                    "bundle.zip",
+                    "1.0.0",
+                    "",
+                    "sha256-checksum",
+                    ""
+                );
+            } catch (InvocationTargetException error) {
+                assertFalse("Timed out waiting for progress acknowledgement", ackTimedOut.get());
+                throw error;
+            }
 
+            assertFalse("Timed out waiting for progress acknowledgement", ackTimedOut.get());
             List<Integer> expected = IntStream.rangeClosed(10, 70).boxed().collect(Collectors.toList());
             assertEquals(expected, writes);
         } finally {
