@@ -405,6 +405,33 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), payload)
     }
 
+    func testPerformDownloadRequestReportsProgressCallbacks() throws {
+        let payload = Data((0..<250_000).map { UInt8($0 % 251) })
+        server.respond { _ in .init(status: 200, body: payload) }
+
+        let lock = NSLock()
+        var samples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(request("bundle-progress.zip"), label: "test") { received, expected in
+            lock.lock()
+            samples.append((received, expected))
+            lock.unlock()
+        }
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+
+        XCTAssertNil(result.error)
+        XCTAssertFalse(samples.isEmpty)
+        if let lastSample = samples.last {
+            XCTAssertEqual(lastSample.1, Int64(payload.count))
+            XCTAssertGreaterThan(lastSample.0, 0)
+            XCTAssertLessThanOrEqual(lastSample.0, lastSample.1)
+        }
+    }
+
+
     func testPerformDownloadRequestKeepsHttpErrorsAsResponses() throws {
         server.respond { _ in .init(status: 404, body: Data("missing".utf8)) }
 

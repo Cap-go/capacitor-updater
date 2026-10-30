@@ -468,11 +468,12 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
-    func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
-        performDownloadRequest(request, label: label, resumeData: nil)
-    }
-
-    func performDownloadRequest(_ request: URLRequest, label: String, resumeData: Data?) -> DownloadRequestResult {
+    func performDownloadRequest(
+        _ request: URLRequest,
+        label: String,
+        resumeData: Data? = nil,
+        onProgress: ((Int64, Int64) -> Void)? = nil
+    ) -> DownloadRequestResult {
         if let schemeError = checkAllowedScheme(request.url) {
             return DownloadRequestResult(fileURL: nil, response: nil, error: schemeError, timedOut: false)
         }
@@ -519,6 +520,18 @@ import UIKit
         }
         let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
             ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
+        let progressObservation: NSKeyValueObservation? = onProgress.map { progressHandler in
+            downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+                let expected = progress.totalUnitCount
+                let received = progress.completedUnitCount
+                if expected > 0 && received >= 0 {
+                    progressHandler(received, expected)
+                }
+            }
+        }
+        defer {
+            progressObservation?.invalidate()
+        }
         downloadTask.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
@@ -2639,7 +2652,24 @@ import UIKit
             request.setValue("bytes=\(totalReceivedBytes)-", forHTTPHeaderField: "Range")
         }
 
-        let downloadResult = performDownloadRequest(request, label: "download \(version)")
+        let progressLock = NSLock()
+        let downloadResult = performDownloadRequest(request, label: "download \(version)") { [weak self] receivedBytes, expectedBytes in
+            guard let self else { return }
+            let totalReceived = totalReceivedBytes + receivedBytes
+            let totalExpected = totalReceivedBytes + expectedBytes
+            guard totalExpected > 0 else { return }
+            let rawPercent = Int((Double(totalReceived) / Double(totalExpected)) * 100)
+            let scaledPercent = self.calcTotalPercent(percent: min(100, max(0, rawPercent)), min: 10, max: 70)
+            progressLock.lock()
+            let shouldNotify = scaledPercent > lastSentProgress && scaledPercent < 70
+            if shouldNotify {
+                lastSentProgress = scaledPercent
+            }
+            progressLock.unlock()
+            if shouldNotify {
+                self.notifyDownload(id: id, percent: scaledPercent, bundle: bundleInfo)
+            }
+        }
         // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
         defer {
             if let fileURL = downloadResult.fileURL {
@@ -2669,9 +2699,14 @@ import UIKit
             do {
                 try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
 
-                if lastSentProgress < 70 {
-                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
+                progressLock.lock()
+                let needsFinalDownloadTick = lastSentProgress < 70
+                if needsFinalDownloadTick {
                     lastSentProgress = 70
+                }
+                progressLock.unlock()
+                if needsFinalDownloadTick {
+                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 }
                 self.logger.info("Download complete")
             } catch let error as NSError {
