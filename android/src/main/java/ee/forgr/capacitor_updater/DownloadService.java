@@ -19,8 +19,11 @@ import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -475,14 +478,86 @@ public class DownloadService extends Worker {
         }
     }
 
+    // Precomputed builtin hashes: see `public/ota-builtin-hashes.json` (generated at build time).
+    static final String BUILTIN_HASHES_ASSET = "public/ota-builtin-hashes.json";
+    private static volatile Map<String, String> builtinHashes;
+    private static final Object BUILTIN_HASHES_LOCK = new Object();
+
+    static Map<String, String> builtinHashes(final AssetManager assets) {
+        Map<String, String> hashes = builtinHashes;
+        if (hashes != null) {
+            return hashes;
+        }
+        synchronized (BUILTIN_HASHES_LOCK) {
+            if (builtinHashes != null) {
+                return builtinHashes;
+            }
+            final Map<String, String> loaded = new HashMap<>();
+            try (InputStream in = assets.open(BUILTIN_HASHES_ASSET)) {
+                final ByteArrayOutputStream out = new ByteArrayOutputStream();
+                final byte[] buffer = new byte[64 * 1024];
+                int length;
+                while ((length = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, length);
+                }
+                final JSONObject files = new JSONObject(out.toString("UTF-8")).getJSONObject("files");
+                final Iterator<String> keys = files.keys();
+                while (keys.hasNext()) {
+                    final String key = keys.next();
+                    loaded.put(key, files.getString(key));
+                }
+            } catch (Exception ignored) {
+                // No table (older build) — every lookup falls back to hashing.
+            }
+            builtinHashes = loaded;
+            return loaded;
+        }
+    }
+
+    /** TRUE/FALSE from the table, or null when the table cannot answer. */
+    static Boolean builtinHashVerdict(final AssetManager assets, final String assetPath, final String expectedHash) {
+        if (assets == null || assetPath == null || !assetPath.startsWith("public/") || expectedHash == null) {
+            return null;
+        }
+        final String known = builtinHashes(assets).get(assetPath.substring("public/".length()));
+        return known == null ? null : known.equalsIgnoreCase(expectedHash);
+    }
+
+    static boolean copyStreamUnchecked(final InputStream input, final File dest) throws IOException {
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            throw new IOException("Destination has no parent: " + dest.getAbsolutePath());
+        }
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+        final File tempFile = File.createTempFile("capgo_asset_", ".tmp", parent);
+        try {
+            try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+                final byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, length);
+                }
+            }
+            return replaceFile(tempFile, dest);
+        } finally {
+            deleteQuietly(tempFile);
+        }
+    }
+
     static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
         if (assets == null || fileName == null || dest == null) {
             return false;
         }
         try {
             final String assetPath = resolveBuiltinAssetPath(fileName);
+            final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
+            if (Boolean.FALSE.equals(verdict)) {
+                return false;
+            }
             try (InputStream in = assets.open(assetPath)) {
-                return copyStreamIfChecksumMatches(in, dest, expectedHash);
+                return verdict != null ? copyStreamUnchecked(in, dest) : copyStreamIfChecksumMatches(in, dest, expectedHash);
             }
         } catch (IOException e) {
             return false;
@@ -495,6 +570,10 @@ public class DownloadService extends Worker {
         }
         try {
             final String assetPath = resolveBuiltinAssetPath(fileName);
+            final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
+            if (verdict != null) {
+                return verdict;
+            }
             try (InputStream in = assets.open(assetPath)) {
                 return expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(in));
             }

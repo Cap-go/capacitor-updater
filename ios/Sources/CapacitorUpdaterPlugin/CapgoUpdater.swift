@@ -1364,8 +1364,7 @@ import UIKit
             let builtinLookupName = knownEntry?.originalFileName ?? relativePath
             let isBuiltinOrigin: Bool
             if let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: builtinLookupName) {
-                isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
-                    verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+                isBuiltinOrigin = builtinFileMatches(builtinFilePath, expectedHash: checksum)
             } else {
                 isBuiltinOrigin = false
             }
@@ -1579,6 +1578,39 @@ import UIKit
         Bundle.main.bundleURL.appendingPathComponent("public")
     }
 
+    // Precomputed builtin hashes: `ota-builtin-hashes.json` in the web assets dir (generated at build time).
+    static let builtinHashesFileName = "ota-builtin-hashes.json"
+    private var cachedBuiltinHashes: [String: String]?
+    private let builtinHashesLock = NSLock()
+
+    private func builtinHashes() -> [String: String] {
+        builtinHashesLock.lock()
+        defer { builtinHashesLock.unlock() }
+        if let hashes = cachedBuiltinHashes {
+            return hashes
+        }
+        var hashes: [String: String] = [:]
+        let tableURL = builtinFolderURL().appendingPathComponent(Self.builtinHashesFileName)
+        if let data = try? Data(contentsOf: tableURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let files = json["files"] as? [String: String] {
+            hashes = files
+        }
+        cachedBuiltinHashes = hashes
+        return hashes
+    }
+
+    private func builtinFileMatches(_ builtinFilePath: URL, expectedHash: String) -> Bool {
+        let basePath = builtinFolderURL().standardizedFileURL.path
+        let filePath = builtinFilePath.standardizedFileURL.path
+        if filePath.hasPrefix(basePath + "/"),
+           let known = builtinHashes()[String(filePath.dropFirst(basePath.count + 1))] {
+            return known.lowercased() == expectedHash.lowercased()
+        }
+        return FileManager.default.fileExists(atPath: builtinFilePath.path) &&
+            verifyChecksum(file: builtinFilePath, expectedHash: expectedHash)
+    }
+
     private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
         guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
             return nil
@@ -1609,7 +1641,7 @@ import UIKit
         guard let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName) else {
             return false
         }
-        if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+        if builtinFileMatches(builtinFilePath, expectedHash: fileHash) {
             return true
         }
 
@@ -1958,8 +1990,7 @@ import UIKit
 
                 do {
                     // Try builtin first
-                    if FileManager.default.fileExists(atPath: task.builtinFilePath.path) &&
-                        self.verifyChecksum(file: task.builtinFilePath, expectedHash: task.finalFileHash) {
+                    if self.builtinFileMatches(task.builtinFilePath, expectedHash: task.finalFileHash) {
                         try self.copyItemReplacing(from: task.builtinFilePath, to: task.destFilePath)
                         self.logger.info("downloadManifest \(task.fileName) using builtin file \(id)")
                     }
