@@ -479,6 +479,7 @@ public class DownloadService extends Worker {
     }
 
     // Precomputed builtin hashes: `public/ota-builtin-hashes.json` (written by the Capacitor sync hook).
+    // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
     static final String BUILTIN_HASHES_ASSET = "public/ota-builtin-hashes.json";
     private static volatile Map<String, String> builtinHashes;
     private static final Object BUILTIN_HASHES_LOCK = new Object();

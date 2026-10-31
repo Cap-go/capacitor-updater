@@ -1579,9 +1579,12 @@ import UIKit
     }
 
     // Precomputed builtin hashes: `ota-builtin-hashes.json` in the web assets dir (Capacitor sync hook).
+    // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
     static let builtinHashesFileName = "ota-builtin-hashes.json"
     private var cachedBuiltinHashes: [String: String]?
     private let builtinHashesLock = NSLock()
+    /// Disk reads of `ota-builtin-hashes.json` (lazy once per updater instance / process).
+    private(set) var builtinHashesTableLoadCount = 0
 
     private func builtinHashes() -> [String: String] {
         builtinHashesLock.lock()
@@ -1591,6 +1594,7 @@ import UIKit
         }
         var hashes: [String: String] = [:]
         let tableURL = builtinFolderURL().appendingPathComponent(Self.builtinHashesFileName)
+        builtinHashesTableLoadCount += 1
         if let data = try? Data(contentsOf: tableURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let files = json["files"] as? [String: String] {

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -119,5 +120,36 @@ public class BuiltinHashesTest {
         assertTrue(DownloadService.tryCopyBuiltinAsset(assets, "index.html", dest, hash));
         assertTrue(dest.exists());
         assertEquals(hash, CryptoCipher.calcChecksum(dest));
+    }
+
+    @Test
+    public void builtinHashesReadsTableAssetOnceAcrossManyLookupsAndUpdates() throws Exception {
+        final byte[] content = "once".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = "{\"files\":{\"index.html\":\"" + hash + "\",\"app.js\":\"" + hash + "\"}}";
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        when(assets.open(eq("public/app.js"))).thenReturn(new ByteArrayInputStream(content));
+
+        for (int i = 0; i < 15; i++) {
+            assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+            assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+            assertTrue(DownloadService.builtinAssetMatches(assets, "app.js", hash));
+        }
+
+        verify(assets, times(1)).open(eq(TABLE_ASSET));
+    }
+
+    @Test
+    public void builtinHashesReadsMissingTableOnceThenReusesEmptyCache() throws Exception {
+        final byte[] content = "fallback once".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final AssetManager assets = assetsWithTable(null, "public/index.html", content);
+
+        for (int i = 0; i < 10; i++) {
+            assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+            assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+        }
+
+        verify(assets, times(1)).open(eq(TABLE_ASSET));
     }
 }

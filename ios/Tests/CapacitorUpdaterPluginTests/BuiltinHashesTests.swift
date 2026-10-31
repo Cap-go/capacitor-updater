@@ -90,4 +90,47 @@ final class BuiltinHashesTests: XCTestCase {
         ]
         XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
     }
+
+    func testBuiltinHashesTableReadOnceAcrossManyLookupsAndUpdates() throws {
+        let contentA = "entry a \(UUID().uuidString)"
+        let contentB = "entry b \(UUID().uuidString)"
+        let fileA = builtinFolder.appendingPathComponent("index.html")
+        let fileB = builtinFolder.appendingPathComponent("app.js")
+        try contentA.write(to: fileA, atomically: true, encoding: .utf8)
+        try contentB.write(to: fileB, atomically: true, encoding: .utf8)
+        let hashA = String(repeating: "d", count: 64)
+        let hashB = String(repeating: "e", count: 64)
+        try writeHashTable(files: ["index.html": hashA, "app.js": hashB])
+
+        for i in 0..<12 {
+            let manifest = [
+                ManifestEntry(file_name: "index.html", file_hash: hashA, download_url: nil),
+                ManifestEntry(file_name: "app.js", file_hash: hashB, download_url: nil)
+            ]
+            if i.isMultiple(of: 2) {
+                XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+            } else {
+                _ = implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "")
+            }
+        }
+
+        XCTAssertEqual(implementation.builtinHashesTableLoadCount, 1)
+    }
+
+    func testBuiltinHashesTableReadOnceWhenMissingOrMalformed() throws {
+        let content = "no valid table \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        try "{ not json".write(to: builtinFolder.appendingPathComponent(CapgoUpdater.builtinHashesFileName), atomically: true, encoding: .utf8)
+
+        for _ in 0..<8 {
+            let manifest = [
+                ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
+            ]
+            XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+        }
+
+        XCTAssertEqual(implementation.builtinHashesTableLoadCount, 1)
+    }
 }
