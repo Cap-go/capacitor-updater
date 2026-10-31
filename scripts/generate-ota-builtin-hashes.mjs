@@ -34,7 +34,7 @@ function assertAllowedRoot(label, target) {
 }
 
 function assertWebDirectory(dir) {
-  const resolved = assertAllowedRoot('web directory', dir);
+  const resolved = assertAllowedRoot('web directory', dir); // NOSONAR CLI path validated against project root and cwd
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     console.error(`Web directory not found: ${dir}`);
     process.exit(1);
@@ -42,10 +42,10 @@ function assertWebDirectory(dir) {
   return resolved;
 }
 
-const webDir = assertWebDirectory(process.argv[2] ?? path.join(root, 'www'));
-const outputFile = process.argv[3]
-  ? assertAllowedRoot('output file', process.argv[3])
-  : path.join(webDir, 'ota-builtin-hashes.json');
+const rawWebDir = process.argv[2] ?? path.join(root, 'www');
+const webDir = assertWebDirectory(rawWebDir);
+const rawOutputFile = process.argv[3] ?? path.join(webDir, 'ota-builtin-hashes.json');
+const outputFile = assertAllowedRoot('output file', rawOutputFile);
 
 if (!pathContains(webDir, outputFile)) {
   console.error('Output file must be inside the web directory');
@@ -85,6 +85,6 @@ function walk(dir, base, out) {
 
 const files = {};
 walk(webDir, webDir, files);
-fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-fs.writeFileSync(outputFile, `${JSON.stringify({ files }, null, 2)}\n`, 'utf8');
+fs.mkdirSync(path.dirname(outputFile), { recursive: true }); // NOSONAR output path constrained to webDir via pathContains
+fs.writeFileSync(outputFile, `${JSON.stringify({ files }, null, 2)}\n`, 'utf8'); // NOSONAR output path constrained to webDir via pathContains
 console.log(`Wrote ${Object.keys(files).length} entries to ${outputFile}`);
