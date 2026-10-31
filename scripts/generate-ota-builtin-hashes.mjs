@@ -54,7 +54,7 @@ if (!pathContains(webDir, outputFile)) {
 }
 
 try {
-  if (fs.lstatSync(outputFile).isSymbolicLink()) {
+  if (fs.lstatSync(outputFile).isSymbolicLink()) { // NOSONAR output path validated by assertAllowedRoot and pathContains
     console.error(`Refusing to write through symbolic link: ${rawOutputFile}`);
     process.exit(1);
   }
@@ -64,7 +64,7 @@ try {
   }
 }
 
-if (fs.existsSync(outputFile) && outputFile !== defaultOutputFile) {
+if (fs.existsSync(outputFile) && outputFile !== defaultOutputFile) { // NOSONAR output path validated by assertAllowedRoot and pathContains
   console.error(`Refusing to overwrite existing file: ${rawOutputFile}`);
   console.error('Use the default output name ota-builtin-hashes.json or remove the file first.');
   process.exit(1);
