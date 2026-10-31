@@ -12,6 +12,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.AdditionalAnswers.returnsNew;
 
 import android.content.res.AssetManager;
 import java.io.ByteArrayInputStream;
@@ -46,7 +47,7 @@ public class BuiltinHashesTest {
             when(assets.open(TABLE_ASSET)).thenReturn(new ByteArrayInputStream(tableJson.getBytes(StandardCharsets.UTF_8)));
         }
         if (assetPath != null && assetBytes != null) {
-            when(assets.open(eq(assetPath))).thenReturn(new ByteArrayInputStream(assetBytes));
+            when(assets.open(eq(assetPath))).thenAnswer(returnsNew(() -> new ByteArrayInputStream(assetBytes)));
         }
         return assets;
     }
@@ -80,7 +81,7 @@ public class BuiltinHashesTest {
         final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         final ByteArrayInputStream contentStream = spy(new ByteArrayInputStream(content));
-        when(assets.open(eq("public/index.html"))).thenReturn(contentStream);
+        when(assets.open(eq("public/index.html"))).thenAnswer(returnsNew(() -> new ByteArrayInputStream(content)));
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
         verify(assets).open(eq("public/index.html"));
         verify(contentStream, never()).read(any(byte[].class));
@@ -128,7 +129,7 @@ public class BuiltinHashesTest {
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = "{\"files\":{\"index.html\":\"" + hash + "\",\"app.js\":\"" + hash + "\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
-        when(assets.open(eq("public/app.js"))).thenReturn(new ByteArrayInputStream(content));
+        when(assets.open(eq("public/app.js"))).thenAnswer(returnsNew(() -> new ByteArrayInputStream(content)));
 
         for (int i = 0; i < 15; i++) {
             assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
