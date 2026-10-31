@@ -37,6 +37,8 @@ export function isSymbolicLinkPath(target) {
   }
 }
 
+/** True when `descendant` is `parent` or a path under `parent`. */
+export function pathContains(parent, descendant) {
   const relative = path.relative(parent, descendant);
   if (relative === '') {
     return true;
