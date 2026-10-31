@@ -835,7 +835,7 @@ public class DownloadService extends Worker {
                     try {
                         if (tryCopyBuiltinAsset(assets, task.fileName, task.targetFile, task.finalFileHash)) {
                             logger.debug("using builtin asset " + task.fileName);
-                        } else if (tryCopyBuiltinFile(assets, task.fileName, task.builtinFile, task.targetFile, task.finalFileHash)) {
+                        } else if (tryCopyBuiltinFile(task.builtinFile, task.targetFile, task.finalFileHash)) {
                             logger.debug("using builtin file " + task.fileName);
                         } else if (
                             tryCopyFromCache(task.cacheFile, task.targetFile, task.finalFileHash) ||
@@ -1531,32 +1531,8 @@ public class DownloadService extends Worker {
     }
 
     static boolean tryCopyBuiltinFile(final File builtinFile, final File dest, final String expectedHash) {
-        return tryCopyBuiltinFile(null, null, builtinFile, dest, expectedHash);
-    }
-
-    static boolean tryCopyBuiltinFile(
-        final AssetManager assets,
-        final String fileName,
-        final File builtinFile,
-        final File dest,
-        final String expectedHash
-    ) {
         if (builtinFile == null || dest == null || expectedHash == null || expectedHash.isEmpty() || !builtinFile.isFile()) {
             return false;
-        }
-        if (assets != null && fileName != null) {
-            try {
-                final Boolean verdict = builtinHashVerdict(assets, resolveBuiltinAssetPath(fileName), expectedHash);
-                if (Boolean.FALSE.equals(verdict)) {
-                    return false;
-                }
-                if (Boolean.TRUE.equals(verdict)) {
-                    copyFileChannel(builtinFile, dest);
-                    return true;
-                }
-            } catch (IOException ignored) {
-                // fall back to hashing
-            }
         }
         try {
             if (!expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(builtinFile))) {

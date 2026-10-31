@@ -52,6 +52,41 @@ export function collectWebBundleHashes(webDir, { outputFileAbs = null } = {}) {
   const skipNames = new Set([BUILTIN_HASHES_FILE_NAME]);
   const files = {};
 
+  function recordRegularFile(resolvedFull) {
+    if (resolvedOutput && resolvedFull === resolvedOutput) {
+      return;
+    }
+    if (!pathContains(base, resolvedFull)) {
+      return;
+    }
+    const rel = path.relative(base, resolvedFull).split(path.sep).join('/');
+    files[rel] = sha256File(resolvedFull);
+  }
+
+  function visitName(name, realDir, ancestors) {
+    if (skipNames.has(name)) {
+      return;
+    }
+    const full = path.join(realDir, name);
+    let stat;
+    try {
+      stat = fs.lstatSync(full);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink()) {
+      return;
+    }
+    if (stat.isDirectory()) {
+      walk(full, ancestors);
+      return;
+    }
+    if (!stat.isFile()) {
+      return;
+    }
+    recordRegularFile(fs.realpathSync(full));
+  }
+
   function walk(dir, ancestors = new Set()) {
     const realDir = fs.realpathSync(dir);
     if (ancestors.has(realDir)) {
@@ -60,35 +95,7 @@ export function collectWebBundleHashes(webDir, { outputFileAbs = null } = {}) {
     ancestors.add(realDir);
     try {
       for (const name of fs.readdirSync(realDir)) {
-        if (skipNames.has(name)) {
-          continue;
-        }
-        const full = path.join(realDir, name);
-        let stat;
-        try {
-          stat = fs.lstatSync(full);
-        } catch {
-          continue;
-        }
-        if (stat.isSymbolicLink()) {
-          continue;
-        }
-        if (stat.isDirectory()) {
-          walk(full, ancestors);
-          continue;
-        }
-        if (!stat.isFile()) {
-          continue;
-        }
-        const resolvedFull = fs.realpathSync(full);
-        if (resolvedOutput && resolvedFull === resolvedOutput) {
-          continue;
-        }
-        if (!pathContains(base, resolvedFull)) {
-          continue;
-        }
-        const rel = path.relative(base, resolvedFull).split(path.sep).join('/');
-        files[rel] = sha256File(resolvedFull);
+        visitName(name, realDir, ancestors);
       }
     } finally {
       ancestors.delete(realDir);
@@ -120,7 +127,7 @@ export function resolveIosPublicDir(rootDir, extConfig = {}) {
     const pbxproj = fs.readFileSync(pbxprojPath, 'utf8');
     const re = /path\s=\spublic[\s\S]+?sourceTree\s=\s([^;]+)/;
     const match = pbxproj.match(re);
-    if (match && match[1] === 'SOURCE_ROOT') {
+    if (match?.[1] === 'SOURCE_ROOT') {
       return path.join(nativeProjectDirAbs, 'public');
     }
   } catch {

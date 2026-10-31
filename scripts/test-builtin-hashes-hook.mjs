@@ -16,8 +16,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capgo-builtin-hook-'));
 
 function assert(condition, message) {
   if (!condition) {
-    console.error(message);
-    process.exit(1);
+    throw new Error(message);
   }
 }
 
@@ -47,13 +46,13 @@ try {
 
   fs.writeFileSync(path.join(webDir, BUILTIN_HASHES_FILE_NAME), '{"files":{}}\n', 'utf8');
   const withoutSelf = collectWebBundleHashes(webDir, { outputFileAbs: outputFile });
-  assert(!Object.prototype.hasOwnProperty.call(withoutSelf, BUILTIN_HASHES_FILE_NAME), 'must skip manifest in web dir');
+  assert(!Object.hasOwn(withoutSelf, BUILTIN_HASHES_FILE_NAME), 'must skip manifest in web dir');
 
   const linkTarget = path.join(tmp, 'outside.js');
   fs.writeFileSync(linkTarget, 'linked\n', 'utf8');
   fs.symlinkSync(linkTarget, path.join(webDir, 'link.js'));
   const withLink = collectWebBundleHashes(webDir, { outputFileAbs: outputFile });
-  assert(!Object.prototype.hasOwnProperty.call(withLink, 'link.js'), 'must not follow symlinks');
+  assert(!Object.hasOwn(withLink, 'link.js'), 'must not follow symlinks');
 
   const resolvedAndroid = resolveNativePublicDir(tmp, 'android', {});
   assert(resolvedAndroid === androidPublic, 'android public dir resolution');

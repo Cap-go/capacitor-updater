@@ -32,12 +32,7 @@ function main() {
   }
 
   const rootDir = process.env.CAPACITOR_ROOT_DIR;
-  const webDir = process.env.CAPACITOR_WEB_DIR;
-  if (!rootDir || !webDir) {
-    return;
-  }
-
-  if (!fs.existsSync(webDir) || !fs.statSync(webDir).isDirectory()) {
+  if (!rootDir) {
     return;
   }
 
@@ -52,7 +47,7 @@ function main() {
   }
 
   const outputFile = path.join(nativePublicDir, BUILTIN_HASHES_FILE_NAME);
-  const files = collectWebBundleHashes(webDir, { outputFileAbs: outputFile });
+  const files = collectWebBundleHashes(nativePublicDir, { outputFileAbs: outputFile });
   writeBuiltinHashesManifest(outputFile, files);
 }
 
