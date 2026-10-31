@@ -1,7 +1,6 @@
 package ee.forgr.capacitor_updater;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import okhttp3.HttpUrl;
 
 final class StatsBatchFailureDiagnostics {
@@ -12,19 +11,12 @@ final class StatsBatchFailureDiagnostics {
 
     @NonNull
     static String safeDestinationUrl(@NonNull HttpUrl url) {
-        return url.newBuilder().username("").password("").query(null).fragment(null).build().toString();
-    }
-
-    @NonNull
-    static String safeDestinationUrl(@Nullable String urlString) {
-        if (urlString == null || urlString.isEmpty()) {
-            return "";
+        final String scheme = url.scheme();
+        final int port = url.port();
+        if (port == HttpUrl.defaultPort(scheme)) {
+            return scheme + "://" + url.host();
         }
-        final HttpUrl parsed = HttpUrl.parse(urlString);
-        if (parsed == null) {
-            return urlString;
-        }
-        return safeDestinationUrl(parsed);
+        return scheme + "://" + url.host() + ":" + port;
     }
 
     @NonNull

@@ -154,6 +154,7 @@ public class CapgoUpdater {
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static volatile Long statsFlushIntervalOverrideMs = null;
     private static volatile boolean statsFlushSchedulingDisabledForTests = false;
+    private static volatile boolean statsFailureElapsedRealtimeStubForTests = false;
     /** Unit tests only: runs after queue mutation and before the stats owner check. */
     static volatile Runnable statsAdoptionBeforeOwnerCheckForTests = null;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
@@ -3723,10 +3724,19 @@ public class CapgoUpdater {
     static void resetStatsFlushForTests() {
         statsFlushIntervalOverrideMs = null;
         statsFlushSchedulingDisabledForTests = false;
+        statsFailureElapsedRealtimeStubForTests = false;
+    }
+
+    static void stubStatsFailureElapsedRealtimeForTests(final boolean enabled) {
+        statsFailureElapsedRealtimeStubForTests = enabled;
     }
 
     int pendingStatsCount() {
         return statsQueue.size();
+    }
+
+    void flushStatsQueueForTests() {
+        flushStatsQueue();
     }
 
     void enqueuePendingStatsEventForTests(final String action) {
@@ -3935,7 +3945,7 @@ public class CapgoUpdater {
             .build();
 
         final int eventCount = eventsToSend.size();
-        final long requestStartElapsedRealtime = SystemClock.elapsedRealtime();
+        final long requestStartElapsedRealtime = statsFailureElapsedRealtimeStubForTests ? 0L : SystemClock.elapsedRealtime();
         DownloadService.sharedClient.newCall(request).enqueue(
             new okhttp3.Callback() {
                 @Override
@@ -3945,7 +3955,9 @@ public class CapgoUpdater {
                     }
                     requeueStatsEvents(eventsToSend);
                     if (logger != null) {
-                        final long elapsedMs = SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
+                        final long elapsedMs = statsFailureElapsedRealtimeStubForTests
+                            ? 0L
+                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         logger.error(
                             StatsBatchFailureDiagnostics.formatFailureMessage(
                                 "Failed to send stats batch",
@@ -3965,7 +3977,9 @@ public class CapgoUpdater {
                         if (abandonStoppedStatsFlush()) {
                             return;
                         }
-                        final long elapsedMs = SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
+                        final long elapsedMs = statsFailureElapsedRealtimeStubForTests
+                            ? 0L
+                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         final String safeDestination = StatsBatchFailureDiagnostics.safeDestinationUrl(response.request().url());
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
