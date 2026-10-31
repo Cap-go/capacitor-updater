@@ -82,7 +82,8 @@
     "native:contract:cli:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests",
     "native:contract:cli:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.CliCryptoFixtureTest && cd ..",
     "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs",
-    "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs"
+    "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs",
+    "generate:ota-builtin-hashes": "bun scripts/generate-ota-builtin-hashes.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.0",

@@ -234,6 +234,21 @@ On iOS, use at least `@capgo/capacitor-updater@8.51.22`. The same fix is in the 
 
 Earlier 5, 6, 7, and 8 builds compiled `autoSplashscreen` so it built the splash screen `show` / `hide` selector at runtime with `NSSelectorFromString`, then called it with `responds(to:)` and `perform`. App Review rejected that binary under [Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements). The rejection names code that passes arbitrary parameters to dynamic methods such as `respondsToSelector:` and `performSelector:`, next to a plugin that downloads a remote bundle. See [#913](https://github.com/Cap-go/capacitor-updater/issues/913). Those calls stay in the binary when `autoSplashscreen` is off, so turning the option off does not clear the rejection. Upgrade to the latest plugin for your Capacitor major and submit a new native build.
 
+#### Faster delta checks with `ota-builtin-hashes.json`
+
+Large web bundles can make `getMissingBundleFiles` slow on device because the plugin otherwise reads and SHA-256-hashes every builtin asset on each manifest update. You can ship a build-time hash table inside your web assets so the plugin compares manifest hashes by lookup instead of re-reading the whole bundle.
+
+1. Before `cap sync`, generate the table from the same web directory Capacitor copies into the app (paths use `/` separators; values are SHA-256 hex of file bytes, same as manifest checksums):
+
+```bash
+bun scripts/generate-ota-builtin-hashes.mjs ./www ./www/ota-builtin-hashes.json
+bunx cap sync
+```
+
+2. The file format is `{"files": {"index.html": "<sha256 hex>", "assets/app.js": "<sha256 hex>"}}`. It is optional: if the file is missing, malformed, or a path is not listed, the plugin falls back to hashing exactly as before.
+
+The table lives in the signed app bundle next to your other web assets (`public/ota-builtin-hashes.json` on Android, `Bundle.main/public/ota-builtin-hashes.json` on iOS). The Capgo CLI may generate this file in a future release; until then use the script above or your own build step.
+
 ## No Cloud setup
 
 Download update distribution zipfiles from a custom URL. Manually control the entire update process.
