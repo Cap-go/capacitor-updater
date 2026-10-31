@@ -71,13 +71,13 @@ public class BuiltinHashesTest {
     }
 
     @Test
-    public void builtinAssetMatchesUsesTableWithoutOpeningContentAsset() throws Exception {
+    public void builtinAssetMatchesUsesTableWithoutRehashingContentAsset() throws Exception {
         final byte[] content = "builtin body".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
-        verify(assets, never()).open(eq("public/index.html"));
+        verify(assets).open(eq("public/index.html"));
     }
 
     @Test

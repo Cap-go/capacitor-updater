@@ -14,7 +14,9 @@
     "dist/",
     "ios/Sources/",
     "CapgoCapacitorUpdater.podspec",
-    "Package.swift"
+    "Package.swift",
+    "scripts/cli-crypto-fixture-output.mjs",
+    "scripts/generate-ota-builtin-hashes.mjs"
   ],
   "author": "Martin Donadieu <martin@capgo.app>",
   "repository": {

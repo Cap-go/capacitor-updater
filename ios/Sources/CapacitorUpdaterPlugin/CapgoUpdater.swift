@@ -1605,6 +1605,9 @@ import UIKit
         let filePath = builtinFilePath.standardizedFileURL.path
         if filePath.hasPrefix(basePath + "/"),
            let known = builtinHashes()[String(filePath.dropFirst(basePath.count + 1))] {
+            guard FileManager.default.fileExists(atPath: builtinFilePath.path) else {
+                return false
+            }
             return known.lowercased() == expectedHash.lowercased()
         }
         return FileManager.default.fileExists(atPath: builtinFilePath.path) &&

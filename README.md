@@ -241,11 +241,13 @@ Large web bundles can make `getMissingBundleFiles` slow on device because the pl
 1. Before `cap sync`, generate the table from the same web directory Capacitor copies into the app (paths use `/` separators; values are SHA-256 hex of file bytes, same as manifest checksums):
 
 ```bash
-bun scripts/generate-ota-builtin-hashes.mjs ./www ./www/ota-builtin-hashes.json
+bun ./node_modules/@capgo/capacitor-updater/scripts/generate-ota-builtin-hashes.mjs ./www ./www/ota-builtin-hashes.json
 bunx cap sync
 ```
 
-2. The file format is `{"files": {"index.html": "<sha256 hex>", "assets/app.js": "<sha256 hex>"}}`. It is optional: if the file is missing, malformed, or a path is not listed, the plugin falls back to hashing exactly as before.
+When working inside this plugin repository, you can run the same script as `bun scripts/generate-ota-builtin-hashes.mjs` instead.
+
+2. The file format is `{"files": {"index.html": "<sha256 hex>", "assets/app.js": "<sha256 hex>"}}`. It is optional: if the file is missing, malformed JSON, or a path is not listed, the plugin falls back to hashing exactly as before. If a path is listed but its stored value does not match the manifest hash, the plugin treats the builtin asset as unavailable and downloads the file.
 
 The table lives in the signed app bundle next to your other web assets (`public/ota-builtin-hashes.json` on Android, `Bundle.main/public/ota-builtin-hashes.json` on iOS). The Capgo CLI may generate this file in a future release; until then use the script above or your own build step.
 
