@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.Observer;
@@ -3934,6 +3935,7 @@ public class CapgoUpdater {
             .build();
 
         final int eventCount = eventsToSend.size();
+        final long requestStartElapsedRealtime = SystemClock.elapsedRealtime();
         DownloadService.sharedClient.newCall(request).enqueue(
             new okhttp3.Callback() {
                 @Override
@@ -3943,7 +3945,15 @@ public class CapgoUpdater {
                     }
                     requeueStatsEvents(eventsToSend);
                     if (logger != null) {
-                        logger.error("Failed to send stats batch");
+                        final long elapsedMs = SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
+                        logger.error(
+                            StatsBatchFailureDiagnostics.formatFailureMessage(
+                                "Failed to send stats batch",
+                                StatsBatchFailureDiagnostics.safeDestinationUrl(call.request().url()),
+                                StatsBatchFailureDiagnostics.STATUS_UNAVAILABLE,
+                                elapsedMs
+                            )
+                        );
                         logger.debug("Error: " + e.getMessage());
                     }
                     statsFlushInFlight.set(false);
@@ -3955,6 +3965,8 @@ public class CapgoUpdater {
                         if (abandonStoppedStatsFlush()) {
                             return;
                         }
+                        final long elapsedMs = SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
+                        final String safeDestination = StatsBatchFailureDiagnostics.safeDestinationUrl(response.request().url());
                         final String responseData = responseBody != null ? responseBody.string() : "";
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
@@ -3974,8 +3986,14 @@ public class CapgoUpdater {
                         } else if (isTransientStatsFailure(response.code())) {
                             requeueStatsEvents(eventsToSend);
                             if (logger != null) {
-                                logger.error("Error sending stats batch");
-                                logger.debug("Retrying later, response code: " + response.code());
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        elapsedMs
+                                    )
+                                );
                             }
                         } else {
                             synchronized (statsQueue) {
@@ -3983,8 +4001,14 @@ public class CapgoUpdater {
                             }
                             persistStatsQueue();
                             if (logger != null) {
-                                logger.error("Dropping stats batch after permanent error");
-                                logger.debug("Response code: " + response.code());
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Dropping stats batch after permanent error",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        elapsedMs
+                                    )
+                                );
                             }
                         }
                     } finally {
