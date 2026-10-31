@@ -96,8 +96,8 @@ public class BuiltinHashesTest {
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = "{\"files\":{\"index.html\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
-        final File dest = File.createTempFile("capgo-builtin-test-", ".dat");
-        dest.deleteOnExit();
+        final File dest = new File(System.getProperty("java.io.tmpdir"), "capgo-builtin-mismatch-" + System.nanoTime() + ".dat");
+        assertFalse(dest.exists());
         assertFalse(DownloadService.tryCopyBuiltinAsset(assets, "index.html", dest, hash));
         verify(assets, never()).open(eq("public/index.html"));
         assertFalse(dest.exists());
