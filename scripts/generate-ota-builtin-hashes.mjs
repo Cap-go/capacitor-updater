@@ -18,10 +18,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { pathContains, resolveRealPath } from './cli-crypto-fixture-output.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const webDir = path.resolve(process.argv[2] ?? path.join(root, 'www'));
-const outputFile = path.resolve(process.argv[3] ?? path.join(webDir, 'ota-builtin-hashes.json'));
+const resolvedRoot = fs.realpathSync(root);
+const resolvedCwd = fs.realpathSync(process.cwd());
+
+function assertAllowedRoot(label, target) {
+  const resolved = resolveRealPath(target);
+  if (!pathContains(resolvedRoot, resolved) && !pathContains(resolvedCwd, resolved)) {
+    console.error(`Refusing ${label} outside the project or current working directory: ${target}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
+function assertWebDirectory(dir) {
+  const resolved = assertAllowedRoot('web directory', dir);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    console.error(`Web directory not found: ${dir}`);
+    process.exit(1);
+  }
+  return resolved;
+}
+
+const webDir = assertWebDirectory(process.argv[2] ?? path.join(root, 'www'));
+const outputFile = process.argv[3]
+  ? assertAllowedRoot('output file', process.argv[3])
+  : path.join(webDir, 'ota-builtin-hashes.json');
+
+if (!pathContains(webDir, outputFile)) {
+  console.error('Output file must be inside the web directory');
+  process.exit(1);
+}
 
 const skipNames = new Set(['ota-builtin-hashes.json']);
 
@@ -37,22 +66,21 @@ function walk(dir, base, out) {
       continue;
     }
     const full = path.join(dir, name);
-    const stat = fs.statSync(full);
+    const resolvedFull = fs.realpathSync(full);
+    if (!pathContains(base, resolvedFull)) {
+      continue;
+    }
+    const stat = fs.statSync(resolvedFull);
     if (stat.isDirectory()) {
-      walk(full, base, out);
+      walk(resolvedFull, base, out);
       continue;
     }
     if (!stat.isFile()) {
       continue;
     }
-    const rel = path.relative(base, full).split(path.sep).join('/');
-    out[rel] = sha256File(full);
+    const rel = path.relative(base, resolvedFull).split(path.sep).join('/');
+    out[rel] = sha256File(resolvedFull);
   }
-}
-
-if (!fs.existsSync(webDir) || !fs.statSync(webDir).isDirectory()) {
-  console.error(`Web directory not found: ${webDir}`);
-  process.exit(1);
 }
 
 const files = {};
