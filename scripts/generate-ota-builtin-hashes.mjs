@@ -35,7 +35,7 @@ function assertAllowedRoot(label, target) {
 
 function assertWebDirectory(dir) {
   const resolved = assertAllowedRoot('web directory', dir); // NOSONAR CLI path validated against project root and cwd
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) { // NOSONAR path validated by assertAllowedRoot
     console.error(`Web directory not found: ${dir}`);
     process.exit(1);
   }
