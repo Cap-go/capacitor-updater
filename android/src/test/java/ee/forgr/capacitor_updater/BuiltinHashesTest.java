@@ -4,9 +4,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,8 +78,11 @@ public class BuiltinHashesTest {
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        final ByteArrayInputStream contentStream = spy(new ByteArrayInputStream(content));
+        when(assets.open(eq("public/index.html"))).thenReturn(contentStream);
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
         verify(assets).open(eq("public/index.html"));
+        verify(contentStream, never()).read(any(byte[].class));
     }
 
     @Test

@@ -40,7 +40,7 @@ final class BuiltinHashesTests: XCTestCase {
         let content = "table match \(UUID().uuidString)"
         let fileURL = builtinFolder.appendingPathComponent("index.html")
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
-        let expectedHash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let expectedHash = String(repeating: "a", count: 64)
         try writeHashTable(files: ["index.html": expectedHash])
         let manifest = [
             ManifestEntry(file_name: "index.html", file_hash: expectedHash, download_url: nil)

@@ -42,7 +42,7 @@ function assertWebDirectory(dir) {
   return resolved;
 }
 
-const rawWebDir = process.argv[2] ?? path.join(root, 'www');
+const rawWebDir = process.argv[2] ?? path.join(process.cwd(), 'www');
 const webDir = assertWebDirectory(rawWebDir);
 const rawOutputFile = process.argv[3] ?? path.join(webDir, 'ota-builtin-hashes.json');
 const outputFile = assertAllowedRoot('output file', rawOutputFile);

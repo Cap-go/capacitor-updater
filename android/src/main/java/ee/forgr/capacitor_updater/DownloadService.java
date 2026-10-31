@@ -570,8 +570,11 @@ public class DownloadService extends Worker {
         }
         try {
             final String assetPath = resolveBuiltinAssetPath(fileName);
+            final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
+            if (Boolean.FALSE.equals(verdict)) {
+                return false;
+            }
             try (InputStream in = assets.open(assetPath)) {
-                final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
                 if (verdict != null) {
                     return verdict;
                 }
