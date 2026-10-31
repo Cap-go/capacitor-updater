@@ -24,8 +24,19 @@ export function resolveRealPath(target) {
   }
 }
 
-/** True when `descendant` is `parent` or a path under `parent`. */
-export function pathContains(parent, descendant) {
+/** True when `target` exists and is a symbolic link (does not follow the link). */
+export function isSymbolicLinkPath(target) {
+  try {
+    fs.readlinkSync(target);
+    return true;
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err?.code === 'EINVAL' || err?.code === 'UNKNOWN') {
+      return false;
+    }
+    throw err;
+  }
+}
+
   const relative = path.relative(parent, descendant);
   if (relative === '') {
     return true;

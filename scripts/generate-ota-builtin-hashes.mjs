@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { pathContains, resolveRealPath } from './cli-crypto-fixture-output.mjs';
+import { isSymbolicLinkPath, pathContains, resolveRealPath } from './cli-crypto-fixture-output.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const resolvedRoot = fs.realpathSync(root);
@@ -53,15 +53,9 @@ if (!pathContains(webDir, outputFile)) {
   process.exit(1);
 }
 
-try {
-  if (fs.lstatSync(outputFile).isSymbolicLink()) { // NOSONAR output path validated by assertAllowedRoot and pathContains
-    console.error(`Refusing to write through symbolic link: ${rawOutputFile}`);
-    process.exit(1);
-  }
-} catch (err) {
-  if (err?.code !== 'ENOENT') {
-    throw err;
-  }
+if (isSymbolicLinkPath(outputFile)) {
+  console.error(`Refusing to write through symbolic link: ${rawOutputFile}`);
+  process.exit(1);
 }
 
 if (fs.existsSync(outputFile) && outputFile !== defaultOutputFile) { // NOSONAR output path validated by assertAllowedRoot and pathContains
