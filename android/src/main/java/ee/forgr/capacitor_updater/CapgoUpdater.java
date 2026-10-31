@@ -3984,6 +3984,32 @@ public class CapgoUpdater {
                         try {
                             responseData = responseBody != null ? responseBody.string() : "";
                         } catch (IOException readEx) {
+                            checkAndHandleRateLimitResponse(response, "");
+                            if (response.isSuccessful()) {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                runStatsCallbacks(eventsToSend);
+                                return;
+                            }
+                            if (!isTransientStatsFailure(response.code())) {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                if (logger != null) {
+                                    logger.error(
+                                        StatsBatchFailureDiagnostics.formatFailureMessage(
+                                            "Dropping stats batch after permanent error",
+                                            safeDestination,
+                                            String.valueOf(response.code()),
+                                            elapsedMs
+                                        )
+                                    );
+                                }
+                                return;
+                            }
                             requeueStatsEvents(eventsToSend);
                             if (logger != null) {
                                 logger.error(
@@ -3999,6 +4025,16 @@ public class CapgoUpdater {
                         }
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
+                            if (logger != null) {
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        elapsedMs
+                                    )
+                                );
+                            }
                             return;
                         }
 
