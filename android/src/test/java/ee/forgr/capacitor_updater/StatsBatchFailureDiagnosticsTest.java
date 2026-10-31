@@ -74,13 +74,27 @@ public class StatsBatchFailureDiagnosticsTest {
     }
 
     @Test
+    public void safeDestinationBracketsIpv6Host() {
+        final HttpUrl url = HttpUrl.parse("https://[::1]:8443/stats");
+        assertEquals("https://[::1]:8443", StatsBatchFailureDiagnostics.safeDestinationUrl(url));
+    }
+
+    @Test
     public void safeDestinationUsesFinalOriginAfterNonCircularRedirect() throws Exception {
-        server.enqueue(new MockResponse().setResponseCode(302).addHeader("Location", server.url("/v2/stats/device-abc").toString()));
-        server.enqueue(new MockResponse().setResponseCode(500));
+        final MockWebServer redirectTarget = new MockWebServer();
+        redirectTarget.start();
+        try {
+            server.enqueue(
+                new MockResponse().setResponseCode(302).addHeader("Location", redirectTarget.url("/v2/stats/device-abc").toString())
+            );
+            redirectTarget.enqueue(new MockResponse().setResponseCode(500));
 
-        final String logged = flushStatsAndCaptureError(server.url("/initial/stats/device-xyz?token=secret").toString());
+            final String logged = flushStatsAndCaptureError(server.url("/initial/stats/device-xyz?token=secret").toString());
 
-        assertEquals("Error sending stats batch destination=" + serverOrigin() + " status=500 elapsedMs=0", logged);
+            assertEquals("Error sending stats batch destination=" + serverOrigin(redirectTarget) + " status=500 elapsedMs=0", logged);
+        } finally {
+            redirectTarget.shutdown();
+        }
     }
 
     @Test
@@ -135,6 +149,10 @@ public class StatsBatchFailureDiagnosticsTest {
     }
 
     private String serverOrigin() {
-        return "http://" + server.getHostName() + ":" + server.getPort();
+        return serverOrigin(server);
+    }
+
+    private static String serverOrigin(final MockWebServer mockWebServer) {
+        return "http://" + mockWebServer.getHostName() + ":" + mockWebServer.getPort();
     }
 }

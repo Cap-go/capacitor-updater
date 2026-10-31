@@ -10,13 +10,22 @@ final class StatsBatchFailureDiagnostics {
     private StatsBatchFailureDiagnostics() {}
 
     @NonNull
+    private static String hostForOrigin(@NonNull final String host) {
+        if (host.indexOf(':') >= 0) {
+            return "[" + host + "]";
+        }
+        return host;
+    }
+
+    @NonNull
     static String safeDestinationUrl(@NonNull HttpUrl url) {
         final String scheme = url.scheme();
         final int port = url.port();
+        final String host = hostForOrigin(url.host());
         if (port == HttpUrl.defaultPort(scheme)) {
-            return scheme + "://" + url.host();
+            return scheme + "://" + host;
         }
-        return scheme + "://" + url.host() + ":" + port;
+        return scheme + "://" + host + ":" + port;
     }
 
     @NonNull

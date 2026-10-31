@@ -3966,7 +3966,6 @@ public class CapgoUpdater {
                                 elapsedMs
                             )
                         );
-                        logger.debug("Error: " + e.getMessage());
                     }
                     statsFlushInFlight.set(false);
                 }
@@ -3981,7 +3980,23 @@ public class CapgoUpdater {
                             ? 0L
                             : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         final String safeDestination = StatsBatchFailureDiagnostics.safeDestinationUrl(response.request().url());
-                        final String responseData = responseBody != null ? responseBody.string() : "";
+                        final String responseData;
+                        try {
+                            responseData = responseBody != null ? responseBody.string() : "";
+                        } catch (IOException readEx) {
+                            requeueStatsEvents(eventsToSend);
+                            if (logger != null) {
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        elapsedMs
+                                    )
+                                );
+                            }
+                            return;
+                        }
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
                             return;
