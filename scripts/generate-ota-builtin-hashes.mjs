@@ -55,7 +55,7 @@ if (!pathContains(webDir, outputFile)) {
 
 function assertOutputNotSymlink(resolvedOutput) {
   try {
-    const fd = fs.openSync(resolvedOutput, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    const fd = fs.openSync(resolvedOutput, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); // NOSONAR output path validated by assertAllowedRoot and pathContains
     fs.closeSync(fd);
   } catch (err) {
     if (err?.code === 'ENOENT') {
@@ -81,11 +81,11 @@ const skipNames = new Set(['ota-builtin-hashes.json']);
 
 function sha256File(file) {
   const hash = createHash('sha256');
-  const fd = fs.openSync(file, 'r');
+  const fd = fs.openSync(file, 'r'); // NOSONAR file path constrained to validated webDir via walk
   try {
     const chunk = Buffer.alloc(1024 * 1024);
     let bytesRead;
-    while ((bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+    while ((bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) { // NOSONAR file path constrained to validated webDir via walk
       hash.update(chunk.subarray(0, bytesRead));
     }
   } finally {
