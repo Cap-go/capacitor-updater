@@ -37,12 +37,24 @@ final class BuiltinHashesTests: XCTestCase {
     }
 
     func testGetMissingBundleFilesUsesHashTableWithoutReadingBuiltinFile() throws {
-        let expectedHash = String(repeating: "a", count: 64)
+        let content = "table match \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let expectedHash = CryptoCipher.calcChecksum(filePath: fileURL)
         try writeHashTable(files: ["index.html": expectedHash])
         let manifest = [
             ManifestEntry(file_name: "index.html", file_hash: expectedHash, download_url: nil)
         ]
         XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+    }
+
+    func testGetMissingBundleFilesReportsMissingWhenTableMatchesButFileAbsent() throws {
+        let expectedHash = String(repeating: "a", count: 64)
+        try writeHashTable(files: ["index.html": expectedHash])
+        let manifest = [
+            ManifestEntry(file_name: "index.html", file_hash: expectedHash, download_url: nil)
+        ]
+        XCTAssertEqual(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").count, 1)
     }
 
     func testGetMissingBundleFilesReportsMissingWhenHashTableDisagrees() throws {
