@@ -3976,14 +3976,14 @@ public class CapgoUpdater {
                         if (abandonStoppedStatsFlush()) {
                             return;
                         }
-                        final long elapsedMs = statsFailureElapsedRealtimeStubForTests
-                            ? 0L
-                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         final String safeDestination = StatsBatchFailureDiagnostics.safeDestinationUrl(response.request().url());
                         final String responseData;
                         try {
                             responseData = responseBody != null ? responseBody.string() : "";
                         } catch (IOException readEx) {
+                            final long readFailureElapsedMs = statsFailureElapsedRealtimeStubForTests
+                                ? 0L
+                                : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                             checkAndHandleRateLimitResponse(response, "");
                             if (response.isSuccessful()) {
                                 synchronized (statsQueue) {
@@ -4004,7 +4004,7 @@ public class CapgoUpdater {
                                             "Dropping stats batch after permanent error",
                                             safeDestination,
                                             String.valueOf(response.code()),
-                                            elapsedMs
+                                            readFailureElapsedMs
                                         )
                                     );
                                 }
@@ -4017,12 +4017,15 @@ public class CapgoUpdater {
                                         "Error sending stats batch",
                                         safeDestination,
                                         String.valueOf(response.code()),
-                                        elapsedMs
+                                        readFailureElapsedMs
                                     )
                                 );
                             }
                             return;
                         }
+                        final long normalElapsedMs = statsFailureElapsedRealtimeStubForTests
+                            ? 0L
+                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
                             if (logger != null) {
@@ -4031,7 +4034,7 @@ public class CapgoUpdater {
                                         "Error sending stats batch",
                                         safeDestination,
                                         String.valueOf(response.code()),
-                                        elapsedMs
+                                        normalElapsedMs
                                     )
                                 );
                             }
@@ -4056,7 +4059,7 @@ public class CapgoUpdater {
                                         "Error sending stats batch",
                                         safeDestination,
                                         String.valueOf(response.code()),
-                                        elapsedMs
+                                        normalElapsedMs
                                     )
                                 );
                             }
@@ -4071,7 +4074,7 @@ public class CapgoUpdater {
                                         "Dropping stats batch after permanent error",
                                         safeDestination,
                                         String.valueOf(response.code()),
-                                        elapsedMs
+                                        normalElapsedMs
                                     )
                                 );
                             }

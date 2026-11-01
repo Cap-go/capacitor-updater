@@ -123,7 +123,40 @@ public class StatsBatchFailureDiagnosticsTest {
         assertFalse((Boolean) method.invoke(null, 404));
     }
 
+    @Test
+    public void statsBatchHttp504RequeuesPendingEventAndLogsFailure() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(504));
+
+        final StatsFlushHarness harness = flushStatsHarness(server.url("/stats/tenant-123?sig=secret").toString());
+
+        assertEquals(
+            "Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0",
+            lastCapturedError(harness.logger)
+        );
+        assertEquals(java.util.Collections.singletonList("diagnostics_probe"), harness.updater.pendingStatsActionsForTests());
+    }
+
+    @Test
+    public void statsBatchCircularRedirectLogsSanitizedOriginOnTransportFailure() throws Exception {
+        for (int i = 0; i < 25; i++) {
+            server.enqueue(
+                new MockResponse().setResponseCode(302).addHeader("Location", server.url("/loop/device-abc?token=secret").toString())
+            );
+        }
+
+        final StatsFlushHarness harness = flushStatsHarness(server.url("/start/stats/device-xyz?token=secret").toString());
+
+        assertEquals(
+            "Failed to send stats batch destination=" + serverOrigin() + " status=unavailable elapsedMs=0",
+            lastCapturedError(harness.logger)
+        );
+    }
+
     private String flushStatsAndCaptureError(final String statsUrl) throws Exception {
+        return lastCapturedError(flushStatsHarness(statsUrl).logger);
+    }
+
+    private StatsFlushHarness flushStatsHarness(final String statsUrl) throws Exception {
         final Logger logger = mock(Logger.class);
         final CountDownLatch latch = new CountDownLatch(1);
         doAnswer((invocation) -> {
@@ -143,9 +176,24 @@ public class StatsBatchFailureDiagnosticsTest {
         assertTrue("stats flush callback", latch.await(10, TimeUnit.SECONDS));
         verify(logger, timeout(10_000)).error(anyString());
 
+        return new StatsFlushHarness(updater, logger);
+    }
+
+    private String lastCapturedError(final Logger logger) {
         final ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(logger).error(captor.capture());
         return captor.getValue();
+    }
+
+    private static final class StatsFlushHarness {
+
+        private final CapgoUpdater updater;
+        private final Logger logger;
+
+        private StatsFlushHarness(final CapgoUpdater updater, final Logger logger) {
+            this.updater = updater;
+            this.logger = logger;
+        }
     }
 
     private String serverOrigin() {
