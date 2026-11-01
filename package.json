@@ -16,8 +16,7 @@
     "CapgoCapacitorUpdater.podspec",
     "Package.swift",
     "scripts/builtin-hashes-lib.mjs",
-    "scripts/capacitor-builtin-hashes-hook.mjs",
-    "scripts/cli-crypto-fixture-output.mjs"
+    "scripts/capacitor-builtin-hashes-hook.mjs"
   ],
   "author": "Martin Donadieu <martin@capgo.app>",
   "repository": {

@@ -47,8 +47,14 @@ function main() {
   }
 
   const outputFile = path.join(nativePublicDir, BUILTIN_HASHES_FILE_NAME);
-  const files = collectWebBundleHashes(nativePublicDir, { outputFileAbs: outputFile });
-  writeBuiltinHashesManifest(outputFile, files);
+  fs.rmSync(outputFile, { force: true });
+  try {
+    const files = collectWebBundleHashes(nativePublicDir, { outputFileAbs: outputFile });
+    writeBuiltinHashesManifest(outputFile, files);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[capgo] ${BUILTIN_HASHES_FILE_NAME} not generated: ${message}`);
+  }
 }
 
 main();

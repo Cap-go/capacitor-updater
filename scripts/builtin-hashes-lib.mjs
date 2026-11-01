@@ -1,9 +1,32 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveRealPath } from './cli-crypto-fixture-output.mjs';
+import process from 'node:process';
 
 export const BUILTIN_HASHES_FILE_NAME = 'ota-builtin-hashes.json';
+
+/** Resolve symlinks; walk up to the nearest existing ancestor when target does not exist yet. */
+export function resolveRealPath(target) {
+  const normalized = path.resolve(target);
+  const suffix = [];
+  let cursor = normalized;
+  while (true) {
+    try {
+      const real = fs.realpathSync(cursor);
+      return suffix.length === 0 ? real : path.join(real, ...suffix);
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        throw err;
+      }
+      suffix.unshift(path.basename(cursor));
+      const parent = path.dirname(cursor);
+      if (parent === cursor) {
+        throw err;
+      }
+      cursor = parent;
+    }
+  }
+}
 
 export function sha256File(file) {
   const hash = createHash('sha256');
@@ -132,5 +155,12 @@ export function resolveNativePublicDir(rootDir, platformName, extConfig = {}) {
 export function writeBuiltinHashesManifest(outputFile, files) {
   const payload = `${JSON.stringify({ files }, null, 2)}\n`;
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-  fs.writeFileSync(outputFile, payload, 'utf8');
+  const tmpFile = `${outputFile}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmpFile, payload, 'utf8');
+    fs.renameSync(tmpFile, outputFile);
+  } catch (err) {
+    fs.rmSync(tmpFile, { force: true });
+    throw err;
+  }
 }
