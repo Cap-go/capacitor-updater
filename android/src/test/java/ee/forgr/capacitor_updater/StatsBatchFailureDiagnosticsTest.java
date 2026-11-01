@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
@@ -163,7 +164,7 @@ public class StatsBatchFailureDiagnosticsTest {
             "Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0",
             lastCapturedError(harness.logger)
         );
-        assertEquals(java.util.Collections.singletonList("diagnostics_probe"), harness.updater.pendingStatsActionsForTests());
+        assertEquals(Collections.singletonList("diagnostics_probe"), harness.updater.pendingStatsActionsForTests());
     }
 
     @Test
