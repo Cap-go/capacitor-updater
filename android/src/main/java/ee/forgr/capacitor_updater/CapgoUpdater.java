@@ -3953,11 +3953,11 @@ public class CapgoUpdater {
                     if (abandonStoppedStatsFlush()) {
                         return;
                     }
+                    final long elapsedMs = statsFailureElapsedRealtimeStubForTests
+                        ? 0L
+                        : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                     requeueStatsEvents(eventsToSend);
                     if (logger != null) {
-                        final long elapsedMs = statsFailureElapsedRealtimeStubForTests
-                            ? 0L
-                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         logger.error(
                             StatsBatchFailureDiagnostics.formatFailureMessage(
                                 "Failed to send stats batch",
