@@ -58,8 +58,11 @@ final class BuiltinHashesTests: XCTestCase {
     }
 
     func testGetMissingBundleFilesReportsMissingWhenHashTableDisagrees() throws {
+        let content = "table mismatch \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let manifestHash = CryptoCipher.calcChecksum(filePath: fileURL)
         let tableHash = String(repeating: "b", count: 64)
-        let manifestHash = String(repeating: "c", count: 64)
         try writeHashTable(files: ["index.html": tableHash])
         let manifest = [
             ManifestEntry(file_name: "index.html", file_hash: manifestHash, download_url: nil)
@@ -75,6 +78,18 @@ final class BuiltinHashesTests: XCTestCase {
         try writeHashTable(files: ["other.js": hash])
         let manifest = [
             ManifestEntry(file_name: "app.js", file_hash: hash, download_url: nil)
+        ]
+        XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+    }
+
+    func testGetMissingBundleFilesFallsBackWhenTableEntryIsMalformed() throws {
+        let content = "malformed table \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        try writeHashTable(files: ["index.html": "not-a-sha256"])
+        let manifest = [
+            ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
         ]
         XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
     }

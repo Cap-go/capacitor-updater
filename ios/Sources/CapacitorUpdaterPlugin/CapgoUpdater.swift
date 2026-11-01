@@ -1581,6 +1581,12 @@ import UIKit
     // Precomputed builtin hashes: `ota-builtin-hashes.json` in the web assets dir (Capacitor sync hook).
     // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
     static let builtinHashesFileName = "ota-builtin-hashes.json"
+    private static func isSha256Hex(_ value: String) -> Bool {
+        guard value.count == 64 else { return false }
+        let hex = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        return value.unicodeScalars.allSatisfy { hex.contains($0) }
+    }
+
     private var cachedBuiltinHashes: [String: String]?
     private let builtinHashesLock = NSLock()
     /// Disk reads of `ota-builtin-hashes.json` (lazy once per updater instance / process).
@@ -1597,8 +1603,11 @@ import UIKit
         builtinHashesTableLoadCount += 1
         if let data = try? Data(contentsOf: tableURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let files = json["files"] as? [String: String] {
-            hashes = files
+           let files = json["files"] as? [String: Any] {
+            for (key, value) in files {
+                guard let hash = value as? String, Self.isSha256Hex(hash) else { continue }
+                hashes[key] = hash
+            }
         }
         cachedBuiltinHashes = hashes
         return hashes

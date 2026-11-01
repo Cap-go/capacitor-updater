@@ -484,6 +484,19 @@ public class DownloadService extends Worker {
     private static volatile Map<String, String> builtinHashes;
     private static final Object BUILTIN_HASHES_LOCK = new Object();
 
+    static boolean isSha256Hex(final String value) {
+        if (value == null || value.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < 64; i++) {
+            final char c = value.charAt(i);
+            if ((c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static Map<String, String> builtinHashes(final AssetManager assets) {
         Map<String, String> hashes = builtinHashes;
         if (hashes != null) {
@@ -505,9 +518,17 @@ public class DownloadService extends Worker {
                 final Iterator<String> keys = files.keys();
                 while (keys.hasNext()) {
                     final String key = keys.next();
-                    loaded.put(key, files.getString(key));
+                    final Object raw = files.opt(key);
+                    if (!(raw instanceof String)) {
+                        continue;
+                    }
+                    final String hash = (String) raw;
+                    if (isSha256Hex(hash)) {
+                        loaded.put(key, hash);
+                    }
                 }
             } catch (Exception ignored) {
+                loaded.clear();
                 // No table (older build): every lookup falls back to hashing.
             }
             builtinHashes = loaded;

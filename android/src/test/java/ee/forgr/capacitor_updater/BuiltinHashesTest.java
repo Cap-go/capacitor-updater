@@ -80,7 +80,7 @@ public class BuiltinHashesTest {
         final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         final ByteArrayInputStream contentStream = spy(new ByteArrayInputStream(content));
-        when(assets.open(eq("public/index.html"))).thenAnswer((invocation) -> new ByteArrayInputStream(content));
+        when(assets.open(eq("public/index.html"))).thenAnswer((invocation) -> contentStream);
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
         verify(assets).open(eq("public/index.html"));
         verify(contentStream, never()).read(any(byte[].class));
@@ -151,5 +151,15 @@ public class BuiltinHashesTest {
         }
 
         verify(assets, times(1)).open(eq(TABLE_ASSET));
+    }
+
+    @Test
+    public void builtinAssetMatchesFallsBackToHashingWhenTableEntryIsMalformed() throws Exception {
+        final byte[] content = "malformed table entry".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = "{\"files\":{\"index.html\":\"not-a-sha256\"}}";
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+        verify(assets).open(eq("public/index.html"));
     }
 }

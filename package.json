@@ -86,7 +86,6 @@
     "native:contract:cli:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.CliCryptoFixtureTest && cd ..",
     "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs",
     "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs",
-    "capacitor:sync:after": "node scripts/capacitor-builtin-hashes-hook.mjs",
     "capacitor:copy:after": "node scripts/capacitor-builtin-hashes-hook.mjs"
   },
   "devDependencies": {

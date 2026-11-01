@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Capacitor plugin hook: runs on capacitor:sync:after and capacitor:copy:after.
+ * Capacitor plugin hook: runs on capacitor:copy:after (covers standalone copy and sync, which invokes copy).
  * Writes ota-builtin-hashes.json into the native web public folder for the active platform.
  */
 import fs from 'node:fs';
