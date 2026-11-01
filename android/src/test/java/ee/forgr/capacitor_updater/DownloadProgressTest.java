@@ -70,16 +70,11 @@ public class DownloadProgressTest {
         ServerSocket server = new ServerSocket(0, 4, InetAddress.getLoopbackAddress());
         Thread responder = new Thread(() -> {
             try (Socket socket = server.accept()) {
-                BufferedReader input = new BufferedReader(
-                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII)
-                );
+                BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
                 String line;
                 while ((line = input.readLine()) != null && !line.isEmpty()) {}
                 OutputStream out = socket.getOutputStream();
-                String headers =
-                    "HTTP/1.1 200 OK\r\nContent-Length: " +
-                    payload.length +
-                    "\r\nConnection: close\r\n\r\n";
+                String headers = "HTTP/1.1 200 OK\r\nContent-Length: " + payload.length + "\r\nConnection: close\r\n\r\n";
                 out.write(headers.getBytes(StandardCharsets.US_ASCII));
                 int sent = 0;
                 for (int pct = 10; pct <= 70; pct++) {

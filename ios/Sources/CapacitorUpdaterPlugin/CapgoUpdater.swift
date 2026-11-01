@@ -535,8 +535,24 @@ import UIKit
                       (200..<300).contains(httpResponse.statusCode) else {
                     return
                 }
-                let expected = progress.totalUnitCount
-                let received = progress.completedUnitCount
+                let responseExpected = httpResponse.expectedContentLength
+                let taskExpected = downloadTask.countOfBytesExpectedToReceive
+                let expected = responseExpected > 0
+                    ? responseExpected
+                    : (taskExpected > 0 ? taskExpected : progress.totalUnitCount)
+                let taskReceived = downloadTask.countOfBytesReceived
+                let received: Int64
+                if progress.fractionCompleted >= 1.0 && expected > 0 {
+                    received = expected
+                } else if progress.totalUnitCount == expected && progress.completedUnitCount > taskReceived {
+                    received = min(expected, progress.completedUnitCount)
+                } else if taskReceived > 0 {
+                    received = expected > 0 ? min(expected, taskReceived) : taskReceived
+                } else if expected > 0 && progress.fractionCompleted > 0 {
+                    received = min(expected, Int64((progress.fractionCompleted * Double(expected)).rounded()))
+                } else {
+                    received = progress.completedUnitCount
+                }
                 if expected > 0 && received >= 0 {
                     let baseline = Self.shouldAppendHttpBody(statusCode: httpResponse.statusCode, existingBytes: resumedBytes)
                         ? resumedBytes
