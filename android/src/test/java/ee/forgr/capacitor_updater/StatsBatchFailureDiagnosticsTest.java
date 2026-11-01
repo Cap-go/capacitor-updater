@@ -121,6 +121,36 @@ public class StatsBatchFailureDiagnosticsTest {
         method.setAccessible(true);
         assertTrue((Boolean) method.invoke(null, 504));
         assertFalse((Boolean) method.invoke(null, 404));
+
+        server.enqueue(new MockResponse().setResponseCode(504));
+
+        final Logger logger = mock(Logger.class);
+        final CountDownLatch latch = new CountDownLatch(1);
+        doAnswer((invocation) -> {
+            latch.countDown();
+            return null;
+        })
+            .when(logger)
+            .error(anyString());
+
+        final CapgoUpdater updater = new CapgoUpdater(logger);
+        updater.documentsDir = documentsDir;
+        updater.statsUrl = server.url("/stats/retry-504").toString();
+        updater.httpsOnly = false;
+        updater.enqueuePendingStatsEventForTests("diagnostics_probe");
+        updater.flushStatsQueueForTests();
+
+        assertTrue("stats flush callback", latch.await(10, TimeUnit.SECONDS));
+        verify(logger, timeout(10_000)).error(anyString());
+
+        final ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(logger).error(captor.capture());
+        assertEquals(
+            "Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0",
+            captor.getValue()
+        );
+        assertEquals(1, updater.pendingStatsCount());
+        assertEquals("diagnostics_probe", updater.pendingStatsActionsForTests().get(0));
     }
 
     @Test
