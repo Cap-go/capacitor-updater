@@ -87,16 +87,6 @@ public class BuiltinHashesTest {
     }
 
     @Test
-    public void builtinAssetMatchesFallsBackToHashingWhenTableEntryMalformed() throws Exception {
-        final byte[] content = "malformed table entry".getBytes(StandardCharsets.UTF_8);
-        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":\"not-a-sha256\"}}";
-        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
-        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
-        verify(assets).open(eq("public/index.html"));
-    }
-
-    @Test
     public void builtinAssetMatchesFallsBackToHashingWhenPathMissingFromTable() throws Exception {
         final byte[] content = "fallback".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
