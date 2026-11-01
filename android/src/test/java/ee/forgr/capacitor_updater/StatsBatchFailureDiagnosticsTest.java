@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
@@ -146,25 +145,9 @@ public class StatsBatchFailureDiagnosticsTest {
 
         final ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(logger).error(captor.capture());
-        assertEquals(
-            "Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0",
-            captor.getValue()
-        );
+        assertEquals("Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0", captor.getValue());
         assertEquals(1, updater.pendingStatsCount());
         assertEquals("diagnostics_probe", updater.pendingStatsActionsForTests().get(0));
-    }
-
-    @Test
-    public void statsBatchHttp504RequeuesPendingEventAndLogsFailure() throws Exception {
-        server.enqueue(new MockResponse().setResponseCode(504));
-
-        final StatsFlushHarness harness = flushStatsHarness(server.url("/stats/tenant-123?sig=secret").toString());
-
-        assertEquals(
-            "Error sending stats batch destination=" + serverOrigin() + " status=504 elapsedMs=0",
-            lastCapturedError(harness.logger)
-        );
-        assertEquals(Collections.singletonList("diagnostics_probe"), harness.updater.pendingStatsActionsForTests());
     }
 
     @Test
