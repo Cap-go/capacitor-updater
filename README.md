@@ -333,6 +333,17 @@ Do not tell the user the app is updating. In any UI the user can see, including 
 
 Do not add a button such as "Update the app" or "Apply update" to trigger the bundle. If you need the user to continue, the furthest the UI should go is asking them to reopen the app, for example "Please reopen the app". Do not say that reopening applies an update.
 
+Do not show your own "new version available" message on a fresh install. The reviewer installs the store binary, which is older than the latest bundle on your channel, so the first check finds a bundle and your `updateAvailable` listener fires right away. Right after a fresh install or a native store update, the app runs the shipped bundle and `current()` returns `bundle.id === "builtin"`. Skip the message in that case:
+
+```ts
+const { bundle } = await CapacitorUpdater.current();
+if (bundle.id !== 'builtin') {
+  showNewVersionMessage();
+}
+```
+
+To bring a fresh install to the latest bundle without any message, use [Instant apply](#instant-apply-always-atinstall-onlaunch) with `autoUpdate: "atInstall"`.
+
 For the iOS plugin version that removes the `autoSplashscreen` code App Review flags, see [Instant apply](#instant-apply-always-atinstall-onlaunch).
 
 ### Packaging `dist.zip` update bundles
