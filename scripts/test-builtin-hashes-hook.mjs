@@ -57,6 +57,14 @@ try {
   const resolvedAndroid = resolveNativePublicDir(tmp, 'android', {});
   assert(resolvedAndroid === androidPublic, 'android public dir resolution');
 
+  const absAndroidRoot = path.join(tmp, 'external-android');
+  const absAndroidPublic = path.join(absAndroidRoot, 'app', 'src', 'main', 'assets', 'public');
+  fs.mkdirSync(absAndroidPublic, { recursive: true });
+  const resolvedAbsAndroid = resolveNativePublicDir(tmp, 'android', {
+    android: { path: absAndroidRoot },
+  });
+  assert(resolvedAbsAndroid === absAndroidPublic, 'absolute android.path public dir resolution');
+
   console.log('builtin-hashes hook ok');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

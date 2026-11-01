@@ -117,7 +117,8 @@ export function resolveIosPublicDir(rootDir, extConfig = {}) {
 
 export function resolveAndroidPublicDir(rootDir, extConfig = {}) {
   const platformDir = extConfig.android?.path ?? 'android';
-  return path.join(rootDir, platformDir, 'app', 'src', 'main', 'assets', 'public');
+  const platformDirAbs = path.resolve(rootDir, platformDir);
+  return path.join(platformDirAbs, 'app', 'src', 'main', 'assets', 'public');
 }
 
 export function resolveNativePublicDir(rootDir, platformName, extConfig = {}) {
