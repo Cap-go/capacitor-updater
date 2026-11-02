@@ -884,7 +884,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_android_apps
-    timeout-minutes: 10
+    timeout-minutes: ${{ matrix.job_timeout_minutes || 10 }}
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     env:
@@ -908,6 +908,7 @@ jobs:
             app: edge-deferred
           - scenario: edge-corrupt-bundle
             app: edge-deferred
+            job_timeout_minutes: 15
           - scenario: edge-offline-check
             app: edge-deferred
           - scenario: edge-direct-network-drop

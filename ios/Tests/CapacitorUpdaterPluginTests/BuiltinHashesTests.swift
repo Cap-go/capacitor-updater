@@ -55,8 +55,9 @@ final class BuiltinHashesTests: XCTestCase {
         let fileURL = builtinFolder.appendingPathComponent("index.html")
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
         let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let tableHash = String(repeating: "b", count: 64)
         let staleSize = Int64((try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) + 99)
-        try writeHashTable(files: ["index.html": hash], sizes: ["index.html": staleSize])
+        try writeHashTable(files: ["index.html": tableHash], sizes: ["index.html": staleSize])
         let manifest = [
             ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
         ]
@@ -126,7 +127,8 @@ final class BuiltinHashesTests: XCTestCase {
         let fileURL = builtinFolder.appendingPathComponent("index.html")
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
         let hash = CryptoCipher.calcChecksum(filePath: fileURL)
-        let table = "{\"files\":{\"index.html\":{\"sha256\":\"\(hash)\",\"size\":\"not-a-number\"}}}"
+        let tableHash = String(repeating: "c", count: 64)
+        let table = "{\"files\":{\"index.html\":{\"sha256\":\"\(tableHash)\",\"size\":\"not-a-number\"}}}"
         try table.write(to: builtinFolder.appendingPathComponent(CapgoUpdater.builtinHashesFileName), atomically: true, encoding: .utf8)
         let manifest = [
             ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)

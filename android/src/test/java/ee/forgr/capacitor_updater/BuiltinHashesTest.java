@@ -89,7 +89,8 @@ public class BuiltinHashesTest {
     public void builtinHashVerdictFallsBackWhenTableSizeStale() throws Exception {
         final byte[] content = "size stale".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + hash + "\",\"size\":" + (content.length + 50) + "}}}";
+        final String tableHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + tableHash + "\",\"size\":" + (content.length + 50) + "}}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
@@ -129,7 +130,8 @@ public class BuiltinHashesTest {
     public void builtinHashVerdictFallsBackWhenTableSizeMalformed() throws Exception {
         final byte[] content = "malformed size field".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + hash + "\",\"size\":\"not-a-number\"}}}";
+        final String tableHash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + tableHash + "\",\"size\":\"not-a-number\"}}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
         assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
