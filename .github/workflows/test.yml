@@ -37,13 +37,24 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Bun
+        if: runner.os != 'Windows'
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
+      - name: Setup Node.js
+        if: runner.os == 'Windows'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
       - name: Check plugin wiring
+        if: runner.os != 'Windows'
         run: bun run check:wiring
+      - name: Check plugin wiring (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: node scripts/check-capacitor-plugin-wiring.mjs && node scripts/test-builtin-hashes-hook.mjs
 
   guard_swiftpm_version:
     permissions:
