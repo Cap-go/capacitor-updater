@@ -1619,10 +1619,12 @@ import UIKit
                       let hash = obj["sha256"] as? String,
                       Self.isSha256Hex(hash) else { continue }
                 let sizeValue: Int64?
-                if let size = obj["size"] as? NSNumber {
+                if obj["size"] == nil || obj["size"] is NSNull {
+                    sizeValue = nil
+                } else if let size = obj["size"] as? NSNumber {
                     sizeValue = size.int64Value
                 } else {
-                    sizeValue = nil
+                    continue
                 }
                 hashes[key] = BuiltinHashEntry(hash: hash, size: sizeValue)
             }

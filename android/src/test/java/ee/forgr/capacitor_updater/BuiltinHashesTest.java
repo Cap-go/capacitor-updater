@@ -126,6 +126,16 @@ public class BuiltinHashesTest {
     }
 
     @Test
+    public void builtinHashVerdictFallsBackWhenTableSizeMalformed() throws Exception {
+        final byte[] content = "malformed size field".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + hash + "\",\"size\":\"not-a-number\"}}}";
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+    }
+
+    @Test
     public void builtinAssetMatchesUsesTableWithoutRehashingContentAsset() throws Exception {
         final byte[] content = "builtin body".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));

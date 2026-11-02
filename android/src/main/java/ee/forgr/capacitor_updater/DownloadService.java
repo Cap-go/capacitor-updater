@@ -546,7 +546,14 @@ public class DownloadService extends Worker {
                     if (!isSha256Hex(hash)) {
                         continue;
                     }
-                    final long size = obj.has("size") && !obj.isNull("size") ? obj.optLong("size", -1L) : -1L;
+                    final long size;
+                    if (!obj.has("size") || obj.isNull("size")) {
+                        size = -1L;
+                    } else if (obj.get("size") instanceof Number) {
+                        size = ((Number) obj.get("size")).longValue();
+                    } else {
+                        continue;
+                    }
                     loaded.put(key, new BuiltinHashEntry(hash, size));
                 }
             } catch (Exception ignored) {

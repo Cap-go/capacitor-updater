@@ -30,13 +30,20 @@ function runHook(envExtra) {
   return result;
 }
 
-function assertManifestKeysUnderNode(manifestPath) {
+function assertManifestKeysUnderNode(manifestPath, expectedEntries = null) {
   const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert(parsed.files && typeof parsed.files === 'object', 'manifest must have files object');
   for (const [rel, entry] of Object.entries(parsed.files)) {
     assert(entry && typeof entry === 'object', `entry for ${rel} must be an object`);
     assert(typeof entry.sha256 === 'string' && entry.sha256.length === 64, `sha256 for ${rel}`);
     assert(typeof entry.size === 'number' && entry.size >= 0, `size for ${rel}`);
+  }
+  if (expectedEntries) {
+    for (const [rel, expected] of Object.entries(expectedEntries)) {
+      assert(parsed.files[rel], `manifest must index ${rel}`);
+      assert(parsed.files[rel].sha256 === expected.sha256, `sha256 mismatch for ${rel}`);
+      assert(parsed.files[rel].size === expected.size, `size mismatch for ${rel}`);
+    }
   }
 }
 
@@ -109,7 +116,12 @@ try {
   assert(androidHook.status === 0, `android hook must exit 0, got ${androidHook.status} stderr=${androidHook.stderr}`);
   const androidManifest = path.join(hookAndroidPublic, BUILTIN_HASHES_FILE_NAME);
   assert(fs.existsSync(androidManifest), 'android hook must write manifest');
-  assertManifestKeysUnderNode(androidManifest);
+  const androidIndexPath = path.join(hookAndroidPublic, 'index.html');
+  const androidIndexHash = sha256File(androidIndexPath);
+  const androidIndexSize = fs.statSync(androidIndexPath).size;
+  assertManifestKeysUnderNode(androidManifest, {
+    'index.html': { sha256: androidIndexHash, size: androidIndexSize },
+  });
 
   const hookIosRoot = path.join(tmp, 'hook-ios-root');
   const iosPublic = path.join(hookIosRoot, 'ios', 'App', 'public');
@@ -130,7 +142,12 @@ try {
   assert(iosHook.status === 0, `ios hook must exit 0, got ${iosHook.status} stderr=${iosHook.stderr}`);
   const iosManifest = path.join(iosPublic, BUILTIN_HASHES_FILE_NAME);
   assert(fs.existsSync(iosManifest), 'ios hook must write manifest');
-  assertManifestKeysUnderNode(iosManifest);
+  const iosIndexPath = path.join(iosPublic, 'index.html');
+  const iosIndexHash = sha256File(iosIndexPath);
+  const iosIndexSize = fs.statSync(iosIndexPath).size;
+  assertManifestKeysUnderNode(iosManifest, {
+    'index.html': { sha256: iosIndexHash, size: iosIndexSize },
+  });
 
   const badRoot = path.join(tmp, 'hook-fail-root');
   fs.mkdirSync(badRoot, { recursive: true });

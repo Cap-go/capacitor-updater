@@ -121,6 +121,19 @@ final class BuiltinHashesTests: XCTestCase {
         XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
     }
 
+    func testGetMissingBundleFilesFallsBackWhenTableSizeIsMalformed() throws {
+        let content = "malformed size \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let table = "{\"files\":{\"index.html\":{\"sha256\":\"\(hash)\",\"size\":\"not-a-number\"}}}"
+        try table.write(to: builtinFolder.appendingPathComponent(CapgoUpdater.builtinHashesFileName), atomically: true, encoding: .utf8)
+        let manifest = [
+            ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
+        ]
+        XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
+    }
+
     func testGetMissingBundleFilesFallsBackWhenHashTableMissingOrMalformed() throws {
         let content = "no table \(UUID().uuidString)"
         let fileURL = builtinFolder.appendingPathComponent("index.html")
