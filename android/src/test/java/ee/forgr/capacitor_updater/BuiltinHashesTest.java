@@ -168,6 +168,9 @@ public class BuiltinHashesTest {
             "}}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         when(assets.open(eq("public/app.js"))).thenAnswer((invocation) -> new ByteArrayInputStream(content));
+        final AssetFileDescriptor appJsFd = mock(AssetFileDescriptor.class);
+        when(appJsFd.getLength()).thenReturn((long) content.length);
+        when(assets.openFd(eq("public/app.js"))).thenReturn(appJsFd);
 
         for (int i = 0; i < 15; i++) {
             assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
