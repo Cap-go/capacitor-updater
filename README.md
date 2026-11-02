@@ -327,6 +327,16 @@ To further remain in compliance with Apple's guidelines, we suggest that App Sto
 
 This is not a problem for the default behavior of background update, since it won't force the user to apply the new version until the next app close, but at least you should be aware of that ruling if you decide to show it.
 
+#### Prevent live updates during Apple and Google review
+
+Keep the app on the web assets shipped in the submitted native binary throughout Apple App Store and Google Play review. Applying a live update during review can reload the app, interrupt the reviewer's session, or change the behavior they are reviewing.
+
+Capgo Cloud blocks update requests from known Apple and Google datacenter networks by default to prevent live updates from reaching review devices on those networks. Keep the app's **Block provider infrastructure requests** setting enabled. This protection runs on Capgo's server and depends on recognizing the request's network; it does not detect every review session or pause updates for all users while a store review is in progress.
+
+If you self-host, manage updates manually, or disable this protection, you must provide your own way to prevent live updates from disturbing review. The same applies if review traffic does not use a recognized network. For example, pause update delivery for the submitted native version or use a dedicated channel that serves no live updates until review is complete. In manual flows, guard calls such as `download()`, `next()`, and `set()`, and prevent already downloaded or queued bundles from being applied during review. Hiding an update message does not prevent the update itself.
+
+Before submitting, test a fresh install and an upgrade from the previous store version. Confirm that the submitted build keeps running its bundled web assets across launches and background/foreground transitions while the review hold is active.
+
 #### Good practice for App Store review
 
 Do not tell the user the app is updating. In any UI the user can see, including copy on top of the splash screen, settings, and buttons, do not say "update", "live update", "remote update", "OTA", "downloading", or "installing". A progress bar is fine when its label describes tailoring the experience, for example "Tailoring your experience…". Calling that wait an update reads as the app installing behavior that was not in the reviewed binary.
