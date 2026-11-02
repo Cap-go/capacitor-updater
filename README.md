@@ -333,7 +333,7 @@ Do not tell the user the app is updating. In any UI the user can see, including 
 
 Do not add a button such as "Update the app" or "Apply update" to trigger the bundle. If you need the user to continue, the furthest the UI should go is asking them to reopen the app, for example "Please reopen the app". Do not say that reopening applies an update.
 
-Do not show your own "new version available" message on a fresh install. This mostly affects self-hosted and manual setups, where your app runs its own version check and shows its own prompt. The reviewer installs the store binary, which is older than your latest bundle, so the first check (your own server call, or the `updateAvailable` listener) finds a bundle right away. Right after a fresh install or a native store update, the app runs the shipped bundle and `current()` returns `bundle.id === "builtin"`. Skip the message in that case:
+Do not show your own "new version available" message on a fresh install. This mostly affects self-hosted and manual setups, where your app runs its own version check and shows its own prompt. The reviewer installs the store binary, which is older than your latest bundle, so the first check finds a bundle right away: your own server call returns it, or the updater finds it and emits `updateAvailable`. Right after a fresh install or a native store update, the app runs the shipped bundle and `current()` returns `bundle.id === "builtin"`. Skip the message in that case:
 
 ```ts
 const { bundle } = await CapacitorUpdater.current();
