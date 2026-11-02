@@ -18,6 +18,7 @@ import android.content.res.AssetManager;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import org.junit.After;
@@ -61,6 +62,27 @@ public class BuiltinHashesTest {
 
     private static String tableJsonLegacyString(final String relPath, final String hash) {
         return "{\"files\":{\"" + relPath + "\":\"" + hash + "\"}}";
+    }
+
+    @Test
+    public void builtinHashVerdictAcceptsLegacyStringTableEntry() throws Exception {
+        final byte[] content = "legacy string entry".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = tableJsonLegacyString("index.html", hash);
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+    }
+
+    @Test
+    public void builtinHashVerdictFallsBackWhenOpenFdFails() throws Exception {
+        final byte[] content = "compressed asset".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = tableJson("index.html", hash, content.length);
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        when(assets.openFd(eq("public/index.html"))).thenThrow(new IOException("Asset not compressed with openFd"));
+        assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
     }
 
     @Test

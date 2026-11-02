@@ -108,7 +108,7 @@ jobs:
         run: bun run verify:android
       - name: Verify packed package in example app (Android)
         shell: bash
-        run: bash ./.github/scripts/verify-packed-example.sh android
+        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh android
       - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
         # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
         run: bun run generate:cli-crypto && bun run native:contract:cli:android
@@ -173,7 +173,7 @@ jobs:
         run: bun run verify:ios
       - name: Verify packed package in example app (iOS)
         shell: bash
-        run: bash ./.github/scripts/verify-packed-example.sh ios
+        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
       - name: Run iOS native tests
         id: test_ios
         run: bun run native:test:ios
@@ -1018,12 +1018,19 @@ jobs:
             CAPGO_MAESTRO_UI_STATE_TIMEOUT_SECONDS=180
             CAPGO_MAESTRO_DIRECT_UPDATE_SETTLE_TIMEOUT_SECONDS=180
             bash ./scripts/maestro/run-android-live-update-ci.sh "${{ matrix.scenario }}"
+      - name: Detect live update success marker after first attempt
+        id: maestro_live_marker_1
+        if: always() && steps.maestro_live_flow_1.outcome != 'skipped'
+        run: |
+          if [[ -f "$CAPGO_MAESTRO_SUCCESS_MARKER" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Clear Android SDK temp cache (retry)
-        if: steps.maestro_live_flow_1.outcome == 'failure'
+        if: steps.maestro_live_flow_1.outcome == 'failure' && steps.maestro_live_marker_1.outputs.present != 'true'
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       - name: Run live update Maestro flow (retry after emulator SDK flake)
-        if: steps.maestro_live_flow_1.outcome == 'failure'
+        if: steps.maestro_live_flow_1.outcome == 'failure' && steps.maestro_live_marker_1.outputs.present != 'true'
         timeout-minutes: 8
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2

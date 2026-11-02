@@ -55,6 +55,14 @@ cleanup() {
   return 0
 }
 
+write_maestro_success_marker() {
+  if [[ -n "${CAPGO_MAESTRO_SUCCESS_MARKER:-}" ]]; then
+    mkdir -p "$(dirname "${CAPGO_MAESTRO_SUCCESS_MARKER}")"
+    : > "${CAPGO_MAESTRO_SUCCESS_MARKER}"
+  fi
+  return 0
+}
+
 run_with_timeout() {
   local timeout_seconds="$1"
   shift
@@ -741,6 +749,7 @@ run_scenario() {
     echo "=== Running Maestro edge case: $scenario_id ==="
     run_edge_case "$scenario_id"
     echo "=== Completed Maestro edge case: $scenario_id ==="
+    write_maestro_success_marker
     return 0
   fi
 
@@ -918,6 +927,7 @@ if (failures.length) {
   esac
 
   echo "=== Completed Maestro scenario: $scenario_id ==="
+  write_maestro_success_marker
 
   return 0
 }
