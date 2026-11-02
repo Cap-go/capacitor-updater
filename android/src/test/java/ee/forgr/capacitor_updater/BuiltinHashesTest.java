@@ -13,6 +13,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -47,8 +48,29 @@ public class BuiltinHashesTest {
         }
         if (assetPath != null && assetBytes != null) {
             when(assets.open(eq(assetPath))).thenAnswer((invocation) -> new ByteArrayInputStream(assetBytes));
+            final AssetFileDescriptor afd = mock(AssetFileDescriptor.class);
+            when(afd.getLength()).thenReturn((long) assetBytes.length);
+            when(assets.openFd(eq(assetPath))).thenReturn(afd);
         }
         return assets;
+    }
+
+    private static String tableJson(final String relPath, final String hash, final long size) {
+        return "{\"files\":{\"" + relPath + "\":{\"sha256\":\"" + hash + "\",\"size\":" + size + "}}}";
+    }
+
+    private static String tableJsonLegacyString(final String relPath, final String hash) {
+        return "{\"files\":{\"" + relPath + "\":\"" + hash + "\"}}";
+    }
+
+    @Test
+    public void builtinHashVerdictFallsBackWhenTableSizeStale() throws Exception {
+        final byte[] content = "size stale".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + hash + "\",\"size\":" + (content.length + 50) + "}}}";
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
     }
 
     @Test
@@ -59,11 +81,19 @@ public class BuiltinHashesTest {
 
     @Test
     public void builtinHashVerdictMatchesStoredHashWithoutReadingAsset() throws Exception {
-        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream("hello".getBytes(StandardCharsets.UTF_8)));
-        final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
-        final AssetManager assets = assetsWithTable(table, null, null);
+        final byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = tableJson("index.html", hash, content.length);
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
-        assertEquals(Boolean.FALSE, DownloadService.builtinHashVerdict(assets, "public/index.html", "deadbeef"));
+        assertEquals(
+            Boolean.FALSE,
+            DownloadService.builtinHashVerdict(
+                assets,
+                "public/index.html",
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            )
+        );
     }
 
     @Test
@@ -77,7 +107,7 @@ public class BuiltinHashesTest {
     public void builtinAssetMatchesUsesTableWithoutRehashingContentAsset() throws Exception {
         final byte[] content = "builtin body".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
+        final String table = tableJson("index.html", hash, content.length);
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         final ByteArrayInputStream contentStream = spy(new ByteArrayInputStream(content));
         when(assets.open(eq("public/index.html"))).thenAnswer((invocation) -> contentStream);
@@ -100,7 +130,7 @@ public class BuiltinHashesTest {
     public void tryCopyBuiltinAssetSkipsCopyWhenTableSaysMismatch() throws Exception {
         final byte[] content = "content".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}";
+        final String table = tableJson("index.html", "0000000000000000000000000000000000000000000000000000000000000000", content.length);
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         final File dest = new File(System.getProperty("java.io.tmpdir"), "capgo-builtin-mismatch-" + System.nanoTime() + ".dat");
         assertFalse(dest.exists());
@@ -113,7 +143,7 @@ public class BuiltinHashesTest {
     public void tryCopyBuiltinAssetCopiesWithoutRehashWhenTableMatches() throws Exception {
         final byte[] content = "copy me".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":\"" + hash + "\"}}";
+        final String table = tableJson("index.html", hash, content.length);
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         final File dest = File.createTempFile("capgo-builtin-test-", ".dat");
         dest.deleteOnExit();
@@ -126,7 +156,16 @@ public class BuiltinHashesTest {
     public void builtinHashesReadsTableAssetOnceAcrossManyLookupsAndUpdates() throws Exception {
         final byte[] content = "once".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
-        final String table = "{\"files\":{\"index.html\":\"" + hash + "\",\"app.js\":\"" + hash + "\"}}";
+        final String table =
+            "{\"files\":{\"index.html\":{\"sha256\":\"" +
+            hash +
+            "\",\"size\":" +
+            content.length +
+            "},\"app.js\":{\"sha256\":\"" +
+            hash +
+            "\",\"size\":" +
+            content.length +
+            "}}}";
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         when(assets.open(eq("public/app.js"))).thenAnswer((invocation) -> new ByteArrayInputStream(content));
 

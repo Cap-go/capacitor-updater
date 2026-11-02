@@ -481,8 +481,20 @@ public class DownloadService extends Worker {
     // Precomputed builtin hashes: `public/ota-builtin-hashes.json` (written by the Capacitor sync hook).
     // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
     static final String BUILTIN_HASHES_ASSET = "public/ota-builtin-hashes.json";
-    private static volatile Map<String, String> builtinHashes;
+    private static volatile Map<String, BuiltinHashEntry> builtinHashes;
     private static final Object BUILTIN_HASHES_LOCK = new Object();
+
+    static final class BuiltinHashEntry {
+
+        final String hash;
+        /** {@code -1} when the manifest entry has no size (legacy string entries). */
+        final long size;
+
+        BuiltinHashEntry(final String hash, final long size) {
+            this.hash = hash;
+            this.size = size;
+        }
+    }
 
     static boolean isSha256Hex(final String value) {
         if (value == null || value.length() != 64) {
@@ -497,8 +509,8 @@ public class DownloadService extends Worker {
         return true;
     }
 
-    static Map<String, String> builtinHashes(final AssetManager assets) {
-        Map<String, String> hashes = builtinHashes;
+    static Map<String, BuiltinHashEntry> builtinHashes(final AssetManager assets) {
+        Map<String, BuiltinHashEntry> hashes = builtinHashes;
         if (hashes != null) {
             return hashes;
         }
@@ -506,7 +518,7 @@ public class DownloadService extends Worker {
             if (builtinHashes != null) {
                 return builtinHashes;
             }
-            final Map<String, String> loaded = new HashMap<>();
+            final Map<String, BuiltinHashEntry> loaded = new HashMap<>();
             try (InputStream in = assets.open(BUILTIN_HASHES_ASSET)) {
                 final ByteArrayOutputStream out = new ByteArrayOutputStream();
                 final byte[] buffer = new byte[64 * 1024];
@@ -519,13 +531,23 @@ public class DownloadService extends Worker {
                 while (keys.hasNext()) {
                     final String key = keys.next();
                     final Object raw = files.opt(key);
-                    if (!(raw instanceof String)) {
+                    if (raw instanceof String) {
+                        final String hash = (String) raw;
+                        if (isSha256Hex(hash)) {
+                            loaded.put(key, new BuiltinHashEntry(hash, -1L));
+                        }
                         continue;
                     }
-                    final String hash = (String) raw;
-                    if (isSha256Hex(hash)) {
-                        loaded.put(key, hash);
+                    if (!(raw instanceof JSONObject)) {
+                        continue;
                     }
+                    final JSONObject obj = (JSONObject) raw;
+                    final String hash = obj.optString("sha256", "");
+                    if (!isSha256Hex(hash)) {
+                        continue;
+                    }
+                    final long size = obj.has("size") && !obj.isNull("size") ? obj.optLong("size", -1L) : -1L;
+                    loaded.put(key, new BuiltinHashEntry(hash, size));
                 }
             } catch (Exception ignored) {
                 loaded.clear();
@@ -536,13 +558,40 @@ public class DownloadService extends Worker {
         }
     }
 
+    static long builtinAssetLength(final AssetManager assets, final String assetPath) throws IOException {
+        try (android.content.res.AssetFileDescriptor afd = assets.openFd(assetPath)) {
+            return afd.getLength();
+        }
+    }
+
+    static Boolean builtinHashVerdictForEntry(
+        final AssetManager assets,
+        final String assetPath,
+        final BuiltinHashEntry entry,
+        final String expectedHash
+    ) {
+        if (entry == null || expectedHash == null) {
+            return null;
+        }
+        if (entry.size >= 0) {
+            try {
+                if (builtinAssetLength(assets, assetPath) != entry.size) {
+                    return null;
+                }
+            } catch (IOException e) {
+                return null;
+            }
+        }
+        return entry.hash.equalsIgnoreCase(expectedHash) ? Boolean.TRUE : Boolean.FALSE;
+    }
+
     /** TRUE/FALSE from the table, or null when the table cannot answer. */
     static Boolean builtinHashVerdict(final AssetManager assets, final String assetPath, final String expectedHash) {
         if (assets == null || assetPath == null || !assetPath.startsWith("public/") || expectedHash == null) {
             return null;
         }
-        final String known = builtinHashes(assets).get(assetPath.substring("public/".length()));
-        return known == null ? null : known.equalsIgnoreCase(expectedHash);
+        final BuiltinHashEntry known = builtinHashes(assets).get(assetPath.substring("public/".length()));
+        return known == null ? null : builtinHashVerdictForEntry(assets, assetPath, known, expectedHash);
     }
 
     static boolean copyStreamUnchecked(final InputStream input, final File dest) throws IOException {

@@ -39,7 +39,8 @@ export function collectWebBundleHashes(webDir, { outputFileAbs = null } = {}) {
       return;
     }
     const rel = path.relative(base, resolvedFull).split(path.sep).join('/');
-    files[rel] = sha256File(resolvedFull);
+    const stat = fs.statSync(resolvedFull);
+    files[rel] = { sha256: sha256File(resolvedFull), size: stat.size };
   }
 
   function visitName(name, realDir, ancestors) {

@@ -30,10 +30,37 @@ final class BuiltinHashesTests: XCTestCase {
         super.tearDown()
     }
 
-    private func writeHashTable(files: [String: String]) throws {
-        let payload: [String: Any] = ["files": files]
+    private func writeHashTable(files: [String: String], sizes: [String: Int64]? = nil) throws {
+        var filesPayload: [String: Any] = [:]
+        for (key, hash) in files {
+            if let size = sizes?[key] {
+                filesPayload[key] = ["sha256": hash, "size": size]
+            } else {
+                let fileURL = builtinFolder.appendingPathComponent(key)
+                if FileManager.default.fileExists(atPath: fileURL.path),
+                   let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    filesPayload[key] = ["sha256": hash, "size": Int64(fileSize)]
+                } else {
+                    filesPayload[key] = ["sha256": hash]
+                }
+            }
+        }
+        let payload: [String: Any] = ["files": filesPayload]
         let data = try JSONSerialization.data(withJSONObject: payload)
         try data.write(to: builtinFolder.appendingPathComponent(CapgoUpdater.builtinHashesFileName))
+    }
+
+    func testGetMissingBundleFilesFallsBackToHashingWhenTableSizeStale() throws {
+        let content = "stale size row \(UUID().uuidString)"
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let staleSize = Int64((try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) + 99)
+        try writeHashTable(files: ["index.html": hash], sizes: ["index.html": staleSize])
+        let manifest = [
+            ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
+        ]
+        XCTAssertTrue(implementation.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty)
     }
 
     func testGetMissingBundleFilesUsesHashTableWithoutReadingBuiltinFile() throws {

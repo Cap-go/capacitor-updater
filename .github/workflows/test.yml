@@ -21,6 +21,30 @@ env:
 permissions: {}
 
 jobs:
+  check_wiring:
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    name: check:wiring / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Check plugin wiring
+        run: bun run check:wiring
+
   guard_swiftpm_version:
     permissions:
       contents: read
