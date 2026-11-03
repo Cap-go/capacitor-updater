@@ -32,6 +32,12 @@ if [[ "$ACTION" != "build-for-testing" ]]; then
   EXTRA_ARGS+=(-collect-test-diagnostics never)
 fi
 
+# Parallel testing clones the simulator once per worker, and on 3-core CI
+# runners the clone and boot cost (about 70s) outweighs the test time it saves.
+if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" ]]; then
+  EXTRA_ARGS+=(-parallel-testing-enabled NO)
+fi
+
 # InstallPerfTests is a timing benchmark (about 80s on CI runners), not a
 # correctness gate, and it pushes the native test shard past its 5 minute cap.
 # CI skips it by default; set CAPGO_IOS_RUN_PERF=1 to run it anyway.
