@@ -250,14 +250,14 @@ jobs:
             ${{ runner.os }}-ios-test-
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
+      - name: Encrypt fresh bundles with the pinned Capgo CLI
+        if: matrix.cli_contract
+        # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
+        # so every CLI bump is re-checked without a second xcodebuild launch.
+        run: bun run generate:cli-crypto native-contract-tests/cli-fresh
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
-      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
-        if: matrix.cli_contract
-        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        # Fixtures are read from disk at test time, so no rebuild is needed.
-        run: bun run generate:cli-crypto && CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
 
   maestro_web_assets:
     permissions:
@@ -958,7 +958,7 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_android_apps
-    timeout-minutes: ${{ matrix.job_timeout_minutes || 10 }}
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     name: maestro_android / ${{ matrix.scenario }}
     env:
@@ -982,7 +982,6 @@ jobs:
             app: edge-deferred
           - scenario: edge-corrupt-bundle
             app: edge-deferred
-            job_timeout_minutes: 15
           - scenario: edge-offline-check
             app: edge-deferred
           - scenario: edge-direct-network-drop
