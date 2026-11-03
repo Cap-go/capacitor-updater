@@ -66,6 +66,7 @@ dependencies {
     testImplementation 'org.json:json:20250517'
     testImplementation 'org.robolectric:robolectric:4.17'
     testImplementation 'androidx.arch.core:core-testing:2.2.0'
+    testImplementation "com.squareup.okhttp3:mockwebserver:$okhttpVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation 'org.brotli:dec:0.1.2'
