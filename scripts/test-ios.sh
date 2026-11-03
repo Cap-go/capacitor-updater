@@ -32,6 +32,13 @@ if [[ "$ACTION" != "build-for-testing" ]]; then
   EXTRA_ARGS+=(-collect-test-diagnostics never)
 fi
 
+# InstallPerfTests is a timing benchmark (about 80s on CI runners), not a
+# correctness gate, and it pushes the native test shard past its 5 minute cap.
+# CI skips it by default; set CAPGO_IOS_RUN_PERF=1 to run it anyway.
+if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" && "${CAPGO_IOS_RUN_PERF:-0}" != "1" ]]; then
+  EXTRA_ARGS+=(-skip-testing:CapacitorUpdaterPluginTests/InstallPerfTests)
+fi
+
 xcodebuild "$ACTION" \
   -scheme CapgoCapacitorUpdater \
   -destination "id=${SIMULATOR_ID}" \
