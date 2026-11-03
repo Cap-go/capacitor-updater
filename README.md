@@ -218,8 +218,8 @@ On `npx cap copy`, the plugin writes `ota-builtin-hashes.json` next to your web 
 
 ```groovy
 android {
-    aaptOptions {
-        noCompress 'html', 'js', 'css', 'json', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'map', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'wasm', 'txt', 'xml'
+    androidResources {
+        noCompress += ['html', 'js', 'css', 'json', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'map', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'wasm', 'txt', 'xml']
     }
 }
 ```
