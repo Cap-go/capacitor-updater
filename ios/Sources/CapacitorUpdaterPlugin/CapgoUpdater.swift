@@ -1621,8 +1621,11 @@ import UIKit
                 let sizeValue: Int64?
                 if obj["size"] == nil || obj["size"] is NSNull {
                     sizeValue = nil
-                } else if let size = obj["size"] as? NSNumber {
-                    sizeValue = size.int64Value
+                } else if let size = obj["size"] as? NSNumber,
+                          CFGetTypeID(size) != CFBooleanGetTypeID(),
+                          let exact = Int64(exactly: size.doubleValue),
+                          exact >= 0 {
+                    sizeValue = exact
                 } else {
                     continue
                 }

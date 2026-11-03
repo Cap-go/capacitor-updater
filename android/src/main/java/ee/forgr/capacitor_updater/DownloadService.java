@@ -549,10 +549,16 @@ public class DownloadService extends Worker {
                     final long size;
                     if (!obj.has("size") || obj.isNull("size")) {
                         size = -1L;
-                    } else if (obj.get("size") instanceof Number) {
-                        size = ((Number) obj.get("size")).longValue();
                     } else {
-                        continue;
+                        final Object rawSize = obj.get("size");
+                        if (!(rawSize instanceof Integer || rawSize instanceof Long)) {
+                            continue;
+                        }
+                        final long parsedSize = ((Number) rawSize).longValue();
+                        if (parsedSize < 0) {
+                            continue;
+                        }
+                        size = parsedSize;
                     }
                     loaded.put(key, new BuiltinHashEntry(hash, size));
                 }

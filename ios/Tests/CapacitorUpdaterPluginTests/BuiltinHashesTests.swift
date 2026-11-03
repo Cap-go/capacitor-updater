@@ -190,4 +190,21 @@ final class BuiltinHashesTests: XCTestCase {
 
         XCTAssertEqual(implementation.builtinHashesTableLoadCount, 1)
     }
+
+    func testGetMissingBundleFilesFallsBackWhenTableSizeIsBoolean() throws {
+        let fileURL = builtinFolder.appendingPathComponent("index.html")
+        try "x".write(to: fileURL, atomically: true, encoding: .utf8)
+        let hash = CryptoCipher.calcChecksum(filePath: fileURL)
+        let tableHash = String(repeating: "c", count: 64)
+        for size in ["true", "-5", "0.5"] {
+            let table = "{\"files\":{\"index.html\":{\"sha256\":\"\(tableHash)\",\"size\":\(size)}}}"
+            try table.write(to: builtinFolder.appendingPathComponent(CapgoUpdater.builtinHashesFileName), atomically: true, encoding: .utf8)
+            let manifest = [
+                ManifestEntry(file_name: "index.html", file_hash: hash, download_url: nil)
+            ]
+            let updater = TestableCapgoUpdater()
+            updater.builtinFolderOverride = builtinFolder
+            XCTAssertTrue(updater.getMissingBundleFiles(manifest: manifest, sessionKey: "").isEmpty, "size \(size)")
+        }
+    }
 }
