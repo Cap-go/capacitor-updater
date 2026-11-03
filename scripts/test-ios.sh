@@ -11,9 +11,29 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
   exit 1
 fi
 
+# CAPGO_IOS_TEST_ACTION lets CI split the work: build-for-testing once, then
+# test-without-building per shard. Defaults to a plain "test" for local runs.
+ACTION="${CAPGO_IOS_TEST_ACTION:-test}"
+case "$ACTION" in
+  test | build-for-testing | test-without-building) ;;
+  *)
+    echo "Unsupported CAPGO_IOS_TEST_ACTION: $ACTION" >&2
+    exit 1
+    ;;
+esac
+
+EXTRA_ARGS=()
+# A stable DerivedData path lets CI cache the compiled test bundle between runs.
+if [[ -n "${CAPGO_IOS_DERIVED_DATA:-}" ]]; then
+  EXTRA_ARGS+=(-derivedDataPath "$CAPGO_IOS_DERIVED_DATA")
+fi
 # Post-test diagnostics collection only adds idle time in CI, so skip it.
-xcodebuild test \
+if [[ "$ACTION" != "build-for-testing" ]]; then
+  EXTRA_ARGS+=(-collect-test-diagnostics never)
+fi
+
+xcodebuild "$ACTION" \
   -scheme CapgoCapacitorUpdater \
   -destination "id=${SIMULATOR_ID}" \
-  -collect-test-diagnostics never \
+  ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   "$@"
