@@ -28,7 +28,7 @@ if [[ -n "${CAPGO_IOS_DERIVED_DATA:-}" ]]; then
   EXTRA_ARGS+=(-derivedDataPath "$CAPGO_IOS_DERIVED_DATA")
 fi
 # Post-test diagnostics collection only adds idle time in CI, so skip it.
-if [[ "$ACTION" != "build-for-testing" ]]; then
+if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" ]]; then
   EXTRA_ARGS+=(-collect-test-diagnostics never)
 fi
 
