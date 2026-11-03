@@ -152,8 +152,8 @@ jobs:
   build_ios:
     permissions:
       contents: read
-    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
-    timeout-minutes: 10
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    timeout-minutes: 5
     runs-on: macOS-latest
     steps:
       - name: Check out
@@ -166,6 +166,15 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
+      - name: Cache SwiftPM and DerivedData
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ${{ runner.temp }}/ios-device-dd
+          key: ${{ runner.os }}-ios-device-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-device-
       - name: Check plugin wiring
         run: bun run check:wiring
       - name: Check Cap 9 deprecated APIs
@@ -173,17 +182,82 @@ jobs:
       - name: Build plugin bundle
         id: build_code
         run: bun run build
-      - name: Build and test iOS plugin
-        run: bun run verify:ios
+      - name: Build iOS plugin
+        run: bun run verify:ios -derivedDataPath "$RUNNER_TEMP/ios-device-dd"
+
+  verify_packed_ios:
+    permissions:
+      contents: read
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    timeout-minutes: 5
+    runs-on: macOS-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Build plugin bundle
+        run: bun run build
       - name: Verify packed package in example app (iOS)
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
-      - name: Run iOS native tests
+
+  test_ios:
+    permissions:
+      contents: read
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    timeout-minutes: 5
+    runs-on: macOS-latest
+    name: test_ios / ${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
+          - shard: core
+            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+            cli_contract: false
+          - shard: rest
+            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+            cli_contract: true
+    env:
+      CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Cache SwiftPM and DerivedData
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            .ci-ios-test-dd
+          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-test-
+      - name: Build iOS tests once
+        run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
+      - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
-        run: bun run native:test:ios
+        run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
       - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
+        if: matrix.cli_contract
         # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        run: bun run generate:cli-crypto && bun run native:contract:cli:ios
+        # Fixtures are read from disk at test time, so no rebuild is needed.
+        run: bun run generate:cli-crypto && CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
 
   maestro_web_assets:
     permissions:
