@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.Observer;
@@ -153,6 +154,7 @@ public class CapgoUpdater {
     private static final long STATS_FLUSH_INTERVAL_MS = 1000;
     private static volatile Long statsFlushIntervalOverrideMs = null;
     private static volatile boolean statsFlushSchedulingDisabledForTests = false;
+    private static volatile boolean statsFailureElapsedRealtimeStubForTests = false;
     /** Unit tests only: runs after queue mutation and before the stats owner check. */
     static volatile Runnable statsAdoptionBeforeOwnerCheckForTests = null;
     private static final String PENDING_STATS_FILE = "capgo_pending_stats.json";
@@ -3722,10 +3724,19 @@ public class CapgoUpdater {
     static void resetStatsFlushForTests() {
         statsFlushIntervalOverrideMs = null;
         statsFlushSchedulingDisabledForTests = false;
+        statsFailureElapsedRealtimeStubForTests = false;
+    }
+
+    static void stubStatsFailureElapsedRealtimeForTests(final boolean enabled) {
+        statsFailureElapsedRealtimeStubForTests = enabled;
     }
 
     int pendingStatsCount() {
         return statsQueue.size();
+    }
+
+    void flushStatsQueueForTests() {
+        flushStatsQueue();
     }
 
     void enqueuePendingStatsEventForTests(final String action) {
@@ -3934,6 +3945,7 @@ public class CapgoUpdater {
             .build();
 
         final int eventCount = eventsToSend.size();
+        final long requestStartElapsedRealtime = statsFailureElapsedRealtimeStubForTests ? 0L : SystemClock.elapsedRealtime();
         DownloadService.sharedClient.newCall(request).enqueue(
             new okhttp3.Callback() {
                 @Override
@@ -3941,10 +3953,19 @@ public class CapgoUpdater {
                     if (abandonStoppedStatsFlush()) {
                         return;
                     }
+                    final long elapsedMs = statsFailureElapsedRealtimeStubForTests
+                        ? 0L
+                        : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                     requeueStatsEvents(eventsToSend);
                     if (logger != null) {
-                        logger.error("Failed to send stats batch");
-                        logger.debug("Error: " + e.getMessage());
+                        logger.error(
+                            StatsBatchFailureDiagnostics.formatFailureMessage(
+                                "Failed to send stats batch",
+                                StatsBatchFailureDiagnostics.safeDestinationUrl(call.request().url()),
+                                StatsBatchFailureDiagnostics.STATUS_UNAVAILABLE,
+                                elapsedMs
+                            )
+                        );
                     }
                     statsFlushInFlight.set(false);
                 }
@@ -3955,9 +3976,68 @@ public class CapgoUpdater {
                         if (abandonStoppedStatsFlush()) {
                             return;
                         }
-                        final String responseData = responseBody != null ? responseBody.string() : "";
+                        final String safeDestination = StatsBatchFailureDiagnostics.safeDestinationUrl(response.request().url());
+                        final String responseData;
+                        try {
+                            responseData = responseBody != null ? responseBody.string() : "";
+                        } catch (IOException readEx) {
+                            final long readFailureElapsedMs = statsFailureElapsedRealtimeStubForTests
+                                ? 0L
+                                : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
+                            checkAndHandleRateLimitResponse(response, "");
+                            if (response.isSuccessful()) {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                runStatsCallbacks(eventsToSend);
+                                return;
+                            }
+                            if (!isTransientStatsFailure(response.code())) {
+                                synchronized (statsQueue) {
+                                    statsInFlight.clear();
+                                }
+                                persistStatsQueue();
+                                if (logger != null) {
+                                    logger.error(
+                                        StatsBatchFailureDiagnostics.formatFailureMessage(
+                                            "Dropping stats batch after permanent error",
+                                            safeDestination,
+                                            String.valueOf(response.code()),
+                                            readFailureElapsedMs
+                                        )
+                                    );
+                                }
+                                return;
+                            }
+                            requeueStatsEvents(eventsToSend);
+                            if (logger != null) {
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        readFailureElapsedMs
+                                    )
+                                );
+                            }
+                            return;
+                        }
+                        final long normalElapsedMs = statsFailureElapsedRealtimeStubForTests
+                            ? 0L
+                            : SystemClock.elapsedRealtime() - requestStartElapsedRealtime;
                         if (checkAndHandleRateLimitResponse(response, responseData).blocked) {
                             requeueStatsEvents(eventsToSend);
+                            if (logger != null) {
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        normalElapsedMs
+                                    )
+                                );
+                            }
                             return;
                         }
 
@@ -3974,8 +4054,14 @@ public class CapgoUpdater {
                         } else if (isTransientStatsFailure(response.code())) {
                             requeueStatsEvents(eventsToSend);
                             if (logger != null) {
-                                logger.error("Error sending stats batch");
-                                logger.debug("Retrying later, response code: " + response.code());
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Error sending stats batch",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        normalElapsedMs
+                                    )
+                                );
                             }
                         } else {
                             synchronized (statsQueue) {
@@ -3983,8 +4069,14 @@ public class CapgoUpdater {
                             }
                             persistStatsQueue();
                             if (logger != null) {
-                                logger.error("Dropping stats batch after permanent error");
-                                logger.debug("Response code: " + response.code());
+                                logger.error(
+                                    StatsBatchFailureDiagnostics.formatFailureMessage(
+                                        "Dropping stats batch after permanent error",
+                                        safeDestination,
+                                        String.valueOf(response.code()),
+                                        normalElapsedMs
+                                    )
+                                );
                             }
                         }
                     } finally {

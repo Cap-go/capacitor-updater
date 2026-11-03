@@ -58,7 +58,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26.x
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -66,7 +66,7 @@ jobs:
           token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
       - name: Self-test constraint restore
         run: node .github/scripts/restore-lts-constraints.mjs --self-test
       - name: Configure Git
