@@ -675,8 +675,10 @@ run_edge_case_once() {
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
   elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_WAIT_SECONDS:-90}"
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_CYCLES:-4}"
+    # Worst case is (cycles + 1) * wait = 240s, well inside the 9 minute step timeout
+    # so the success marker is always written before the step deadline.
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_WAIT_SECONDS:-60}"
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_CYCLES:-3}"
   fi
 
   local -a recovery_fragments=(
