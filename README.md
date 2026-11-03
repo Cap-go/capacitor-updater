@@ -212,6 +212,20 @@ npm install @capgo/capacitor-updater@lts-v5
 npm install @capgo/capacitor-updater@lts-v4
 ```
 
+### Android: keep web assets uncompressed
+
+On `npx cap copy`, the plugin writes `ota-builtin-hashes.json` next to your web assets so the native code can reuse builtin files without hashing them. On Android the size check uses `AssetManager.openFd()`, which cannot open compressed assets, so compressed files silently fall back to full hashing. To get the fast path, keep web asset extensions uncompressed in `android/app/build.gradle`:
+
+```groovy
+android {
+    aaptOptions {
+        noCompress 'html', 'js', 'css', 'json', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'map', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'wasm', 'txt', 'xml'
+    }
+}
+```
+
+This only affects speed: without it, updates still verify every builtin file by checksum.
+
 ## Auto-update setup
 
 Create your account in [capgo.app](https://capgo.app) and get your [API key](https://console.capgo.app/dashboard/apikeys)
@@ -3041,7 +3055,9 @@ Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvai
 
 Construct a type with a set of properties K of type T
 
-<code>{ [P in K]: T; }</code>
+<code>{
+ [P in K]: T;
+ }</code>
 
 
 ##### ShakeMenuGesture

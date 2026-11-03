@@ -245,6 +245,7 @@ public class BuiltinHashesTest {
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String tableHash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
         for (final String size : new String[] { "-5", "12.5" }) {
+            resetBuiltinHashesCache();
             final String table = "{\"files\":{\"index.html\":{\"sha256\":\"" + tableHash + "\",\"size\":" + size + "}}}";
             final AssetManager assets = assetsWithTable(table, "public/index.html", content);
             assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
