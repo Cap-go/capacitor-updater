@@ -11,18 +11,13 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
   exit 1
 fi
 
-# Boot the simulator ourselves so it stays up between xcodebuild invocations
-# (native tests, then the CLI crypto contract run) instead of each run paying
-# for a cold boot and shutdown.
-xcrun simctl bootstatus "$SIMULATOR_ID" -b >/dev/null 2>&1 || true
-
-# Reuse one DerivedData folder so later runs in the same job are incremental,
-# and skip post-test diagnostics collection, which only adds idle time in CI.
-DERIVED_DATA_PATH="${CAPGO_IOS_TEST_DERIVED_DATA:-$ROOT_DIR/.build/ios-test-derived-data}"
+# On CI the simulator is already booting (see scripts/prewarm-ios-simulator.sh).
+# Booting is idempotent; keeping it up lets later xcodebuild runs in the same job
+# reuse it. Post-test diagnostics collection only adds idle time, so skip it.
+xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 
 xcodebuild test \
   -scheme CapgoCapacitorUpdater \
   -destination "id=${SIMULATOR_ID}" \
-  -derivedDataPath "$DERIVED_DATA_PATH" \
   -collect-test-diagnostics never \
   "$@"

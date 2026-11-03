@@ -45,7 +45,7 @@
   ],
   "scripts": {
     "verify": "bun run verify:ios && bun run verify:android && bun run verify:web",
-    "verify:ios": "xcodebuild -scheme CapgoCapacitorUpdater -destination generic/platform=iOS",
+    "verify:ios": "./scripts/prewarm-ios-simulator.sh && xcodebuild -scheme CapgoCapacitorUpdater -destination generic/platform=iOS",
     "verify:android": "cd android && ./gradlew clean build test && cd ..",
     "verify:web": "bun run build",
     "native:compile": "./scripts/native-platform.sh compile all",
