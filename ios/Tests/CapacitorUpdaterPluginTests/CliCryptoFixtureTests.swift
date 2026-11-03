@@ -4,6 +4,8 @@ import XCTest
 
 /// Decrypts bundles encrypted by the real Capgo CLI (native-contract-tests/cli, written by
 /// scripts/generate-cli-crypto-fixtures.mjs) through the plugin's own download path.
+/// CI also writes a fresh set into native-contract-tests/cli-fresh before the run, so the committed
+/// fixtures and a fresh encryption by the pinned CLI are both checked in one xcodebuild invocation.
 final class CliCryptoFixtureTests: XCTestCase {
     private struct InstalledFile {
         let path: String
@@ -38,14 +40,24 @@ final class CliCryptoFixtureTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private static func fixtureDirectory() throws -> URL {
+    private struct Fixture {
+        let label: String
+        let publicKey: String
+        let bundles: [Bundle]
+    }
+
+    private static let fixtureFolders = ["native-contract-tests/cli", "native-contract-tests/cli-fresh"]
+
+    private static func fixtureDirectories() throws -> [URL] {
         let fileManager = FileManager.default
         for start in [URL(fileURLWithPath: fileManager.currentDirectoryPath), URL(fileURLWithPath: #filePath)] {
             var current = start
             while current.path != "/" {
-                let candidate = current.appendingPathComponent("native-contract-tests/cli")
-                if fileManager.fileExists(atPath: candidate.appendingPathComponent("cli-crypto.json").path) {
-                    return candidate
+                let found = fixtureFolders
+                    .map { current.appendingPathComponent($0) }
+                    .filter { fileManager.fileExists(atPath: $0.appendingPathComponent("cli-crypto.json").path) }
+                if found.first?.lastPathComponent == "cli" {
+                    return found
                 }
                 current.deleteLastPathComponent()
             }
@@ -53,8 +65,12 @@ final class CliCryptoFixtureTests: XCTestCase {
         throw NSError(domain: "CliCryptoFixtureTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "native-contract-tests/cli not found"])
     }
 
-    private func loadFixture() throws -> (publicKey: String, bundles: [Bundle]) {
-        let dir = try Self.fixtureDirectory()
+    private func loadFixtures() throws -> [Fixture] {
+        try Self.fixtureDirectories().map { try loadFixture(from: $0) }
+    }
+
+    private func loadFixture(from dir: URL) throws -> Fixture {
+        let label = dir.lastPathComponent
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: dir.appendingPathComponent("cli-crypto.json")))
         let fixture = try XCTUnwrap(json as? [String: Any])
         let publicKey = try XCTUnwrap(fixture["publicKey"] as? String)
@@ -63,8 +79,9 @@ final class CliCryptoFixtureTests: XCTestCase {
             let files = try XCTUnwrap(entry["files"] as? [[String: Any]]).map { file in
                 InstalledFile(path: try XCTUnwrap(file["path"] as? String), sha256: try XCTUnwrap(file["sha256"] as? String))
             }
+            let rawId = try XCTUnwrap(entry["id"] as? String)
             return Bundle(
-                id: try XCTUnwrap(entry["id"] as? String),
+                id: "\(label)-\(rawId)",
                 zip: try Data(contentsOf: dir.appendingPathComponent(try XCTUnwrap(entry["zip"] as? String))),
                 encrypted: try Data(contentsOf: dir.appendingPathComponent(try XCTUnwrap(entry["encrypted"] as? String))),
                 sha256: try XCTUnwrap(entry["sha256"] as? String),
@@ -73,23 +90,24 @@ final class CliCryptoFixtureTests: XCTestCase {
                 files: files
             )
         }
-        XCTAssertFalse(bundles.isEmpty, "fixture has bundles")
-        return (publicKey, bundles)
+        XCTAssertFalse(bundles.isEmpty, "\(label): fixture has bundles")
+        return Fixture(label: label, publicKey: publicKey, bundles: bundles)
     }
 
     func testEveryCliEncryptedBundleDecryptsToItsZip() throws {
-        let fixture = try loadFixture()
-        for bundle in fixture.bundles {
-            let file = root.appendingPathComponent("\(bundle.id).zip")
-            try bundle.encrypted.write(to: file)
+        for fixture in try loadFixtures() {
+            for bundle in fixture.bundles {
+                let file = root.appendingPathComponent("\(bundle.id).zip")
+                try bundle.encrypted.write(to: file)
 
-            XCTAssertTrue(CryptoCipher.isValidSessionKey(bundle.ivSessionKey), bundle.id)
-            try CryptoCipher.decryptFile(filePath: file, publicKey: fixture.publicKey, sessionKey: bundle.ivSessionKey, version: "1.0.0")
-            let expectedChecksum = try CryptoCipher.decryptChecksum(checksum: bundle.checksum, publicKey: fixture.publicKey)
+                XCTAssertTrue(CryptoCipher.isValidSessionKey(bundle.ivSessionKey), bundle.id)
+                try CryptoCipher.decryptFile(filePath: file, publicKey: fixture.publicKey, sessionKey: bundle.ivSessionKey, version: "1.0.0")
+                let expectedChecksum = try CryptoCipher.decryptChecksum(checksum: bundle.checksum, publicKey: fixture.publicKey)
 
-            XCTAssertEqual(try Data(contentsOf: file), bundle.zip, "\(bundle.id): decrypted bytes")
-            XCTAssertEqual(expectedChecksum, bundle.sha256, "\(bundle.id): decrypted checksum")
-            XCTAssertEqual(CryptoCipher.calcChecksum(filePath: file), expectedChecksum, "\(bundle.id): file checksum")
+                XCTAssertEqual(try Data(contentsOf: file), bundle.zip, "\(bundle.id): decrypted bytes")
+                XCTAssertEqual(expectedChecksum, bundle.sha256, "\(bundle.id): decrypted checksum")
+                XCTAssertEqual(CryptoCipher.calcChecksum(filePath: file), expectedChecksum, "\(bundle.id): file checksum")
+            }
         }
     }
 
@@ -112,71 +130,75 @@ final class CliCryptoFixtureTests: XCTestCase {
     }
 
     func testDownloadVerifiedInstallsEveryCliEncryptedBundle() throws {
-        let fixture = try loadFixture()
-        for bundle in fixture.bundles {
-            let updater = FixtureDownloadCapgoUpdater()
-            updater.setLogger(Logger(withTag: "cli-fixture-tests", options: Logger.Options(level: .silent)))
-            // Payloads are served from file:// URLs.
-            updater.httpsOnly = false
-            updater.setPublicKey(fixture.publicKey)
-            updater.payload = bundle.encrypted
-            defer { updater.shutdown() }
+        for fixture in try loadFixtures() {
+            for bundle in fixture.bundles {
+                let updater = FixtureDownloadCapgoUpdater()
+                updater.setLogger(Logger(withTag: "cli-fixture-tests", options: Logger.Options(level: .silent)))
+                // Payloads are served from file:// URLs.
+                updater.httpsOnly = false
+                updater.setPublicKey(fixture.publicKey)
+                updater.payload = bundle.encrypted
+                defer { updater.shutdown() }
 
-            // The raw update response values: encrypted checksum and ivSessionKey from the CLI.
-            let installed = try updater.downloadVerified(
-                url: root.appendingPathComponent("\(bundle.id).zip"),
-                version: "9.9.9-cli-\(bundle.id)",
-                sessionKey: bundle.ivSessionKey,
-                expectedChecksum: bundle.checksum
-            )
-            defer { _ = updater.delete(id: installed.getId()) }
+                // The raw update response values: encrypted checksum and ivSessionKey from the CLI.
+                let installed = try updater.downloadVerified(
+                    url: root.appendingPathComponent("\(bundle.id).zip"),
+                    version: "9.9.9-cli-\(bundle.id)",
+                    sessionKey: bundle.ivSessionKey,
+                    expectedChecksum: bundle.checksum
+                )
+                defer { _ = updater.delete(id: installed.getId()) }
 
-            XCTAssertEqual(installed.getChecksum(), bundle.sha256, bundle.id)
-            let bundleDir = libraryDir.appendingPathComponent("NoCloud/ionic_built_snapshots").appendingPathComponent(installed.getId())
-            for file in bundle.files {
-                let path = bundleDir.appendingPathComponent(file.path)
-                XCTAssertEqual(CryptoCipher.calcChecksum(filePath: path), file.sha256, "\(bundle.id): \(file.path)")
+                XCTAssertEqual(installed.getChecksum(), bundle.sha256, bundle.id)
+                let bundleDir = libraryDir.appendingPathComponent("NoCloud/ionic_built_snapshots").appendingPathComponent(installed.getId())
+                for file in bundle.files {
+                    let path = bundleDir.appendingPathComponent(file.path)
+                    XCTAssertEqual(CryptoCipher.calcChecksum(filePath: path), file.sha256, "\(bundle.id): \(file.path)")
+                }
             }
         }
     }
     func testConcurrentManifestSessionsResetCipherAndKeepKeysSeparate() throws {
-        let (publicKey, bundles) = try loadFixture()
-        let sessions = bundles.map { CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: $0.ivSessionKey) }
-        let lock = NSLock()
-        var failures: [String] = []
-        DispatchQueue.concurrentPerform(iterations: 24) { index in
-            do {
-                let selected = index % bundles.count
-                let file = root.appendingPathComponent("session-file-\(index)")
-                try bundles[selected].encrypted.write(to: file)
-                try sessions[selected].decryptFile(filePath: file)
-                let actual = try Data(contentsOf: file)
-                if actual != bundles[selected].zip {
-                    throw NSError(domain: "SessionTest", code: 1)
+        for fixture in try loadFixtures() {
+            let (publicKey, bundles) = (fixture.publicKey, fixture.bundles)
+            let sessions = bundles.map { CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: $0.ivSessionKey) }
+            let lock = NSLock()
+            var failures: [String] = []
+            DispatchQueue.concurrentPerform(iterations: 24) { index in
+                do {
+                    let selected = index % bundles.count
+                    let file = root.appendingPathComponent("session-file-\(index)")
+                    try bundles[selected].encrypted.write(to: file)
+                    try sessions[selected].decryptFile(filePath: file)
+                    let actual = try Data(contentsOf: file)
+                    if actual != bundles[selected].zip {
+                        throw NSError(domain: "SessionTest", code: 1)
+                    }
+                } catch {
+                    lock.lock()
+                    failures.append(error.localizedDescription)
+                    lock.unlock()
                 }
-            } catch {
-                lock.lock()
-                failures.append(error.localizedDescription)
-                lock.unlock()
             }
+            XCTAssertTrue(failures.isEmpty, "\(fixture.label): " + failures.joined(separator: "; "))
         }
-        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "; "))
     }
 
     func testInvalidSessionDoesNotModifyFilesOrPoisonAnotherSession() throws {
-        let (publicKey, bundles) = try loadFixture()
-        let bundle = try XCTUnwrap(bundles.first)
-        let file = root.appendingPathComponent("invalid-session")
-        try bundle.encrypted.write(to: file)
-        XCTAssertThrowsError(try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "").decryptFile(filePath: file))
-        XCTAssertEqual(try Data(contentsOf: file), bundle.encrypted)
-        let invalid = CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "AAAA:AAAA")
-        for _ in 0..<2 {
-            XCTAssertThrowsError(try invalid.decryptFile(filePath: file))
+        for fixture in try loadFixtures() {
+            let (publicKey, bundles) = (fixture.publicKey, fixture.bundles)
+            let bundle = try XCTUnwrap(bundles.first)
+            let file = root.appendingPathComponent("invalid-session")
+            try bundle.encrypted.write(to: file)
+            XCTAssertThrowsError(try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "").decryptFile(filePath: file))
             XCTAssertEqual(try Data(contentsOf: file), bundle.encrypted)
+            let invalid = CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: "AAAA:AAAA")
+            for _ in 0..<2 {
+                XCTAssertThrowsError(try invalid.decryptFile(filePath: file))
+                XCTAssertEqual(try Data(contentsOf: file), bundle.encrypted)
+            }
+            try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: bundle.ivSessionKey).decryptFile(filePath: file)
+            XCTAssertEqual(try Data(contentsOf: file), bundle.zip)
         }
-        try CryptoCipher.DecryptionSession(publicKey: publicKey, sessionKey: bundle.ivSessionKey).decryptFile(filePath: file)
-        XCTAssertEqual(try Data(contentsOf: file), bundle.zip)
     }
-
 }

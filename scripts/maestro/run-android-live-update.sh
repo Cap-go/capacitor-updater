@@ -55,6 +55,14 @@ cleanup() {
   return 0
 }
 
+write_maestro_success_marker() {
+  if [[ -n "${CAPGO_MAESTRO_SUCCESS_MARKER:-}" ]]; then
+    mkdir -p "$(dirname "${CAPGO_MAESTRO_SUCCESS_MARKER}")"
+    : > "${CAPGO_MAESTRO_SUCCESS_MARKER}"
+  fi
+  return 0
+}
+
 run_with_timeout() {
   local timeout_seconds="$1"
   shift
@@ -659,12 +667,18 @@ run_edge_case_once() {
 
   local recovery_cycle_mode="$cycle_mode"
   local recovery_wait_seconds="$EDGE_CASE_RECOVERY_WAIT_SECONDS"
+  local previous_recovery_cycles="$EDGE_CASE_RECOVERY_CYCLES"
   if [[ "$edge_case_id" == "edge-kill-download" ]]; then
     recovery_cycle_mode="cold-launch"
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
+  elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
+    # Worst case is (cycles + 1) * wait = 240s, well inside the 9 minute step timeout
+    # so the success marker is always written before the step deadline.
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_WAIT_SECONDS:-60}"
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_CORRUPT_RECOVERY_CYCLES:-3}"
   fi
 
   local -a recovery_fragments=(
@@ -678,7 +692,6 @@ run_edge_case_once() {
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
-  local previous_recovery_cycles="$EDGE_CASE_RECOVERY_CYCLES"
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
     EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
   fi
@@ -698,6 +711,7 @@ run_edge_case_once() {
     wait_for_server_condition "$app_scenario" 'the dropped download resumed with a Range request' 'downloads.ranged >= 1' 5 || return 1
   fi
 
+  write_maestro_success_marker
   return 0
 }
 
@@ -741,6 +755,7 @@ run_scenario() {
     echo "=== Running Maestro edge case: $scenario_id ==="
     run_edge_case "$scenario_id"
     echo "=== Completed Maestro edge case: $scenario_id ==="
+    write_maestro_success_marker
     return 0
   fi
 
@@ -918,6 +933,7 @@ if (failures.length) {
   esac
 
   echo "=== Completed Maestro scenario: $scenario_id ==="
+  write_maestro_success_marker
 
   return 0
 }
