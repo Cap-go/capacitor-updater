@@ -11,11 +11,7 @@ if [[ -z "${SIMULATOR_ID:-}" ]]; then
   exit 1
 fi
 
-# On CI the simulator is already booting (see scripts/prewarm-ios-simulator.sh).
-# Booting is idempotent; keeping it up lets later xcodebuild runs in the same job
-# reuse it. Post-test diagnostics collection only adds idle time, so skip it.
-xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-
+# Post-test diagnostics collection only adds idle time in CI, so skip it.
 xcodebuild test \
   -scheme CapgoCapacitorUpdater \
   -destination "id=${SIMULATOR_ID}" \
