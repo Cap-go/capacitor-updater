@@ -667,6 +667,7 @@ run_edge_case_once() {
 
   local recovery_cycle_mode="$cycle_mode"
   local recovery_wait_seconds="$EDGE_CASE_RECOVERY_WAIT_SECONDS"
+  local previous_recovery_cycles="$EDGE_CASE_RECOVERY_CYCLES"
   if [[ "$edge_case_id" == "edge-kill-download" ]]; then
     recovery_cycle_mode="cold-launch"
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
@@ -689,7 +690,6 @@ run_edge_case_once() {
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
-  local previous_recovery_cycles="$EDGE_CASE_RECOVERY_CYCLES"
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
     EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
   fi
