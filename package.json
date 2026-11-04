@@ -14,7 +14,10 @@
     "dist/",
     "ios/Sources/",
     "CapgoCapacitorUpdater.podspec",
-    "Package.swift"
+    "Package.swift",
+    "scripts/builtin-hashes-lib.mjs",
+    "scripts/capacitor-builtin-hashes-hook.mjs",
+    "scripts/resolve-real-path.mjs"
   ],
   "author": "Martin Donadieu <martin@capgo.app>",
   "repository": {
@@ -71,7 +74,7 @@
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "bun run build",
-    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs && bun scripts/test-cli-crypto-output-guard.mjs",
+    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs && bun scripts/test-cli-crypto-output-guard.mjs && node scripts/test-builtin-hashes-hook.mjs",
     "check:cap9-deprecated": "bun scripts/check-cap9-deprecated.mjs",
     "changelog:ai": "node scripts/generate-ai-changelog.mjs",
     "example:install": "cd example-app && bun install --frozen-lockfile",
@@ -82,7 +85,8 @@
     "native:contract:cli:ios": "./scripts/test-ios.sh -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests",
     "native:contract:cli:android": "cd android && ./gradlew testDebugUnitTest --tests ee.forgr.capacitor_updater.CliCryptoFixtureTest && cd ..",
     "generate:rsa-contract": "bun scripts/generate-rsa-contract-fixtures.mjs",
-    "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs"
+    "generate:cli-crypto": "bun scripts/generate-cli-crypto-fixtures.mjs",
+    "capacitor:copy:after": "node scripts/capacitor-builtin-hashes-hook.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",

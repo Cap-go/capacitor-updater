@@ -19,8 +19,11 @@ import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -475,14 +478,170 @@ public class DownloadService extends Worker {
         }
     }
 
+    // Precomputed builtin hashes: `public/ota-builtin-hashes.json` (written by the Capacitor sync hook).
+    // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
+    static final String BUILTIN_HASHES_ASSET = "public/ota-builtin-hashes.json";
+    private static volatile Map<String, BuiltinHashEntry> builtinHashes;
+    private static final Object BUILTIN_HASHES_LOCK = new Object();
+
+    static final class BuiltinHashEntry {
+
+        final String hash;
+        /** {@code -1} when the manifest entry has no size (legacy string entries). */
+        final long size;
+
+        BuiltinHashEntry(final String hash, final long size) {
+            this.hash = hash;
+            this.size = size;
+        }
+    }
+
+    static boolean isSha256Hex(final String value) {
+        if (value == null || value.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < 64; i++) {
+            final char c = value.charAt(i);
+            if ((c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static Map<String, BuiltinHashEntry> builtinHashes(final AssetManager assets) {
+        Map<String, BuiltinHashEntry> hashes = builtinHashes;
+        if (hashes != null) {
+            return hashes;
+        }
+        synchronized (BUILTIN_HASHES_LOCK) {
+            if (builtinHashes != null) {
+                return builtinHashes;
+            }
+            final Map<String, BuiltinHashEntry> loaded = new HashMap<>();
+            try (InputStream in = assets.open(BUILTIN_HASHES_ASSET)) {
+                final ByteArrayOutputStream out = new ByteArrayOutputStream();
+                final byte[] buffer = new byte[64 * 1024];
+                int length;
+                while ((length = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, length);
+                }
+                final JSONObject files = new JSONObject(out.toString("UTF-8")).getJSONObject("files");
+                final Iterator<String> keys = files.keys();
+                while (keys.hasNext()) {
+                    final String key = keys.next();
+                    final Object raw = files.opt(key);
+                    if (raw instanceof String) {
+                        final String hash = (String) raw;
+                        if (isSha256Hex(hash)) {
+                            loaded.put(key, new BuiltinHashEntry(hash, -1L));
+                        }
+                        continue;
+                    }
+                    if (!(raw instanceof JSONObject)) {
+                        continue;
+                    }
+                    final JSONObject obj = (JSONObject) raw;
+                    final String hash = obj.optString("sha256", "");
+                    if (!isSha256Hex(hash)) {
+                        continue;
+                    }
+                    final long size;
+                    if (!obj.has("size") || obj.isNull("size")) {
+                        size = -1L;
+                    } else {
+                        final Object rawSize = obj.get("size");
+                        if (!(rawSize instanceof Integer || rawSize instanceof Long)) {
+                            continue;
+                        }
+                        final long parsedSize = ((Number) rawSize).longValue();
+                        if (parsedSize < 0) {
+                            continue;
+                        }
+                        size = parsedSize;
+                    }
+                    loaded.put(key, new BuiltinHashEntry(hash, size));
+                }
+            } catch (Exception ignored) {
+                loaded.clear();
+                // No table (older build): every lookup falls back to hashing.
+            }
+            builtinHashes = loaded;
+            return loaded;
+        }
+    }
+
+    static long builtinAssetLength(final AssetManager assets, final String assetPath) throws IOException {
+        try (android.content.res.AssetFileDescriptor afd = assets.openFd(assetPath)) {
+            return afd.getLength();
+        }
+    }
+
+    static Boolean builtinHashVerdictForEntry(
+        final AssetManager assets,
+        final String assetPath,
+        final BuiltinHashEntry entry,
+        final String expectedHash
+    ) {
+        if (entry == null || expectedHash == null) {
+            return null;
+        }
+        if (entry.size >= 0) {
+            try {
+                if (builtinAssetLength(assets, assetPath) != entry.size) {
+                    return null;
+                }
+            } catch (IOException e) {
+                return null;
+            }
+        }
+        return entry.hash.equalsIgnoreCase(expectedHash) ? Boolean.TRUE : Boolean.FALSE;
+    }
+
+    /** TRUE/FALSE from the table, or null when the table cannot answer. */
+    static Boolean builtinHashVerdict(final AssetManager assets, final String assetPath, final String expectedHash) {
+        if (assets == null || assetPath == null || !assetPath.startsWith("public/") || expectedHash == null) {
+            return null;
+        }
+        final BuiltinHashEntry known = builtinHashes(assets).get(assetPath.substring("public/".length()));
+        return known == null ? null : builtinHashVerdictForEntry(assets, assetPath, known, expectedHash);
+    }
+
+    static boolean copyStreamUnchecked(final InputStream input, final File dest) throws IOException {
+        final File parent = dest.getParentFile();
+        if (parent == null) {
+            throw new IOException("Destination has no parent: " + dest.getAbsolutePath());
+        }
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create parent directory: " + parent.getAbsolutePath());
+        }
+        final File tempFile = File.createTempFile("capgo_asset_", ".tmp", parent);
+        try {
+            try (FileOutputStream outStream = new FileOutputStream(tempFile)) {
+                final byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, length);
+                }
+            }
+            return replaceFile(tempFile, dest);
+        } finally {
+            deleteQuietly(tempFile);
+        }
+    }
+
     static boolean tryCopyBuiltinAsset(final AssetManager assets, final String fileName, final File dest, final String expectedHash) {
         if (assets == null || fileName == null || dest == null) {
             return false;
         }
         try {
             final String assetPath = resolveBuiltinAssetPath(fileName);
+            final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
+            if (Boolean.FALSE.equals(verdict)) {
+                return false;
+            }
             try (InputStream in = assets.open(assetPath)) {
-                return copyStreamIfChecksumMatches(in, dest, expectedHash);
+                return verdict != null ? copyStreamUnchecked(in, dest) : copyStreamIfChecksumMatches(in, dest, expectedHash);
             }
         } catch (IOException e) {
             return false;
@@ -495,7 +654,14 @@ public class DownloadService extends Worker {
         }
         try {
             final String assetPath = resolveBuiltinAssetPath(fileName);
+            final Boolean verdict = builtinHashVerdict(assets, assetPath, expectedHash);
+            if (Boolean.FALSE.equals(verdict)) {
+                return false;
+            }
             try (InputStream in = assets.open(assetPath)) {
+                if (verdict != null) {
+                    return verdict;
+                }
                 return expectedHash.equalsIgnoreCase(CryptoCipher.calcChecksum(in));
             }
         } catch (IOException e) {
