@@ -17,7 +17,7 @@ android {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
-            // Keep Capacitor web assets uncompressed so ota-builtin-hashes.json size checks can use openFd().
+            // Optional noCompress: avoids a stream open for builtin hash table size checks (see README).
             noCompress 'html', 'js', 'css', 'json', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'map', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'wasm', 'txt', 'xml'
         }
     }
