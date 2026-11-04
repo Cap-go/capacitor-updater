@@ -76,6 +76,7 @@ public class BuiltinHashesTest {
 
     @Test
     public void builtinHashVerdictAcceptsTableWhenOpenFdFailsForCompressedAsset() throws Exception {
+        // Real APKs: aapt-compressed assets throw from openFd(); size comes from AssetManager.open().
         final byte[] content = "compressed asset".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = tableJson("index.html", hash, content.length);
