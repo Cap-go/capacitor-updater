@@ -212,9 +212,11 @@ npm install @capgo/capacitor-updater@lts-v5
 npm install @capgo/capacitor-updater@lts-v4
 ```
 
-### Android: keep web assets uncompressed
+### Android: builtin hash table and compressed assets
 
-On `npx cap copy`, the plugin writes `ota-builtin-hashes.json` next to your web assets so the native code can reuse builtin files without hashing them. On Android the size check uses `AssetManager.openFd()`, which cannot open compressed assets, so compressed files silently fall back to full hashing. To get the fast path, keep web asset extensions uncompressed in `android/app/build.gradle`:
+On `npx cap copy`, the plugin writes `ota-builtin-hashes.json` next to your web assets so the native code can reuse builtin files without hashing them. On Android each sized row checks that the asset's uncompressed length still matches the manifest before trusting the stored SHA-256 (same integrity model as iOS file size checks). `AssetManager.openFd()` only works for uncompressed APK assets; when it fails, the plugin reads the uncompressed length via `AssetManager.open()` instead, so the fast path works for default aapt-compressed web bundles (`.js`, `.css`, `.html`, and similar) without `noCompress`.
+
+Optional: listing extensions in `androidResources { noCompress += [...] }` avoids opening a stream for the length check on those files, but increases installed APK size. Without it, updates still verify every builtin file by checksum when the table cannot answer.
 
 ```groovy
 android {
@@ -223,8 +225,6 @@ android {
     }
 }
 ```
-
-This only affects speed: without it, updates still verify every builtin file by checksum.
 
 ## Auto-update setup
 

@@ -6,7 +6,7 @@ import { resolveRealPath } from './resolve-real-path.mjs';
 
 export const BUILTIN_HASHES_FILE_NAME = 'ota-builtin-hashes.json';
 
-/** Android apps should list web asset extensions in aapt noCompress so sized rows can use openFd length checks. */
+/** On Android, sized manifest rows compare against uncompressed asset length (openFd when stored uncompressed, otherwise InputStream). */
 
 export function sha256File(file) {
   const hash = createHash('sha256');
