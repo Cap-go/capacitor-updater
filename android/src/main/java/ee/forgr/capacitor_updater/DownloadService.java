@@ -574,6 +574,21 @@ public class DownloadService extends Worker {
     static long builtinAssetLength(final AssetManager assets, final String assetPath) throws IOException {
         try (android.content.res.AssetFileDescriptor afd = assets.openFd(assetPath)) {
             return afd.getLength();
+        } catch (IOException openFdFailed) {
+            // Compressed APK assets cannot use openFd(); length is still the uncompressed byte count.
+            try (InputStream in = assets.open(assetPath)) {
+                final long fromAvailable = in.available();
+                if (fromAvailable > 0) {
+                    return fromAvailable;
+                }
+                long total = 0;
+                final byte[] buffer = new byte[CryptoCipher.ioBufferBytes()];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    total += read;
+                }
+                return total;
+            }
         }
     }
 
