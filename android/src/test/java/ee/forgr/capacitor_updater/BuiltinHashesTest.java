@@ -75,10 +75,24 @@ public class BuiltinHashesTest {
     }
 
     @Test
-    public void builtinHashVerdictFallsBackWhenOpenFdFails() throws Exception {
+    public void builtinHashVerdictAcceptsTableWhenOpenFdFailsForCompressedAsset() throws Exception {
         final byte[] content = "compressed asset".getBytes(StandardCharsets.UTF_8);
         final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
         final String table = tableJson("index.html", hash, content.length);
+        final AssetManager assets = assetsWithTable(table, "public/index.html", content);
+        when(assets.openFd(eq("public/index.html"))).thenThrow(new IOException("Asset not compressed with openFd"));
+        assertEquals(Boolean.TRUE, DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
+        final ByteArrayInputStream contentStream = spy(new ByteArrayInputStream(content));
+        when(assets.open(eq("public/index.html"))).thenAnswer((invocation) -> contentStream);
+        assertTrue(DownloadService.builtinAssetMatches(assets, "index.html", hash));
+        verify(contentStream, never()).read(any(byte[].class));
+    }
+
+    @Test
+    public void builtinHashVerdictFallsBackWhenOpenFdFailsAndCompressedSizeMismatch() throws Exception {
+        final byte[] content = "compressed asset".getBytes(StandardCharsets.UTF_8);
+        final String hash = CryptoCipher.calcChecksum(new ByteArrayInputStream(content));
+        final String table = tableJson("index.html", hash, content.length + 99);
         final AssetManager assets = assetsWithTable(table, "public/index.html", content);
         when(assets.openFd(eq("public/index.html"))).thenThrow(new IOException("Asset not compressed with openFd"));
         assertNull(DownloadService.builtinHashVerdict(assets, "public/index.html", hash));
