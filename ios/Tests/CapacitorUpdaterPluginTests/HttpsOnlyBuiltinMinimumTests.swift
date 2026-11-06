@@ -22,12 +22,14 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
         var reloadCalls = 0
 
         /// Simulates a successful WebView reload and records whether activation reached that step.
-        override func _reload() -> Bool {
+        override func _reload() -> Bool { // NOSONAR Must match the inherited plugin method name.
             reloadCalls += 1
             return true
         }
 
-        override func restoreLiveBundleStateAfterFailedReload() {}
+        override func restoreLiveBundleStateAfterFailedReload() {
+            // This test has no WebView bridge to restore; it verifies the persisted bundle state instead.
+        }
     }
 
     /// Persists a real downloaded bundle and restores the active, fallback and pending state after the test.
