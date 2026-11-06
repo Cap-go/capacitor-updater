@@ -208,7 +208,7 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  # One macOS job builds for testing, writes cli-fresh crypto fixtures, and saves the SwiftPM plus DerivedData cache so shard jobs only run xctest under the 5 minute cap.
+  # One macOS job builds for testing, writes cli-fresh crypto fixtures, and saves SwiftPM, DerivedData, and native-contract-tests/cli-fresh in the same cache so shard jobs only run xctest under the 5 minute cap.
   test_ios_setup:
     permissions:
       contents: read
@@ -227,12 +227,13 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM and DerivedData
+      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
         uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             .ci-ios-test-dd
+            native-contract-tests/cli-fresh
           key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
           restore-keys: |
             ${{ runner.os }}-ios-test-
@@ -274,12 +275,13 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM and DerivedData
+      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
         uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             .ci-ios-test-dd
+            native-contract-tests/cli-fresh
           key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
           restore-keys: |
             ${{ runner.os }}-ios-test-
