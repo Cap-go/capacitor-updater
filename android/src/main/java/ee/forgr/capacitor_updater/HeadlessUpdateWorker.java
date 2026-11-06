@@ -25,6 +25,7 @@ import androidx.work.WorkerParameters;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.plugin.WebView;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
