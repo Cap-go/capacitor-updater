@@ -938,6 +938,11 @@ jobs:
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" || "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
+            # Three summary waits in the deferred recovery flow; default 180s each blows the 10m job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           else
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=360
           fi
