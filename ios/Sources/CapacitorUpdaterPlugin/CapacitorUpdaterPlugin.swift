@@ -5211,9 +5211,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             if !self.shouldUseDirectUpdate() {
                 if self.directUpdateMode == "false" {
-                    logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen.")
+                    logger.warn("autoSplashscreen is enabled but autoUpdate is not configured for immediate updates. Set autoUpdate to 'always' or disable autoSplashscreen.")
                 } else if self.directUpdateMode == "atInstall" || self.directUpdateMode == "onLaunch" {
-                    logger.info("autoSplashscreen is enabled but directUpdate is set to \"\(self.directUpdateMode)\". This is normal. Skipping autoSplashscreen logic.")
+                    logger.info("autoSplashscreen is enabled but autoUpdate is set to \"\(self.autoUpdateMode)\". This is normal. Skipping autoSplashscreen logic.")
                 }
                 canShowSplashscreen = false
             }

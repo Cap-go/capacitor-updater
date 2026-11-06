@@ -5855,12 +5855,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (!this.shouldUseDirectUpdate()) {
                 if ("false".equals(this.directUpdateMode)) {
                     logger.warn(
-                        "autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen."
+                        "autoSplashscreen is enabled but autoUpdate is not configured for immediate updates. Set autoUpdate to 'always' or disable autoSplashscreen."
                     );
                 } else if ("atInstall".equals(this.directUpdateMode) || "onLaunch".equals(this.directUpdateMode)) {
                     logger.info(
-                        "autoSplashscreen is enabled but directUpdate is set to \"" +
-                            this.directUpdateMode +
+                        "autoSplashscreen is enabled but autoUpdate is set to \"" +
+                            this.autoUpdateMode +
                             "\". This is normal. Skipping autoSplashscreen logic."
                     );
                 }
