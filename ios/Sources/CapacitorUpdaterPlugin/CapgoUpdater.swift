@@ -1364,8 +1364,7 @@ import UIKit
             let builtinLookupName = knownEntry?.originalFileName ?? relativePath
             let isBuiltinOrigin: Bool
             if let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: builtinLookupName) {
-                isBuiltinOrigin = fileManager.fileExists(atPath: builtinFilePath.path) &&
-                    verifyChecksum(file: builtinFilePath, expectedHash: checksum)
+                isBuiltinOrigin = builtinFileMatches(builtinFilePath, expectedHash: checksum)
             } else {
                 isBuiltinOrigin = false
             }
@@ -1579,6 +1578,93 @@ import UIKit
         Bundle.main.bundleURL.appendingPathComponent("public")
     }
 
+    // Precomputed builtin hashes: `ota-builtin-hashes.json` in the web assets dir (Capacitor sync hook).
+    // Loaded lazily once per process; missing or invalid JSON is cached as an empty map.
+    static let builtinHashesFileName = "ota-builtin-hashes.json"
+    private static func isSha256Hex(_ value: String) -> Bool {
+        guard value.count == 64 else { return false }
+        let hex = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        return value.unicodeScalars.allSatisfy { hex.contains($0) }
+    }
+
+    private struct BuiltinHashEntry {
+        let hash: String
+        /// `nil` for legacy string-only manifest entries (no size gate).
+        let size: Int64?
+    }
+
+    private var cachedBuiltinHashes: [String: BuiltinHashEntry]?
+    private let builtinHashesLock = NSLock()
+    /// Disk reads of `ota-builtin-hashes.json` (lazy once per updater instance / process).
+    private(set) var builtinHashesTableLoadCount = 0
+
+    private func builtinHashes() -> [String: BuiltinHashEntry] {
+        builtinHashesLock.lock()
+        defer { builtinHashesLock.unlock() }
+        if let hashes = cachedBuiltinHashes {
+            return hashes
+        }
+        var hashes: [String: BuiltinHashEntry] = [:]
+        let tableURL = builtinFolderURL().appendingPathComponent(Self.builtinHashesFileName)
+        builtinHashesTableLoadCount += 1
+        if let data = try? Data(contentsOf: tableURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let files = json["files"] as? [String: Any] {
+            for (key, value) in files {
+                if let hash = value as? String, Self.isSha256Hex(hash) {
+                    hashes[key] = BuiltinHashEntry(hash: hash, size: nil)
+                    continue
+                }
+                guard let obj = value as? [String: Any],
+                      let hash = obj["sha256"] as? String,
+                      Self.isSha256Hex(hash) else { continue }
+                let sizeValue: Int64?
+                if obj["size"] == nil || obj["size"] is NSNull {
+                    sizeValue = nil
+                } else if let size = obj["size"] as? NSNumber,
+                          CFGetTypeID(size) != CFBooleanGetTypeID(),
+                          let exact = Int64(exactly: size.doubleValue),
+                          exact >= 0 {
+                    sizeValue = exact
+                } else {
+                    continue
+                }
+                hashes[key] = BuiltinHashEntry(hash: hash, size: sizeValue)
+            }
+        }
+        cachedBuiltinHashes = hashes
+        return hashes
+    }
+
+    private func builtinTableVerdict(relativePath: String, fileURL: URL, expectedHash: String) -> Bool? {
+        guard let entry = builtinHashes()[relativePath] else {
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return false
+        }
+        if let expectedSize = entry.size {
+            let actualSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) }
+            if actualSize != expectedSize {
+                return nil
+            }
+        }
+        return entry.hash.lowercased() == expectedHash.lowercased()
+    }
+
+    private func builtinFileMatches(_ builtinFilePath: URL, expectedHash: String) -> Bool {
+        let basePath = builtinFolderURL().standardizedFileURL.path
+        let filePath = builtinFilePath.standardizedFileURL.path
+        if filePath.hasPrefix(basePath + "/") {
+            let relativePath = String(filePath.dropFirst(basePath.count + 1))
+            if let verdict = builtinTableVerdict(relativePath: relativePath, fileURL: builtinFilePath, expectedHash: expectedHash) {
+                return verdict
+            }
+        }
+        return FileManager.default.fileExists(atPath: builtinFilePath.path) &&
+            verifyChecksum(file: builtinFilePath, expectedHash: expectedHash)
+    }
+
     private func resolveManifestFileHash(entry: ManifestEntry, sessionKey: String) -> String? {
         guard var fileHash = entry.file_hash, !fileHash.isEmpty else {
             return nil
@@ -1609,7 +1695,7 @@ import UIKit
         guard let builtinFilePath = try? Self.resolveManifestTargetPath(baseDirectory: builtinFolder, fileName: fileName) else {
             return false
         }
-        if FileManager.default.fileExists(atPath: builtinFilePath.path) && verifyChecksum(file: builtinFilePath, expectedHash: fileHash) {
+        if builtinFileMatches(builtinFilePath, expectedHash: fileHash) {
             return true
         }
 
@@ -1958,8 +2044,7 @@ import UIKit
 
                 do {
                     // Try builtin first
-                    if FileManager.default.fileExists(atPath: task.builtinFilePath.path) &&
-                        self.verifyChecksum(file: task.builtinFilePath, expectedHash: task.finalFileHash) {
+                    if self.builtinFileMatches(task.builtinFilePath, expectedHash: task.finalFileHash) {
                         try self.copyItemReplacing(from: task.builtinFilePath, to: task.destFilePath)
                         self.logger.info("downloadManifest \(task.fileName) using builtin file \(id)")
                     }

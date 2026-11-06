@@ -212,6 +212,20 @@ npm install @capgo/capacitor-updater@lts-v5
 npm install @capgo/capacitor-updater@lts-v4
 ```
 
+### Android: builtin hash table and compressed assets
+
+On `npx cap copy`, the plugin writes `ota-builtin-hashes.json` next to your web assets so the native code can reuse builtin files without hashing them. On Android each sized row checks that the asset's uncompressed length still matches the manifest before trusting the stored SHA-256 (same integrity model as iOS file size checks). `AssetManager.openFd()` only works for uncompressed APK assets; when it fails, the plugin reads the uncompressed length via `AssetManager.open()` instead, so the fast path works for default aapt-compressed web bundles (`.js`, `.css`, `.html`, and similar) without `noCompress`.
+
+Optional: listing extensions in `androidResources { noCompress += [...] }` avoids opening a stream for the length check on those files, but increases installed APK size. Without it, updates still verify every builtin file by checksum when the table cannot answer.
+
+```groovy
+android {
+    androidResources {
+        noCompress += ['html', 'js', 'css', 'json', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'map', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'ico', 'wasm', 'txt', 'xml']
+    }
+}
+```
+
 ## Auto-update setup
 
 Create your account in [capgo.app](https://capgo.app) and get your [API key](https://console.capgo.app/dashboard/apikeys)
@@ -326,6 +340,16 @@ To further remain in compliance with Apple's guidelines, we suggest that App Sto
 > Apps must not force users to rate the app, review the app, download other apps, or other similar actions to access functionality, content, or use of the app.
 
 This is not a problem for the default behavior of background update, since it won't force the user to apply the new version until the next app close, but at least you should be aware of that ruling if you decide to show it.
+
+#### Prevent live updates during Apple and Google review
+
+Keep the app on the web assets shipped in the submitted native binary throughout Apple App Store and Google Play review. Applying a live update during review can reload the app, interrupt the reviewer's session, or change the behavior they are reviewing.
+
+Capgo Cloud blocks update requests from known Apple and Google datacenter networks by default to prevent live updates from reaching review devices on those networks. Keep the app's **Block provider infrastructure requests** setting enabled. This protection runs on Capgo's server and depends on recognizing the request's network; it does not detect every review session or pause updates for all users while a store review is in progress.
+
+If you self-host, manage updates manually, or disable this protection, you must provide your own way to prevent live updates from disturbing review. The same applies if review traffic does not use a recognized network. For example, pause update delivery for the submitted native version or use a dedicated channel that serves no live updates until review is complete. In manual flows, guard calls such as `download()`, `next()`, and `set()`, and prevent already downloaded or queued bundles from being applied during review. Hiding an update message does not prevent the update itself.
+
+Before submitting, test a fresh install and an upgrade from the previous store version. Confirm that the submitted build keeps running its bundled web assets across launches and background/foreground transitions while the review hold is active.
 
 #### Good practice for App Store review
 

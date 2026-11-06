@@ -72,3 +72,4 @@ captures
 .externalNativeBuild
 node_modules/
 package-lock.json
+native-contract-tests/cli-fresh/
