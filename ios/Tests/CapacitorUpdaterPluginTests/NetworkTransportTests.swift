@@ -185,7 +185,10 @@ final class NetworkTransportTests: XCTestCase {
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
-        XCTAssertEqual(attempts, 2)
+        // URLSession may issue an extra GET after 503 before surfacing the failure to our retry loop,
+        // so expect at least one 503 and a final 200, and at most three hits on the test server.
+        XCTAssertGreaterThanOrEqual(attempts, 2)
+        XCTAssertLessThanOrEqual(attempts, 3)
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
