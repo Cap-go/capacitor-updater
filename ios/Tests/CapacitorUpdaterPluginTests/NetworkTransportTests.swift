@@ -133,10 +133,19 @@ private final class LoopbackHTTPServer {
             head += "\(name): \(value)\r\n"
         }
         head += "\r\n"
-        var payload = Data(head.utf8)
-        payload.append(response.truncateBodyAt.map { response.body.prefix($0) } ?? response.body)
-        connection.send(content: payload, completion: .contentProcessed { _ in
-            connection.cancel()
+        let headerData = Data(head.utf8)
+        let bodyData = response.truncateBodyAt.map { Data(response.body.prefix($0)) } ?? response.body
+
+        // Send headers and body in separate writes so a truncated body is a real mid-stream drop,
+        // not one atomic read containing a short body with Content-Length still outstanding.
+        connection.send(content: headerData, isComplete: false, completion: .contentProcessed { error in
+            if error != nil {
+                connection.cancel()
+                return
+            }
+            connection.send(content: bodyData, isComplete: true, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
         })
     }
 }
