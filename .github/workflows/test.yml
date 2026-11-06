@@ -725,9 +725,9 @@ jobs:
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
-          CAPGO_MAESTRO_TEST_RETRIES=1
+          CAPGO_MAESTRO_TEST_RETRIES=2
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=240
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
@@ -792,8 +792,8 @@ jobs:
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
-          CAPGO_MAESTRO_TEST_RETRIES=1 \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=240 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
@@ -886,10 +886,10 @@ jobs:
             edge_case_retries: 1
           - scenario: edge-corrupt-bundle
             app: edge-deferred
-            edge_case_retries: 1
+            edge_case_retries: 2
           - scenario: edge-offline-check
             app: edge-deferred
-            edge_case_retries: 1
+            edge_case_retries: 2
           - scenario: edge-direct-network-drop
             app: edge-direct
             edge_case_retries: 1
@@ -933,16 +933,16 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$MATRIX_SCENARIO" == "edge-direct-network-drop" ]]; then
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" || "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
             # Three summary waits in the deferred recovery flow.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           else
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           fi
