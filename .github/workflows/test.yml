@@ -223,8 +223,12 @@ jobs:
           - shard: core
             select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
             cli_contract: false
+          # Real URLSession transport tests can dominate the remaining runtime on hosted simulators.
+          - shard: network
+            select: -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+            cli_contract: false
           - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
             cli_contract: true
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
