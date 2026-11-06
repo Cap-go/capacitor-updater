@@ -5,7 +5,8 @@ const autoUpdateEnabled = process.env.CAPGO_AUTO_UPDATE === 'true';
 // The plugin's directUpdate option was removed in 9.0.0, so it maps to an autoUpdate mode.
 const instantApplyMode = (process.env.CAPGO_DIRECT_UPDATE ?? 'false') as 'false' | 'always' | 'atInstall' | 'onLaunch';
 const usesDirectUpdate = instantApplyMode !== 'false';
-const autoUpdate = autoUpdateEnabled ? (instantApplyMode === 'false' ? true : instantApplyMode) : false;
+const autoUpdateMode = instantApplyMode === 'false' ? true : instantApplyMode;
+const autoUpdate = autoUpdateEnabled ? autoUpdateMode : false;
 const parsedAppReadyTimeout = Number.parseInt(process.env.CAPGO_APP_READY_TIMEOUT ?? '20000', 10);
 const appReadyTimeout =
   Number.isFinite(parsedAppReadyTimeout) && parsedAppReadyTimeout >= 1000
