@@ -5,7 +5,7 @@ appId: app.capgo.updater
 # screen and holds every field in one element, so a single regex proves one consistent state.
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
-    timeout: 180000
+    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS}'
 - extendedWaitUntil:
     visible: '${SUMMARY_PATTERN}'
-    timeout: 180000
+    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS}'
