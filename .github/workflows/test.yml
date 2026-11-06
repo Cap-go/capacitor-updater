@@ -240,6 +240,7 @@ jobs:
             ${{ runner.os }}-ios-test-
       - name: Build iOS tests once
         run: |
+          xcodebuild -version > "$RUNNER_TEMP/ios-native-xcode-version.txt"
           # Cached manifests may target an older SDK. Regenerate only the current build's test manifest.
           rm -f "$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun
           CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
@@ -264,6 +265,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ios-native-test-products.tar.gz
             ${{ runner.temp }}/ios-native-cli-fixtures.tar.gz
+            ${{ runner.temp }}/ios-native-xcode-version.txt
           compression-level: 0
           retention-days: 1
 
@@ -303,6 +305,19 @@ jobs:
         with:
           name: ios-native-test-products
           path: ${{ runner.temp }}/ios-native-test-products
+      - name: Verify compiled iOS test Xcode version
+        run: |
+          producer_version_path="$RUNNER_TEMP/ios-native-test-products/ios-native-xcode-version.txt"
+          if [[ ! -f "$producer_version_path" ]]; then
+            echo "Missing Xcode version metadata for compiled iOS tests" >&2
+            exit 1
+          fi
+          producer_version="$(cat "$producer_version_path")"
+          current_version="$(xcodebuild -version)"
+          if [[ "$producer_version" != "$current_version" ]]; then
+            printf 'Xcode version mismatch for compiled iOS tests.\nProducer:\n%s\nConsumer:\n%s\n' "$producer_version" "$current_version" >&2
+            exit 1
+          fi
       - name: Extract compiled iOS tests
         run: |
           mkdir -p "$CAPGO_IOS_DERIVED_DATA/Build"
