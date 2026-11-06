@@ -741,7 +741,7 @@ run_edge_case_once() {
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-30}"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-20}"
   elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
     # Worst case is (cycles + 1) * wait = 240s, well inside the 9 minute step timeout
     # so the success marker is always written before the step deadline.
@@ -761,7 +761,7 @@ run_edge_case_once() {
   fi
 
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-3}"
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
     if ! wait_for_edge_network_drop_recovery \
       "$recovery_wait_seconds" \
       "${edge_case_id}: the release applies once the network is back" \

@@ -1122,8 +1122,9 @@ jobs:
       - name: Tune Maestro env for Android edge-network-drop
         if: matrix.scenario == 'edge-network-drop'
         run: |
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=30" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_CASE_RETRIES=1" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=2" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=20" >> "$GITHUB_ENV"
           echo "CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS=120" >> "$GITHUB_ENV"
           echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
       # edge-offline-check can sit in the default recovery poll loop too long for the 8 minute emulator step.
