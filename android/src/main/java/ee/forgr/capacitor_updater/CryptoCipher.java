@@ -317,30 +317,14 @@ public class CryptoCipher {
             return checksum;
         }
         try {
-            // TODO: remove this in a month or two
-            // Determine if input is hex or base64 encoded
-            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
-            byte[] checksumBytes;
-            String detectedFormat;
-            if (checksum.matches("^[0-9a-fA-F]+$")) {
-                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
-                checksumBytes = hexStringToByteArray(checksum);
-                detectedFormat = "hex";
-            } else {
-                // TODO: remove backwards compatibility
-                // Base64 encoded (old format for backwards compatibility)
-                checksumBytes = Base64.decode(checksum, Base64.DEFAULT);
-                detectedFormat = "base64";
+            // The encrypted checksum is hex encoded. The base64 format of CLI uploads made for plugin
+            // versions older than 5.30.0 / 6.30.0 / 7.30.0 is no longer accepted since 9.0.0.
+            if (!checksum.matches("^[0-9a-fA-F]+$")) {
+                logger.error("Cannot decode checksum as hex. Re-upload the bundle with a current Capgo CLI.");
+                throw new IOException("Bundle checksum is not hex encoded. Re-upload the bundle with a current Capgo CLI.");
             }
-            logger.debug(
-                "Received checksum format: " +
-                    detectedFormat +
-                    " (length: " +
-                    checksum.length() +
-                    " chars, " +
-                    checksumBytes.length +
-                    " bytes)"
-            );
+            final byte[] checksumBytes = hexStringToByteArray(checksum);
+            logger.debug("Received checksum format: hex (length: " + checksum.length() + " chars, " + checksumBytes.length + " bytes)");
 
             // RSA-2048 encrypted data must be exactly 256 bytes
             // If the checksum is not 256 bytes, the bundle was not encrypted properly
@@ -368,9 +352,6 @@ public class CryptoCipher {
             String detectedAlgorithm;
             if (decryptedChecksum.length == 32) {
                 detectedAlgorithm = "SHA-256";
-            } else if (decryptedChecksum.length == 4) {
-                detectedAlgorithm = "CRC32 (deprecated)";
-                logger.error("CRC32 checksum detected - deprecated algorithm");
             } else {
                 detectedAlgorithm = "unknown (" + decryptedChecksum.length + " bytes)";
                 logger.error("Unknown checksum algorithm detected");
@@ -395,8 +376,7 @@ public class CryptoCipher {
 
     /**
      * Detect checksum algorithm based on hex string length.
-     * SHA-256 = 64 hex chars (32 bytes)
-     * CRC32 = 8 hex chars (4 bytes)
+     * SHA-256 = 64 hex chars (32 bytes). It is the only supported algorithm.
      */
     public static String detectChecksumAlgorithm(String hexChecksum) {
         if (hexChecksum == null || hexChecksum.isEmpty()) {
@@ -405,22 +385,18 @@ public class CryptoCipher {
         int len = hexChecksum.length();
         if (len == 64) {
             return "SHA-256";
-        } else if (len == 8) {
-            return "CRC32 (deprecated)";
         } else {
             return "unknown (" + len + " hex chars)";
         }
     }
 
     /**
-     * Log checksum info and warn if deprecated algorithm detected.
+     * Log checksum info and warn if the checksum is not SHA-256.
      */
     public static void logChecksumInfo(String label, String hexChecksum) {
         String algorithm = detectChecksumAlgorithm(hexChecksum);
         logger.debug(label + ": " + algorithm + " hex format (length: " + hexChecksum.length() + " chars)");
-        if (algorithm.contains("CRC32")) {
-            logger.error("CRC32 checksum detected - deprecated algorithm");
-        } else if (algorithm.contains("unknown")) {
+        if (algorithm.contains("unknown")) {
             logger.error("Unknown checksum algorithm detected");
             logger.debug("Char count: " + hexChecksum.length() + ", Expected: 64 (SHA-256)");
         }

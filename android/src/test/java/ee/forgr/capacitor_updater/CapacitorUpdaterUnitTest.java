@@ -272,7 +272,8 @@ public class CapacitorUpdaterUnitTest {
         private java.util.function.Consumer<String> updateAvailableNotifier = (version) -> {};
 
         FreshDownloadCapgoUpdater() {
-            super(null);
+            // builtinMinimum is on by default since 9.0.0 and logs when it skips an unparseable native version.
+            super(mock(Logger.class));
         }
 
         @Override
@@ -3781,9 +3782,8 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
 
             assertTrue(plugin.hasNotifiedEvent("breakingAvailable"));
-            assertTrue(plugin.hasNotifiedEvent("majorAvailable"));
+            assertFalse(plugin.hasNotifiedEvent("majorAvailable"));
             assertEquals("1.0.17", plugin.getNotifiedEventPayload("breakingAvailable").getString("version"));
-            assertEquals("1.0.17", plugin.getNotifiedEventPayload("majorAvailable").getString("version"));
             assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
             assertTrue(updater.downloadFailStatsCalled);
         }
@@ -3806,9 +3806,8 @@ public class CapacitorUpdaterUnitTest {
             plugin.getLatest(call);
 
             assertTrue(plugin.hasNotifiedEvent("breakingAvailable"));
-            assertTrue(plugin.hasNotifiedEvent("majorAvailable"));
+            assertFalse(plugin.hasNotifiedEvent("majorAvailable"));
             assertEquals("1.0.17", plugin.getNotifiedEventPayload("breakingAvailable").getString("version"));
-            assertEquals("1.0.17", plugin.getNotifiedEventPayload("majorAvailable").getString("version"));
             verify(call).reject("store_update_required");
         }
     }
@@ -3846,7 +3845,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testEveryEventIsForwardedToUpdaterEvent() {
+    public void testEveryEventIsDeliveredOnlyAsUpdaterEvent() {
         try (
             MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -3857,16 +3856,22 @@ public class CapacitorUpdaterUnitTest {
             PluginCall listener = mock(PluginCall.class);
             when(listener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
             plugin.addListener(listener);
+            // Per-event listeners were removed in 9.0.0: nothing is emitted under the legacy name.
+            PluginCall legacyListener = mock(PluginCall.class);
+            when(legacyListener.getString("eventName")).thenReturn("download");
+            plugin.addListener(legacyListener);
 
             JSObject data = new JSObject();
             data.put("percent", 10);
             plugin.notifyListeners("download", data, false);
-            plugin.notifyListeners("majorAvailable", new JSObject(), false);
+            plugin.notifyListeners("appReloaded", new JSObject());
 
             ArgumentCaptor<JSObject> captor = ArgumentCaptor.forClass(JSObject.class);
-            verify(listener, times(1)).resolve(captor.capture());
-            assertEquals("download", captor.getValue().getString("type"));
-            assertEquals(10, captor.getValue().getJSObject("data").getInteger("percent").intValue());
+            verify(listener, times(2)).resolve(captor.capture());
+            assertEquals("download", captor.getAllValues().get(0).getString("type"));
+            assertEquals(10, captor.getAllValues().get(0).getJSObject("data").getInteger("percent").intValue());
+            assertEquals("appReloaded", captor.getAllValues().get(1).getString("type"));
+            verify(legacyListener, never()).resolve(any(JSObject.class));
         }
     }
 
@@ -3895,7 +3900,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testRetainedEventReplayIsNotForwardedTwice() {
+    public void testRetainedEventReplayIsDeliveredOnce() {
         try (
             MockedStatic<com.getcapacitor.Logger> ignored = mockStatic(com.getcapacitor.Logger.class);
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -3904,17 +3909,27 @@ public class CapacitorUpdaterUnitTest {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
             CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin();
             plugin.notifyListeners("set", new JSObject(), true);
-
-            PluginCall updaterListener = mock(PluginCall.class);
-            when(updaterListener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
-            plugin.addListener(updaterListener);
+            plugin.notifyListeners("appReady", new JSObject(), true);
 
             PluginCall setListener = mock(PluginCall.class);
             when(setListener.getString("eventName")).thenReturn("set");
             plugin.addListener(setListener);
 
-            verify(updaterListener, times(1)).resolve(any(JSObject.class));
-            verify(setListener, times(1)).resolve(any(JSObject.class));
+            PluginCall updaterListener = mock(PluginCall.class);
+            when(updaterListener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(updaterListener);
+
+            PluginCall lateUpdaterListener = mock(PluginCall.class);
+            when(lateUpdaterListener.getString("eventName")).thenReturn(CapacitorUpdaterPlugin.UPDATER_EVENT);
+            plugin.addListener(lateUpdaterListener);
+
+            ArgumentCaptor<JSObject> captor = ArgumentCaptor.forClass(JSObject.class);
+            verify(updaterListener, times(2)).resolve(captor.capture());
+            assertEquals("set", captor.getAllValues().get(0).getString("type"));
+            assertEquals("appReady", captor.getAllValues().get(1).getString("type"));
+            // Replay consumed the retained events: neither a later listener nor a legacy name gets them again.
+            verify(lateUpdaterListener, never()).resolve(any(JSObject.class));
+            verify(setListener, never()).resolve(any(JSObject.class));
         }
     }
 

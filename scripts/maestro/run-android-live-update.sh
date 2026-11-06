@@ -33,7 +33,7 @@ DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUN
 ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
-SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+SCENARIO_SEQUENCE=(deferred always at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 EDGE_CASE_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS:-150}"
 
@@ -804,27 +804,6 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
-        'Current bundle source: downloaded' \
-        "Current bundle version: $second_release"
-      ;;
-    legacy-true)
-      control_server reset legacy-true
-      prepare_scenario legacy-true
-      run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies on first launch" \
-        "Build label: $first_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
-        'Current bundle source: downloaded' \
-        "Current bundle version: $first_release"
-      control_server advance legacy-true
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies a newer release after resume" \
-        "Build label: $second_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
       ;;

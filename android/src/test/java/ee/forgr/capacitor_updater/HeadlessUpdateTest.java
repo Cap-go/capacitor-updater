@@ -15,6 +15,7 @@ import com.getcapacitor.PluginConfig;
 import java.util.HashMap;
 import java.util.Map;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -28,22 +29,36 @@ public class HeadlessUpdateTest {
         CapacitorUpdaterPlugin.instanceLoaded = false;
     }
 
-    private static PluginConfig config(final String autoUpdate, final boolean autoUpdateBool, final String directUpdate) {
+    private static PluginConfig config(final String autoUpdate, final boolean autoUpdateBool, final String directUpdate) throws Exception {
         final PluginConfig config = mock(PluginConfig.class);
         when(config.getString("autoUpdate", null)).thenReturn(autoUpdate);
         when(config.getBoolean("autoUpdate", true)).thenReturn(autoUpdateBool);
-        when(config.getString("directUpdate", null)).thenReturn(directUpdate);
-        when(config.getBoolean("directUpdate", false)).thenReturn(false);
+        final JSONObject raw = new JSONObject();
+        if (directUpdate != null) {
+            raw.put("directUpdate", directUpdate);
+        }
+        when(config.getConfigJSON()).thenReturn(raw);
         return config;
     }
 
     @Test
-    public void autoUpdateModeMatchesThePluginConfig() {
+    public void autoUpdateModeMatchesThePluginConfig() throws Exception {
         assertEquals("onlyDownload", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config("onlyDownload", true, null), null));
         assertEquals("off", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config("false", true, null), null));
         assertEquals("atBackground", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config(null, true, null), null));
-        assertEquals("atInstall", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config(null, true, "atInstall"), null));
+        assertEquals("atInstall", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config("atInstall", true, null), null));
         assertEquals("off", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config(null, false, null), null));
+    }
+
+    @Test
+    public void removedDirectUpdateConfigIsIgnoredWithAnError() throws Exception {
+        final Logger logger = mock(Logger.class);
+        assertEquals("atBackground", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config(null, true, "atInstall"), logger));
+        verify(logger).error(CapacitorUpdaterPlugin.REMOVED_DIRECT_UPDATE_CONFIG_MESSAGE);
+
+        final Logger quietLogger = mock(Logger.class);
+        assertEquals("always", CapacitorUpdaterPlugin.autoUpdateModeFromConfig(config("always", true, null), quietLogger));
+        verify(quietLogger, never()).error(CapacitorUpdaterPlugin.REMOVED_DIRECT_UPDATE_CONFIG_MESSAGE);
     }
 
     private static CapgoUpdater updaterWithDelays(final String delays) {

@@ -17,15 +17,16 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
         return updater
     }
 
-    func testDefaultsAreHttpsOnlyOnAndBuiltinMinimumOff() throws {
+    func testDefaultsAreHttpsOnlyOnAndBuiltinMinimumOn() throws {
         let updater = makeUpdater()
         XCTAssertTrue(updater.httpsOnly)
-        XCTAssertFalse(updater.builtinMinimum)
+        XCTAssertTrue(updater.builtinMinimum)
         XCTAssertTrue(RedirectPolicyDelegate().httpsOnly)
         updater.versionBuild = "2.0.0"
-        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("1.0.0"))
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.0.0"))
         XCTAssertNotNil(updater.checkAllowedScheme(try XCTUnwrap(URL(string: "http://example.com/a.zip"))))
-        XCTAssertTrue(updater.sentStatsActions.isEmpty)
+        XCTAssertEqual(updater.sentStatsActions, ["version_below_native"])
     }
 
     // MARK: - builtinMinimum

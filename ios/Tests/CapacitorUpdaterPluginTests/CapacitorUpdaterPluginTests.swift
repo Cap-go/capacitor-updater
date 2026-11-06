@@ -2,18 +2,29 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
 
+/// Since 9.0.0 the plugin emits every event as `updaterEvent` with `{ type, data }`. Test doubles
+/// record the inner type and payload so assertions keep naming the event (`download`, `appReady`, ...).
+func decodeUpdaterEvent(_ eventName: String, data: [String: Any]?) -> (name: String, data: [String: Any]?) {
+    guard eventName == CapacitorUpdaterPlugin.updaterEvent, let type = data?["type"] as? String else {
+        return (eventName, data)
+    }
+    return (type, data?["data"] as? [String: Any])
+}
+
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
     private(set) var notifiedEventRetainValues: [String: Bool] = [:]
+    /// Raw bridge calls, before decoding the `updaterEvent` envelope.
     private(set) var notifiedEvents: [(name: String, data: [String: Any]?, retain: Bool)] = []
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
-        notifiedEventNames.append(eventName)
         notifiedEvents.append((name: eventName, data: data, retain: retain))
-        notifiedEventRetainValues[eventName] = retain
-        if let data {
-            notifiedEventPayloads[eventName] = data
+        let event = decodeUpdaterEvent(eventName, data: data)
+        notifiedEventNames.append(event.name)
+        notifiedEventRetainValues[event.name] = retain
+        if let payload = event.data {
+            notifiedEventPayloads[event.name] = payload
         }
     }
 
@@ -73,15 +84,16 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     }
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+        let event = decodeUpdaterEvent(eventName, data: data)
         eventLock.lock()
-        _notifiedEventNames.append(eventName)
-        if eventName == "appReady" {
+        _notifiedEventNames.append(event.name)
+        if event.name == "appReady" {
             _appReadyNotifiedAt = Date()
             _appReadyNotifiedOnMainThread = Thread.isMainThread
             _appReadyRetainUntilConsumed = retain
         }
-        if let data {
-            _notifiedEventPayloads[eventName] = data
+        if let payload = event.data {
+            _notifiedEventPayloads[event.name] = payload
         }
         eventLock.unlock()
     }
@@ -2403,9 +2415,8 @@ class CapacitorUpdaterTests: XCTestCase {
         wait(for: [rejected], timeout: 10)
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("majorAvailable"))
         XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
     }
 
     func testGetLatestBreakingResponseWithoutVersionNotifiesCurrentBundleVersion() throws {
@@ -2446,9 +2457,8 @@ class CapacitorUpdaterTests: XCTestCase {
         wait(for: [resolved], timeout: 10)
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("majorAvailable"))
         XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "1.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "1.0.0")
     }
 
     func testBlockedUpdateCheckDoesNotNotifyDownloadFailed() {
@@ -2479,9 +2489,8 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("noNeedUpdate"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("updateCheckResult"))
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("majorAvailable"))
         XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
         XCTAssertFalse(testPlugin.notifiedEventNames.contains("downloadFailed"))
         XCTAssertFalse(blockedImplementation.sentStatsActions.contains("download_fail"))
     }
@@ -2511,9 +2520,8 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.backgroundDownload()
 
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("breakingAvailable"))
-        XCTAssertTrue(testPlugin.notifiedEventNames.contains("majorAvailable"))
+        XCTAssertFalse(testPlugin.notifiedEventNames.contains("majorAvailable"))
         XCTAssertEqual(testPlugin.notifiedEventPayloads["breakingAvailable"]?["version"] as? String, "2.0.0")
-        XCTAssertEqual(testPlugin.notifiedEventPayloads["majorAvailable"]?["version"] as? String, "2.0.0")
         XCTAssertTrue(testPlugin.notifiedEventNames.contains("downloadFailed"))
         XCTAssertTrue(breakingImplementation.sentStatsActions.contains("download_fail"))
     }
@@ -2552,29 +2560,26 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(failedImplementation.lastStatsMetadata?["status_code"], "500")
     }
 
-    func testEveryEventIsForwardedToUpdaterEvent() {
+    func testEveryEventIsDeliveredOnlyAsUpdaterEvent() {
         let testPlugin = TestableCapacitorUpdaterPlugin()
         testPlugin.notifyListenersOnMainForTesting("download", data: ["percent": 10], retainUntilConsumed: false)
         testPlugin.notifyListenersOnMainForTesting("appReady", data: ["status": "ok"], retainUntilConsumed: true)
-        testPlugin.notifyListenersOnMainForTesting("majorAvailable", data: ["version": "2.0.0"], retainUntilConsumed: false)
 
-        let forwarded = testPlugin.notifiedEvents.filter { $0.name == "updaterEvent" }
-        XCTAssertEqual(forwarded.count, 2)
-        XCTAssertEqual(forwarded[0].data?["type"] as? String, "download")
-        XCTAssertEqual((forwarded[0].data?["data"] as? [String: Any])?["percent"] as? Int, 10)
-        XCTAssertFalse(forwarded[0].retain)
-        XCTAssertEqual(forwarded[1].data?["type"] as? String, "appReady")
-        XCTAssertEqual((forwarded[1].data?["data"] as? [String: Any])?["status"] as? String, "ok")
-        XCTAssertTrue(forwarded[1].retain)
+        // Per-event listeners were removed in 9.0.0: one bridge call per event, always as updaterEvent.
+        XCTAssertEqual(testPlugin.notifiedEvents.map { $0.name }, ["updaterEvent", "updaterEvent"])
+        let events = testPlugin.notifiedEvents
+        XCTAssertEqual(events[0].data?["type"] as? String, "download")
+        XCTAssertEqual((events[0].data?["data"] as? [String: Any])?["percent"] as? Int, 10)
+        XCTAssertFalse(events[0].retain)
+        XCTAssertEqual(events[1].data?["type"] as? String, "appReady")
+        XCTAssertEqual((events[1].data?["data"] as? [String: Any])?["status"] as? String, "ok")
+        XCTAssertTrue(events[1].retain)
     }
 
     func testUpdaterEventPayloadHelpers() {
         let payload = CapacitorUpdaterPlugin.updaterEventPayload(eventName: "appReloaded", data: nil)
         XCTAssertEqual(payload["type"] as? String, "appReloaded")
         XCTAssertTrue((payload["data"] as? [String: Any])?.isEmpty ?? false)
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("updaterEvent"))
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("majorAvailable"))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent("breakingAvailable"))
         XCTAssertEqual(CapacitorUpdaterPlugin.updateCheckErrorMetadata(error: "", statusCode: 0), ["error": "unknown"])
     }
 

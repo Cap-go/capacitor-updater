@@ -96,6 +96,12 @@ const fixture = {
       input: { checksumHex: '00'.repeat(255) },
       expect: { throws: true },
     },
+    {
+      // Base64 checksums were the pre-x.30.0 CLI format. Support was removed in 9.0.0.
+      id: 'base64-encoded-rsa-ciphertext-removed-in-v9',
+      input: { checksumHex: Buffer.from(checksumCiphertext).toString('base64') },
+      expect: { throws: true },
+    },
   ],
 };
 

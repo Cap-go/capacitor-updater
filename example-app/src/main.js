@@ -115,7 +115,6 @@ const elements = {
   lastError: requireElement('last-error'),
   latestVersionState: requireElement('latest-version-state'),
   listChannelsState: requireElement('list-channels-state'),
-  majorEvent: requireElement('major-event'),
   nextBundle: requireElement('next-bundle'),
   noNeedUpdateEventState: requireElement('no-need-update-event-state'),
   noNeedUpdateEvent: requireElement('no-need-update-event'),
@@ -316,7 +315,6 @@ const state = {
     downloadComplete: 'none',
     downloadFailed: 'none',
     flexibleUpdate: 'none',
-    majorAvailable: 'none',
     noNeedUpdate: 'none',
     set: 'none',
     setNext: 'none',
@@ -604,11 +602,6 @@ function recordEventMarker(eventName, payload) {
     return;
   }
 
-  if (eventName === 'majorAvailable') {
-    state.eventMarkers.majorAvailable = markerValue;
-    return;
-  }
-
   if (eventName === 'onFlexibleUpdateStateChange') {
     state.eventMarkers.flexibleUpdate = markerValue;
     return;
@@ -889,7 +882,6 @@ function renderState() {
   elements.downloadFailedEvent.textContent = `downloadFailed event: ${state.eventMarkers.downloadFailed}`;
   elements.noNeedUpdateEvent.textContent = `noNeedUpdate event: ${state.eventMarkers.noNeedUpdate}`;
   elements.breakingEvent.textContent = `breakingAvailable event: ${state.eventMarkers.breakingAvailable}`;
-  elements.majorEvent.textContent = `majorAvailable event: ${state.eventMarkers.majorAvailable}`;
   elements.flexibleUpdateEvent.textContent = `flexible update event: ${state.eventMarkers.flexibleUpdate}`;
 
   const notifyReady = String(state.notifyStatus ?? '').toLowerCase();
@@ -3315,49 +3307,49 @@ async function attachListeners() {
     return;
   }
 
-  const listenerDefinitions = [
-    { eventName: 'appReady', label: 'App ready event', refreshAfter: true },
-    { eventName: 'appReloaded', label: 'App reloaded event', refreshAfter: true },
-    { eventName: 'breakingAvailable', label: 'Breaking update event', refreshAfter: false },
-    { eventName: 'channelPrivate', label: 'Channel private event', refreshAfter: false },
-    { eventName: 'download', label: 'Download progress', refreshAfter: false },
-    { eventName: 'downloadComplete', label: 'Download complete', refreshAfter: true },
-    { eventName: 'downloadFailed', label: 'Download failed', refreshAfter: true },
-    { eventName: 'majorAvailable', label: 'Major update event', refreshAfter: false },
-    { eventName: 'noNeedUpdate', label: 'No need update event', refreshAfter: false },
-    {
-      eventName: 'onFlexibleUpdateStateChange',
-      label: 'Flexible update event',
-      refreshAfter: false,
-    },
-    { eventName: 'set', label: 'Set event', refreshAfter: true },
-    { eventName: 'setNext', label: 'Set next event', refreshAfter: true },
-    { eventName: 'updateAvailable', label: 'Update available event', refreshAfter: false },
-    { eventName: 'updateFailed', label: 'Update failed event', refreshAfter: true },
-  ];
+  // Since 9.0.0 every plugin event arrives through the single updaterEvent listener as { type, data }.
+  const eventDefinitions = {
+    appReady: { label: 'App ready event', refreshAfter: true },
+    appReloaded: { label: 'App reloaded event', refreshAfter: true },
+    breakingAvailable: { label: 'Breaking update event', refreshAfter: false },
+    channelPrivate: { label: 'Channel private event', refreshAfter: false },
+    download: { label: 'Download progress', refreshAfter: false },
+    downloadComplete: { label: 'Download complete', refreshAfter: true },
+    downloadFailed: { label: 'Download failed', refreshAfter: true },
+    noNeedUpdate: { label: 'No need update event', refreshAfter: false },
+    onFlexibleUpdateStateChange: { label: 'Flexible update event', refreshAfter: false },
+    set: { label: 'Set event', refreshAfter: true },
+    setNext: { label: 'Set next event', refreshAfter: true },
+    updateAvailable: { label: 'Update available event', refreshAfter: false },
+    updateFailed: { label: 'Update failed event', refreshAfter: true },
+  };
 
-  await Promise.all(
-    listenerDefinitions.map(({ eventName, label, refreshAfter }) =>
-      plugin.addListener(eventName, async (payload) => {
-        recordEventMarker(eventName, payload);
+  await plugin.addListener('updaterEvent', async (event) => {
+    const eventName = event?.type;
+    const payload = event?.data;
+    const definition = eventDefinitions[eventName];
+    if (!definition) {
+      // The harness UI only tracks the event types above (for example it ignores updateCheckResult).
+      return;
+    }
 
-        if (eventName === 'downloadComplete') {
-          state.lastDownload = getBundleVersion(payload?.bundle ?? payload);
-        }
+    recordEventMarker(eventName, payload);
 
-        if (eventName === 'updateFailed') {
-          state.failedUpdate = payload;
-        }
+    if (eventName === 'downloadComplete') {
+      state.lastDownload = getBundleVersion(payload?.bundle ?? payload);
+    }
 
-        addEvent(label, payload);
-        renderState();
+    if (eventName === 'updateFailed') {
+      state.failedUpdate = payload;
+    }
 
-        if (refreshAfter) {
-          await refreshState();
-        }
-      }),
-    ),
-  );
+    addEvent(definition.label, payload);
+    renderState();
+
+    if (definition.refreshAfter) {
+      await refreshState();
+    }
+  });
 
   listenersAttached = true;
 }

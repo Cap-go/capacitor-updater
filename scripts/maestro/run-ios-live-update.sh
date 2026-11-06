@@ -22,7 +22,7 @@ export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
 FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
 DEBUG_LOG_FAILURE_PATTERN="fail|Fail|failure|Failure|error|Error|Exception|CommandFailed|Assertion is false|crash|Crash"
-SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+SCENARIO_SEQUENCE=(deferred always at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 
 # shellcheck source=scripts/maestro/edge-cases.sh
@@ -229,7 +229,7 @@ is_supported_scenario() {
   local scenario_id="$1"
 
   case "$scenario_id" in
-    deferred|always|legacy-true|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest)
+    deferred|always|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest)
       return 0
       ;;
   esac
@@ -820,18 +820,6 @@ run_scenario() {
         "Build label: $first_release" \
         'Scenario: always' \
         'Direct update mode: always' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
-      ;;
-    legacy-true)
-      run_core_assert \
-        "${scenario_id}-first-release" \
-        "Build label: $first_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
         "$ASSERT_AUTO_UPDATE_ENABLED" \
         "$ASSERT_AUTO_UPDATE_AVAILABLE" \
         "Notify app ready: ok ($first_release)" \

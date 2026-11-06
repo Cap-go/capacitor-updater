@@ -338,7 +338,6 @@ jobs:
         scenario:
           - deferred
           - always
-          - legacy-true
           - at-install
           - on-launch
           - manual-zip
@@ -486,7 +485,6 @@ jobs:
           scenarios=(
             deferred
             always
-            legacy-true
             at-install
             on-launch
             manual-zip
@@ -722,7 +720,6 @@ jobs:
       matrix:
         scenario:
           - always
-          - legacy-true
           - on-launch
     steps:
       - name: Check out
@@ -969,7 +966,6 @@ jobs:
         scenario:
           - deferred
           - always
-          - legacy-true
           - at-install
           - on-launch
           - manual-zip-config-guards

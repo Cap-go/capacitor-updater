@@ -52,15 +52,16 @@ public class HttpsOnlyBuiltinMinimumTest {
     // --- defaults ---
 
     @Test
-    public void defaultsAreHttpsOnlyOnAndBuiltinMinimumOff() throws Exception {
+    public void defaultsAreHttpsOnlyOnAndBuiltinMinimumOn() throws Exception {
         StatsCapturingUpdater updater = new StatsCapturingUpdater();
         assertTrue(updater.httpsOnly);
-        assertFalse(updater.builtinMinimum);
+        assertTrue(updater.builtinMinimum);
         assertTrue(DownloadService.httpsOnly);
         updater.versionBuild = "2.0.0";
-        updater.runPreDownloadSecurityGates("https://example.com/a.zip", "1.0.0", null);
+        updater.runPreDownloadSecurityGates("https://example.com/a.zip", "2.0.0", null);
+        assertThrows(IOException.class, () -> updater.runPreDownloadSecurityGates("https://example.com/a.zip", "1.0.0", null));
         assertThrows(IOException.class, () -> updater.runPreDownloadSecurityGates("http://example.com/a.zip", "3.0.0", null));
-        assertTrue(updater.stats.isEmpty());
+        assertEquals(List.of("version_below_native:1.0.0"), updater.stats);
     }
 
     // --- builtinMinimum ---

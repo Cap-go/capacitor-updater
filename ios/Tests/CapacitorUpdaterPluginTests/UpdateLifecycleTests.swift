@@ -149,9 +149,10 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
     }
 
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
-        events.append(eventName)
-        if let data {
-            payloads[eventName] = data
+        let event = decodeUpdaterEvent(eventName, data: data)
+        events.append(event.name)
+        if let payload = event.data {
+            payloads[event.name] = payload
         }
     }
 

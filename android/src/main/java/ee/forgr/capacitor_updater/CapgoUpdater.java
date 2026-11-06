@@ -118,8 +118,8 @@ public class CapgoUpdater {
     public String publicKey = "";
     public String deviceID = "";
     public int timeout = 20000;
-    /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default false. */
-    public volatile boolean builtinMinimum = false;
+    /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default true. */
+    public volatile boolean builtinMinimum = true;
     /**
      * Require https for every URL the updater downloads from. Config httpsOnly, default true. Mirrors
      * DownloadService.httpsOnly (the OkHttp interceptor); this field gates URLs before any network IO.
@@ -2491,11 +2491,6 @@ public class CapgoUpdater {
             return;
         }
         this.sendStats("set", bundle.getVersionName(), previousBundleName);
-    }
-
-    @Deprecated
-    public void autoReset() {
-        this.autoReset(this.versionCode == null ? "" : this.versionCode);
     }
 
     public void autoReset(final String currentNativeBuildVersion) {

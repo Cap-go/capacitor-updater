@@ -51,8 +51,8 @@ import UIKit
     public var httpsOnly: Bool = true {
         didSet { redirectPolicy.httpsOnly = httpsOnly }
     }
-    /// When true a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
-    public var builtinMinimum: Bool = false
+    /// When true (default) a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
+    public var builtinMinimum: Bool = true
     /// Error raised when `httpsOnly` is set and a URL is not https.
     public static func httpsOnlyError(_ url: URL) -> NSError {
         return NSError(

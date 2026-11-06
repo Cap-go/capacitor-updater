@@ -73,6 +73,15 @@
       "expect": {
         "throws": true
       }
+    },
+    {
+      "id": "base64-encoded-rsa-ciphertext-removed-in-v9",
+      "input": {
+        "checksumHex": "BdbZjgJ5OkIAVBdTMP/a178Lv2RFmCk0FmPKWcnuLvJ4q4KRttCUQQ+90l1L9AUo2WXYtPrVkNryErDTCWAviVs7vNSS5/1CeD+/4jr6cDcK+p5sagpgbcEuy8LBTG173o4AizeMnb5NJpYm7LJHXGq4bo+eoYM1K61EOf1WEnO4+nV5k4K03JnRYXJ5OsIAxfiFyfXpFSev4rlbDQxqm82M4SiXp6/wxJAVUfREOWugWdmt9IBXGahlKczHfLquWPZFbu60S5NkQ7N6QOO4bsiD5NWLFvtdwQWRcdQUlWjULNorpHTc6oLXBqjYm1ViDF+6w9cZki7mdT/wXw0ryA=="
+      },
+      "expect": {
+        "throws": true
+      }
     }
   ]
 }

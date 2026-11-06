@@ -294,6 +294,8 @@ public class HeadlessUpdateWorker extends Worker {
         appId = InternalUtils.getRootConfigString(context, "appId", appId);
         updater.appId = config.getString("appId", appId);
         updater.setPublicKey(config.getString("publicKey", ""));
+        // Same default as CapacitorUpdaterPlugin#load: on unless the app opts out.
+        updater.builtinMinimum = config.getBoolean("builtinMinimum", true);
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);
         updater.statsUrl = config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault);
@@ -307,7 +309,7 @@ public class HeadlessUpdateWorker extends Worker {
         updater.defaultChannel =
             storedDefaultChannel != null && !storedDefaultChannel.isEmpty() ? storedDefaultChannel : config.getString("defaultChannel", "");
 
-        if (config.getBoolean("persistCustomId", false)) {
+        if (config.getBoolean("persistCustomId", true)) {
             final String storedCustomId = prefs.getString(CapacitorUpdaterPlugin.CUSTOM_ID_PREF_KEY, "");
             if (storedCustomId != null && !storedCustomId.isEmpty()) {
                 updater.customId = storedCustomId;
