@@ -31,6 +31,9 @@ public struct CryptoCipher {
         return str.unicodeScalars.allSatisfy { hexCharacterSet.contains($0) }
     }
 
+    /// Decrypts the RSA encrypted bundle checksum and returns it as lowercase hex.
+    /// Returns `checksum` unchanged when no public key is configured. Throws for anything that is not
+    /// an even-length hex string of 256 bytes signed with the matching private key.
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
             logger.info("No encryption set (public key) ignored")
@@ -39,7 +42,8 @@ public struct CryptoCipher {
         do {
             // The encrypted checksum is hex encoded. The base64 format of CLI uploads made for plugin
             // versions older than 5.30.0 / 6.30.0 / 7.30.0 is no longer accepted since 9.0.0.
-            guard isHexString(checksum), let checksumBytes = hexStringToData(checksum) else {
+            // An odd length is rejected too: hexStringToData would silently drop the last digit.
+            guard checksum.count.isMultiple(of: 2), isHexString(checksum), let checksumBytes = hexStringToData(checksum) else {
                 logger.error("Cannot decode checksum as hex. Re-upload the bundle with a current Capgo CLI.")
                 logger.debug("Checksum value: \(checksum)")
                 throw CustomError.cannotDecode

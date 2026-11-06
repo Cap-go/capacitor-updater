@@ -240,6 +240,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var delayUpdateUtils: DelayUpdateUtils!
     private var nativeUpdatePromptCoordinator: NativeUpdatePromptCoordinator?
 
+    /// Reads the plugin config, applies its defaults (`httpsOnly`, `builtinMinimum` and `persistCustomId` are on
+    /// unless the app opts out) and starts the updater.
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
         // Set webView for logging to JavaScript console
@@ -4217,6 +4219,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Resolves `autoUpdate` (boolean or string mode) into the auto update and instant apply state.
+    /// The `directUpdate` key removed in 9.0.0 is ignored and only logged.
     private func configureAutoUpdateModeFromConfig() {
         if let configuredMode = getConfig().getString("autoUpdate"),
            configuredMode != "",
@@ -4349,6 +4353,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.setOnLaunchDirectUpdateUsed(true)
     }
 
+    /// Test hook: sets an instant apply mode (`"false"`, `"always"`, `"atInstall"`, `"onLaunch"`) and the
+    /// matching `autoUpdate` mode, as if it came from the config.
     func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
         self.directUpdateMode = directUpdateMode
         self.autoUpdateMode = Self.isDirectUpdateMode(directUpdateMode) ? directUpdateMode : Self.autoUpdateModeBackground
@@ -4446,6 +4452,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.getOnLaunchDirectUpdateUsed()
     }
 
+    /// Emits the `breakingAvailable` updater event for `version`. Empty versions are skipped.
     private func notifyBreakingEvents(version: String) {
         guard !version.isEmpty else {
             return

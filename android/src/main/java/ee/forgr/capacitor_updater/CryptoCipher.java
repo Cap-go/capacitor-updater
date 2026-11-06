@@ -311,6 +311,11 @@ public class CryptoCipher {
         return data;
     }
 
+    /**
+     * Decrypts the RSA encrypted bundle checksum and returns it as lowercase hex. Returns {@code checksum}
+     * unchanged when no public key is configured. Throws for anything that is not an even-length hex string
+     * of 256 bytes signed with the matching private key.
+     */
     public static String decryptChecksum(String checksum, String publicKey) throws IOException {
         if (publicKey.isEmpty()) {
             logger.error("No encryption set (public key) ignored");
@@ -319,7 +324,8 @@ public class CryptoCipher {
         try {
             // The encrypted checksum is hex encoded. The base64 format of CLI uploads made for plugin
             // versions older than 5.30.0 / 6.30.0 / 7.30.0 is no longer accepted since 9.0.0.
-            if (!checksum.matches("^[0-9a-fA-F]+$")) {
+            // An odd length is rejected too: hexStringToByteArray would read past the last digit.
+            if (checksum.length() % 2 != 0 || !checksum.matches("^[0-9a-fA-F]+$")) {
                 logger.error("Cannot decode checksum as hex. Re-upload the bundle with a current Capgo CLI.");
                 throw new IOException("Bundle checksum is not hex encoded. Re-upload the bundle with a current Capgo CLI.");
             }

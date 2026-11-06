@@ -336,6 +336,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return Long.toString(PackageInfoCompat.getLongVersionCode(packageInfo));
     }
 
+    /** Emits the breakingAvailable updater event for {@code version}. Empty versions are skipped. */
     private void notifyBreakingEvents(final String version) {
         if (version == null || version.isEmpty()) {
             return;
@@ -714,13 +715,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return payload;
     }
 
-    // Every plugin event reaches JavaScript as a single updaterEvent with { type, data }. eventName is the
-    // event type (download, appReady, ...). The per-event listeners were removed in 9.0.0.
+    /** Emits {@code eventName} as an updaterEvent without retaining it. See the three-argument overload. */
     @Override
     protected void notifyListeners(final String eventName, final JSObject data) {
         this.notifyListeners(eventName, data, false);
     }
 
+    /**
+     * Every plugin event reaches JavaScript as a single updaterEvent with { type, data }. eventName is the
+     * event type (download, appReady, ...). The per-event listeners were removed in 9.0.0.
+     */
     @Override
     protected void notifyListeners(final String eventName, final JSObject data, final boolean retainUntilConsumed) {
         if (UPDATER_EVENT.equals(eventName)) {
@@ -731,6 +735,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         super.notifyListeners(UPDATER_EVENT, updaterEventPayload(eventName, data), retainUntilConsumed);
     }
 
+    /**
+     * Reads the plugin config, applies its defaults (httpsOnly, builtinMinimum and persistCustomId are on unless
+     * the app opts out) and starts the updater.
+     */
     @Override
     public void load() {
         super.load();
@@ -2407,6 +2415,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.onLaunchDirectUpdateUsed = true;
     }
 
+    /**
+     * Test hook: sets an instant apply mode ("false", "always", "atInstall", "onLaunch") and the matching
+     * autoUpdate mode, as if it came from the config.
+     */
     void configureDirectUpdateModeForTesting(final String directUpdateMode, final boolean onLaunchDirectUpdateUsed) {
         this.directUpdateMode = directUpdateMode;
         this.autoUpdateMode = isDirectUpdateMode(directUpdateMode) ? directUpdateMode : AUTO_UPDATE_MODE_BACKGROUND;

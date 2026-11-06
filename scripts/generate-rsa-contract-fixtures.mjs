@@ -102,6 +102,12 @@ const fixture = {
       input: { checksumHex: Buffer.from(checksumCiphertext).toString('base64') },
       expect: { throws: true },
     },
+    {
+      // One extra digit must not be dropped: a valid ciphertext followed by a stray nibble is rejected.
+      id: 'odd-length-hex-rejected',
+      input: { checksumHex: `${toHex(checksumCiphertext)}0` },
+      expect: { throws: true },
+    },
   ],
 };
 

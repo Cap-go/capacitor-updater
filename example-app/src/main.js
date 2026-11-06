@@ -594,6 +594,11 @@ function formatEventMarkerValue(eventName, payload) {
   );
 }
 
+/**
+ * Stores the latest value seen for an updater event type, shown in the event status lines.
+ * @param {string} eventName The updaterEvent type.
+ * @param {object | undefined} payload The updaterEvent data.
+ */
 function recordEventMarker(eventName, payload) {
   const markerValue = formatEventMarkerValue(eventName, payload);
 
@@ -800,6 +805,7 @@ function publishHarnessMarker(markerId, outcome = 'success') {
   renderState();
 }
 
+/** Writes the current harness state into the page, including the event status lines Maestro asserts. */
 function renderState() {
   const serverDebug = state.serverDebug?.debug ?? null;
   const lastUpdatePayload = serverDebug?.lastUpdateRequest?.payload ?? {};
@@ -3302,6 +3308,7 @@ function bindDemoActions() {
   });
 }
 
+/** Subscribes once to the single updaterEvent listener and routes each event type to the harness UI. */
 async function attachListeners() {
   if (listenersAttached) {
     return;

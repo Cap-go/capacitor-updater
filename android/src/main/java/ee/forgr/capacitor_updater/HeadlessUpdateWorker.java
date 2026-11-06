@@ -268,7 +268,7 @@ public class HeadlessUpdateWorker extends Worker {
         return packageManager.getPackageInfo(context.getPackageName(), 0);
     }
 
-    /** Mirrors the identity and URL setup of CapacitorUpdaterPlugin#load. */
+    /** Mirrors the identity, URL and builtinMinimum setup of CapacitorUpdaterPlugin#load. */
     private static void configure(
         final CapgoUpdater updater,
         final Context context,

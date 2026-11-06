@@ -18,6 +18,7 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     /// Raw bridge calls, before decoding the `updaterEvent` envelope.
     private(set) var notifiedEvents: [(name: String, data: [String: Any]?, retain: Bool)] = []
 
+    /// Records the decoded updaterEvent type and payload; `notifiedEvents` keeps the raw bridge call.
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         notifiedEvents.append((name: eventName, data: data, retain: retain))
         let event = decodeUpdaterEvent(eventName, data: data)
@@ -83,6 +84,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         return _notifiedEventPayloads
     }
 
+    /// Records the decoded updaterEvent type and payload; `notifiedEvents` keeps the raw bridge call.
     override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         let event = decodeUpdaterEvent(eventName, data: data)
         eventLock.lock()
