@@ -1111,6 +1111,14 @@ jobs:
       - name: Clear Android SDK temp cache
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
+      # edge-network-drop defaults to 6 recovery cycles at 90s each (9 minutes of waits alone),
+      # which exceeds the 8 minute emulator step cap below. Tighten only this scenario.
+      - name: Tune Maestro env for Android edge-network-drop
+        if: matrix.scenario == 'edge-network-drop'
+        run: |
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=4" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=45" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
       # The runner action tears the emulator down inside this step, and that teardown can hang
       # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
       # open). Bound the step below the job cap and let the success marker decide the result,
