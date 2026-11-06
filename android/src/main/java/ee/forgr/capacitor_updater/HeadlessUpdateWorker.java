@@ -175,10 +175,7 @@ public class HeadlessUpdateWorker extends Worker {
                 return "failed";
             }
             if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
-                try {
-                    updater.requireVersionNotBelowBuiltin(version);
-                } catch (final IOException e) {
-                    logger.error(e.getMessage() == null ? "Download blocked" : e.getMessage());
+                if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
                     return "skipped";
                 }
                 if (setNext && updater.setNextBundle(existing.getId())) {
@@ -244,6 +241,20 @@ public class HeadlessUpdateWorker extends Worker {
         return false;
     }
 
+    /**
+     * When builtinMinimum is on, refuse an existing downloaded bundle whose version is below the native build.
+     * Shared by tests and {@link #run} so removing the guard breaks a unit test.
+     */
+    static boolean builtinMinimumBlocksExistingBundle(final CapgoUpdater updater, final String bundleVersion, final Logger logger) {
+        try {
+            updater.requireVersionNotBelowBuiltin(bundleVersion);
+            return false;
+        } catch (final java.io.IOException e) {
+            logger.error(e.getMessage() == null ? "Download blocked" : e.getMessage());
+            return true;
+        }
+    }
+
     static JSONArray manifestOf(final Map<String, Object> latest) {
         final Object manifest = latest.get("manifest");
         if (manifest instanceof JSONArray) {
@@ -307,6 +318,9 @@ public class HeadlessUpdateWorker extends Worker {
         updater.httpsOnly = httpsOnly;
         DownloadService.setHttpsOnly(httpsOnly);
         updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
+        if (DownloadService.getLogger() == null) {
+            DownloadService.setLogger(logger);
+        }
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);
         updater.statsUrl = config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault);

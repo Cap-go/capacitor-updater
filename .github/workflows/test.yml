@@ -208,7 +208,8 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  # One macOS job builds for testing, writes cli-fresh crypto fixtures, and saves SwiftPM, DerivedData, and native-contract-tests/cli-fresh in the same cache so shard jobs only run xctest under the 5 minute cap.
+  # One macOS job builds for testing and writes cli-fresh crypto fixtures. Shards download that build
+  # and those fixtures as workflow artifacts so they always match this run. SwiftPM stays on actions/cache only.
   test_ios_setup:
     permissions:
       contents: read
@@ -227,20 +228,25 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
+      - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            .ci-ios-test-dd
-            native-contract-tests/cli-fresh
-          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
           restore-keys: |
-            ${{ runner.os }}-ios-test-
+            ${{ runner.os }}-swiftpm-
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
       - name: Encrypt fresh bundles with the pinned Capgo CLI
         run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Upload iOS test build and CLI fresh fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-build
+          path: |
+            .ci-ios-test-dd
+            native-contract-tests/cli-fresh
+          if-no-files-found: error
 
   test_ios:
     needs: test_ios_setup
@@ -275,16 +281,16 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
+      - name: Download iOS test build and CLI fresh fixtures
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-test-build
+          path: .
+      - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            .ci-ios-test-dd
-            native-contract-tests/cli-fresh
-          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
-          restore-keys: |
-            ${{ runner.os }}-ios-test-
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}

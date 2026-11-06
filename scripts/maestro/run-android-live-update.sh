@@ -654,6 +654,16 @@ wait_for_edge_network_drop_recovery() {
     return $?
   fi
 
+  # WorkManager can finish a retry after the last cycle: one more background and resume before giving up.
+  if wait_for_ui_state_with_timeout \
+    "${description} (late retry): download finished, release queued for activation" \
+    "$recovery_wait_seconds" "${queued_fragments[@]}"; then
+    background_and_resume_app
+    wait_for_ui_state_with_timeout "${description} (late retry): deferred release applies after resume from queued" \
+      "$recovery_wait_seconds" "${activated_fragments[@]}"
+    return $?
+  fi
+
   return 1
 }
 
