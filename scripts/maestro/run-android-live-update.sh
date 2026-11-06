@@ -639,6 +639,16 @@ run_edge_case_once() {
         "$direct_update_line" \
         'Current bundle source: builtin' \
         "Current bundle version: $builtin_version" || return 1
+      # Deferred updates activate on a background transition after the resumed download queues.
+      # Waiting for activation before that transition only burns the WorkManager retry budget.
+      wait_for_ui_state_with_timeout \
+        "${edge_case_id}: the resumed download is queued while builtin keeps running" \
+        "${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}" \
+        "Build label: $builtin_label" \
+        "Scenario: $app_scenario" \
+        'Current bundle source: builtin' \
+        "Current bundle version: $builtin_version" \
+        "Next bundle version: $first_release" || return 1
       background_and_resume_app
       ;;
     *)
@@ -688,14 +698,16 @@ run_edge_case_once() {
     'Current bundle source: downloaded'
     "Current bundle version: $first_release"
   )
-  if [[ "$edge_case_id" == "edge-kill-download" ]]; then
+  if [[ "$edge_case_id" == "edge-kill-download" || "$edge_case_id" == "edge-network-drop" ]]; then
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
-  fi
-  if ! wait_for_edge_recovery_with_wait_seconds \
+    wait_for_ui_state_with_timeout \
+      "${edge_case_id}: the queued release applies after background" \
+      "$recovery_wait_seconds" \
+      "${recovery_fragments[@]}" || return 1
+  elif ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
