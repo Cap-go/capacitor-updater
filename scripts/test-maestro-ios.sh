@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
+SERVER_LOG_PATH="$RESULTS_DIR/fake-capgo-server-ios-smoke.log"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
 SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
 RUN_NATIVE_RESET="${CAPGO_MAESTRO_RUN_NATIVE_RESET:-0}"
@@ -56,11 +57,6 @@ SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
 cleanup() {
-  if [[ -f "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" ]]; then
-    mkdir -p "$RESULTS_DIR"
-    cp "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" "$RESULTS_DIR/fake-capgo-server-ios-smoke.log" 2>/dev/null || true
-  fi
-
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -176,8 +172,8 @@ assert_fake_server_process_alive() {
 }
 
 start_fake_server() {
-  mkdir -p "$ARTIFACT_DIR"
-  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" 2>&1 &
+  mkdir -p "$RESULTS_DIR"
+  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$SERVER_LOG_PATH" 2>&1 &
   SERVER_PID=$!
 
   wait_for_server
@@ -351,7 +347,7 @@ if (failures.length) {
   case "$SCENARIO_ID" in
     manual-zip-no-persist)
       if ! grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
-        "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
+        "$SERVER_LOG_PATH"; then
         echo "Smoke server assertions failed:" >&2
         echo "- missing runtime app ID override in channel request log" >&2
         exit 1
@@ -359,7 +355,7 @@ if (failures.length) {
       ;;
     manual-zip-config-guards)
       if grep -Eq "/api/channel\\?scenario=${SCENARIO_ID}.*app_id=app\\.capgo\\.updater\\.e2e" \
-        "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"; then
+        "$SERVER_LOG_PATH"; then
         echo "Smoke server assertions failed:" >&2
         echo "- guarded config unexpectedly accepted the runtime app ID override" >&2
         exit 1
@@ -409,12 +405,13 @@ if [[ -z "${APP_PATH:-}" ]]; then
   exit 1
 fi
 
+cd "$ROOT_DIR"
+
+rm -rf "$RESULTS_DIR"
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 printf 'scenario=%s\n' "$SCENARIO_ID" >"$RESULTS_DIR/runner-metadata.txt"
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-
-cd "$ROOT_DIR"
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
   if [[ ! -d node_modules ]]; then
@@ -465,9 +462,9 @@ install_example_app
 
 attempt=1
 while (( attempt <= MAESTRO_TEST_RETRIES )); do
-  rm -rf "$RESULTS_DIR"
-  mkdir -p "$RESULTS_DIR"
-  output_file="$(mktemp)"
+  attempt_results_dir="$RESULTS_DIR/attempt-$attempt"
+  mkdir -p "$attempt_results_dir"
+  output_file="$attempt_results_dir/console.log"
 
   echo "Running iOS Maestro smoke flow (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
 
@@ -478,15 +475,14 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     --no-reinstall-driver \
     "$FLOW_PATH" \
     --format junit \
-    --output "$RESULTS_DIR/junit.xml" \
-    --debug-output "$RESULTS_DIR/debug" \
+    --output "$attempt_results_dir/junit.xml" \
+    --debug-output "$attempt_results_dir/debug" \
     --flatten-debug-output \
-    --test-output-dir "$RESULTS_DIR/artifacts" 2>&1 | tee "$output_file"
+    --test-output-dir "$attempt_results_dir/artifacts" 2>&1 | tee "$output_file"
   status=${PIPESTATUS[0]}
   set -e
 
   if [[ $status -eq 0 ]]; then
-    rm -f "$output_file"
     break
   fi
 
@@ -496,7 +492,6 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 
   if (( attempt < MAESTRO_TEST_RETRIES )) && { [[ $status -eq 124 ]] || grep -Eq "$FLOW_RETRY_PATTERN" "$output_file"; }; then
     echo "Retrying iOS Maestro smoke flow after simulator/XCTest instability." >&2
-    rm -f "$output_file"
     run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
     reset_ios_maestro_driver
     run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
@@ -510,7 +505,6 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     continue
   fi
 
-  rm -f "$output_file"
   exit "$status"
 done
 
