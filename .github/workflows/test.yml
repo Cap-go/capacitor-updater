@@ -937,11 +937,12 @@ jobs:
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           elif [[ "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
-            # Three summary waits in the deferred recovery flow; keep the Maestro slice under the job
-            # cap when Bun setup and downloads use most of the first minutes on macOS runners.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=210
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=75
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=60000
+            # Three wait-summary blocks in edge-case-recover-deferred.yaml (two extendedWaitUntil each).
+            # The per-flow timeout must clear a full slow recovery; 210s was too low and failed the run.
+            # One matrix retry only (edge_case_retries: 1) keeps total wall time under the 10 minute job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=80000
           elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" ]]; then
             # Three summary waits in the deferred recovery flow.
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
