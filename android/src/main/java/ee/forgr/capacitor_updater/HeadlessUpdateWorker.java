@@ -174,6 +174,12 @@ public class HeadlessUpdateWorker extends Worker {
                 return "failed";
             }
             if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
+                try {
+                    updater.requireVersionNotBelowBuiltin(version);
+                } catch (final IOException e) {
+                    logger.error(e.getMessage() == null ? "Download blocked" : e.getMessage());
+                    return "skipped";
+                }
                 if (setNext && updater.setNextBundle(existing.getId())) {
                     return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
                 }
@@ -294,6 +300,12 @@ public class HeadlessUpdateWorker extends Worker {
         appId = InternalUtils.getRootConfigString(context, "appId", appId);
         updater.appId = config.getString("appId", appId);
         updater.setPublicKey(config.getString("publicKey", ""));
+
+        DownloadService.setAllowHttpsToHttpRedirect(config.getBoolean("allowHttpsToHttpRedirect", false));
+        final boolean httpsOnly = config.getBoolean("httpsOnly", true);
+        updater.httpsOnly = httpsOnly;
+        DownloadService.setHttpsOnly(httpsOnly);
+        updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);
         updater.statsUrl = config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault);
