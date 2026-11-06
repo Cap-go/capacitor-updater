@@ -1111,13 +1111,15 @@ jobs:
       - name: Clear Android SDK temp cache
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
-      # edge-network-drop defaults to 6 recovery cycles at 90s each (9 minutes of waits alone),
-      # which exceeds the 8 minute emulator step cap below. Keep (cycles * wait) under the step budget.
+      # edge-network-drop recovery polls UI every wait seconds for up to cycles attempts, then
+      # does one more final poll. Keep that worst case under the 8 minute emulator step cap
+      # alongside boot, install, and server waits so the job does not need a second emulator run.
       - name: Tune Maestro env for Android edge-network-drop
         if: matrix.scenario == 'edge-network-drop'
         run: |
           echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=35" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=30" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS=120" >> "$GITHUB_ENV"
           echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
       # edge-offline-check can sit in the default recovery poll loop too long for the 8 minute emulator step.
       - name: Tune Maestro env for Android edge-offline-check
