@@ -2422,10 +2422,12 @@ public class CapgoUpdater {
         return bundle != null && !bundle.isErrorStatus() && (bundle.isBuiltin() || this.bundleExists(bundle.getId()));
     }
 
+    /** Activates a stored bundle through the same version-floor checks as activation by id. */
     public Boolean set(final BundleInfo bundle) {
         return this.set(bundle.getId());
     }
 
+    /** Activates a stored bundle only when its version satisfies builtinMinimum; builtin reset remains available. */
     public Boolean set(final String id) {
         final BundleInfo newBundle = this.getBundleInfo(id);
         if (newBundle.isBuiltin()) {
@@ -2444,6 +2446,11 @@ public class CapgoUpdater {
         }
         logger.info("Setting next active bundle: " + id);
         if (this.bundleExists(id)) {
+            try {
+                this.requireVersionNotBelowBuiltin(newBundle.getVersionName());
+            } catch (IOException e) {
+                return false;
+            }
             var currentBundleName = this.getCurrentBundle().getVersionName();
             this.setCurrentBundle(bundle);
             this.setBundleStatus(id, BundleStatus.PENDING);
@@ -2455,11 +2462,13 @@ public class CapgoUpdater {
         return false;
     }
 
+    /** Stages an installable pending bundle without mutating state when the native version floor rejects it. */
     boolean stagePendingReload(final BundleInfo bundle) {
         if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
             return false;
         }
         try {
+            this.requireVersionNotBelowBuiltin(bundle.getVersionName());
             this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
             return true;
         } catch (IOException e) {

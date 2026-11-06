@@ -3397,6 +3397,7 @@ import UIKit
         return false
     }
 
+    /// Activates a stored bundle only if it meets the native version floor. Builtin reset is always allowed.
     public func set(id: String) -> Bool {
         let newBundle: BundleInfo = self.getBundleInfo(id: id)
         if newBundle.isBuiltin() {
@@ -3404,6 +3405,11 @@ import UIKit
             return true
         }
         if bundleExists(id: id) {
+            do {
+                try self.requireVersionNotBelowBuiltin(newBundle.getVersionName())
+            } catch {
+                return false
+            }
             let currentBundleName = self.getCurrentBundle().getVersionName()
             guard let bundleDir = try? self.getBundleDirectory(id: id) else {
                 self.setBundleStatus(id: id, status: BundleStatus.ERROR)
@@ -3420,15 +3426,19 @@ import UIKit
         return false
     }
 
+    /// Stages a pending bundle without finalizing it, checking the version floor before changing the active path.
     func stagePendingReload(bundle: BundleInfo) -> Bool {
         guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
             return false
         }
-        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
+        do {
+            try self.requireVersionNotBelowBuiltin(bundle.getVersionName())
+            let bundleDir = try self.getBundleDirectory(id: bundle.getId())
+            self.setCurrentBundle(bundle: bundleDir.path)
+            return true
+        } catch {
             return false
         }
-        self.setCurrentBundle(bundle: bundleDir.path)
-        return true
     }
 
     /// Points the current bundle back at `bundle` without sending stats, after an
@@ -3436,8 +3446,9 @@ import UIKit
     func restoreCurrentBundle(_ bundle: BundleInfo) {
         if bundle.isBuiltin() {
             self.setCurrentBundle(bundle: "")
-        } else {
-            _ = self.stagePendingReload(bundle: bundle)
+        } else if bundleExists(id: bundle.getId()),
+                  let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) {
+            self.setCurrentBundle(bundle: bundleDir.path)
         }
     }
 
