@@ -725,7 +725,7 @@ jobs:
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
-          CAPGO_MAESTRO_TEST_RETRIES=2
+          CAPGO_MAESTRO_TEST_RETRIES=1
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
@@ -793,7 +793,7 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
-          CAPGO_MAESTRO_TEST_RETRIES=2 \
+          CAPGO_MAESTRO_TEST_RETRIES=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
@@ -880,7 +880,7 @@ jobs:
         include:
           - scenario: edge-network-drop
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-kill-download
             app: edge-deferred
             edge_case_retries: 1
@@ -925,10 +925,8 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      # A full case takes most of the 10 minute cap on hosted macOS runners. edge-network-drop
-      # alone gets one retry for simulator crashes during recovery; other cases stay at one attempt.
-      # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
-      # edge-direct-network-drop runs an extra direct-update path; tighten waits and flow timeout so the job still finishes within the 10 minute job cap after checkout plus artifact downloads.
+      # Default summary waits are 180s per step; multiple Maestro steps plus a 300s flow timeout and
+      # a full job retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows
         env:
           MATRIX_SCENARIO: ${{ matrix.scenario }}
@@ -939,12 +937,14 @@ jobs:
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" || "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
-            # Three summary waits in the deferred recovery flow; default 180s each blows the 10m job cap.
+            # Three summary waits in the deferred recovery flow.
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           else
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=360
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
           fi
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
