@@ -103,6 +103,9 @@ Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
 ## Migration to v9
 
+This preparation branch is marked `private: true` to block npm publishing, including PR betas.
+Remove that flag only when the package version and Capacitor 9 dependency migration are complete.
+
 This major version follows Capacitor major version 9. It removes every API deprecated in v8 and turns on stricter defaults.
 
 First follow the migration guide of Capacitor:
