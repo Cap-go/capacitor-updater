@@ -22,6 +22,20 @@ case "$ACTION" in
     ;;
 esac
 
+# A shared build artifact can run directly without resolving the package or compiling on each shard.
+BUILD_SELECTION=(-scheme CapgoCapacitorUpdater)
+if [[ -n "${CAPGO_IOS_XCTESTRUN:-}" ]]; then
+  if [[ "$ACTION" != "test-without-building" ]]; then
+    echo "CAPGO_IOS_XCTESTRUN requires CAPGO_IOS_TEST_ACTION=test-without-building" >&2
+    exit 1
+  fi
+  if [[ ! -f "$CAPGO_IOS_XCTESTRUN" ]]; then
+    echo "iOS test configuration not found: $CAPGO_IOS_XCTESTRUN" >&2
+    exit 1
+  fi
+  BUILD_SELECTION=(-xctestrun "$CAPGO_IOS_XCTESTRUN")
+fi
+
 EXTRA_ARGS=()
 # A stable DerivedData path lets CI cache the compiled test bundle between runs.
 if [[ -n "${CAPGO_IOS_DERIVED_DATA:-}" ]]; then
@@ -46,7 +60,7 @@ if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" && "${CAPGO_IOS_RUN_PERF:
 fi
 
 xcodebuild "$ACTION" \
-  -scheme CapgoCapacitorUpdater \
+  "${BUILD_SELECTION[@]}" \
   -destination "id=${SIMULATOR_ID}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   "$@"
