@@ -36,8 +36,11 @@
     public static void addDocumentStartJavaScript(android.webkit.WebView, java.lang.String, java.util.Set);
 }
 
-# WorkManager constructs workers by class; keep no-arg worker contract used by the runtime.
--keepclassmembers class * extends androidx.work.Worker {
+# WorkManager constructs these worker classes by class object or class name at runtime.
+-keepclassmembers class ee.forgr.capacitor_updater.DownloadService {
+    <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keepclassmembers class ee.forgr.capacitor_updater.HeadlessUpdateWorker {
     <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 
