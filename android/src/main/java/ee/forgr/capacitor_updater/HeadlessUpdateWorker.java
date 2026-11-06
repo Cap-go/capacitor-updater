@@ -25,6 +25,7 @@ import androidx.work.WorkerParameters;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.plugin.WebView;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -173,11 +174,9 @@ public class HeadlessUpdateWorker extends Worker {
             if (existing != null && existing.isErrorStatus()) {
                 return "failed";
             }
-            if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
-                if (setNext && updater.setNextBundle(existing.getId())) {
-                    return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
-                }
-                return "downloaded";
+            final String reused = reuseDownloadedBundle(updater, existing, version, setNext, logger);
+            if (reused != null) {
+                return reused;
             }
 
             // downloadBackground returns null when it refuses the download (blocked encryption, gate,
@@ -266,6 +265,32 @@ public class HeadlessUpdateWorker extends Worker {
             return packageManager.getPackageInfo(context.getPackageName(), PackageManager.PackageInfoFlags.of(0));
         }
         return packageManager.getPackageInfo(context.getPackageName(), 0);
+    }
+
+    /**
+     * Reuses a bundle already downloaded for {@code version}: queues it, and installs it when no UI runs, after
+     * the same builtinMinimum gate a fresh download goes through. Returns null when there is nothing to reuse.
+     */
+    static String reuseDownloadedBundle(
+        final CapgoUpdater updater,
+        final BundleInfo existing,
+        final String version,
+        final boolean setNext,
+        final Logger logger
+    ) {
+        if (existing == null || !existing.isDownloaded() || BundleStatus.DOWNLOADING == existing.getStatus()) {
+            return null;
+        }
+        try {
+            updater.requireVersionNotBelowBuiltin(version);
+        } catch (final IOException e) {
+            logger.error(e.getMessage() == null ? "Download blocked" : e.getMessage());
+            return "skipped";
+        }
+        if (setNext && updater.setNextBundle(existing.getId())) {
+            return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
+        }
+        return "downloaded";
     }
 
     /** Mirrors the identity, URL and builtinMinimum setup of CapacitorUpdaterPlugin#load. */
