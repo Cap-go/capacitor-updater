@@ -1894,6 +1894,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Reloads the app, rejecting an incompatible pending bundle with VERSION_BELOW_NATIVE before changing state.
     @objc func reload(_ call: CAPPluginCall) {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
@@ -1902,6 +1903,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            let next = next,
            !next.isErrorStatus(),
            next.getId() != current.getId() {
+            if !next.isBuiltin() {
+                do {
+                    try self.implementation.requireVersionNotBelowBuiltin(next.getVersionName())
+                } catch {
+                    call.reject(error.localizedDescription, "VERSION_BELOW_NATIVE", error)
+                    return
+                }
+            }
             let previousState = self.implementation.captureResetState()
             let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
             logger.info("Applying pending bundle before reload: \(next.toString())")

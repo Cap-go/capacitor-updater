@@ -136,18 +136,24 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
             let previousState = updater.captureResetState()
             let plugin = ReloadTrackingPlugin()
             plugin.implementation = updater
-            var rejected = false
+            var rejectionMessages: [String] = []
+            var rejectionCodes: [String?] = []
             let call = try XCTUnwrap(CAPPluginCall(
                 callbackId: "reload-version-floor",
                 methodName: "reload",
                 options: [:],
                 success: { _, _ in XCTFail("Reload must reject the old bundle") },
-                error: { _ in rejected = true }
+                error: { error in
+                    rejectionMessages.append(error?.message ?? "")
+                    rejectionCodes.append(error?.code)
+                }
             ))
 
             plugin.reload(call)
+            plugin.reload(call)
 
-            XCTAssertTrue(rejected)
+            XCTAssertEqual(rejectionMessages, Array(repeating: "Bundle version 1.9.9 is below native version 2.0.0 (builtinMinimum)", count: 2))
+            XCTAssertEqual(rejectionCodes, ["VERSION_BELOW_NATIVE", "VERSION_BELOW_NATIVE"])
             XCTAssertEqual(plugin.reloadCalls, 0)
             XCTAssertEqual(updater.captureResetState().currentBundlePath, previousState.currentBundlePath)
             XCTAssertEqual(updater.captureResetState().fallbackBundleId, previousState.fallbackBundleId)
@@ -155,6 +161,26 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
             XCTAssertEqual(updater.getBundleInfo(id: bundle.getId()).getStatus(), BundleStatus.PENDING.storedValue)
             XCTAssertEqual(updater.sentStatsActions, ["set_next", "version_below_native"])
         }
+    }
+
+    /// Duplicate reporting is suppressed without caching validation or hiding changes to the native floor or opt-out.
+    func testVersionFloorStatsFollowPolicyChanges() throws {
+        let updater = makeUpdater()
+        updater.versionBuild = "2.0.0"
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 1)
+        updater.versionBuild = "3.0.0"
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 2)
+        updater.builtinMinimum = false
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        updater.builtinMinimum = true
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 3)
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("3.0.0"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 4)
     }
 
     /// Both activation entry points accept stored bundles at or above the native version.

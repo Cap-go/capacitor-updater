@@ -6,10 +6,17 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
+import com.getcapacitor.PluginCall;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -147,6 +154,59 @@ public class HttpsOnlyBuiltinMinimumTest {
         BundleInfo bundle = new BundleInfo(id, version, BundleStatus.SUCCESS, new Date(), "checksum");
         assertTrue(updater.saveBundleInfo(id, bundle));
         return bundle;
+    }
+
+    /** Repeated reloads explain the policy rejection without changing the queue or reporting duplicate stats. */
+    @Test
+    public void reloadReportsVersionFloorRejectionWithoutRepeatingStats() throws IOException {
+        StatsCapturingUpdater updater = activationUpdater();
+        BundleInfo retained = retainedBundle(updater, "retained01", "1.9.9");
+        assertTrue(updater.setNextBundle(retained.getId()));
+        CapacitorUpdaterPlugin plugin = spy(new CapacitorUpdaterPlugin());
+        plugin.implementation = updater;
+        plugin.setLoggerForTesting(mock(Logger.class));
+        doAnswer((invocation) -> {
+            Runnable work = invocation.getArgument(0);
+            work.run();
+            return new Thread();
+        })
+            .when(plugin)
+            .startNewThread(any(Runnable.class));
+        PluginCall call = mock(PluginCall.class);
+
+        plugin.reload(call);
+        plugin.reload(call);
+
+        verify(call, times(2)).reject(
+            eq("Bundle version 1.9.9 is below native version 2.0.0 (builtinMinimum)"),
+            eq("VERSION_BELOW_NATIVE"),
+            any(IOException.class)
+        );
+        verify(plugin, never())._reload();
+        assertTrue(updater.getCurrentBundle().isBuiltin());
+        assertEquals(retained.getId(), updater.getNextBundle().getId());
+        assertEquals(List.of("version_below_native:1.9.9"), updater.stats);
+    }
+
+    /** Suppressing consecutive telemetry never caches the policy decision or hides a changed native floor. */
+    @Test
+    public void versionFloorStatsFollowPolicyChanges() throws IOException {
+        StatsCapturingUpdater updater = new StatsCapturingUpdater();
+        updater.versionBuild = "2.0.0";
+        assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9.9"));
+        assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9.9"));
+        assertEquals(1, updater.stats.size());
+        updater.versionBuild = "3.0.0";
+        assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9.9"));
+        assertEquals(2, updater.stats.size());
+        updater.builtinMinimum = false;
+        updater.requireVersionNotBelowBuiltin("1.9.9");
+        updater.builtinMinimum = true;
+        assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9.9"));
+        assertEquals(3, updater.stats.size());
+        updater.requireVersionNotBelowBuiltin("3.0.0");
+        assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9.9"));
+        assertEquals(4, updater.stats.size());
     }
 
     /** Rejecting manual activation leaves the running bundle, queued bundle, and queued metadata unchanged. */

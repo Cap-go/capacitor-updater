@@ -569,8 +569,9 @@ public class CapacitorUpdaterUnitTest {
         private ResetState restoredState;
         private ResetState restoredRollbackTargets;
 
+        /** Provides a logger for shared validation while transition side effects remain stubbed. */
         ResetTrackingCapgoUpdater() {
-            super(null);
+            super(mock(Logger.class));
         }
 
         @Override

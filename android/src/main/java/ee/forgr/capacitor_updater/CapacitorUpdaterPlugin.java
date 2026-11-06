@@ -3283,6 +3283,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
+    /** Reloads the app, rejecting an incompatible pending bundle with VERSION_BELOW_NATIVE before changing state. */
     @PluginMethod
     public void reload(final PluginCall call) {
         startNewThread(() -> {
@@ -3291,6 +3292,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 final BundleInfo next = this.implementation.getNextBundle();
 
                 if (!this.isPreviewSessionStateActive() && next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                    if (!next.isBuiltin()) {
+                        try {
+                            this.implementation.requireVersionNotBelowBuiltin(next.getVersionName());
+                        } catch (IOException e) {
+                            call.reject(e.getMessage(), "VERSION_BELOW_NATIVE", e);
+                            return;
+                        }
+                    }
                     final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
                     final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                     logger.info("Applying pending bundle before reload: " + next.getVersionName());

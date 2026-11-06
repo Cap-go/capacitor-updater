@@ -53,6 +53,8 @@ import UIKit
     }
     /// When true (default) a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
     public var builtinMinimum: Bool = true
+    private let versionFloorRejectionLock = NSLock()
+    private var lastVersionFloorRejection: String?
     /// Error raised when `httpsOnly` is set and a URL is not https.
     public static func httpsOnlyError(_ url: URL) -> NSError {
         return NSError(
@@ -700,8 +702,10 @@ import UIKit
 
     /// `builtinMinimum`: refuse any bundle version lower than the native app version (`versionBuild`).
     /// Versions that do not parse as semver skip the check so odd native version strings never block updates.
+    /// Consecutive identical rejections report one stat per updater instance; every attempt still validates and throws.
     func requireVersionNotBelowBuiltin(_ version: String) throws {
         guard self.builtinMinimum else {
+            _ = self.recordVersionFloorRejection(nil)
             return
         }
         // Build metadata (+...) never takes part in ordering, and may contain dots the parser rejects.
@@ -709,6 +713,7 @@ import UIKit
         let nativeCore = String(self.versionBuild.split(separator: "+", maxSplits: 1).first ?? "")
         guard let parsedBundle = try? CapgoSemanticVersion(bundleCore),
               let parsedNative = try? CapgoSemanticVersion(nativeCore) else {
+            _ = self.recordVersionFloorRejection(nil)
             logger?.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
             return
         }
@@ -716,14 +721,27 @@ import UIKit
         let bundleVersion = CapgoSemanticVersion(major: parsedBundle.major, minor: parsedBundle.minor, patch: parsedBundle.patch)
         let nativeVersion = CapgoSemanticVersion(major: parsedNative.major, minor: parsedNative.minor, patch: parsedNative.patch)
         if bundleVersion < nativeVersion {
-            logger?.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
-            self.sendStats(action: "version_below_native", versionName: version)
+            let message = "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"
+            logger?.error(message)
+            if self.recordVersionFloorRejection(message) {
+                self.sendStats(action: "version_below_native", versionName: version)
+            }
             throw NSError(
                 domain: "CapgoUpdater",
                 code: 8,
-                userInfo: [NSLocalizedDescriptionKey: "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"]
+                userInfo: [NSLocalizedDescriptionKey: message]
             )
         }
+        _ = self.recordVersionFloorRejection(nil)
+    }
+
+    /// Records the latest rejection atomically and returns whether it needs a stat. Nil clears the last rejection.
+    private func recordVersionFloorRejection(_ message: String?) -> Bool {
+        versionFloorRejectionLock.lock()
+        defer { versionFloorRejectionLock.unlock() }
+        let shouldReport = message != nil && lastVersionFloorRejection != message
+        lastVersionFloorRejection = message
+        return shouldReport
     }
 
     public func setPublicKey(_ publicKey: String) {

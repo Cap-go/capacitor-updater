@@ -58,6 +58,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import okhttp3.*;
@@ -120,6 +121,7 @@ public class CapgoUpdater {
     public int timeout = 20000;
     /** Refuse bundles whose version is below the native app version (versionBuild). Config builtinMinimum, default true. */
     public volatile boolean builtinMinimum = true;
+    private final AtomicReference<String> lastVersionFloorRejection = new AtomicReference<>();
     /**
      * Require https for every URL the updater downloads from. Config httpsOnly, default true. Mirrors
      * DownloadService.httpsOnly (the OkHttp interceptor); this field gates URLs before any network IO.
@@ -713,16 +715,19 @@ public class CapgoUpdater {
 
     /**
      * builtinMinimum gate: a bundle may never roll the app below its native version. Skipped (debug log) when
-     * either version string does not parse, so unversioned bundles keep working.
+     * either version string does not parse, so unversioned bundles keep working. Consecutive identical
+     * rejections report one stat per updater instance; every attempt still validates and throws.
      */
     void requireVersionNotBelowBuiltin(final String version) throws IOException {
         if (!this.builtinMinimum) {
+            this.lastVersionFloorRejection.set(null);
             return;
         }
         // Build metadata (+...) never takes part in ordering.
         final Version bundle = new Version(stripBuildMetadata(version));
         final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
         if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
+            this.lastVersionFloorRejection.set(null);
             logger.debug(
                 "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
             );
@@ -732,9 +737,12 @@ public class CapgoUpdater {
         if (compareCoreVersion(bundle, nativeVersion) < 0) {
             final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
             logger.error(message);
-            this.sendStats("version_below_native", version);
+            if (!message.equals(this.lastVersionFloorRejection.getAndSet(message))) {
+                this.sendStats("version_below_native", version);
+            }
             throw new IOException(message);
         }
+        this.lastVersionFloorRejection.set(null);
     }
 
     /** Pre-network download gates shared by every entry point: httpsOnly and builtinMinimum. */

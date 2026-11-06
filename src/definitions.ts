@@ -975,6 +975,9 @@ export interface CapacitorUpdaterPlugin {
    * - Testing update flows during development
    *
    * If no update is pending (no call to {@link next}), this simply reloads the current bundle.
+   * If `builtinMinimum` rejects a pending bundle below the native version, the promise rejects with
+   * code `VERSION_BELOW_NATIVE` and a message naming both versions. The current bundle and pending
+   * update remain unchanged, so you can reset to builtin or choose another bundle.
    *
    * @returns {Promise<void>} A promise that may never resolve because the app will be reloaded.
    * @throws {Error} If the reload operation fails.
