@@ -17,6 +17,8 @@ CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE="${CAPGO_MAESTRO_CLEAR_SWIFTPM_CAPACITOR_
 ASSUME_CLEAN_INSTALL="${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+# Per wait step in edge-case-wait-summary.yaml (two steps per flow); defaults match the old 180s cap.
+export CAPGO_MAESTRO_SUMMARY_WAIT_MS="${CAPGO_MAESTRO_SUMMARY_WAIT_MS:-180000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
@@ -725,12 +727,14 @@ run_edge_case_once() {
 
   if [[ "$app_scenario" == "edge-direct" ]]; then
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
+      "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   else
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-deferred.yaml" \
+      "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
