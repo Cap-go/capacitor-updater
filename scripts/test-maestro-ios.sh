@@ -56,6 +56,8 @@ fi
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
+# Release runner-owned resources on exit while retaining attempt reports and
+# caller-supplied build products for later inspection or reuse.
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
@@ -274,6 +276,8 @@ process.exit(ok ? 0 : 1);
   return 1
 }
 
+# Check observed traffic after relaunch against each scenario's persistence and
+# config-guard contract, failing on missing requests or leaked runtime overrides.
 assert_smoke_server_state() {
   local server_state=""
 
