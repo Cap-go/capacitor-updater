@@ -926,15 +926,24 @@ jobs:
       # A full case takes most of the 10 minute cap on hosted macOS runners. edge-network-drop
       # alone gets one retry for simulator crashes during recovery; other cases stay at one attempt.
       # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
+      # edge-direct-network-drop runs an extra direct-update path; tighten waits and flow timeout so the job still finishes within the 10 minute job cap after checkout plus artifact downloads.
       - name: Run edge case Maestro flows
+        env:
+          MATRIX_SCENARIO: ${{ matrix.scenario }}
         run: |
           set -euo pipefail
+          if [[ "$MATRIX_SCENARIO" == "edge-direct-network-drop" ]]; then
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          else
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=360
+          fi
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=360 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
