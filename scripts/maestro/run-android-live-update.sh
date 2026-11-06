@@ -589,6 +589,74 @@ wait_for_edge_recovery_with_wait_seconds() {
   wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "$@"
 }
 
+# Deferred edge-network-drop can finish the download while the UI still shows the builtin bundle as
+# current with the release queued as next. The generic recovery loop only looks for "current:
+# downloaded", so it backgrounds without seeing the queued state and the final wait times out.
+# Treat "download complete + queued next" like early success: resume once, then wait for activation.
+wait_for_edge_network_drop_recovery() {
+  local recovery_wait_seconds="$1"
+  local description="$2"
+  local cycle_mode="$3"
+  local builtin_label="$4"
+  local builtin_version="$5"
+  local first_release="$6"
+  local app_scenario="$7"
+  local direct_update_line="$8"
+  shift 8
+  local -a activated_fragments=("$@")
+  local -a queued_fragments=(
+    "Build label: $builtin_label"
+    "Scenario: $app_scenario"
+    "$direct_update_line"
+    'Current bundle source: builtin'
+    "Current bundle version: $builtin_version"
+    "Next bundle version: $first_release"
+    "Last completed download: $first_release"
+  )
+  local cycle=1
+
+  while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
+    if wait_for_ui_state_with_timeout "$description (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+      "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+      return 0
+    fi
+
+    if wait_for_ui_state_with_timeout \
+      "${description}: download finished, release queued for activation (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+      "$recovery_wait_seconds" "${queued_fragments[@]}"; then
+      background_and_resume_app
+      if wait_for_ui_state_with_timeout \
+        "${description}: deferred release applies after resume from queued (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+        "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+        return 0
+      fi
+    fi
+
+    if [[ "$cycle_mode" == "cold-launch" ]]; then
+      cold_launch_app
+    else
+      background_and_resume_app
+    fi
+
+    cycle=$((cycle + 1))
+  done
+
+  if wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+    return 0
+  fi
+
+  if wait_for_ui_state_with_timeout \
+    "${description} (final): download finished, release queued for activation" \
+    "$recovery_wait_seconds" "${queued_fragments[@]}"; then
+    background_and_resume_app
+    wait_for_ui_state_with_timeout "${description} (final): deferred release applies after resume from queued" \
+      "$recovery_wait_seconds" "${activated_fragments[@]}"
+    return $?
+  fi
+
+  return 1
+}
+
 # run_edge_case_once runs inside an if, where set -e is off, so every step must fail explicitly.
 run_edge_case_once() {
   local edge_case_id="$1"
@@ -694,8 +762,20 @@ run_edge_case_once() {
 
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
     EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-3}"
-  fi
-  if ! wait_for_edge_recovery_with_wait_seconds \
+    if ! wait_for_edge_network_drop_recovery \
+      "$recovery_wait_seconds" \
+      "${edge_case_id}: the release applies once the network is back" \
+      "$recovery_cycle_mode" \
+      "$builtin_label" \
+      "$builtin_version" \
+      "$first_release" \
+      "$app_scenario" \
+      "$direct_update_line" \
+      "${recovery_fragments[@]}"; then
+      EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
+      return 1
+    fi
+  elif ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
