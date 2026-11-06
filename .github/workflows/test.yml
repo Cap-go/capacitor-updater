@@ -208,28 +208,12 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  test_ios:
+  # One macOS job builds for testing, writes cli-fresh crypto fixtures, and saves the SwiftPM plus DerivedData cache so shard jobs only run xctest under the 5 minute cap.
+  test_ios_setup:
     permissions:
       contents: read
-    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: macOS-latest
-    name: test_ios / ${{ matrix.shard }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
-          - shard: core
-            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-            cli_contract: false
-          # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
-          - shard: delta
-            select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
-            cli_contract: false
-          - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -skip-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -skip-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -skip-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -skip-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
-            cli_contract: true
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
     steps:
@@ -255,10 +239,50 @@ jobs:
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
       - name: Encrypt fresh bundles with the pinned Capgo CLI
-        if: matrix.cli_contract
-        # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
-        # so every CLI bump is re-checked without a second xcodebuild launch.
         run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+
+  test_ios:
+    needs: test_ios_setup
+    permissions:
+      contents: read
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    timeout-minutes: 5
+    runs-on: macOS-latest
+    name: test_ios / ${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
+          - shard: core
+            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+          # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
+          - shard: delta
+            select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+          - shard: rest
+            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -skip-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -skip-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -skip-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -skip-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+    env:
+      CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Cache SwiftPM and DerivedData
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            .ci-ios-test-dd
+          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-test-
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
