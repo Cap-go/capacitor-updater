@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -40,6 +41,11 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
 public class DownloadProgressTest {
+
+    @After
+    public void restoreHttpsOnly() {
+        DownloadService.setHttpsOnly(true);
+    }
 
     @Test
     public void repeatedOrLatePercentagesDoNotWriteWorkManagerProgressAgain() throws Exception {

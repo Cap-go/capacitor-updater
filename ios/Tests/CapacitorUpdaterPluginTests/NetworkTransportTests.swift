@@ -573,6 +573,7 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertFalse(partialSamples.isEmpty)
         if let lastPartial = partialSamples.last {
             XCTAssertEqual(lastPartial.1, Int64(10 + tail.count))
+            XCTAssertGreaterThanOrEqual(lastPartial.0, 10)
         }
 
         server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
