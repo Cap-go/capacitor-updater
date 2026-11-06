@@ -33,7 +33,7 @@ DIRECT_UPDATE_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_DIRECT_UPDATE_BACKGROUN
 ADB_COMMAND_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_COMMAND_TIMEOUT_SECONDS:-20}"
 ADB_INSTALL_TIMEOUT_SECONDS="${CAPGO_MAESTRO_ADB_INSTALL_TIMEOUT_SECONDS:-180}"
 TIMEOUT_CMD="$(command -v gtimeout || command -v timeout || true)"
-SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
+SCENARIO_SEQUENCE=(deferred always at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 EDGE_CASE_UI_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS:-150}"
 
@@ -639,6 +639,16 @@ run_edge_case_once() {
         "$direct_update_line" \
         'Current bundle source: builtin' \
         "Current bundle version: $builtin_version" || return 1
+      # Deferred updates activate on a background transition after the resumed download queues.
+      # Waiting for activation before that transition only burns the WorkManager retry budget.
+      wait_for_ui_state_with_timeout \
+        "${edge_case_id}: the resumed download is queued while builtin keeps running" \
+        "${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}" \
+        "Build label: $builtin_label" \
+        "Scenario: $app_scenario" \
+        'Current bundle source: builtin' \
+        "Current bundle version: $builtin_version" \
+        "Next bundle version: $first_release" || return 1
       background_and_resume_app
       ;;
     *)
@@ -688,14 +698,16 @@ run_edge_case_once() {
     'Current bundle source: downloaded'
     "Current bundle version: $first_release"
   )
-  if [[ "$edge_case_id" == "edge-kill-download" ]]; then
+  if [[ "$edge_case_id" == "edge-kill-download" || "$edge_case_id" == "edge-network-drop" ]]; then
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
-  fi
-  if ! wait_for_edge_recovery_with_wait_seconds \
+    wait_for_ui_state_with_timeout \
+      "${edge_case_id}: the queued release applies after background" \
+      "$recovery_wait_seconds" \
+      "${recovery_fragments[@]}" || return 1
+  elif ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
@@ -804,27 +816,6 @@ run_scenario() {
         "Build label: $second_release" \
         'Scenario: always' \
         'Direct update mode: always' \
-        'Current bundle source: downloaded' \
-        "Current bundle version: $second_release"
-      ;;
-    legacy-true)
-      control_server reset legacy-true
-      prepare_scenario legacy-true
-      run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies on first launch" \
-        "Build label: $first_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
-        'Current bundle source: downloaded' \
-        "Current bundle version: $first_release"
-      control_server advance legacy-true
-      background_and_resume_app
-      wait_for_direct_update_ui_state \
-        "legacy true direct update applies a newer release after resume" \
-        "Build label: $second_release" \
-        'Scenario: legacy-true' \
-        'Direct update mode: true' \
         'Current bundle source: downloaded' \
         "Current bundle version: $second_release"
       ;;

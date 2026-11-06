@@ -1,12 +1,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const autoUpdate = process.env.CAPGO_AUTO_UPDATE === 'true';
-const directUpdateEnv = process.env.CAPGO_DIRECT_UPDATE ?? 'false';
-const directUpdate =
-  directUpdateEnv === 'true' || directUpdateEnv === 'false'
-    ? directUpdateEnv === 'true'
-    : directUpdateEnv;
-const usesDirectUpdate = directUpdate !== false;
+const autoUpdateEnabled = process.env.CAPGO_AUTO_UPDATE === 'true';
+// Test-harness knob for instant apply: "false", "always", "atInstall" or "onLaunch".
+// The plugin's directUpdate option was removed in 9.0.0, so it maps to an autoUpdate mode.
+const instantApplyMode = (process.env.CAPGO_DIRECT_UPDATE ?? 'false') as 'false' | 'always' | 'atInstall' | 'onLaunch';
+const usesDirectUpdate = instantApplyMode !== 'false';
+const autoUpdateMode = instantApplyMode === 'false' ? true : instantApplyMode;
+const autoUpdate = autoUpdateEnabled ? autoUpdateMode : false;
 const parsedAppReadyTimeout = Number.parseInt(process.env.CAPGO_APP_READY_TIMEOUT ?? '20000', 10);
 const appReadyTimeout =
   Number.isFinite(parsedAppReadyTimeout) && parsedAppReadyTimeout >= 1000
@@ -62,7 +62,6 @@ const config: CapacitorConfig = {
       allowModifyAppId: readBooleanEnv('CAPGO_ALLOW_MODIFY_APP_ID', true),
       allowManualBundleError: readBooleanEnv('CAPGO_ALLOW_MANUAL_BUNDLE_ERROR', true),
       allowSetDefaultChannel: readBooleanEnv('CAPGO_ALLOW_SET_DEFAULT_CHANNEL', true),
-      directUpdate,
       persistCustomId: readBooleanEnv('CAPGO_PERSIST_CUSTOM_ID', true),
       persistModifyUrl: readBooleanEnv('CAPGO_PERSIST_MODIFY_URL', true),
       updateUrl: process.env.CAPGO_UPDATE_URL,

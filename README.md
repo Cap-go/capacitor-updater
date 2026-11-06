@@ -101,6 +101,63 @@ The most complete [documentation here](https://capgo.app/docs/).
 ## Community
 Join the [discord](https://discord.gg/VnYRvBfgA6) to get help.
 
+## Migration to v9
+
+This preparation branch is marked `private: true` to block npm publishing, including PR betas.
+Remove that flag only when the package version and Capacitor 9 dependency migration are complete.
+
+This major version follows Capacitor major version 9. It removes every API deprecated in v8 and turns on stricter defaults.
+
+First follow the migration guide of Capacitor:
+
+[https://capacitorjs.com/docs/next/updating/9-0](https://capacitorjs.com/docs/next/updating/9-0)
+
+### Removed APIs
+
+- **Per-event listeners**: `addListener('download', ...)`, `addListener('appReady', ...)`, and every other per-event listener were removed. The plugin now emits only `updaterEvent`. Listen to it and switch on `event.type`; `event.data` is the payload the old listener received:
+
+  ```typescript
+  // Before (v8)
+  CapacitorUpdater.addListener('download', (info) => console.log(info.percent));
+  CapacitorUpdater.addListener('appReady', (info) => console.log(info.status));
+
+  // After (v9)
+  CapacitorUpdater.addListener('updaterEvent', (event) => {
+    switch (event.type) {
+      case 'download':
+        console.log(event.data.percent);
+        break;
+      case 'appReady':
+        console.log(event.data.status);
+        break;
+    }
+  });
+  ```
+
+  Native code no longer sends the per-event names, so a listener registered with an old name never fires.
+- **`majorAvailable` event and `MajorAvailableEvent` type**: use the `breakingAvailable` type of `updaterEvent` and `BreakingAvailableEvent`.
+- **`LatestVersion.major`**: use `LatestVersion.breaking`.
+- **`directUpdate` config**: use the `autoUpdate` string modes. The plugin ignores `directUpdate` and logs an error at startup when it is still set.
+
+  | v8 config | v9 config |
+  | --- | --- |
+  | `autoUpdate: true, directUpdate: false` | `autoUpdate: true` (or `"atBackground"`) |
+  | `autoUpdate: true, directUpdate: true` | `autoUpdate: "always"` |
+  | `autoUpdate: true, directUpdate: "always"` | `autoUpdate: "always"` |
+  | `autoUpdate: true, directUpdate: "atInstall"` | `autoUpdate: "atInstall"` |
+  | `autoUpdate: true, directUpdate: "onLaunch"` | `autoUpdate: "onLaunch"` |
+- **Base64 encrypted checksums**: the native code only accepts the hex checksum format that the Capgo CLI has produced since plugin versions 5.30.0, 6.30.0 and 7.30.0. Re-upload bundles made with an older CLI. The CRC32 checksum labels were removed too: SHA-256 is the only supported checksum.
+- **Android `CapgoUpdater.autoReset()`** without arguments: call `autoReset(currentNativeBuildVersion)`.
+
+### New defaults
+
+| Option | v8 default | v9 default | Keep the v8 behavior |
+| --- | --- | --- | --- |
+| `builtinMinimum` | `false` | `true` | `builtinMinimum: false` if you version web bundles independently of the native app |
+| `persistCustomId` | `false` | `true` | `persistCustomId: false` to keep the custom ID for the current session only |
+
+`httpsOnly` stays `true` (the default since 8.54.0).
+
 ## Migration to v8
 
 This major version is here to follow Capacitor major version 8
@@ -127,6 +184,7 @@ The plugin has no third-party iOS dependencies besides Capacitor: ZIP extraction
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
+| v9.\*.\*       | v9.\*.\*                | ✅                 |
 | v8.\*.\*       | v8.\*.\*                | ✅                 |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |
@@ -135,7 +193,7 @@ The plugin has no third-party iOS dependencies besides Capacitor: ZIP extraction
 | v3.\*.\*       | v3.\*.\*                | ⚠️ Deprecated     |
 | > 7            | v4.\*.\*                | ⚠️ Deprecated, our CI got crazy and bumped too much version     |
 
-> **Note:** Versions 4, 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation.
+> **Note:** Versions 4, 5, 6, 7, and 8 all share the same features. The major version simply follows your Capacitor version. You can safely use any of these versions that matches your Capacitor installation. Version 9 removes the APIs deprecated in v8 and turns on stricter defaults: see [Migration to v9](#migration-to-v9).
 
 ### iOS
 
@@ -391,8 +449,7 @@ CapacitorUpdater can be configured with these options:
 | **`statsUrl`**                         | <code>string</code>                                                                                        | Configure the URL / endpoint to which update statistics are sent. Only available for Android and iOS. Set to "" to disable stats reporting. Native stats include update lifecycle events, app health signals such as crashes, Android ANRs, low-memory exits, iOS memory warnings, and WebView health signals such as JavaScript errors, unhandled promise rejections, resource load failures, WebView renderer exits, unclean WebView restarts, app launch readiness timing, and WebView load milestones when available. Failed background update checks that never start a download (network errors, timeouts, non-2xx responses, unreadable payloads) are reported as `update_check_error` with `metadata.error` and optional `metadata.status_code`, not as `download_fail`. Self-hosted Capgo backends must allow the `update_check_error` stats action.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>https://plugin.capgo.app/stats</code>                                                |         |
 | **`publicKey`**                        | <code>string</code>                                                                                        | Configure the public key for end to end live update encryption Version 2. What it guarantees: a bundle can only be installed when its checksum and session key were produced with the matching private key. Capgo never holds that key, so Capgo cannot create, modify or decrypt an update for your app. It does NOT make the bundle unreadable to someone who has your app binary: the public key ships inside the app, and anyone holding the app can recover the session key and read the bundle. If you also need Capgo to be unable to find your app (and so its public key), use a Capgo app id that is not your store bundle id (`appId` in this plugin config) so the app is not identifiable from the dashboard. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>undefined</code>                                                                     | 6.2.0   |
 | **`version`**                          | <code>string</code>                                                                                        | Configure the current version of the app. This will be used for the first update request. If not set, the plugin will get the version from the native code. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>undefined</code>                                                                     | 4.17.48 |
-| **`directUpdate`**                     | <code>boolean \| 'always' \| 'atInstall' \| 'onLaunch'</code>                                              | Configure when the plugin should direct install updates. Only for autoUpdate mode. Instant apply (`atInstall`, `onLaunch`, `always`) should be uploaded with `--delta` so the update does not slow the user experience. A full zip, especially over 10MB, is relatively slow for users. These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`. This flag makes the CLI upload delta in CI and ask for confirmation in local uploads. - false: Never do direct updates - atInstall: Same as `"atInstall"` for {@link autoUpdate} - onLaunch: Same as `"onLaunch"` for {@link autoUpdate} - always: Same as `"always"` for {@link autoUpdate} - true: (deprecated) Same as "always" for backward compatibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | <code>false</code>                                                                         | 5.1.0   |
-| **`autoSplashscreen`**                 | <code>boolean</code>                                                                                       | Automatically hide the splashscreen after instant apply updates finish, or when no update is needed. Required when using instant apply modes (`"atInstall"`, `"onLaunch"`, `"always"`), including the deprecated `directUpdate` values `"atInstall"`, `"onLaunch"`, `"always"`, and `true`. `@capacitor/splash-screen` must be installed and configured with `launchAutoHide: false`. This removes the need to manually listen for appReady events and call SplashScreen.hide(). Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>false</code>                                                                         | 7.6.0   |
+| **`autoSplashscreen`**                 | <code>boolean</code>                                                                                       | Automatically hide the splashscreen after instant apply updates finish, or when no update is needed. Required when using the instant apply {@link autoUpdate} modes (`"atInstall"`, `"onLaunch"`, `"always"`). `@capacitor/splash-screen` must be installed and configured with `launchAutoHide: false`. This removes the need to manually listen for appReady events and call SplashScreen.hide(). Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>false</code>                                                                         | 7.6.0   |
 | **`autoSplashscreenLoader`**           | <code>boolean</code>                                                                                       | Display a native loading indicator on top of the splashscreen while automatic direct updates are running. Only takes effect when {@link autoSplashscreen} is enabled. Requires the @capacitor/splash-screen plugin to be installed and configured with launchAutoHide: false. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | <code>false</code>                                                                         | 7.19.0  |
 | **`autoSplashscreenTimeout`**          | <code>number</code>                                                                                        | Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates. If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed. Set to `0` (zero) to disable the timeout. When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch. Requires {@link autoSplashscreen} to be enabled. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>10000 // (10 seconds)</code>                                                         | 7.19.0  |
 | **`periodCheckDelay`**                 | <code>number</code>                                                                                        | Configure the interval in seconds for repeating update checks while the app stays open. Foreground checks still run when this is 0. Values below 600 are normalized to 600. Only available for Android and iOS. Cannot be less than 600 seconds (10 minutes).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>0 (disabled)</code>                                                                  |         |
@@ -406,11 +463,11 @@ CapacitorUpdater can be configured with these options:
 | **`allowModifyUrl`**                   | <code>boolean</code>                                                                                       | Allow the plugin to modify the updateUrl, statsUrl and channelUrl dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>false</code>                                                                         | 5.4.0   |
 | **`allowHttpsToHttpRedirect`**         | <code>boolean</code>                                                                                       | Allow the plugin to follow redirects from HTTPS to plain HTTP for its own network requests (update checks, stats, channel calls, and bundle/manifest downloads). Blocked by default so a redirect can never downgrade updater traffic to an unencrypted connection. Only enable this if your self-hosted update server or CDN must redirect to an HTTP URL. `httpsOnly` (default `true`) rejects every non-https URL and redirect hop regardless of this setting, so an HTTP redirect also needs `httpsOnly: false`. Direct HTTP URLs (for example `localApi` during development) are only allowed with `httpsOnly: false` as well. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | <code>false</code>                                                                         | 8.52.0  |
 | **`httpsOnly`**                        | <code>boolean</code>                                                                                       | Require https for every URL the plugin talks to: `updateUrl`, `statsUrl`, `channelUrl` (from config, persisted values and `setUpdateUrl` / `setStatsUrl` / `setChannelUrl`), bundle zip URLs, every manifest `download_url`, preview payload URLs and every redirect hop. When enabled it overrides `allowHttpsToHttpRedirect`. A non-https URL fails the call or download with `httpsOnly is enabled and &lt;url&gt; is not https`. Set to `false` only for local development servers (for example a plain-http `localApi` on loopback) or a self-hosted plain-http update server you control. Upgrading with a plain-http `updateUrl`, `statsUrl`, `channelUrl` or `allowHttpsToHttpRedirect: true` requires setting this to `false` explicitly. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>true</code>                                                                          | 8.54.0  |
-| **`builtinMinimum`**                   | <code>boolean</code>                                                                                       | Refuse to download or install a bundle whose version is lower than the native app version (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device counterpart of the Capgo channel setting "disable auto update under native" and protects against a replayed old update response rolling the app back below its store version. Only the numeric `major.minor.patch` part is compared (a `1.2.3-beta.1` bundle is accepted on native `1.2.3`), and versions that do not parse as semver skip the check. Rejections are reported as the `version_below_native` stat. Keep it off if you version web bundles independently of the native app (for example native `2.0.0` with bundle `1.4.7`). Future-major default candidate: `true`. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>false</code>                                                                         | 8.54.0  |
+| **`builtinMinimum`**                   | <code>boolean</code>                                                                                       | Refuse to download or install a bundle whose version is lower than the native app version (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device counterpart of the Capgo channel setting "disable auto update under native" and protects against a replayed old update response rolling the app back below its store version. Only the numeric `major.minor.patch` part is compared (a `1.2.3-beta.1` bundle is accepted on native `1.2.3`), and versions that do not parse as semver skip the check. Rejections are reported as the `version_below_native` stat. Set it to `false` if you version web bundles independently of the native app (for example native `2.0.0` with bundle `1.4.7`). Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>true (was `false` before 9.0.0)</code>                                               | 8.54.0  |
 | **`allowModifyAppId`**                 | <code>boolean</code>                                                                                       | Allow the plugin to modify the appId dynamically from the JavaScript side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>false</code>                                                                         | 7.14.0  |
 | **`allowManualBundleError`**           | <code>boolean</code>                                                                                       | Allow marking bundles as errored from JavaScript while using manual update flows. When enabled, {@link CapacitorUpdaterPlugin.setBundleError} can change a bundle status to `error`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>false</code>                                                                         | 7.20.0  |
 | **`allowPreview`**                     | <code>boolean</code>                                                                                       | Allow JavaScript to start a native preview session and temporarily request updates for another app id. This is intended for trusted container apps that implement Expo Go-style preview flows. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                                         | 8.47.0  |
-| **`persistCustomId`**                  | <code>boolean</code>                                                                                       | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>false (will be true by default in a future major release v8.x.x)</code>              | 7.17.3  |
+| **`persistCustomId`**                  | <code>boolean</code>                                                                                       | Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts. Set it to `false` to keep the customId in memory only, so it resets on every app launch. Calling `setCustomId({ customId: '' })` clears the saved value. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>true (was `false` before 9.0.0)</code>                                               | 7.17.3  |
 | **`persistModifyUrl`**                 | <code>boolean</code>                                                                                       | Persist the updateUrl, statsUrl and channelUrl set through {@link CapacitorUpdaterPlugin.setUpdateUrl}, {@link CapacitorUpdaterPlugin.setStatsUrl} and {@link CapacitorUpdaterPlugin.setChannelUrl} across app restarts. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | <code>false</code>                                                                         | 7.20.0  |
 | **`allowSetDefaultChannel`**           | <code>boolean</code>                                                                                       | Allow or disallow the {@link CapacitorUpdaterPlugin.setChannel} method to modify the defaultChannel. When set to `false`, calling `setChannel()` will return an error with code `disabled_by_config`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <code>true</code>                                                                          | 7.34.0  |
 | **`persistDefaultChannelOnReinstall`** | <code>boolean</code>                                                                                       | Keep the default channel stored by {@link CapacitorUpdaterPlugin.setChannel} or refreshed by {@link CapacitorUpdaterPlugin.getChannel} when app data is restored into a new app install. `setChannel()` and a successful `getChannel()` still persist the selected channel across app restarts. When this option is `false`, native startup clears that persisted channel when it detects app data restored into a new installation. Native build cleanup clears the persisted channel only when `persistDefaultChannelOnReinstall` is `false`, `resetWhenUpdate` is `true`, and the native build version has changed. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | <code>true</code>                                                                          | 8.51.0  |
@@ -422,7 +479,7 @@ CapacitorUpdater can be configured with these options:
 | **`shakeMenu`**                        | <code>boolean</code>                                                                                       | Enable the native preview menu gesture while a preview session is active. Outside preview sessions this preview menu is ignored, unless {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector} is enabled.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>false</code>                                                                         | 7.5.0   |
 | **`shakeMenuGesture`**                 | <code><a href="#shakemenugesture">ShakeMenuGesture</a></code>                                              | Choose which native gesture opens the preview/channel menu. This applies to both {@link PluginsConfig.CapacitorUpdater.shakeMenu} and {@link PluginsConfig.CapacitorUpdater.allowShakeChannelSelector}. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | <code>'shake'</code>                                                                       | 8.48.0  |
 | **`allowShakeChannelSelector`**        | <code>boolean</code>                                                                                       | Enable the native menu gesture to show a channel selector menu for switching between update channels. If {@link PluginsConfig.CapacitorUpdater.shakeMenu} is also enabled while a preview session is active, the shake menu includes both preview actions and channel switching. The native gesture can be changed with {@link PluginsConfig.CapacitorUpdater.shakeMenuGesture}. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <code>false</code>                                                                         | 8.43.0  |
-| **`nativeUpdatePrompt`**               | <code>boolean</code>                                                                                       | When enabled, show a native dialog prompting the user to install a newer native app from the App Store or Play Store. The prompt appears when a live update is blocked because the device native app is too old, including backend `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` / `majorAvailable` flows. Only available for Android and iOS. No-op on web.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | <code>false</code>                                                                         | 8.53.0  |
+| **`nativeUpdatePrompt`**               | <code>boolean</code>                                                                                       | When enabled, show a native dialog prompting the user to install a newer native app from the App Store or Play Store. The prompt appears when a live update is blocked because the device native app is too old, including backend `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` flows. Only available for Android and iOS. No-op on web.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | <code>false</code>                                                                         | 8.53.0  |
 | **`nativeUpdatePromptTitle`**          | <code>string</code>                                                                                        | Optional title for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>"Update available"</code>                                                            | 8.53.0  |
 | **`nativeUpdatePromptMessage`**        | <code>string</code>                                                                                        | Optional message body for the native store update dialog shown when {@link PluginsConfig.CapacitorUpdater.nativeUpdatePrompt} is enabled. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | <code>A short message explaining that a newer native app is available in the store.</code> | 8.53.0  |
 | **`nativeUpdatePromptUpdateButton`**   | <code>string</code>                                                                                        | Optional label for the primary action button that opens the store or starts an in-app update on Android. Only available for Android and iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | <code>"Update"</code>                                                                      | 8.53.0  |
@@ -450,7 +507,6 @@ In `capacitor.config.json`:
       "statsUrl": https://example.com/api/stats,
       "publicKey": undefined,
       "version": undefined,
-      "directUpdate": undefined,
       "autoSplashscreen": undefined,
       "autoSplashscreenLoader": undefined,
       "autoSplashscreenTimeout": undefined,
@@ -515,7 +571,6 @@ const config: CapacitorConfig = {
       statsUrl: https://example.com/api/stats,
       publicKey: undefined,
       version: undefined,
-      directUpdate: undefined,
       autoSplashscreen: undefined,
       autoSplashscreenLoader: undefined,
       autoSplashscreenTimeout: undefined,
@@ -605,21 +660,6 @@ export default config;
 * [`isAutoUpdateEnabled()`](#isautoupdateenabled)
 * [`removeAllListeners()`](#removealllisteners)
 * [`addListener('updaterEvent', ...)`](#addlistenerupdaterevent-)
-* [`addListener('download', ...)`](#addlistenerdownload-)
-* [`addListener('noNeedUpdate', ...)`](#addlistenernoneedupdate-)
-* [`addListener('updateCheckResult', ...)`](#addlistenerupdatecheckresult-)
-* [`addListener('updateAvailable', ...)`](#addlistenerupdateavailable-)
-* [`addListener('downloadComplete', ...)`](#addlistenerdownloadcomplete-)
-* [`addListener('breakingAvailable', ...)`](#addlistenerbreakingavailable-)
-* [`addListener('majorAvailable', ...)`](#addlistenermajoravailable-)
-* [`addListener('updateFailed', ...)`](#addlistenerupdatefailed-)
-* [`addListener('set', ...)`](#addlistenerset-)
-* [`addListener('setNext', ...)`](#addlistenersetnext-)
-* [`addListener('downloadFailed', ...)`](#addlistenerdownloadfailed-)
-* [`addListener('appReloaded', ...)`](#addlistenerappreloaded-)
-* [`addListener('appReady', ...)`](#addlistenerappready-)
-* [`addListener('channelPrivate', ...)`](#addlistenerchannelprivate-)
-* [`addListener('onFlexibleUpdateStateChange', ...)`](#addlisteneronflexibleupdatestatechange-)
 * [`isAutoUpdateAvailable()`](#isautoupdateavailable)
 * [`getNextBundle()`](#getnextbundle)
 * [`getFailedUpdate()`](#getfailedupdate)
@@ -1157,6 +1197,9 @@ Common use cases:
 - Testing update flows during development
 
 If no update is pending (no call to {@link next}), this simply reloads the current bundle.
+If `builtinMinimum` rejects a pending bundle below the native version, the promise rejects with
+code `VERSION_BELOW_NATIVE` and a message naming both versions. The current bundle and pending
+update remain unchanged, so you can reset to builtin or choose another bundle.
 
 --------------------
 
@@ -1229,9 +1272,9 @@ such as a silent push notification asking the app to check for a Capgo
 bundle without reimplementing the update protocol in JavaScript.
 
 The promise resolves after the native background work has been queued, not
-after the update has been downloaded or installed. Listen to updater events
-such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
-`noNeedUpdate` for the final result.
+after the update has been downloaded or installed. Listen to `updaterEvent`
+and its `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+`noNeedUpdate` types for the final result.
 
 Native support is available on iOS and Android. On Web, this method returns
 a result with `status: 'unavailable'`. Native platforms also return
@@ -1399,13 +1442,15 @@ Only assignments created from the dashboard or the Public API are shown in the D
 **Important: Listen for the `channelPrivate` event**
 
 When a user attempts to set a channel that doesn't allow device self-assignment, the method will
-throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+throw an error AND emit a `channelPrivate` {@link <a href="#updaterevent">UpdaterEvent</a>}. You should listen to this event
 to provide appropriate feedback to users:
 
 ```typescript
-CapacitorUpdater.addListener('channelPrivate', (data) =&gt; {
-  console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
-  // Show user-friendly message
+CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
+  if (event.type === 'channelPrivate') {
+    console.warn(`Cannot access channel "${event.data.channel}": ${event.data.message}`);
+    // Show user-friendly message
+  }
 });
 ```
 
@@ -1525,7 +1570,7 @@ to your update server and can be used for:
 - A/B testing or feature flagging
 
 **Persistence:**
-- When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is `true`, the ID persists across app restarts
+- When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is `true` (the default), the ID persists across app restarts
 - When `false`, the ID is only kept for the current session
 
 **Clearing the custom ID:**
@@ -1659,18 +1704,8 @@ removeAllListeners() => Promise<void>
 
 Remove all event listeners registered for this plugin.
 
-This unregisters all listeners added via {@link addListener} for all event types:
-- `updaterEvent`
-- `download`
-- `noNeedUpdate`
-- `updateCheckResult`
-- `updateAvailable`
-- `downloadComplete`
-- `downloadFailed`
-- `breakingAvailable` / `majorAvailable`
-- `updateFailed`
-- `appReloaded`
-- `appReady`
+This unregisters every listener added via {@link addListener}, including all
+`updaterEvent` listeners.
 
 Use this during cleanup (e.g., when unmounting components or closing screens)
 to prevent memory leaks from lingering event listeners.
@@ -1688,12 +1723,15 @@ addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => vo
 
 Listen for every updater event with a single listener.
 
-Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
-`downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
-When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
-`updaterEvent` gets the same retention.
+Each call receives `{ type, data }`: `type` is the event name and `data` is its payload
+(see {@link <a href="#updaterevent">UpdaterEvent</a>} for every type and its payload).
 
-The per-event listeners below are deprecated and will be removed in v9.
+Since 9.0.0 this is the only listener the plugin emits. The per-event listeners
+(`addListener('download', ...)`, `addListener('appReady', ...)`, ...) and the `majorAvailable`
+alias were removed: switch on `event.type` instead.
+
+`set` and `appReady` are retained natively until a listener attaches, so they are still
+delivered after a reload even when the listener is registered later in app startup.
 
 ```typescript
 CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
@@ -1703,6 +1741,9 @@ CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
       break;
     case 'downloadFailed':
       console.warn('download failed', event.data.version);
+      break;
+    case 'channelPrivate':
+      console.warn(`Cannot access channel "${event.data.channel}": ${event.data.message}`);
       break;
   }
 });
@@ -1716,340 +1757,6 @@ CapacitorUpdater.addListener('updaterEvent', (event) =&gt; {
 **Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
 
 **Since:** 8.53.0
-
---------------------
-
-
-#### addListener('download', ...)
-
-```typescript
-addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
-This will return you all download percent during the download
-
-| Param              | Type                                                                        |
-| ------------------ | --------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'download'</code>                                                     |
-| **`listenerFunc`** | <code>(state: <a href="#downloadevent">DownloadEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 2.0.11
-
---------------------
-
-
-#### addListener('noNeedUpdate', ...)
-
-```typescript
-addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for no need to update event, useful when you want force check every time the app is launched
-
-| Param              | Type                                                                    |
-| ------------------ | ----------------------------------------------------------------------- |
-| **`eventName`**    | <code>'noNeedUpdate'</code>                                             |
-| **`listenerFunc`** | <code>(state: <a href="#noneedevent">NoNeedEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 4.0.0
-
---------------------
-
-
-#### addListener('updateCheckResult', ...)
-
-```typescript
-addListener(eventName: 'updateCheckResult', listenerFunc: (state: UpdateCheckResultEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for update check results before the updater decides whether to download.
-The backend can classify the <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> payload as `up_to_date`, `blocked`, or `failed`.
-
-This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
-`noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-`downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
-instead of `download_fail`, because no bundle download was attempted.
-
-| Param              | Type                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'updateCheckResult'</code>                                                              |
-| **`listenerFunc`** | <code>(state: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 8.45.11
-
---------------------
-
-
-#### addListener('updateAvailable', ...)
-
-```typescript
-addListener(eventName: 'updateAvailable', listenerFunc: (state: UpdateAvailableEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for available update event, useful when you want to force check every time the app is launched
-
-| Param              | Type                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'updateAvailable'</code>                                                            |
-| **`listenerFunc`** | <code>(state: <a href="#updateavailableevent">UpdateAvailableEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 4.0.0
-
---------------------
-
-
-#### addListener('downloadComplete', ...)
-
-```typescript
-addListener(eventName: 'downloadComplete', listenerFunc: (state: DownloadCompleteEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for downloadComplete events.
-
-| Param              | Type                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'downloadComplete'</code>                                                             |
-| **`listenerFunc`** | <code>(state: <a href="#downloadcompleteevent">DownloadCompleteEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 4.0.0
-
---------------------
-
-
-#### addListener('breakingAvailable', ...)
-
-```typescript
-addListener(eventName: 'breakingAvailable', listenerFunc: (state: BreakingAvailableEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for breaking update events when the backend flags an update as incompatible with the current app.
-Emits the same payload as the legacy `majorAvailable` listener.
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'breakingAvailable'</code>                                                        |
-| **`listenerFunc`** | <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 7.22.0
-
---------------------
-
-
-#### addListener('majorAvailable', ...)
-
-```typescript
-addListener(eventName: 'majorAvailable', listenerFunc: (state: MajorAvailableEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'majorAvailable'</code>                                                           |
-| **`listenerFunc`** | <code>(state: <a href="#majoravailableevent">MajorAvailableEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 2.3.0
-
---------------------
-
-
-#### addListener('updateFailed', ...)
-
-```typescript
-addListener(eventName: 'updateFailed', listenerFunc: (state: UpdateFailedEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for update fail event in the App, let you know when update has fail to install at next app start
-
-| Param              | Type                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'updateFailed'</code>                                                         |
-| **`listenerFunc`** | <code>(state: <a href="#updatefailedevent">UpdateFailedEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 2.3.0
-
---------------------
-
-
-#### addListener('set', ...)
-
-```typescript
-addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for set event in the App, let you know when a bundle has been applied successfully.
-This event is retained natively until JavaScript consumes it, so if the app reloads before your
-listener is attached, the last pending `set` event is delivered once the listener subscribes.
-
-| Param              | Type                                                              |
-| ------------------ | ----------------------------------------------------------------- |
-| **`eventName`**    | <code>'set'</code>                                                |
-| **`listenerFunc`** | <code>(state: <a href="#setevent">SetEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 8.43.12
-
---------------------
-
-
-#### addListener('setNext', ...)
-
-```typescript
-addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
-
-| Param              | Type                                                                      |
-| ------------------ | ------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'setNext'</code>                                                    |
-| **`listenerFunc`** | <code>(state: <a href="#setnextevent">SetNextEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 6.14.0
-
---------------------
-
-
-#### addListener('downloadFailed', ...)
-
-```typescript
-addListener(eventName: 'downloadFailed', listenerFunc: (state: DownloadFailedEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for download fail event in the App, let you know when a bundle download has failed
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'downloadFailed'</code>                                                           |
-| **`listenerFunc`** | <code>(state: <a href="#downloadfailedevent">DownloadFailedEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 4.0.0
-
---------------------
-
-
-#### addListener('appReloaded', ...)
-
-```typescript
-addListener(eventName: 'appReloaded', listenerFunc: () => void) => Promise<PluginListenerHandle>
-```
-
-Listen for reload event in the App, let you know when reload has happened
-
-| Param              | Type                       |
-| ------------------ | -------------------------- |
-| **`eventName`**    | <code>'appReloaded'</code> |
-| **`listenerFunc`** | <code>() =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 4.3.0
-
---------------------
-
-
-#### addListener('appReady', ...)
-
-```typescript
-addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for app ready event in the App, let you know when app is ready to use.
-This event is retained natively until JavaScript consumes it, so it can still be delivered after
-a reload even if the listener is attached later in app startup.
-
-| Param              | Type                                                                        |
-| ------------------ | --------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'appReady'</code>                                                     |
-| **`listenerFunc`** | <code>(state: <a href="#appreadyevent">AppReadyEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 5.1.0
-
---------------------
-
-
-#### addListener('channelPrivate', ...)
-
-```typescript
-addListener(eventName: 'channelPrivate', listenerFunc: (state: ChannelPrivateEvent) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
-
-This event is useful for:
-- Informing users they don't have permission to switch to a specific channel
-- Implementing custom error handling for channel restrictions
-- Logging unauthorized channel access attempts
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'channelPrivate'</code>                                                           |
-| **`listenerFunc`** | <code>(state: <a href="#channelprivateevent">ChannelPrivateEvent</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 7.34.0
-
---------------------
-
-
-#### addListener('onFlexibleUpdateStateChange', ...)
-
-```typescript
-addListener(eventName: 'onFlexibleUpdateStateChange', listenerFunc: (state: FlexibleUpdateState) => void) => Promise<PluginListenerHandle>
-```
-
-Listen for flexible update state changes on Android.
-
-This event fires during the flexible update download process, providing:
-- Download progress (bytes downloaded / total bytes)
-- Installation status changes
-
-**Install status values:**
-- `UNKNOWN` (0): Unknown status
-- `PENDING` (1): Download pending
-- `DOWNLOADING` (2): Download in progress
-- `INSTALLING` (3): Installing the update
-- `INSTALLED` (4): Update installed (app restart needed)
-- `FAILED` (5): Update failed
-- `CANCELED` (6): Update was canceled
-- `DOWNLOADED` (11): Download complete, ready to install
-
-When status is `DOWNLOADED`, you should prompt the user and call
-{@link completeFlexibleUpdate} to finish the installation.
-
-| Param              | Type                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| **`eventName`**    | <code>'onFlexibleUpdateStateChange'</code>                                              |
-| **`listenerFunc`** | <code>(state: <a href="#flexibleupdatestate">FlexibleUpdateState</a>) =&gt; void</code> |
-
-**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
-
-**Since:** 8.0.0
 
 --------------------
 
@@ -2407,7 +2114,7 @@ This triggers Google Play's flexible update flow, which:
 3. Notifies when download is complete
 4. Requires calling {@link completeFlexibleUpdate} to install
 
-Monitor the download progress using the `onFlexibleUpdateStateChange` listener.
+Monitor the download progress with the `onFlexibleUpdateStateChange` type of `updaterEvent`.
 
 **Requirements:**
 - Android only (throws error on iOS)
@@ -2416,7 +2123,7 @@ Monitor the download progress using the `onFlexibleUpdateStateChange` listener.
 
 **Typical flow:**
 1. Call `startFlexibleUpdate()` to begin download
-2. Listen to `onFlexibleUpdateStateChange` for progress
+2. Listen to `updaterEvent` and handle `onFlexibleUpdateStateChange` for progress
 3. When status is `DOWNLOADED`, prompt user to restart
 4. Call `completeFlexibleUpdate()` to install and restart
 
@@ -2639,7 +2346,6 @@ Result returned after requesting an immediate native auto-update check.
 | **`version`**      | <code>string</code>                                                                 | Result of getLatest method                                                                                                                       | 4.0.0   |
 | **`checksum`**     | <code>string</code>                                                                 |                                                                                                                                                  | 6       |
 | **`breaking`**     | <code>boolean</code>                                                                | Indicates whether the update was flagged as breaking by the backend.                                                                             | 7.22.0  |
-| **`major`**        | <code>boolean</code>                                                                |                                                                                                                                                  |         |
 | **`message`**      | <code>string</code>                                                                 | Optional message from the server. When no new version is available, this will be "No new version available".                                     |         |
 | **`sessionKey`**   | <code>string</code>                                                                 |                                                                                                                                                  |         |
 | **`error`**        | <code>string</code>                                                                 | Error code from the server, if any. Use `kind` for classification instead of parsing this value.                                                 |         |
@@ -2853,11 +2559,13 @@ Result returned after requesting an immediate native auto-update check.
 | **`version`** | <code>string</code> | Emit when a download fail. | 4.0.0 |
 
 
-##### MajorAvailableEvent
+##### BreakingAvailableEvent
 
-| Prop          | Type                | Description                               | Since |
-| ------------- | ------------------- | ----------------------------------------- | ----- |
-| **`version`** | <code>string</code> | Emit when a breaking update is available. | 4.0.0 |
+Payload of the `breakingAvailable` {@link <a href="#updaterevent">UpdaterEvent</a>}.
+
+| Prop          | Type                | Description                                                                  | Since  |
+| ------------- | ------------------- | ---------------------------------------------------------------------------- | ------ |
+| **`version`** | <code>string</code> | Version of the breaking update that the backend blocked for this native app. | 7.22.0 |
 
 
 ##### UpdateFailedEvent
@@ -3046,19 +2754,29 @@ failed by native clients.
 ##### UpdaterEvent
 
 Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
-`type` is the legacy event name and `data` is the same payload the legacy listener receives,
-so you can switch on `type` and get a typed `data`.
+Switch on `type` to get a typed `data`.
 
-The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+- `download`: download progress of a bundle, from start to finish (`percent` between 0 and 100).
+- `noNeedUpdate`: the update check found nothing to install.
+- `updateCheckResult`: classified result of an update check, before the updater decides whether to download.
+  For `up_to_date` and `blocked` it is emitted before `noNeedUpdate` and no `downloadFailed` follows. For `failed`
+  it is emitted before `downloadFailed`, and native code sends an `update_check_error` stat instead of
+  `download_fail` because no bundle download was attempted.
+- `updateAvailable`: a new bundle is downloaded and ready.
+- `downloadComplete`: a bundle download finished.
+- `downloadFailed`: a bundle download or update check failed.
+- `breakingAvailable`: the backend blocked an update as incompatible with the current native app.
+- `updateFailed`: a bundle failed to install at the next app start and was rolled back.
+- `set`: a bundle was applied. Retained natively until a listener consumes it.
+- `setNext`: a bundle was queued as the next bundle to install.
+- `appReloaded`: the app reloaded.
+- `appReady`: the app is ready to use. Retained natively until a listener consumes it.
+- `channelPrivate`: `setChannel()` targeted a channel that does not allow device self-assignment.
+- `onFlexibleUpdateStateChange`: Android flexible in-app update progress and install status.
+  When `installStatus` is `DOWNLOADED`, prompt the user and call
+  {@link CapacitorUpdaterPlugin.completeFlexibleUpdate}.
 
 <code>{ type: 'download'; data: <a href="#downloadevent">DownloadEvent</a> } | { type: 'noNeedUpdate'; data: <a href="#noneedevent">NoNeedEvent</a> } | { type: 'updateCheckResult'; data: <a href="#updatecheckresultevent">UpdateCheckResultEvent</a> } | { type: 'updateAvailable'; data: <a href="#updateavailableevent">UpdateAvailableEvent</a> } | { type: 'downloadComplete'; data: <a href="#downloadcompleteevent">DownloadCompleteEvent</a> } | { type: 'downloadFailed'; data: <a href="#downloadfailedevent">DownloadFailedEvent</a> } | { type: 'breakingAvailable'; data: <a href="#breakingavailableevent">BreakingAvailableEvent</a> } | { type: 'updateFailed'; data: <a href="#updatefailedevent">UpdateFailedEvent</a> } | { type: 'set'; data: <a href="#setevent">SetEvent</a> } | { type: 'setNext'; data: <a href="#setnextevent">SetNextEvent</a> } | { type: 'appReloaded'; data: <a href="#record">Record</a>&lt;string, never&gt; } | { type: 'appReady'; data: <a href="#appreadyevent">AppReadyEvent</a> } | { type: 'channelPrivate'; data: <a href="#channelprivateevent">ChannelPrivateEvent</a> } | { type: 'onFlexibleUpdateStateChange'; data: <a href="#flexibleupdatestate">FlexibleUpdateState</a> }</code>
-
-
-##### BreakingAvailableEvent
-
-Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
-
-<code><a href="#majoravailableevent">MajorAvailableEvent</a></code>
 
 
 ##### Record
@@ -3119,11 +2837,15 @@ Supported values are `shake` and `threeFingerPinch`.
 
 ### Listen to download events
 
-```javascript
-  import { CapacitorUpdater } from '@capgo/capacitor-updater';
+Every plugin event arrives through the single `updaterEvent` listener as `{ type, data }`:
 
-CapacitorUpdater.addListener('download', (info: any) => {
-  console.log('download was fired', info.percent);
+```typescript
+import { CapacitorUpdater } from '@capgo/capacitor-updater';
+
+CapacitorUpdater.addListener('updaterEvent', (event) => {
+  if (event.type === 'download') {
+    console.log('download was fired', event.data.percent);
+  }
 });
 ```
 

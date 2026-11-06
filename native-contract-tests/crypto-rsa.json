@@ -73,6 +73,24 @@
       "expect": {
         "throws": true
       }
+    },
+    {
+      "id": "base64-encoded-rsa-ciphertext-removed-in-v9",
+      "input": {
+        "checksumHex": "BdbZjgJ5OkIAVBdTMP/a178Lv2RFmCk0FmPKWcnuLvJ4q4KRttCUQQ+90l1L9AUo2WXYtPrVkNryErDTCWAviVs7vNSS5/1CeD+/4jr6cDcK+p5sagpgbcEuy8LBTG173o4AizeMnb5NJpYm7LJHXGq4bo+eoYM1K61EOf1WEnO4+nV5k4K03JnRYXJ5OsIAxfiFyfXpFSev4rlbDQxqm82M4SiXp6/wxJAVUfREOWugWdmt9IBXGahlKczHfLquWPZFbu60S5NkQ7N6QOO4bsiD5NWLFvtdwQWRcdQUlWjULNorpHTc6oLXBqjYm1ViDF+6w9cZki7mdT/wXw0ryA=="
+      },
+      "expect": {
+        "throws": true
+      }
+    },
+    {
+      "id": "odd-length-hex-rejected",
+      "input": {
+        "checksumHex": "05d6d98e02793a420054175330ffdad7bf0bbf64459829341663ca59c9ee2ef278ab8291b6d094410fbdd25d4bf40528d965d8b4fad590daf212b0d309602f895b3bbcd492e7fd42783fbfe23afa70370afa9e6c6a0a606dc12ecbc2c14c6d7bde8e008b378c9dbe4d269626ecb2475c6ab86e8f9ea183352bad4439fd561273b8fa75799382b4dc99d16172793ac200c5f885c9f5e91527afe2b95b0d0c6a9bcd8ce12897a7aff0c4901551f444396ba059d9adf4805719a86529ccc77cbaae58f6456eeeb44b936443b37a40e3b86ec883e4d58b16fb5dc1059171d4149568d42cda2ba474dcea82d706a8d89b55620c5fbac3d719922ee6753ff05f0d2bc80"
+      },
+      "expect": {
+        "throws": true
+      }
     }
   ]
 }

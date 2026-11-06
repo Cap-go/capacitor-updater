@@ -51,8 +51,10 @@ import UIKit
     public var httpsOnly: Bool = true {
         didSet { redirectPolicy.httpsOnly = httpsOnly }
     }
-    /// When true a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
-    public var builtinMinimum: Bool = false
+    /// When true (default) a bundle whose version is lower than the native app version is refused. Config `builtinMinimum`.
+    public var builtinMinimum: Bool = true
+    private let versionFloorRejectionLock = NSLock()
+    private var lastVersionFloorRejection: String?
     /// Error raised when `httpsOnly` is set and a URL is not https.
     public static func httpsOnlyError(_ url: URL) -> NSError {
         return NSError(
@@ -745,8 +747,10 @@ import UIKit
 
     /// `builtinMinimum`: refuse any bundle version lower than the native app version (`versionBuild`).
     /// Versions that do not parse as semver skip the check so odd native version strings never block updates.
+    /// Consecutive identical rejections report one stat per updater instance; every attempt still validates and throws.
     func requireVersionNotBelowBuiltin(_ version: String) throws {
         guard self.builtinMinimum else {
+            _ = self.recordVersionFloorRejection(nil)
             return
         }
         // Build metadata (+...) never takes part in ordering, and may contain dots the parser rejects.
@@ -754,6 +758,7 @@ import UIKit
         let nativeCore = String(self.versionBuild.split(separator: "+", maxSplits: 1).first ?? "")
         guard let parsedBundle = try? CapgoSemanticVersion(bundleCore),
               let parsedNative = try? CapgoSemanticVersion(nativeCore) else {
+            _ = self.recordVersionFloorRejection(nil)
             logger?.debug("builtinMinimum skipped: cannot parse bundle version \(version) or native version \(self.versionBuild)")
             return
         }
@@ -761,14 +766,27 @@ import UIKit
         let bundleVersion = CapgoSemanticVersion(major: parsedBundle.major, minor: parsedBundle.minor, patch: parsedBundle.patch)
         let nativeVersion = CapgoSemanticVersion(major: parsedNative.major, minor: parsedNative.minor, patch: parsedNative.patch)
         if bundleVersion < nativeVersion {
-            logger?.error("Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)")
-            self.sendStats(action: "version_below_native", versionName: version)
+            let message = "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"
+            logger?.error(message)
+            if self.recordVersionFloorRejection(message) {
+                self.sendStats(action: "version_below_native", versionName: version)
+            }
             throw NSError(
                 domain: "CapgoUpdater",
                 code: 8,
-                userInfo: [NSLocalizedDescriptionKey: "Bundle version \(version) is below native version \(self.versionBuild) (builtinMinimum)"]
+                userInfo: [NSLocalizedDescriptionKey: message]
             )
         }
+        _ = self.recordVersionFloorRejection(nil)
+    }
+
+    /// Records the latest rejection atomically and returns whether it needs a stat. Nil clears the last rejection.
+    private func recordVersionFloorRejection(_ message: String?) -> Bool {
+        versionFloorRejectionLock.lock()
+        defer { versionFloorRejectionLock.unlock() }
+        let shouldReport = message != nil && lastVersionFloorRejection != message
+        lastVersionFloorRejection = message
+        return shouldReport
     }
 
     public func setPublicKey(_ publicKey: String) {
@@ -3456,6 +3474,7 @@ import UIKit
         return false
     }
 
+    /// Activates a stored bundle only if it meets the native version floor. Builtin reset is always allowed.
     public func set(id: String) -> Bool {
         let newBundle: BundleInfo = self.getBundleInfo(id: id)
         if newBundle.isBuiltin() {
@@ -3463,6 +3482,11 @@ import UIKit
             return true
         }
         if bundleExists(id: id) {
+            do {
+                try self.requireVersionNotBelowBuiltin(newBundle.getVersionName())
+            } catch {
+                return false
+            }
             let currentBundleName = self.getCurrentBundle().getVersionName()
             guard let bundleDir = try? self.getBundleDirectory(id: id) else {
                 self.setBundleStatus(id: id, status: BundleStatus.ERROR)
@@ -3479,15 +3503,19 @@ import UIKit
         return false
     }
 
+    /// Stages a pending bundle without finalizing it, checking the version floor before changing the active path.
     func stagePendingReload(bundle: BundleInfo) -> Bool {
         guard !bundle.isBuiltin(), bundleExists(id: bundle.getId()) else {
             return false
         }
-        guard let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) else {
+        do {
+            try self.requireVersionNotBelowBuiltin(bundle.getVersionName())
+            let bundleDir = try self.getBundleDirectory(id: bundle.getId())
+            self.setCurrentBundle(bundle: bundleDir.path)
+            return true
+        } catch {
             return false
         }
-        self.setCurrentBundle(bundle: bundleDir.path)
-        return true
     }
 
     /// Points the current bundle back at `bundle` without sending stats, after an
@@ -3495,8 +3523,9 @@ import UIKit
     func restoreCurrentBundle(_ bundle: BundleInfo) {
         if bundle.isBuiltin() {
             self.setCurrentBundle(bundle: "")
-        } else {
-            _ = self.stagePendingReload(bundle: bundle)
+        } else if bundleExists(id: bundle.getId()),
+                  let bundleDir = try? self.getBundleDirectory(id: bundle.getId()) {
+            self.setCurrentBundle(bundle: bundleDir.path)
         }
     }
 

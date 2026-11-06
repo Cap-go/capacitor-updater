@@ -31,38 +31,24 @@ public struct CryptoCipher {
         return str.unicodeScalars.allSatisfy { hexCharacterSet.contains($0) }
     }
 
+    /// Decrypts the RSA encrypted bundle checksum and returns it as lowercase hex.
+    /// Returns `checksum` unchanged when no public key is configured. Throws for anything that is not
+    /// an even-length hex string of 256 bytes signed with the matching private key.
     public static func decryptChecksum(checksum: String, publicKey: String) throws -> String {
         if publicKey.isEmpty {
             logger.info("No encryption set (public key) ignored")
             return checksum
         }
         do {
-            // Determine if input is hex or base64 encoded
-            // Hex strings only contain 0-9 and a-f, while base64 contains other characters
-            let checksumBytes: Data
-            let detectedFormat: String
-            if isHexString(checksum) {
-                // Hex encoded (new format from CLI for plugin versions >= 5.30.0, 6.30.0, 7.30.0)
-                guard let hexData = hexStringToData(checksum) else {
-                    logger.error("Cannot decode checksum as hex")
-                    logger.debug("Checksum value: \(checksum)")
-                    throw CustomError.cannotDecode
-                }
-                checksumBytes = hexData
-                detectedFormat = "hex"
-            } else {
-                // TODO: remove backwards compatibility
-                // Base64 encoded (old format for backwards compatibility)
-                guard let base64Data = Data(base64Encoded: checksum) else {
-                    logger.error("Cannot decode checksum as base64")
-                    logger.debug("Checksum value: \(checksum)")
-                    throw CustomError.cannotDecode
-                }
-                checksumBytes = base64Data
-                detectedFormat = "base64"
+            // The encrypted checksum is hex encoded. The base64 format of CLI uploads made for plugin
+            // versions older than 5.30.0 / 6.30.0 / 7.30.0 is no longer accepted since 9.0.0.
+            // An odd length is rejected too: hexStringToData would silently drop the last digit.
+            guard checksum.count.isMultiple(of: 2), isHexString(checksum), let checksumBytes = hexStringToData(checksum) else {
+                logger.error("Cannot decode checksum as hex. Re-upload the bundle with a current Capgo CLI.")
+                logger.debug("Checksum value: \(checksum)")
+                throw CustomError.cannotDecode
             }
-            // swiftlint:disable:next line_length
-            logger.debug("Received checksum format: \(detectedFormat) (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
+            logger.debug("Received checksum format: hex (length: \(checksum.count) chars, \(checksumBytes.count) bytes)")
 
             if checksumBytes.isEmpty {
                 logger.error("Decoded checksum is empty")
@@ -94,9 +80,6 @@ public struct CryptoCipher {
             let detectedAlgorithm: String
             if decryptedChecksum.count == 32 {
                 detectedAlgorithm = "SHA-256"
-            } else if decryptedChecksum.count == 4 {
-                detectedAlgorithm = "CRC32 (deprecated)"
-                logger.error("CRC32 checksum detected - deprecated algorithm")
             } else {
                 detectedAlgorithm = "unknown (\(decryptedChecksum.count) bytes)"
                 logger.error("Unknown checksum algorithm detected")
@@ -113,8 +96,7 @@ public struct CryptoCipher {
     }
 
     /// Detect checksum algorithm based on hex string length.
-    /// SHA-256 = 64 hex chars (32 bytes)
-    /// CRC32 = 8 hex chars (4 bytes)
+    /// SHA-256 = 64 hex chars (32 bytes). It is the only supported algorithm.
     public static func detectChecksumAlgorithm(_ hexChecksum: String) -> String {
         if hexChecksum.isEmpty {
             return "empty"
@@ -122,20 +104,16 @@ public struct CryptoCipher {
         let len = hexChecksum.count
         if len == 64 {
             return "SHA-256"
-        } else if len == 8 {
-            return "CRC32 (deprecated)"
         } else {
             return "unknown (\(len) hex chars)"
         }
     }
 
-    /// Log checksum info and warn if deprecated algorithm detected.
+    /// Log checksum info and warn if the checksum is not SHA-256.
     public static func logChecksumInfo(label: String, hexChecksum: String) {
         let algorithm = detectChecksumAlgorithm(hexChecksum)
         logger.debug("\(label): \(algorithm) hex format (length: \(hexChecksum.count) chars)")
-        if algorithm.contains("CRC32") {
-            logger.error("CRC32 checksum detected - deprecated algorithm")
-        } else if algorithm.contains("unknown") {
+        if algorithm.contains("unknown") {
             logger.error("Unknown checksum algorithm detected")
             logger.debug("Char count: \(hexChecksum.count), Expected: 64 (SHA-256)")
         }

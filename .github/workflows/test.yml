@@ -208,24 +208,13 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  test_ios:
+  test_ios_build:
     permissions:
       contents: read
-    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    # Keep compilation separate from simulator startup and test teardown under the same hard cap.
     timeout-minutes: 5
     runs-on: macOS-latest
-    name: test_ios / ${{ matrix.shard }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
-          - shard: core
-            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-            cli_contract: false
-          - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-            cli_contract: true
+    name: Build iOS native tests
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
     steps:
@@ -236,6 +225,7 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
+          setup-node: 'false'
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
@@ -249,12 +239,98 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ios-test-
       - name: Build iOS tests once
-        run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
+        run: |
+          xcodebuild -version > "$RUNNER_TEMP/ios-native-xcode-version.txt"
+          # Cached manifests may target an older SDK. Regenerate only the current build's test manifest.
+          rm -f "$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun
+          CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
       - name: Encrypt fresh bundles with the pinned Capgo CLI
-        if: matrix.cli_contract
         # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
         # so every CLI bump is re-checked without a second xcodebuild launch.
         run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Archive compiled iOS tests
+        run: |
+          xctestrun_files=("$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun)
+          if [[ ${#xctestrun_files[@]} -ne 1 || ! -f "${xctestrun_files[0]}" ]]; then
+            echo "Expected exactly one compiled iOS test manifest" >&2
+            exit 1
+          fi
+          COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/ios-native-test-products.tar.gz" -C "$CAPGO_IOS_DERIVED_DATA/Build" Products
+      - name: Archive fresh Capgo CLI fixtures
+        run: COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/ios-native-cli-fixtures.tar.gz" -C "$GITHUB_WORKSPACE" native-contract-tests/cli-fresh
+      - name: Upload compiled iOS tests
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-test-products
+          path: |
+            ${{ runner.temp }}/ios-native-test-products.tar.gz
+            ${{ runner.temp }}/ios-native-cli-fixtures.tar.gz
+            ${{ runner.temp }}/ios-native-xcode-version.txt
+          compression-level: 0
+          retention-days: 1
+
+  test_ios:
+    permissions:
+      contents: read
+    needs: test_ios_build
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    # Diagnose timing with bun scripts/ci/report-ios-job-budget.mjs <run-id>.
+    timeout-minutes: 5
+    runs-on: macOS-latest
+    name: test_ios / ${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
+          - shard: core
+            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+            cli_contract: false
+          # Real URLSession transport tests can dominate the remaining runtime on hosted simulators.
+          - shard: network
+            select: -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+            cli_contract: false
+          - shard: rest
+            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+            cli_contract: true
+    env:
+      CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download compiled iOS tests
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-native-test-products
+          path: ${{ runner.temp }}/ios-native-test-products
+      - name: Verify compiled iOS test Xcode version
+        run: |
+          producer_version_path="$RUNNER_TEMP/ios-native-test-products/ios-native-xcode-version.txt"
+          if [[ ! -f "$producer_version_path" ]]; then
+            echo "Missing Xcode version metadata for compiled iOS tests" >&2
+            exit 1
+          fi
+          producer_version="$(cat "$producer_version_path")"
+          current_version="$(xcodebuild -version)"
+          if [[ "$producer_version" != "$current_version" ]]; then
+            printf 'Xcode version mismatch for compiled iOS tests.\nProducer:\n%s\nConsumer:\n%s\n' "$producer_version" "$current_version" >&2
+            exit 1
+          fi
+      - name: Extract compiled iOS tests
+        run: |
+          mkdir -p "$CAPGO_IOS_DERIVED_DATA/Build"
+          tar -xzf "$RUNNER_TEMP/ios-native-test-products/ios-native-test-products.tar.gz" -C "$CAPGO_IOS_DERIVED_DATA/Build"
+          xctestrun_files=("$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun)
+          if [[ ${#xctestrun_files[@]} -ne 1 || ! -f "${xctestrun_files[0]}" ]]; then
+            echo "Expected exactly one compiled iOS test manifest" >&2
+            exit 1
+          fi
+          echo "CAPGO_IOS_XCTESTRUN=${xctestrun_files[0]}" >> "$GITHUB_ENV"
+      - name: Extract fresh Capgo CLI fixtures
+        if: matrix.cli_contract
+        run: tar -xzf "$RUNNER_TEMP/ios-native-test-products/ios-native-cli-fixtures.tar.gz" -C "$GITHUB_WORKSPACE"
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
@@ -338,7 +414,6 @@ jobs:
         scenario:
           - deferred
           - always
-          - legacy-true
           - at-install
           - on-launch
           - manual-zip
@@ -486,7 +561,6 @@ jobs:
           scenarios=(
             deferred
             always
-            legacy-true
             at-install
             on-launch
             manual-zip
@@ -674,6 +748,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -722,7 +797,6 @@ jobs:
       matrix:
         scenario:
           - always
-          - legacy-true
           - on-launch
     steps:
       - name: Check out
@@ -740,6 +814,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -881,6 +956,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -969,7 +1045,6 @@ jobs:
         scenario:
           - deferred
           - always
-          - legacy-true
           - at-install
           - on-launch
           - manual-zip-config-guards
@@ -995,17 +1070,13 @@ jobs:
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          dependency-cache-key: ${{ runner.os }}-bun-deps-root-example-${{ hashFiles('bun.lock', 'package.json', 'example-app/bun.lock', 'example-app/package.json') }}
-          dependency-cache-path: |
-            node_modules
-            example-app/node_modules
-          install-example: 'true'
+          install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup java
         uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '21'
-          cache: gradle
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
