@@ -222,6 +222,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          setup-node: 'false'
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
       - name: Cache SwiftPM and DerivedData
         uses: actions/cache@v6
         with:
@@ -236,6 +243,10 @@ jobs:
           # Cached manifests may target an older SDK. Regenerate only the current build's test manifest.
           rm -f "$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun
           CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
+      - name: Encrypt fresh bundles with the pinned Capgo CLI
+        # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
+        # so every CLI bump is re-checked without a second xcodebuild launch.
+        run: bun run generate:cli-crypto native-contract-tests/cli-fresh
       - name: Archive compiled iOS tests
         run: |
           xctestrun_files=("$CAPGO_IOS_DERIVED_DATA"/Build/Products/*.xctestrun)
@@ -244,11 +255,15 @@ jobs:
             exit 1
           fi
           COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/ios-native-test-products.tar.gz" -C "$CAPGO_IOS_DERIVED_DATA/Build" Products
+      - name: Archive fresh Capgo CLI fixtures
+        run: COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/ios-native-cli-fixtures.tar.gz" -C "$GITHUB_WORKSPACE" native-contract-tests/cli-fresh
       - name: Upload compiled iOS tests
         uses: actions/upload-artifact@v7
         with:
           name: ios-native-test-products
-          path: ${{ runner.temp }}/ios-native-test-products.tar.gz
+          path: |
+            ${{ runner.temp }}/ios-native-test-products.tar.gz
+            ${{ runner.temp }}/ios-native-cli-fixtures.tar.gz
           compression-level: 0
           retention-days: 1
 
@@ -257,6 +272,7 @@ jobs:
       contents: read
     needs: test_ios_build
     # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    # Diagnose timing with bun scripts/ci/report-ios-job-budget.mjs <run-id>.
     timeout-minutes: 5
     runs-on: macOS-latest
     name: test_ios / ${{ matrix.shard }}
@@ -282,13 +298,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Setup Bun
-        if: matrix.cli_contract
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
-          dependency-cache-path: node_modules
       - name: Download compiled iOS tests
         uses: actions/download-artifact@v8
         with:
@@ -304,11 +313,9 @@ jobs:
             exit 1
           fi
           echo "CAPGO_IOS_XCTESTRUN=${xctestrun_files[0]}" >> "$GITHUB_ENV"
-      - name: Encrypt fresh bundles with the pinned Capgo CLI
+      - name: Extract fresh Capgo CLI fixtures
         if: matrix.cli_contract
-        # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
-        # so every CLI bump is re-checked without a second xcodebuild launch.
-        run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+        run: tar -xzf "$RUNNER_TEMP/ios-native-test-products/ios-native-cli-fixtures.tar.gz" -C "$GITHUB_WORKSPACE"
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
