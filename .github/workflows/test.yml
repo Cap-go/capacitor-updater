@@ -223,8 +223,12 @@ jobs:
           - shard: core
             select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
             cli_contract: false
+          # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
+          - shard: delta
+            select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+            cli_contract: false
           - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -skip-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -skip-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -skip-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -skip-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
             cli_contract: true
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
