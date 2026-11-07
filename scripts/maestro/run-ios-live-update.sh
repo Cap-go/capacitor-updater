@@ -696,6 +696,12 @@ run_edge_case_once() {
   wait_for_edge_case_fault_hit "$edge_case_id" "$app_scenario" || return 1
   assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
 
+  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+    # Restore the bundle endpoint before the recovery flow so the deferred download can finish
+    # inside the Maestro flow timeout (same timing as the Android edge-network-drop path).
+    set_server_fault "$app_scenario" bundle none || return 1
+  fi
+
   local builtin_pattern=""
   builtin_pattern="$(edge_summary_pattern \
     "Build label: $builtin_label" \

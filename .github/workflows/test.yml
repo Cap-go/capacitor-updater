@@ -978,6 +978,12 @@ jobs:
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          elif [[ "$MATRIX_SCENARIO" == "edge-network-drop" ]]; then
+            # Shell clears the drop fault before Maestro; slightly shorter summary waits keep
+            # three deferred steps within the 240s flow cap and the 10 minute job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=70000
           else
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
