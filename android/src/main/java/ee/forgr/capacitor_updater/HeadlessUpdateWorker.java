@@ -25,7 +25,6 @@ import androidx.work.WorkerParameters;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.plugin.WebView;
-import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -321,6 +320,7 @@ public class HeadlessUpdateWorker extends Worker {
         updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
         if (DownloadService.getLogger() == null) {
             DownloadService.setLogger(headlessLogger);
+            DownloadWorkerManager.setLogger(headlessLogger);
         }
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);

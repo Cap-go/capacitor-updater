@@ -167,6 +167,7 @@ public class HeadlessUpdateTest {
     @Test
     public void configureInitializesDownloadLoggerWhenUnset() throws Exception {
         DownloadService.setLogger(null);
+        DownloadWorkerManager.setLogger(null);
         final PluginConfig config = mock(PluginConfig.class);
         when(config.getString("publicKey", "")).thenReturn("");
         when(config.getBoolean("allowHttpsToHttpRedirect", false)).thenReturn(false);
@@ -201,5 +202,6 @@ public class HeadlessUpdateTest {
         configure.invoke(null, updater, context, config, prefs, packageInfo, "42", headlessLogger);
 
         assertEquals(headlessLogger.getTag(), DownloadService.getLogger().getTag());
+        assertEquals(headlessLogger.getTag(), DownloadWorkerManager.getLogger().getTag());
     }
 }
