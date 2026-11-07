@@ -246,6 +246,7 @@ jobs:
           path: |
             .ci-ios-test-dd
             native-contract-tests/cli-fresh
+          include-hidden-files: true
           if-no-files-found: error
 
   test_ios:
