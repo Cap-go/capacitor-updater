@@ -30,6 +30,7 @@ private final class LoopbackHTTPServer {
     private let lock = NSLock()
     private var handler: (RecordedRequest) -> Response = { _ in Response(status: 200, body: Data()) }
     private var recorded: [RecordedRequest] = []
+    private var activeConnections = 0
 
     init() throws {
         let parameters = NWParameters.tcp
@@ -68,7 +69,39 @@ private final class LoopbackHTTPServer {
         listener.cancel()
     }
 
+    /// Waits until accepted connections finish or `timeout` elapses (stray URLSession tasks after invalidate).
+    func drain(timeout: TimeInterval = 2) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            lock.lock()
+            let active = activeConnections
+            lock.unlock()
+            if active == 0 {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+    }
+
+    private func connectionOpened() {
+        lock.lock()
+        activeConnections += 1
+        lock.unlock()
+    }
+
+    private func connectionClosed() {
+        lock.lock()
+        activeConnections = max(0, activeConnections - 1)
+        lock.unlock()
+    }
+
     private func accept(_ connection: NWConnection) {
+        connectionOpened()
+        connection.stateUpdateHandler = { [weak self] state in
+            if case .cancelled = state {
+                self?.connectionClosed()
+            }
+        }
         connection.start(queue: queue)
         receive(on: connection, buffer: Data())
     }
@@ -178,14 +211,20 @@ private final class LoopbackHTTPServer {
 final class NetworkTransportTests: XCTestCase {
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
+    private var activeUpdaters: [CapgoUpdater] = []
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         server = try LoopbackHTTPServer()
+        activeUpdaters = []
     }
 
     override func tearDownWithError() throws {
+        finishAllUpdaters()
+        server.drain()
         server.stop()
         server = nil
+        try super.tearDownWithError()
     }
 
     private func makeUpdater() -> CapgoUpdater {
@@ -194,7 +233,23 @@ final class NetworkTransportTests: XCTestCase {
         updater.timeout = 5
         // The loopback test server is plain http.
         updater.httpsOnly = false
+        activeUpdaters.append(updater)
         return updater
+    }
+
+    /// Shutdown and drop references before URLSession invalidation so the loopback port is not reused mid-flight.
+    private func releaseUpdater(_ updater: CapgoUpdater) {
+        updater.shutdown()
+        activeUpdaters.removeAll { $0 === updater }
+        server.drain()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+    }
+
+    private func finishAllUpdaters() {
+        for updater in activeUpdaters {
+            updater.shutdown()
+        }
+        activeUpdaters.removeAll()
     }
 
     func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
@@ -213,6 +268,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: status, body: status == 200 ? body : Data())
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-retry-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
@@ -241,6 +297,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: 200, body: body, dropConnection: drop)
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-drop-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
@@ -284,6 +341,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: 206, body: body.subdata(in: start..<body.count), headers: headers)
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-resume-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "app.js", file_hash: hash,
@@ -324,6 +382,7 @@ final class NetworkTransportTests: XCTestCase {
     func testManifestPermanentFailuresAndRetryBudget() throws {
         for status in [404, 429, 503, 200] {
             let updater = makeUpdater()
+            defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
             let version = UUID().uuidString
             defer {
@@ -508,6 +567,7 @@ final class NetworkTransportTests: XCTestCase {
         server.respond { _ in .init(status: 200, body: zipPayload, chunkSize: 60_000, chunkDelay: 0.01) }
 
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "zip-progress-test", options: Logger.Options(level: .silent)))
         var percents: [Int] = []
         updater.notifyDownloadRaw = { _, percent, _, _ in
