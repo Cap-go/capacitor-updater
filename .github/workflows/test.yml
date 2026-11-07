@@ -1003,11 +1003,35 @@ jobs:
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
-      - name: Upload edge case Maestro artifacts
+      - name: Upload edge case Maestro artifacts (attempt 1)
         if: always()
+        id: upload_maestro_ios_edge_1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-edge-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+      - name: Wait before retrying edge case Maestro artifacts upload
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
+        run: sleep 15
+      - name: Upload edge case Maestro artifacts (attempt 2)
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
+        id: upload_maestro_ios_edge_2
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-edge-${{ matrix.scenario }}
+          overwrite: true
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+      - name: Wait before final edge case Maestro artifacts upload
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
+        run: sleep 15
+      - name: Upload edge case Maestro artifacts (attempt 3)
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-edge-${{ matrix.scenario }}
+          overwrite: true
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
   web:

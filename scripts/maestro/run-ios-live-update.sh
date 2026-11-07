@@ -700,6 +700,13 @@ run_edge_case_once() {
     # Restore the bundle endpoint before the recovery flow so the deferred download can finish
     # inside the Maestro flow timeout (same timing as the Android edge-network-drop path).
     set_server_fault "$app_scenario" bundle none || return 1
+  elif [[ "$edge_case_id" == "edge-offline-check" ]]; then
+    # Match Android: bring the update endpoint back before recovery, while the Maestro flow still
+    # proves the builtin state from the failed check.
+    set_server_fault "$app_scenario" update none || return 1
+  elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
+    set_server_fault "$app_scenario" bundle none || return 1
+    set_server_fault "$app_scenario" update none || return 1
   fi
 
   local builtin_pattern=""
