@@ -638,7 +638,7 @@ final class NetworkTransportTests: XCTestCase {
         let flowLock = NSLock()
         var resumeBody = false
         server.respond { _ in
-            var response = Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
+            var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
             response.waitBeforeContinuingBody = {
                 flowLock.lock()
                 let go = resumeBody
