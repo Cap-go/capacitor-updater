@@ -201,7 +201,7 @@ const quickActionIds = [
   'queue-boot-verify-persisted-config',
 ];
 const smokeSequenceDefaultDelayMs = isMaestroE2E ? 0 : 150;
-const smokeSequenceMutationDelayMs = isMaestroE2E ? 40 : 300;
+const smokeSequenceMutationDelayMs = isMaestroE2E ? 0 : 300;
 const actionTriggerCooldownMs = isMaestroE2E ? 50 : 250;
 const reloadActionTriggerCooldownMs = isMaestroE2E ? 1500 : 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
@@ -3291,6 +3291,11 @@ async function handleMaestroDeepLink(rawUrl) {
 
   if (route === 'harness' && value === 'smoke-sequence') {
     scrollHarnessElementIntoView(elements.quickRunSmokeSequenceButton);
+    return;
+  }
+
+  if (route === 'run' && value === 'smoke-sequence') {
+    void runSmokeSequence();
   }
 }
 

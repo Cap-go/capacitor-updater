@@ -10,14 +10,8 @@ appId: app.capgo.updater
 - assertVisible: '@capgo/capacitor-updater'
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
-    timeout: 120000
-- extendedWaitUntil:
-    visible: 'Quick run smoke test sequence'
-    timeout: 120000
-- tapOn:
-    text: 'Quick run smoke test sequence'
-    retryTapIfNoChange: true
-- openLink: capgo-maestro://harness/smoke-sequence
+    timeout: 90000
+- openLink: capgo-maestro://run/smoke-sequence
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 180000
