@@ -10,6 +10,7 @@
   "files": [
     "android/src/main/",
     "android/proguard-rules.pro",
+    "android/consumer-rules.pro",
     "android/build.gradle",
     "dist/",
     "ios/Sources/",
