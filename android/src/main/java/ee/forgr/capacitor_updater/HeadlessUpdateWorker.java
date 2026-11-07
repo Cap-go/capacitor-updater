@@ -132,7 +132,7 @@ public class HeadlessUpdateWorker extends Worker {
                 }
             }
         };
-        configure(updater, context, config, prefs, packageInfo, versionCode);
+        configure(updater, context, config, prefs, packageInfo, versionCode, logger);
         try {
             String updateUrl = config.getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault);
             if (config.getBoolean("persistModifyUrl", false) && prefs.contains(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY)) {
@@ -174,6 +174,9 @@ public class HeadlessUpdateWorker extends Worker {
                 return "failed";
             }
             if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
+                if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
+                    return "skipped";
+                }
                 if (setNext && updater.setNextBundle(existing.getId())) {
                     return applyIfNoUi(updater, existing, logger) ? "installed" : "queued";
                 }
@@ -237,6 +240,20 @@ public class HeadlessUpdateWorker extends Worker {
         return false;
     }
 
+    /**
+     * When builtinMinimum is on, refuse an existing downloaded bundle whose version is below the native build.
+     * Shared by tests and {@link #run} so removing the guard breaks a unit test.
+     */
+    static boolean builtinMinimumBlocksExistingBundle(final CapgoUpdater updater, final String bundleVersion, final Logger logger) {
+        try {
+            updater.requireVersionNotBelowBuiltin(bundleVersion);
+            return false;
+        } catch (final java.io.IOException e) {
+            logger.error(e.getMessage() == null ? "Download blocked" : e.getMessage());
+            return true;
+        }
+    }
+
     static JSONArray manifestOf(final Map<String, Object> latest) {
         final Object manifest = latest.get("manifest");
         if (manifest instanceof JSONArray) {
@@ -275,7 +292,8 @@ public class HeadlessUpdateWorker extends Worker {
         final PluginConfig config,
         final SharedPreferences prefs,
         final PackageInfo packageInfo,
-        final String versionCode
+        final String versionCode,
+        final Logger headlessLogger
     ) {
         updater.appContext = context;
         updater.prefs = prefs;
@@ -294,6 +312,16 @@ public class HeadlessUpdateWorker extends Worker {
         appId = InternalUtils.getRootConfigString(context, "appId", appId);
         updater.appId = config.getString("appId", appId);
         updater.setPublicKey(config.getString("publicKey", ""));
+
+        DownloadService.setAllowHttpsToHttpRedirect(config.getBoolean("allowHttpsToHttpRedirect", false));
+        final boolean httpsOnly = config.getBoolean("httpsOnly", true);
+        updater.httpsOnly = httpsOnly;
+        DownloadService.setHttpsOnly(httpsOnly);
+        updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
+        if (DownloadService.getLogger() == null) {
+            DownloadService.setLogger(headlessLogger);
+            DownloadWorkerManager.setLogger(headlessLogger);
+        }
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);
         updater.statsUrl = config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault);

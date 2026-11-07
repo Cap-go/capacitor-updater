@@ -341,7 +341,13 @@ import UIKit
         }
         let task = self.urlSession.dataTask(with: request) { data, response, error in
             let httpResponse = response as? HTTPURLResponse
-            let body = (data?.isEmpty ?? true) ? nil : data
+            // URLSession may give nil `data` for 204 No Content and still deliver the HTTPURLResponse.
+            let body: Data?
+            if let data {
+                body = data.isEmpty ? nil : data
+            } else {
+                body = nil
+            }
             let resultError: Error?
             if let error {
                 resultError = NetworkError.sessionTaskFailed(error)

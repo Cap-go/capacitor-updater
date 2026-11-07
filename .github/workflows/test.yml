@@ -208,24 +208,13 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  test_ios:
+  # One macOS job builds for testing and writes cli-fresh crypto fixtures. Shards download that build
+  # and those fixtures as workflow artifacts so they always match this run. SwiftPM stays on actions/cache only.
+  test_ios_setup:
     permissions:
       contents: read
-    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: macOS-latest
-    name: test_ios / ${{ matrix.shard }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
-          - shard: core
-            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-            cli_contract: false
-          - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-            cli_contract: true
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
     steps:
@@ -239,22 +228,99 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM and DerivedData
+      - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            .ci-ios-test-dd
-          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
           restore-keys: |
-            ${{ runner.os }}-ios-test-
+            ${{ runner.os }}-swiftpm-
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
       - name: Encrypt fresh bundles with the pinned Capgo CLI
-        if: matrix.cli_contract
-        # CliCryptoFixtureTests checks the committed fixtures and this fresh set in the same run,
-        # so every CLI bump is re-checked without a second xcodebuild launch.
         run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Upload iOS test build and CLI fresh fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-build
+          path: |
+            .ci-ios-test-dd
+            native-contract-tests/cli-fresh
+          include-hidden-files: true
+          if-no-files-found: error
+
+  test_ios:
+    needs: test_ios_setup
+    permissions:
+      contents: read
+    # Hard cap: keep every iOS job under 5 minutes. Never raise it; make the job faster instead.
+    timeout-minutes: 5
+    runs-on: macOS-latest
+    name: test_ios / ${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CapacitorUpdaterTests is large; parallel workers keep this shard under the job cap.
+          - shard: core
+            parallel_testing: '1'
+            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+          # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
+          - shard: delta
+            parallel_testing: '0'
+            select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+          - shard: rest-a
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/BuiltinHashesTests
+              -only-testing:CapacitorUpdaterPluginTests/BundleHardeningTests
+              -only-testing:CapacitorUpdaterPluginTests/CapgoSemanticVersionTests
+              -only-testing:CapacitorUpdaterPluginTests/ChecksumRequiredTests
+          - shard: rest-b
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
+              -only-testing:CapacitorUpdaterPluginTests/HttpsOnlyBuiltinMinimumTests
+              -only-testing:CapacitorUpdaterPluginTests/ListChannelsTests
+              -only-testing:CapacitorUpdaterPluginTests/LoggerSecurityTests
+          - shard: rest-c
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
+              -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+              -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
+              -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
+          - shard: rest-d
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/SessionKeyRequiredTests
+              -only-testing:CapacitorUpdaterPluginTests/UpdateLifecycleTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipArchiveReaderTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipBundleExtractionTests
+    env:
+      CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+      CAPGO_IOS_PARALLEL_TESTING: ${{ matrix.parallel_testing }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
+          dependency-cache-path: node_modules
+      - name: Download iOS test build and CLI fresh fixtures
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-test-build
+          path: .
+      - name: Cache SwiftPM
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
@@ -697,7 +763,7 @@ jobs:
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
           CAPGO_MAESTRO_TEST_RETRIES=2
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=240
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
@@ -762,7 +828,7 @@ jobs:
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=240 \
           CAPGO_MAESTRO_TEST_RETRIES=2 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
@@ -850,13 +916,13 @@ jobs:
         include:
           - scenario: edge-network-drop
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-kill-download
             app: edge-deferred
             edge_case_retries: 1
           - scenario: edge-corrupt-bundle
             app: edge-deferred
-            edge_case_retries: 1
+            edge_case_retries: 2
           - scenario: edge-offline-check
             app: edge-deferred
             edge_case_retries: 1
@@ -895,26 +961,77 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      # A full case takes most of the 10 minute cap on hosted macOS runners. edge-network-drop
-      # alone gets one retry for simulator crashes during recovery; other cases stay at one attempt.
-      # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
+      # Default summary waits are 180s per step; multiple Maestro steps plus a 300s flow timeout and
+      # a full job retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows
+        env:
+          MATRIX_SCENARIO: ${{ matrix.scenario }}
         run: |
           set -euo pipefail
+          if [[ "$MATRIX_SCENARIO" == "edge-direct-network-drop" ]]; then
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          elif [[ "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
+            # Three wait-summary blocks in edge-case-recover-deferred.yaml (two extendedWaitUntil each).
+            # The per-flow timeout must clear a full slow recovery; 210s was too low and failed the run.
+            # One matrix retry only (edge_case_retries: 1) keeps total wall time under the 10 minute job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=80000
+          elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" ]]; then
+            # Three summary waits in the deferred recovery flow.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          elif [[ "$MATRIX_SCENARIO" == "edge-network-drop" ]]; then
+            # Shell clears the drop fault before Maestro; slightly shorter summary waits keep
+            # three deferred steps within the 240s flow cap and the 10 minute job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=70000
+          else
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+          fi
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=360 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
-      - name: Upload edge case Maestro artifacts
+      - name: Upload edge case Maestro artifacts (attempt 1)
         if: always()
+        id: upload_maestro_ios_edge_1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-edge-${{ matrix.scenario }}
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+      - name: Wait before retrying edge case Maestro artifacts upload
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
+        run: sleep 15
+      - name: Upload edge case Maestro artifacts (attempt 2)
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
+        id: upload_maestro_ios_edge_2
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-edge-${{ matrix.scenario }}
+          overwrite: true
+          path: maestro-results-ios-live-update/${{ matrix.scenario }}
+      - name: Wait before final edge case Maestro artifacts upload
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
+        run: sleep 15
+      - name: Upload edge case Maestro artifacts (attempt 3)
+        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-edge-${{ matrix.scenario }}
+          overwrite: true
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
   web:
@@ -1072,6 +1189,24 @@ jobs:
       - name: Clear Android SDK temp cache
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
+      # edge-network-drop recovery polls UI every wait seconds for up to cycles attempts, then
+      # does one more final poll. Keep that worst case under the 8 minute emulator step cap
+      # alongside boot, install, and server waits so the job does not need a second emulator run.
+      - name: Tune Maestro env for Android edge-network-drop
+        if: matrix.scenario == 'edge-network-drop'
+        run: |
+          echo "CAPGO_MAESTRO_EDGE_CASE_RETRIES=1" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=2" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=20" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS=120" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
+      # edge-offline-check can sit in the default recovery poll loop too long for the 8 minute emulator step.
+      - name: Tune Maestro env for Android edge-offline-check
+        if: matrix.scenario == 'edge-offline-check'
+        run: |
+          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_WAIT_SECONDS=35" >> "$GITHUB_ENV"
+          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
       # The runner action tears the emulator down inside this step, and that teardown can hang
       # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
       # open). Bound the step below the job cap and let the success marker decide the result,

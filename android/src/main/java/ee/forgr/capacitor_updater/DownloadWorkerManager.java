@@ -30,6 +30,10 @@ public class DownloadWorkerManager {
         logger = loggerInstance;
     }
 
+    public static Logger getLogger() {
+        return logger;
+    }
+
     private static volatile boolean isInitialized = false;
     private static final ExecutorService cancelExecutor = Executors.newSingleThreadExecutor();
 

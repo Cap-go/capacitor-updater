@@ -46,7 +46,7 @@ set_server_fault() {
   local mode="$3"
 
   curl --silent --show-error --fail -X POST \
-    "$HOST_SERVER_URL/api/control/fault?scenario=$scenario&target=$target&mode=$mode" >/dev/null
+    "$HOST_SERVER_URL/api/control/fault?scenario=$scenario&target=$target&mode=$mode" >/dev/null || return 1
   echo "Fake Capgo server fault for ${scenario}: ${target}=${mode}"
   return 0
 }
