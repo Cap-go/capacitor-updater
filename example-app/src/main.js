@@ -202,7 +202,7 @@ const quickActionIds = [
 ];
 const smokeSequenceDefaultDelayMs = isMaestroE2E ? 0 : 150;
 const smokeSequenceMutationDelayMs = isMaestroE2E ? 0 : 300;
-const actionTriggerCooldownMs = isMaestroE2E ? 50 : 250;
+const actionTriggerCooldownMs = isMaestroE2E ? 0 : 250;
 const reloadActionTriggerCooldownMs = isMaestroE2E ? 1500 : 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
@@ -2914,7 +2914,7 @@ async function runSmokeSequence() {
         await withTimeout(
           `smoke action ${action.id}`,
           () => runAction(action, values, { skipRefresh: true }),
-          action.smokeTimeoutMs ?? 45000,
+          action.smokeTimeoutMs ?? (isMaestroE2E ? 25000 : 45000),
         );
         await pause(getSmokeSequenceDelayMs(action.id));
       }
