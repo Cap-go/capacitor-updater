@@ -276,17 +276,23 @@ jobs:
               -only-testing:CapacitorUpdaterPluginTests/BundleHardeningTests
               -only-testing:CapacitorUpdaterPluginTests/CapgoSemanticVersionTests
               -only-testing:CapacitorUpdaterPluginTests/ChecksumRequiredTests
+          - shard: rest-b
+            parallel_testing: '0'
+            select: >-
               -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
               -only-testing:CapacitorUpdaterPluginTests/HttpsOnlyBuiltinMinimumTests
               -only-testing:CapacitorUpdaterPluginTests/ListChannelsTests
               -only-testing:CapacitorUpdaterPluginTests/LoggerSecurityTests
-          - shard: rest-b
+          - shard: rest-c
             parallel_testing: '0'
             select: >-
               -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
               -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
               -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
               -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
+          - shard: rest-d
+            parallel_testing: '0'
+            select: >-
               -only-testing:CapacitorUpdaterPluginTests/SessionKeyRequiredTests
               -only-testing:CapacitorUpdaterPluginTests/UpdateLifecycleTests
               -only-testing:CapacitorUpdaterPluginTests/ZipArchiveReaderTests
