@@ -102,8 +102,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     // Single listener that receives every plugin event as { type, data }.
     static final String UPDATER_EVENT = "updaterEvent";
-    // Deprecated alias emitted next to breakingAvailable; not forwarded to avoid duplicates.
-    private static final String DEPRECATED_MAJOR_AVAILABLE_EVENT = "majorAvailable";
+    // Config key removed in 9.0.0. Still read once at load to warn apps that kept it.
+    static final String REMOVED_DIRECT_UPDATE_CONFIG_KEY = "directUpdate";
+    static final String REMOVED_DIRECT_UPDATE_CONFIG_MESSAGE =
+        "The directUpdate config option was removed in 9.0.0 and is ignored. Use autoUpdate: \"atInstall\", \"onLaunch\" or \"always\" instead.";
 
     private Logger logger;
 
@@ -131,7 +133,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String PREVIEW_SOURCE_PREF_KEY = "CapacitorUpdater.previewSource";
     private static final String PREVIEW_SESSIONS_PREF_KEY = "CapacitorUpdater.previewSessions";
     private static final String PREVIEW_SESSION_ALERT_PENDING_PREF_KEY = "CapacitorUpdater.previewSessionAlertPending";
-    private static final String[] BREAKING_EVENT_NAMES = { "breakingAvailable", "majorAvailable" };
     private static final String LAST_FAILED_BUNDLE_PREF_KEY = "CapacitorUpdater.lastFailedBundle";
     private static final String LAST_REPORTED_APP_EXIT_TIMESTAMP_PREF_KEY = "CapacitorUpdater.lastReportedAppExitTimestamp";
     private static final String LAST_WEBVIEW_RENDER_PROCESS_GONE_PREF_KEY = "CapacitorUpdater.lastWebViewRenderProcessGone";
@@ -169,7 +170,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private SharedPreferences prefs;
     private final Object previewSessionsLock = new Object();
     protected CapgoUpdater implementation;
-    private Boolean persistCustomId = false;
+    private Boolean persistCustomId = true;
     private Boolean persistModifyUrl = false;
     private Boolean persistDefaultChannelOnReinstall = true;
 
@@ -335,15 +336,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return Long.toString(PackageInfoCompat.getLongVersionCode(packageInfo));
     }
 
+    /** Emits the breakingAvailable updater event for {@code version}. Empty versions are skipped. */
     private void notifyBreakingEvents(final String version) {
         if (version == null || version.isEmpty()) {
             return;
         }
-        for (final String eventName : BREAKING_EVENT_NAMES) {
-            final JSObject payload = new JSObject();
-            payload.put("version", version);
-            CapacitorUpdaterPlugin.this.notifyListeners(eventName, payload, false);
-        }
+        final JSObject payload = new JSObject();
+        payload.put("version", version);
+        CapacitorUpdaterPlugin.this.notifyListeners("breakingAvailable", payload, false);
     }
 
     private boolean shouldNotifyBreakingEvents(final JSObject response) {
@@ -715,26 +715,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return payload;
     }
 
-    static boolean shouldForwardToUpdaterEvent(final String eventName) {
-        return !UPDATER_EVENT.equals(eventName) && !DEPRECATED_MAJOR_AVAILABLE_EVENT.equals(eventName);
-    }
-
-    // Capacitor replays retained events through this overload when a listener attaches. They were
-    // already forwarded to updaterEvent when emitted, so skip forwarding here. Plugin code must emit
-    // through the three-argument overload.
+    /** Emits {@code eventName} as an updaterEvent without retaining it. See the three-argument overload. */
     @Override
     protected void notifyListeners(final String eventName, final JSObject data) {
-        super.notifyListeners(eventName, data, false);
+        this.notifyListeners(eventName, data, false);
     }
 
+    /**
+     * Every plugin event reaches JavaScript as a single updaterEvent with { type, data }. eventName is the
+     * event type (download, appReady, ...). The per-event listeners were removed in 9.0.0.
+     */
     @Override
     protected void notifyListeners(final String eventName, final JSObject data, final boolean retainUntilConsumed) {
-        super.notifyListeners(eventName, data, retainUntilConsumed);
-        if (shouldForwardToUpdaterEvent(eventName)) {
-            super.notifyListeners(UPDATER_EVENT, updaterEventPayload(eventName, data), retainUntilConsumed);
+        if (UPDATER_EVENT.equals(eventName)) {
+            // Already wrapped: Capacitor replays retained updaterEvent payloads through this path.
+            super.notifyListeners(eventName, data, retainUntilConsumed);
+            return;
         }
+        super.notifyListeners(UPDATER_EVENT, updaterEventPayload(eventName, data), retainUntilConsumed);
     }
 
+    /**
+     * Reads the plugin config, applies its defaults (httpsOnly, builtinMinimum and persistCustomId are on unless
+     * the app opts out) and starts the updater.
+     */
     @Override
     public void load() {
         super.load();
@@ -832,7 +836,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.allowPreview = this.getConfig().getBoolean("allowPreview", false);
         logger.info("appId: " + implementation.appId);
 
-        this.persistCustomId = this.getConfig().getBoolean("persistCustomId", false);
+        this.persistCustomId = this.getConfig().getBoolean("persistCustomId", true);
         this.persistModifyUrl = this.getConfig().getBoolean("persistModifyUrl", false);
         this.persistDefaultChannelOnReinstall = this.getConfig().getBoolean("persistDefaultChannelOnReinstall", true);
         this.allowSetDefaultChannel = this.getConfig().getBoolean("allowSetDefaultChannel", true);
@@ -957,7 +961,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final boolean httpsOnly = this.getConfig().getBoolean("httpsOnly", true);
         this.implementation.httpsOnly = httpsOnly;
         DownloadService.setHttpsOnly(httpsOnly);
-        this.implementation.builtinMinimum = this.getConfig().getBoolean("builtinMinimum", false);
+        this.implementation.builtinMinimum = this.getConfig().getBoolean("builtinMinimum", true);
         // Do not crash at load: requests to a non-https URL fail later with the same message.
         this.warnIfNotHttps("updateUrl", this.updateUrl);
         this.warnIfNotHttps("statsUrl", this.implementation.statsUrl);
@@ -2282,8 +2286,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.directUpdate = isDirectUpdateMode(this.directUpdateMode);
     }
 
-    /** Resolves autoUpdate (and the legacy directUpdate) from the plugin config. Shared with the headless update check. */
+    /** Resolves autoUpdate from the plugin config. Shared with the headless update check. */
     static String autoUpdateModeFromConfig(final PluginConfig pluginConfig, final Logger logger) {
+        final JSONObject rawConfig = pluginConfig.getConfigJSON();
+        if (logger != null && rawConfig != null && rawConfig.has(REMOVED_DIRECT_UPDATE_CONFIG_KEY)) {
+            logger.error(REMOVED_DIRECT_UPDATE_CONFIG_MESSAGE);
+        }
         final String configuredMode = pluginConfig.getString("autoUpdate", null);
         if (configuredMode != null && !configuredMode.isEmpty() && !"true".equals(configuredMode) && !"false".equals(configuredMode)) {
             final String mode = normalizedAutoUpdateMode(configuredMode);
@@ -2298,31 +2306,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         final boolean enabled =
             configuredMode != null ? "true".equals(configuredMode) : Boolean.TRUE.equals(pluginConfig.getBoolean("autoUpdate", true));
-        return enabled
-            ? autoUpdateModeForLegacyDirectUpdateMode(resolveLegacyDirectUpdateModeFromConfig(pluginConfig, logger))
-            : AUTO_UPDATE_MODE_OFF;
-    }
-
-    private static String resolveLegacyDirectUpdateModeFromConfig(final PluginConfig pluginConfig, final Logger logger) {
-        final String directUpdateConfig = pluginConfig.getString("directUpdate", null);
-        if (directUpdateConfig != null) {
-            if ("true".equals(directUpdateConfig)) {
-                return AUTO_UPDATE_MODE_ALWAYS;
-            }
-            if ("false".equals(directUpdateConfig) || isDirectUpdateMode(directUpdateConfig)) {
-                return directUpdateConfig;
-            }
-            if (logger != null) {
-                logger.error(
-                    "Invalid directUpdate value: \"" +
-                        directUpdateConfig +
-                        "\". Supported values are: false, true, \"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\"."
-                );
-            }
-            return "false";
-        }
-
-        return Boolean.TRUE.equals(pluginConfig.getBoolean("directUpdate", false)) ? AUTO_UPDATE_MODE_ALWAYS : "false";
+        return enabled ? AUTO_UPDATE_MODE_BACKGROUND : AUTO_UPDATE_MODE_OFF;
     }
 
     static String normalizedAutoUpdateMode(final String value) {
@@ -2366,18 +2350,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return false;
         }
         return SHAKE_MENU_GESTURE_SHAKE.equals(normalized) || SHAKE_MENU_GESTURE_THREE_FINGER_PINCH.equals(normalized);
-    }
-
-    static String autoUpdateModeForLegacyDirectUpdateMode(final String directUpdateMode) {
-        switch (directUpdateMode) {
-            case AUTO_UPDATE_MODE_INSTALL:
-            case AUTO_UPDATE_MODE_LAUNCH:
-            case AUTO_UPDATE_MODE_ALWAYS:
-                return directUpdateMode;
-            case "false":
-            default:
-                return AUTO_UPDATE_MODE_BACKGROUND;
-        }
     }
 
     static String directUpdateModeForAutoUpdateMode(final String autoUpdateMode) {
@@ -2443,9 +2415,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.onLaunchDirectUpdateUsed = true;
     }
 
+    /**
+     * Test hook: sets an instant apply mode ("false", "always", "atInstall", "onLaunch") and the matching
+     * autoUpdate mode, as if it came from the config.
+     */
     void configureDirectUpdateModeForTesting(final String directUpdateMode, final boolean onLaunchDirectUpdateUsed) {
         this.directUpdateMode = directUpdateMode;
-        this.autoUpdateMode = autoUpdateModeForLegacyDirectUpdateMode(directUpdateMode);
+        this.autoUpdateMode = isDirectUpdateMode(directUpdateMode) ? directUpdateMode : AUTO_UPDATE_MODE_BACKGROUND;
         this.autoUpdate = isAutoUpdateModeEnabled(this.autoUpdateMode);
         if (this.implementation != null) {
             this.implementation.directUpdate = isDirectUpdateMode(this.directUpdateMode);
@@ -3307,6 +3283,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
+    /** Reloads the app, rejecting an incompatible pending bundle with VERSION_BELOW_NATIVE before changing state. */
     @PluginMethod
     public void reload(final PluginCall call) {
         startNewThread(() -> {
@@ -3315,6 +3292,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 final BundleInfo next = this.implementation.getNextBundle();
 
                 if (!this.isPreviewSessionStateActive() && next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
+                    if (!next.isBuiltin()) {
+                        try {
+                            this.implementation.requireVersionNotBelowBuiltin(next.getVersionName());
+                        } catch (IOException e) {
+                            call.reject(e.getMessage(), "VERSION_BELOW_NATIVE", e);
+                            return;
+                        }
+                    }
                     final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
                     final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                     logger.info("Applying pending bundle before reload: " + next.getVersionName());
@@ -5879,12 +5864,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (!this.shouldUseDirectUpdate()) {
                 if ("false".equals(this.directUpdateMode)) {
                     logger.warn(
-                        "autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen."
+                        "autoSplashscreen is enabled but autoUpdate is not configured for immediate updates. Set autoUpdate to 'always' or disable autoSplashscreen."
                     );
                 } else if ("atInstall".equals(this.directUpdateMode) || "onLaunch".equals(this.directUpdateMode)) {
                     logger.info(
-                        "autoSplashscreen is enabled but directUpdate is set to \"" +
-                            this.directUpdateMode +
+                        "autoSplashscreen is enabled but autoUpdate is set to \"" +
+                            this.autoUpdateMode +
                             "\". This is normal. Skipping autoSplashscreen logic."
                     );
                 }

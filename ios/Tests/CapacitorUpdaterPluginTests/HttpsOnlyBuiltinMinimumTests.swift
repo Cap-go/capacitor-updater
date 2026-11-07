@@ -1,7 +1,8 @@
 import XCTest
+import Capacitor
 @testable import CapacitorUpdaterPlugin
 
-/// `httpsOnly` and `builtinMinimum` download gates.
+/// `httpsOnly` download gates and `builtinMinimum` download and activation gates.
 final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
     private final class StatsTrackingCapgoUpdater: CapgoUpdater {
         var sentStatsActions: [String] = []
@@ -17,15 +18,53 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
         return updater
     }
 
-    func testDefaultsAreHttpsOnlyOnAndBuiltinMinimumOff() throws {
+    private final class ReloadTrackingPlugin: CapacitorUpdaterPlugin {
+        var reloadCalls = 0
+
+        /// Simulates a successful WebView reload and records whether activation reached that step.
+        override func _reload() -> Bool { // NOSONAR Must match the inherited plugin method name.
+            reloadCalls += 1
+            return true
+        }
+
+        override func restoreLiveBundleStateAfterFailedReload() {
+            // This test has no WebView bridge to restore; it verifies the persisted bundle state instead.
+        }
+    }
+
+    /// Persists a real downloaded bundle and restores the active, fallback and pending state after the test.
+    private func withStoredBundle(
+        version: String,
+        _ body: (StatsTrackingCapgoUpdater, BundleInfo) throws -> Void
+    ) throws {
+        let updater = makeUpdater()
+        let previousState = updater.captureResetState()
+        let bundle = BundleInfo(id: UUID().uuidString, version: version, status: .SUCCESS, downloaded: Date(), checksum: "abc")
+        let directory = try updater.getBundleDirectory(id: bundle.getId())
+        defer {
+            updater.restoreResetState(previousState)
+            updater.saveBundleInfo(id: bundle.getId(), bundle: nil)
+            try? FileManager.default.removeItem(at: directory)
+            updater.shutdown()
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "<html>retained bundle</html>".write(to: directory.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+        XCTAssertTrue(updater.saveBundleInfo(id: bundle.getId(), bundle: bundle))
+        updater.prepareResetStateForTransition()
+        updater.versionBuild = "2.0.0"
+        try body(updater, bundle)
+    }
+
+    func testDefaultsAreHttpsOnlyOnAndBuiltinMinimumOn() throws {
         let updater = makeUpdater()
         XCTAssertTrue(updater.httpsOnly)
-        XCTAssertFalse(updater.builtinMinimum)
+        XCTAssertTrue(updater.builtinMinimum)
         XCTAssertTrue(RedirectPolicyDelegate().httpsOnly)
         updater.versionBuild = "2.0.0"
-        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("1.0.0"))
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("2.0.0"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.0.0"))
         XCTAssertNotNil(updater.checkAllowedScheme(try XCTUnwrap(URL(string: "http://example.com/a.zip"))))
-        XCTAssertTrue(updater.sentStatsActions.isEmpty)
+        XCTAssertEqual(updater.sentStatsActions, ["version_below_native"])
     }
 
     // MARK: - builtinMinimum
@@ -74,6 +113,121 @@ final class HttpsOnlyBuiltinMinimumTests: XCTestCase {
             try updater.downloadManifest(manifest: manifest, version: "2.0.0", sessionKey: "")
         ) { error in
             XCTAssertEqual((error as NSError).code, 8)
+        }
+    }
+
+    /// A native upgrade must not let manual set reactivate an older stored bundle or mark it corrupt.
+    func testManualSetRejectsRetainedBundleWithoutChangingState() throws {
+        try withStoredBundle(version: "1.9.9") { updater, bundle in
+            let previousState = updater.captureResetState()
+
+            XCTAssertFalse(updater.set(id: bundle.getId()))
+
+            XCTAssertEqual(updater.captureResetState().currentBundlePath, previousState.currentBundlePath)
+            XCTAssertEqual(updater.getBundleInfo(id: bundle.getId()).getStatus(), BundleStatus.SUCCESS.storedValue)
+            XCTAssertEqual(updater.sentStatsActions, ["version_below_native"])
+        }
+    }
+
+    /// Explicit reload must reject an incompatible pending bundle before reloading or clearing its ID.
+    func testReloadRejectsRetainedBundleAndKeepsItPending() throws {
+        try withStoredBundle(version: "1.9.9") { updater, bundle in
+            XCTAssertTrue(updater.setNextBundle(next: bundle.getId()))
+            let previousState = updater.captureResetState()
+            let plugin = ReloadTrackingPlugin()
+            plugin.implementation = updater
+            var rejectionMessages: [String] = []
+            var rejectionCodes: [String?] = []
+            let call = try XCTUnwrap(CAPPluginCall(
+                callbackId: "reload-version-floor",
+                methodName: "reload",
+                options: [:],
+                success: { _, _ in XCTFail("Reload must reject the old bundle") },
+                error: { error in
+                    rejectionMessages.append(error?.message ?? "")
+                    rejectionCodes.append(error?.code)
+                }
+            ))
+
+            plugin.reload(call)
+            plugin.reload(call)
+
+            XCTAssertEqual(rejectionMessages, Array(repeating: "Bundle version 1.9.9 is below native version 2.0.0 (builtinMinimum)", count: 2))
+            XCTAssertEqual(rejectionCodes, ["VERSION_BELOW_NATIVE", "VERSION_BELOW_NATIVE"])
+            XCTAssertEqual(plugin.reloadCalls, 0)
+            XCTAssertEqual(updater.captureResetState().currentBundlePath, previousState.currentBundlePath)
+            XCTAssertEqual(updater.captureResetState().fallbackBundleId, previousState.fallbackBundleId)
+            XCTAssertEqual(updater.getNextBundle()?.getId(), bundle.getId())
+            XCTAssertEqual(updater.getBundleInfo(id: bundle.getId()).getStatus(), BundleStatus.PENDING.storedValue)
+            XCTAssertEqual(updater.sentStatsActions, ["set_next", "version_below_native"])
+        }
+    }
+
+    /// Duplicate reporting is suppressed without caching validation or hiding changes to the native floor or opt-out.
+    func testVersionFloorStatsFollowPolicyChanges() throws {
+        let updater = makeUpdater()
+        updater.versionBuild = "2.0.0"
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 1)
+        updater.versionBuild = "3.0.0"
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 2)
+        updater.builtinMinimum = false
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        updater.builtinMinimum = true
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 3)
+        XCTAssertNoThrow(try updater.requireVersionNotBelowBuiltin("3.0.0"))
+        XCTAssertThrowsError(try updater.requireVersionNotBelowBuiltin("1.9.9"))
+        XCTAssertEqual(updater.sentStatsActions.count, 4)
+    }
+
+    /// Both activation entry points accept stored bundles at or above the native version.
+    func testStoredBundleActivationAcceptsEqualOrNewerVersions() throws {
+        for version in ["2.0.0", "2.0.1"] {
+            try withStoredBundle(version: version) { updater, bundle in
+                XCTAssertTrue(updater.set(id: bundle.getId()))
+                XCTAssertEqual(updater.getCurrentBundleId(), bundle.getId())
+                updater.prepareResetStateForTransition()
+                XCTAssertTrue(updater.stagePendingReload(bundle: bundle))
+                XCTAssertEqual(updater.getCurrentBundleId(), bundle.getId())
+            }
+        }
+    }
+
+    /// Independent web versioning still works when the app explicitly disables the version floor.
+    func testStoredBundleActivationAllowsExplicitOptOut() throws {
+        try withStoredBundle(version: "1.9.9") { updater, bundle in
+            updater.builtinMinimum = false
+            XCTAssertTrue(updater.set(id: bundle.getId()))
+            XCTAssertEqual(updater.getCurrentBundleId(), bundle.getId())
+            updater.prepareResetStateForTransition()
+            XCTAssertTrue(updater.stagePendingReload(bundle: bundle))
+            XCTAssertEqual(updater.getCurrentBundleId(), bundle.getId())
+        }
+    }
+
+    /// A rejected pending update must not prevent the app from resetting to its builtin bundle.
+    func testBuiltinResetClearsRejectedPendingBundle() throws {
+        try withStoredBundle(version: "1.9.9") { updater, bundle in
+            XCTAssertTrue(updater.setNextBundle(next: bundle.getId()))
+            XCTAssertFalse(updater.stagePendingReload(bundle: bundle))
+
+            XCTAssertTrue(updater.set(id: BundleInfo.ID_BUILTIN))
+
+            XCTAssertTrue(updater.getCurrentBundle().isBuiltin())
+            XCTAssertTrue(updater.getNextBundle()?.isUnknown() ?? true)
+        }
+    }
+
+    /// Restoring a WebView's previous bundle after a failed transition is not a new activation.
+    func testFailedReloadCanRestoreAnExistingOlderBundle() throws {
+        try withStoredBundle(version: "1.9.9") { updater, bundle in
+            updater.restoreCurrentBundle(bundle)
+
+            XCTAssertEqual(updater.getCurrentBundleId(), bundle.getId())
+            XCTAssertTrue(updater.sentStatsActions.isEmpty)
         }
     }
 

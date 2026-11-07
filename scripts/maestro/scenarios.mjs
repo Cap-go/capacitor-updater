@@ -61,18 +61,6 @@ export const scenarios = {
       { version: 'always-v2', label: 'always-v2' },
     ],
   },
-  'legacy-true': {
-    id: 'legacy-true',
-    mode: 'auto',
-    delivery: 'zip',
-    autoUpdate: true,
-    directUpdate: 'true',
-    builtinLabel: 'legacy-true-builtin',
-    releases: [
-      { version: 'legacy-true-v1', label: 'legacy-true-v1' },
-      { version: 'legacy-true-v2', label: 'legacy-true-v2' },
-    ],
-  },
   'at-install': {
     id: 'at-install',
     mode: 'auto',

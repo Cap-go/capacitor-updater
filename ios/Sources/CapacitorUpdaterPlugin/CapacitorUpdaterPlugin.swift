@@ -105,8 +105,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     static let updateCheckErrorAction = "update_check_error"
     // Single listener that receives every plugin event as { type, data }.
     static let updaterEvent = "updaterEvent"
-    // Deprecated alias emitted next to breakingAvailable; not forwarded to avoid duplicates.
-    static let deprecatedMajorAvailableEvent = "majorAvailable"
+    // Config key removed in 9.0.0. Still read once at load to warn apps that kept it.
+    static let removedDirectUpdateConfigKey = "directUpdate"
     static let autoUpdateModeOff = "off"
     static let autoUpdateModeBackground = "atBackground"
     static let autoUpdateModeInstall = "atInstall"
@@ -210,7 +210,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var cleanupTimedOut = false
     private var cleanupThread: Thread?
     private var defaultChannelCleanupMustRetry = false
-    private var persistCustomId = false
+    private var persistCustomId = true
     private var persistModifyUrl = false
     private var allowManualBundleError = false
     private var allowPreview = false
@@ -240,6 +240,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var delayUpdateUtils: DelayUpdateUtils!
     private var nativeUpdatePromptCoordinator: NativeUpdatePromptCoordinator?
 
+    /// Reads the plugin config, applies its defaults (`httpsOnly`, `builtinMinimum` and `persistCustomId` are on
+    /// unless the app opts out) and starts the updater.
     override public func load() {
         let disableJSLogging = getConfig().getBoolean("disableJSLogging", false)
         // Set webView for logging to JavaScript console
@@ -270,7 +272,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         // Use DeviceIdHelper to get or create device ID that persists across reinstalls
         self.implementation.deviceID = DeviceIdHelper.getOrCreateDeviceId()
-        persistCustomId = getConfig().getBoolean("persistCustomId", false)
+        persistCustomId = getConfig().getBoolean("persistCustomId", true)
         allowSetDefaultChannel = getConfig().getBoolean("allowSetDefaultChannel", true)
         persistDefaultChannelOnReinstall = getConfig().getBoolean("persistDefaultChannelOnReinstall", true)
         if persistCustomId {
@@ -316,7 +318,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
         implementation.httpsOnly = getConfig().getBoolean("httpsOnly", true)
-        implementation.builtinMinimum = getConfig().getBoolean("builtinMinimum", false)
+        implementation.builtinMinimum = getConfig().getBoolean("builtinMinimum", true)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)
         shakeMenuEnabled = getConfig().getBoolean("shakeMenu", false)
         shakeChannelSelectorEnabled = getConfig().getBoolean("allowShakeChannelSelector", false)
@@ -1298,22 +1300,18 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return ["type": eventName, "data": data ?? [:]]
     }
 
-    static func shouldForwardToUpdaterEvent(_ eventName: String) -> Bool {
-        return eventName != updaterEvent && eventName != deprecatedMajorAvailableEvent
-    }
-
+    /// Every plugin event is delivered to JavaScript as a single `updaterEvent` with `{ type, data }`.
+    /// `eventName` is the event type (`download`, `appReady`, ...). The per-event listeners were removed in 9.0.0.
+    ///
     /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
     /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
     private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
-            self.notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
-            if CapacitorUpdaterPlugin.shouldForwardToUpdaterEvent(eventName) {
-                self.notifyListeners(
-                    CapacitorUpdaterPlugin.updaterEvent,
-                    data: CapacitorUpdaterPlugin.updaterEventPayload(eventName: eventName, data: data),
-                    retainUntilConsumed: retainUntilConsumed
-                )
-            }
+            self.notifyListeners(
+                CapacitorUpdaterPlugin.updaterEvent,
+                data: CapacitorUpdaterPlugin.updaterEventPayload(eventName: eventName, data: data),
+                retainUntilConsumed: retainUntilConsumed
+            )
         }
 
         if Thread.isMainThread {
@@ -1896,6 +1894,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Reloads the app, rejecting an incompatible pending bundle with VERSION_BELOW_NATIVE before changing state.
     @objc func reload(_ call: CAPPluginCall) {
         let current: BundleInfo = self.implementation.getCurrentBundle()
         let next: BundleInfo? = self.implementation.getNextBundle()
@@ -1904,6 +1903,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            let next = next,
            !next.isErrorStatus(),
            next.getId() != current.getId() {
+            if !next.isBuiltin() {
+                do {
+                    try self.implementation.requireVersionNotBelowBuiltin(next.getVersionName())
+                } catch {
+                    call.reject(error.localizedDescription, "VERSION_BELOW_NATIVE", error)
+                    return
+                }
+            }
             let previousState = self.implementation.captureResetState()
             let previousBundleName = self.implementation.getCurrentBundle().getVersionName()
             logger.info("Applying pending bundle before reload: \(next.toString())")
@@ -4216,6 +4223,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Resolves `autoUpdate` (boolean or string mode) into the auto update and instant apply state.
+    /// The `directUpdate` key removed in 9.0.0 is ignored and only logged.
     private func configureAutoUpdateModeFromConfig() {
         if let configuredMode = getConfig().getString("autoUpdate"),
            configuredMode != "",
@@ -4231,9 +4240,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             let configuredMode = getConfig().getString("autoUpdate")
             let enabled = configuredMode != nil ? configuredMode == "true" : getConfig().getBoolean("autoUpdate", true)
-            autoUpdateMode = enabled
-                ? Self.autoUpdateModeForLegacyDirectUpdateMode(resolveLegacyDirectUpdateModeFromConfig())
-                : Self.autoUpdateModeOff
+            autoUpdateMode = enabled ? Self.autoUpdateModeBackground : Self.autoUpdateModeOff
+        }
+
+        if getConfig().getConfigJSON()[Self.removedDirectUpdateConfigKey] != nil {
+            logger.error(Self.removedDirectUpdateConfigMessage)
         }
 
         autoUpdate = Self.isAutoUpdateModeEnabled(autoUpdateMode)
@@ -4241,23 +4252,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         directUpdate = Self.isDirectUpdateMode(directUpdateMode)
     }
 
-    private func resolveLegacyDirectUpdateModeFromConfig() -> String {
-        if let directUpdateString = getConfig().getString("directUpdate") {
-            if directUpdateString == "true" {
-                return Self.autoUpdateModeAlways
-            }
-            if directUpdateString == "false" || Self.isDirectUpdateMode(directUpdateString) {
-                return directUpdateString
-            }
-            logger.error(
-                "Invalid directUpdate value: \"\(directUpdateString)\". Supported values are: false, true, " +
-                    "\"always\", \"atInstall\", \"onLaunch\". Defaulting to \"false\"."
-            )
-            return "false"
-        }
-
-        return getConfig().getBoolean("directUpdate", false) ? Self.autoUpdateModeAlways : "false"
-    }
+    static let removedDirectUpdateConfigMessage =
+        "The directUpdate config option was removed in 9.0.0 and is ignored. " +
+        "Use autoUpdate: \"atInstall\", \"onLaunch\" or \"always\" instead."
 
     static func normalizedAutoUpdateMode(_ value: String?) -> String {
         guard let value else {
@@ -4295,15 +4292,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return false
         }
         return normalized == shakeMenuGestureShake || normalized == shakeMenuGestureThreeFingerPinch
-    }
-
-    static func autoUpdateModeForLegacyDirectUpdateMode(_ directUpdateMode: String) -> String {
-        switch directUpdateMode {
-        case autoUpdateModeInstall, autoUpdateModeLaunch, autoUpdateModeAlways:
-            return directUpdateMode
-        default:
-            return autoUpdateModeBackground
-        }
     }
 
     static func directUpdateModeForAutoUpdateMode(_ autoUpdateMode: String) -> String {
@@ -4369,9 +4357,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.setOnLaunchDirectUpdateUsed(true)
     }
 
+    /// Test hook: sets an instant apply mode (`"false"`, `"always"`, `"atInstall"`, `"onLaunch"`) and the
+    /// matching `autoUpdate` mode, as if it came from the config.
     func configureDirectUpdateModeForTesting(_ directUpdateMode: String, onLaunchDirectUpdateUsed: Bool = false) {
         self.directUpdateMode = directUpdateMode
-        self.autoUpdateMode = Self.autoUpdateModeForLegacyDirectUpdateMode(directUpdateMode)
+        self.autoUpdateMode = Self.isDirectUpdateMode(directUpdateMode) ? directUpdateMode : Self.autoUpdateModeBackground
         self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
         self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
@@ -4466,13 +4456,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.getOnLaunchDirectUpdateUsed()
     }
 
+    /// Emits the `breakingAvailable` updater event for `version`. Empty versions are skipped.
     private func notifyBreakingEvents(version: String) {
         guard !version.isEmpty else {
             return
         }
-        let payload: [String: Any] = ["version": version]
-        self.notifyListenersOnMain("breakingAvailable", data: payload)
-        self.notifyListenersOnMain("majorAvailable", data: payload)
+        self.notifyListenersOnMain("breakingAvailable", data: ["version": version])
     }
 
     private func shouldNotifyBreakingEvents(response: AppVersion) -> Bool {
@@ -5226,9 +5215,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             if !self.shouldUseDirectUpdate() {
                 if self.directUpdateMode == "false" {
-                    logger.warn("autoSplashscreen is enabled but directUpdate is not configured for immediate updates. Set directUpdate to 'always' or disable autoSplashscreen.")
+                    logger.warn("autoSplashscreen is enabled but autoUpdate is not configured for immediate updates. Set autoUpdate to 'always' or disable autoSplashscreen.")
                 } else if self.directUpdateMode == "atInstall" || self.directUpdateMode == "onLaunch" {
-                    logger.info("autoSplashscreen is enabled but directUpdate is set to \"\(self.directUpdateMode)\". This is normal. Skipping autoSplashscreen logic.")
+                    logger.info("autoSplashscreen is enabled but autoUpdate is set to \"\(self.autoUpdateMode)\". This is normal. Skipping autoSplashscreen logic.")
                 }
                 canShowSplashscreen = false
             }

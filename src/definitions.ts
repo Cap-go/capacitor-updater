@@ -165,28 +165,8 @@ declare module '@capacitor/cli' {
       version?: string;
 
       /**
-       * Configure when the plugin should direct install updates. Only for autoUpdate mode.
-       * Instant apply (`atInstall`, `onLaunch`, `always`) should be uploaded with `--delta` so the update does not slow the user experience. A full zip, especially over 10MB, is relatively slow for users.
-       * These modes require `autoSplashscreen: true` and `@capacitor/splash-screen` installed with `launchAutoHide: false`.
-       * This flag makes the CLI upload delta in CI and ask for confirmation in local uploads.
-       * - false: Never do direct updates
-       * - atInstall: Same as `"atInstall"` for {@link autoUpdate}
-       * - onLaunch: Same as `"onLaunch"` for {@link autoUpdate}
-       * - always: Same as `"always"` for {@link autoUpdate}
-       * - true: (deprecated) Same as "always" for backward compatibility
-       *
-       * @deprecated Use {@link PluginsConfig.CapacitorUpdater.autoUpdate} string modes instead.
-       *
-       * Only available for Android and iOS.
-       *
-       * @default false
-       * @since  5.1.0
-       */
-      directUpdate?: boolean | 'atInstall' | 'always' | 'onLaunch';
-
-      /**
        * Automatically hide the splashscreen after instant apply updates finish, or when no update is needed.
-       * Required when using instant apply modes (`"atInstall"`, `"onLaunch"`, `"always"`), including the deprecated `directUpdate` values `"atInstall"`, `"onLaunch"`, `"always"`, and `true`.
+       * Required when using the instant apply {@link autoUpdate} modes (`"atInstall"`, `"onLaunch"`, `"always"`).
        * `@capacitor/splash-screen` must be installed and configured with `launchAutoHide: false`.
        * This removes the need to manually listen for appReady events and call SplashScreen.hide().
        *
@@ -349,14 +329,12 @@ declare module '@capacitor/cli' {
        * replayed old update response rolling the app back below its store version. Only the numeric
        * `major.minor.patch` part is compared (a `1.2.3-beta.1` bundle is accepted on native `1.2.3`), and
        * versions that do not parse as semver skip the check. Rejections are reported as the
-       * `version_below_native` stat. Keep it off if you version web bundles independently of the native app
-       * (for example native `2.0.0` with bundle `1.4.7`).
-       *
-       * Future-major default candidate: `true`.
+       * `version_below_native` stat. Set it to `false` if you version web bundles independently of the native
+       * app (for example native `2.0.0` with bundle `1.4.7`).
        *
        * Only available for Android and iOS.
        *
-       * @default false
+       * @default true (was `false` before 9.0.0)
        * @since 8.54.0
        */
       builtinMinimum?: boolean;
@@ -392,10 +370,12 @@ declare module '@capacitor/cli' {
 
       /**
        * Persist the customId set through {@link CapacitorUpdaterPlugin.setCustomId} across app restarts.
+       * Set it to `false` to keep the customId in memory only, so it resets on every app launch.
+       * Calling `setCustomId({ customId: '' })` clears the saved value.
        *
        * Only available for Android and iOS.
        *
-       * @default false (will be true by default in a future major release v8.x.x)
+       * @default true (was `false` before 9.0.0)
        * @since  7.17.3
        */
       persistCustomId?: boolean;
@@ -525,7 +505,7 @@ declare module '@capacitor/cli' {
       /**
        * When enabled, show a native dialog prompting the user to install a newer native app from the App Store or Play Store.
        * The prompt appears when a live update is blocked because the device native app is too old, including backend
-       * `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` / `majorAvailable` flows.
+       * `disable_auto_update_*` responses, `store_update_required`, and `breakingAvailable` flows.
        *
        * Only available for Android and iOS. No-op on web.
        *
@@ -995,6 +975,9 @@ export interface CapacitorUpdaterPlugin {
    * - Testing update flows during development
    *
    * If no update is pending (no call to {@link next}), this simply reloads the current bundle.
+   * If `builtinMinimum` rejects a pending bundle below the native version, the promise rejects with
+   * code `VERSION_BELOW_NATIVE` and a message naming both versions. The current bundle and pending
+   * update remain unchanged, so you can reset to builtin or choose another bundle.
    *
    * @returns {Promise<void>} A promise that may never resolve because the app will be reloaded.
    * @throws {Error} If the reload operation fails.
@@ -1075,9 +1058,9 @@ export interface CapacitorUpdaterPlugin {
    * bundle without reimplementing the update protocol in JavaScript.
    *
    * The promise resolves after the native background work has been queued, not
-   * after the update has been downloaded or installed. Listen to updater events
-   * such as `updateAvailable`, `downloadComplete`, `downloadFailed`, and
-   * `noNeedUpdate` for the final result.
+   * after the update has been downloaded or installed. Listen to `updaterEvent`
+   * and its `updateAvailable`, `downloadComplete`, `downloadFailed`, and
+   * `noNeedUpdate` types for the final result.
    *
    * Native support is available on iOS and Android. On Web, this method returns
    * a result with `status: 'unavailable'`. Native platforms also return
@@ -1212,13 +1195,15 @@ export interface CapacitorUpdaterPlugin {
    * **Important: Listen for the `channelPrivate` event**
    *
    * When a user attempts to set a channel that doesn't allow device self-assignment, the method will
-   * throw an error AND fire a {@link addListener}('channelPrivate') event. You should listen to this event
+   * throw an error AND emit a `channelPrivate` {@link UpdaterEvent}. You should listen to this event
    * to provide appropriate feedback to users:
    *
    * ```typescript
-   * CapacitorUpdater.addListener('channelPrivate', (data) => {
-   *   console.warn(`Cannot access channel "${data.channel}": ${data.message}`);
-   *   // Show user-friendly message
+   * CapacitorUpdater.addListener('updaterEvent', (event) => {
+   *   if (event.type === 'channelPrivate') {
+   *     console.warn(`Cannot access channel "${event.data.channel}": ${event.data.message}`);
+   *     // Show user-friendly message
+   *   }
    * });
    * ```
    *
@@ -1310,7 +1295,7 @@ export interface CapacitorUpdaterPlugin {
    * - A/B testing or feature flagging
    *
    * **Persistence:**
-   * - When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is `true`, the ID persists across app restarts
+   * - When {@link PluginsConfig.CapacitorUpdater.persistCustomId} is `true` (the default), the ID persists across app restarts
    * - When `false`, the ID is only kept for the current session
    *
    * **Clearing the custom ID:**
@@ -1415,18 +1400,8 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Remove all event listeners registered for this plugin.
    *
-   * This unregisters all listeners added via {@link addListener} for all event types:
-   * - `updaterEvent`
-   * - `download`
-   * - `noNeedUpdate`
-   * - `updateCheckResult`
-   * - `updateAvailable`
-   * - `downloadComplete`
-   * - `downloadFailed`
-   * - `breakingAvailable` / `majorAvailable`
-   * - `updateFailed`
-   * - `appReloaded`
-   * - `appReady`
+   * This unregisters every listener added via {@link addListener}, including all
+   * `updaterEvent` listeners.
    *
    * Use this during cleanup (e.g., when unmounting components or closing screens)
    * to prevent memory leaks from lingering event listeners.
@@ -1439,12 +1414,15 @@ export interface CapacitorUpdaterPlugin {
   /**
    * Listen for every updater event with a single listener.
    *
-   * Each call receives `{ type, data }`: `type` is the event name (`download`, `updateAvailable`,
-   * `downloadFailed`, `appReady`, ...) and `data` is the payload the matching legacy listener receives.
-   * When the native layer retains an event until a listener attaches (for example `set` and `appReady`),
-   * `updaterEvent` gets the same retention.
+   * Each call receives `{ type, data }`: `type` is the event name and `data` is its payload
+   * (see {@link UpdaterEvent} for every type and its payload).
    *
-   * The per-event listeners below are deprecated and will be removed in v9.
+   * Since 9.0.0 this is the only listener the plugin emits. The per-event listeners
+   * (`addListener('download', ...)`, `addListener('appReady', ...)`, ...) and the `majorAvailable`
+   * alias were removed: switch on `event.type` instead.
+   *
+   * `set` and `appReady` are retained natively until a listener attaches, so they are still
+   * delivered after a reload even when the listener is registered later in app startup.
    *
    * ```typescript
    * CapacitorUpdater.addListener('updaterEvent', (event) => {
@@ -1455,6 +1433,9 @@ export interface CapacitorUpdaterPlugin {
    *     case 'downloadFailed':
    *       console.warn('download failed', event.data.version);
    *       break;
+   *     case 'channelPrivate':
+   *       console.warn(`Cannot access channel "${event.data.channel}": ${event.data.message}`);
+   *       break;
    *   }
    * });
    * ```
@@ -1462,187 +1443,6 @@ export interface CapacitorUpdaterPlugin {
    * @since 8.53.0
    */
   addListener(eventName: 'updaterEvent', listenerFunc: (event: UpdaterEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for bundle download event in the App. Fires once a download has started, during downloading and when finished.
-   * This will return you all download percent during the download
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 2.0.11
-   */
-  addListener(eventName: 'download', listenerFunc: (state: DownloadEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for no need to update event, useful when you want force check every time the app is launched
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 4.0.0
-   */
-  addListener(eventName: 'noNeedUpdate', listenerFunc: (state: NoNeedEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for update check results before the updater decides whether to download.
-   * The backend can classify the UpdateCheckResultEvent payload as `up_to_date`, `blocked`, or `failed`.
-   *
-   * This event is emitted alongside legacy events. For `up_to_date` and `blocked`, it is emitted before
-   * `noNeedUpdate` and does not emit `downloadFailed`. For `failed`, it is emitted before the legacy
-   * `downloadFailed` event; native code also sends an `update_check_error` stat (with error metadata)
-   * instead of `download_fail`, because no bundle download was attempted.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 8.45.11
-   */
-  addListener(
-    eventName: 'updateCheckResult',
-    listenerFunc: (state: UpdateCheckResultEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for available update event, useful when you want to force check every time the app is launched
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 4.0.0
-   */
-  addListener(
-    eventName: 'updateAvailable',
-    listenerFunc: (state: UpdateAvailableEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for downloadComplete events.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 4.0.0
-   */
-  addListener(
-    eventName: 'downloadComplete',
-    listenerFunc: (state: DownloadCompleteEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for breaking update events when the backend flags an update as incompatible with the current app.
-   * Emits the same payload as the legacy `majorAvailable` listener.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 7.22.0
-   */
-  addListener(
-    eventName: 'breakingAvailable',
-    listenerFunc: (state: BreakingAvailableEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for Major update event in the App, let you know when major update is blocked by setting disableAutoUpdateBreaking
-   *
-   * @deprecated Deprecated alias for {@link addListener} with `breakingAvailable`. Emits the same payload. will be removed in v8
-   * @since 2.3.0
-   */
-  addListener(
-    eventName: 'majorAvailable',
-    listenerFunc: (state: MajorAvailableEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for update fail event in the App, let you know when update has fail to install at next app start
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 2.3.0
-   */
-  addListener(
-    eventName: 'updateFailed',
-    listenerFunc: (state: UpdateFailedEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for set event in the App, let you know when a bundle has been applied successfully.
-   * This event is retained natively until JavaScript consumes it, so if the app reloads before your
-   * listener is attached, the last pending `set` event is delivered once the listener subscribes.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 8.43.12
-   */
-  addListener(eventName: 'set', listenerFunc: (state: SetEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for set next event in the App, let you know when a bundle is queued as the next bundle to install.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 6.14.0
-   */
-  addListener(eventName: 'setNext', listenerFunc: (state: SetNextEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for download fail event in the App, let you know when a bundle download has failed
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 4.0.0
-   */
-  addListener(
-    eventName: 'downloadFailed',
-    listenerFunc: (state: DownloadFailedEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   *  Listen for reload event in the App, let you know when reload has happened
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 4.3.0
-   */
-  addListener(eventName: 'appReloaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for app ready event in the App, let you know when app is ready to use.
-   * This event is retained natively until JavaScript consumes it, so it can still be delivered after
-   * a reload even if the listener is attached later in app startup.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 5.1.0
-   */
-  addListener(eventName: 'appReady', listenerFunc: (state: AppReadyEvent) => void): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for channel private event, fired when attempting to set a channel that doesn't allow device self-assignment.
-   *
-   * This event is useful for:
-   * - Informing users they don't have permission to switch to a specific channel
-   * - Implementing custom error handling for channel restrictions
-   * - Logging unauthorized channel access attempts
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 7.34.0
-   */
-  addListener(
-    eventName: 'channelPrivate',
-    listenerFunc: (state: ChannelPrivateEvent) => void,
-  ): Promise<PluginListenerHandle>;
-
-  /**
-   * Listen for flexible update state changes on Android.
-   *
-   * This event fires during the flexible update download process, providing:
-   * - Download progress (bytes downloaded / total bytes)
-   * - Installation status changes
-   *
-   * **Install status values:**
-   * - `UNKNOWN` (0): Unknown status
-   * - `PENDING` (1): Download pending
-   * - `DOWNLOADING` (2): Download in progress
-   * - `INSTALLING` (3): Installing the update
-   * - `INSTALLED` (4): Update installed (app restart needed)
-   * - `FAILED` (5): Update failed
-   * - `CANCELED` (6): Update was canceled
-   * - `DOWNLOADED` (11): Download complete, ready to install
-   *
-   * When status is `DOWNLOADED`, you should prompt the user and call
-   * {@link completeFlexibleUpdate} to finish the installation.
-   *
-   * @deprecated Use `addListener('updaterEvent', ...)` and switch on `event.type`. This listener keeps working until v9.
-   * @since 8.0.0
-   */
-  addListener(
-    eventName: 'onFlexibleUpdateStateChange',
-    listenerFunc: (state: FlexibleUpdateState) => void,
-  ): Promise<PluginListenerHandle>;
 
   /**
    * Check if the auto-update feature is available (not disabled by custom server configuration).
@@ -1918,7 +1718,7 @@ export interface CapacitorUpdaterPlugin {
    * 3. Notifies when download is complete
    * 4. Requires calling {@link completeFlexibleUpdate} to install
    *
-   * Monitor the download progress using the `onFlexibleUpdateStateChange` listener.
+   * Monitor the download progress with the `onFlexibleUpdateStateChange` type of `updaterEvent`.
    *
    * **Requirements:**
    * - Android only (throws error on iOS)
@@ -1927,7 +1727,7 @@ export interface CapacitorUpdaterPlugin {
    *
    * **Typical flow:**
    * 1. Call `startFlexibleUpdate()` to begin download
-   * 2. Listen to `onFlexibleUpdateStateChange` for progress
+   * 2. Listen to `updaterEvent` and handle `onFlexibleUpdateStateChange` for progress
    * 3. When status is `DOWNLOADED`, prompt user to restart
    * 4. Call `completeFlexibleUpdate()` to install and restart
    *
@@ -2102,22 +1902,19 @@ export interface DownloadEvent {
   bundle: BundleInfo;
 }
 
-export interface MajorAvailableEvent {
-  /**
-   * Emit when a breaking update is available.
-   *
-   * @deprecated Deprecated alias for {@link BreakingAvailableEvent}. Receives the same payload.
-   * @since  4.0.0
-   */
-  version: string;
-}
-
 /**
- * Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvailable`.
+ * Payload of the `breakingAvailable` {@link UpdaterEvent}.
  *
  * @since 7.22.0
  */
-export type BreakingAvailableEvent = MajorAvailableEvent;
+export interface BreakingAvailableEvent {
+  /**
+   * Version of the breaking update that the backend blocked for this native app.
+   *
+   * @since 7.22.0
+   */
+  version: string;
+}
 
 export interface DownloadFailedEvent {
   /**
@@ -2188,10 +1985,27 @@ export interface ChannelPrivateEvent {
 
 /**
  * Payload of the single `updaterEvent` listener: every plugin event as `{ type, data }`.
- * `type` is the legacy event name and `data` is the same payload the legacy listener receives,
- * so you can switch on `type` and get a typed `data`.
+ * Switch on `type` to get a typed `data`.
  *
- * The deprecated `majorAvailable` alias is not forwarded: use `breakingAvailable`.
+ * - `download`: download progress of a bundle, from start to finish (`percent` between 0 and 100).
+ * - `noNeedUpdate`: the update check found nothing to install.
+ * - `updateCheckResult`: classified result of an update check, before the updater decides whether to download.
+ *   For `up_to_date` and `blocked` it is emitted before `noNeedUpdate` and no `downloadFailed` follows. For `failed`
+ *   it is emitted before `downloadFailed`, and native code sends an `update_check_error` stat instead of
+ *   `download_fail` because no bundle download was attempted.
+ * - `updateAvailable`: a new bundle is downloaded and ready.
+ * - `downloadComplete`: a bundle download finished.
+ * - `downloadFailed`: a bundle download or update check failed.
+ * - `breakingAvailable`: the backend blocked an update as incompatible with the current native app.
+ * - `updateFailed`: a bundle failed to install at the next app start and was rolled back.
+ * - `set`: a bundle was applied. Retained natively until a listener consumes it.
+ * - `setNext`: a bundle was queued as the next bundle to install.
+ * - `appReloaded`: the app reloaded.
+ * - `appReady`: the app is ready to use. Retained natively until a listener consumes it.
+ * - `channelPrivate`: `setChannel()` targeted a channel that does not allow device self-assignment.
+ * - `onFlexibleUpdateStateChange`: Android flexible in-app update progress and install status.
+ *   When `installStatus` is `DOWNLOADED`, prompt the user and call
+ *   {@link CapacitorUpdaterPlugin.completeFlexibleUpdate}.
  *
  * @since 8.53.0
  */
@@ -2368,10 +2182,6 @@ export interface LatestVersion {
    * @since 7.22.0
    */
   breaking?: boolean;
-  /**
-   * @deprecated Use {@link LatestVersion.breaking} instead.
-   */
-  major?: boolean;
   /**
    * Optional message from the server.
    * When no new version is available, this will be "No new version available".
