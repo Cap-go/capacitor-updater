@@ -221,7 +221,7 @@ final class NetworkTransportTests: XCTestCase {
 
     override func tearDownWithError() throws {
         finishAllUpdaters()
-        server.drain()
+        server.drain(timeout: 0.25)
         server.stop()
         server = nil
         try super.tearDownWithError()
@@ -241,8 +241,8 @@ final class NetworkTransportTests: XCTestCase {
     private func releaseUpdater(_ updater: CapgoUpdater) {
         updater.shutdown()
         activeUpdaters.removeAll { $0 === updater }
-        server.drain()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+        server.drain(timeout: 0.25)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
 
     private func finishAllUpdaters() {
