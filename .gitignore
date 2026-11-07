@@ -73,3 +73,8 @@ captures
 node_modules/
 package-lock.json
 native-contract-tests/cli-fresh/
+
+# CI stores Xcode DerivedData under `.ci-ios-test-dd` and uploads it as a workflow artifact.
+# The iOS rule `Build` above matches that tree; un-ignore so `actions/upload-artifact` includes it.
+!.ci-ios-test-dd/Build/
+!.ci-ios-test-dd/Build/**
