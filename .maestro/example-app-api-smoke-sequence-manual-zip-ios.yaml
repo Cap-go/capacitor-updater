@@ -11,7 +11,6 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 90000
-- openLink: capgo-maestro://run/smoke-sequence
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
     timeout: 180000
