@@ -48,6 +48,13 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void restoreHttpsOnlyResetsVolatileFlag() {
+        DownloadService.setHttpsOnly(false);
+        restoreHttpsOnly();
+        assertTrue(DownloadService.httpsOnly);
+    }
+
+    @Test
     public void repeatedOrLatePercentagesDoNotWriteWorkManagerProgressAgain() throws Exception {
         DownloadService worker = mock(DownloadService.class, CALLS_REAL_METHODS);
         List<Integer> writes = new ArrayList<>();

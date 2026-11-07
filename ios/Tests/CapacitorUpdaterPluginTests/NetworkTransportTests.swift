@@ -16,6 +16,9 @@ private final class LoopbackHTTPServer {
         /// Stream the response body in chunks of this size with `chunkDelay` between writes.
         var chunkSize: Int?
         var chunkDelay: TimeInterval = 0.01
+        /// When set, waits until this returns true before sending each body chunk after the first.
+        var waitBeforeContinuingBody: (() -> Bool)?
+        var waitBeforeContinuingBodyTimeout: TimeInterval = 2
     }
 
     struct RecordedRequest {
@@ -180,12 +183,19 @@ private final class LoopbackHTTPServer {
             return
         }
         connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
-            self?.sendChunks(of: body, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay, on: connection)
+            self?.sendChunks(
+                of: body, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay,
+                waitBeforeContinuingBody: response.waitBeforeContinuingBody,
+                waitTimeout: response.waitBeforeContinuingBodyTimeout, on: connection
+            )
         })
     }
 
     /// Recursively writes slices of `body` over `connection` separated by `delay`.
-    private func sendChunks(of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval, on connection: NWConnection) {
+    private func sendChunks(
+        of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval,
+        waitBeforeContinuingBody: (() -> Bool)?, waitTimeout: TimeInterval, on connection: NWConnection
+    ) {
         guard offset < body.count else {
             connection.cancel()
             return
@@ -199,7 +209,17 @@ private final class LoopbackHTTPServer {
             }
             if end < body.count {
                 self.queue.asyncAfter(deadline: .now() + delay) {
-                    self.sendChunks(of: body, offset: end, chunkSize: chunkSize, delay: delay, on: connection)
+                    if let wait = waitBeforeContinuingBody {
+                        let deadline = Date().addingTimeInterval(waitTimeout)
+                        while !wait() && Date() < deadline {
+                            Thread.sleep(forTimeInterval: 0.005)
+                        }
+                    }
+                    self.sendChunks(
+                        of: body, offset: end, chunkSize: chunkSize, delay: delay,
+                        waitBeforeContinuingBody: waitBeforeContinuingBody, waitTimeout: waitTimeout,
+                        on: connection
+                    )
                 }
             } else {
                 connection.cancel()
@@ -567,7 +587,6 @@ final class NetworkTransportTests: XCTestCase {
         server.respond { _ in .init(status: 200, body: zipPayload, chunkSize: 60_000, chunkDelay: 0.01) }
 
         let updater = makeUpdater()
-        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "zip-progress-test", options: Logger.Options(level: .silent)))
         var percents: [Int] = []
         updater.notifyDownloadRaw = { _, percent, _, _ in
@@ -594,11 +613,13 @@ final class NetworkTransportTests: XCTestCase {
                 done.fulfill()
             }
         }
-        wait(for: [done], timeout: 10)
+        let waitResult = XCTWaiter.wait(for: [done], timeout: 10)
+        XCTAssertEqual(waitResult, .completed, "zip download did not finish before teardown")
         defer {
             if let installed = downloadedBundle {
                 _ = updater.delete(id: installed.getId())
             }
+            releaseUpdater(updater)
         }
         XCTAssertNil(downloadError)
         XCTAssertEqual(percents.first, 0)
@@ -613,7 +634,19 @@ final class NetworkTransportTests: XCTestCase {
     /// Verifies that `Range` requests offset progress only when the server responds with `206 Partial Content`.
     func testPerformDownloadRequestSendsRangeHeader() {
         let tail = Data(repeating: 0x42, count: 100_000)
-        server.respond { _ in .init(status: 206, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
+        let expectedTotal = Int64(10 + tail.count)
+        let flowLock = NSLock()
+        var resumeBody = false
+        server.respond { _ in
+            var response = Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
+            response.waitBeforeContinuingBody = {
+                flowLock.lock()
+                let go = resumeBody
+                flowLock.unlock()
+                return go
+            }
+            return response
+        }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
 
@@ -622,6 +655,11 @@ final class NetworkTransportTests: XCTestCase {
         let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
             sampleLock.lock()
             partialSamples.append((received, expected))
+            if received > 10 {
+                flowLock.lock()
+                resumeBody = true
+                flowLock.unlock()
+            }
             sampleLock.unlock()
         }
         if let fileURL = result.fileURL {
@@ -631,9 +669,14 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(result.response?.statusCode, 206)
         XCTAssertEqual(server.requests.first?.headers["range"], "bytes=10-")
         XCTAssertFalse(partialSamples.isEmpty)
+        XCTAssertTrue(partialSamples.contains(where: { $0.0 > 10 }), "expected resumed bytes beyond the 10 byte offset, got \(partialSamples)")
+        for sample in partialSamples {
+            XCTAssertLessThanOrEqual(sample.0, sample.1)
+            XCTAssertEqual(sample.1, expectedTotal)
+        }
         if let lastPartial = partialSamples.last {
-            XCTAssertEqual(lastPartial.1, Int64(10 + tail.count))
-            XCTAssertGreaterThanOrEqual(lastPartial.0, 10)
+            XCTAssertEqual(lastPartial.1, expectedTotal)
+            XCTAssertGreaterThan(lastPartial.0, 10)
         }
 
         server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
