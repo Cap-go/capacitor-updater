@@ -133,7 +133,7 @@ public class HeadlessUpdateWorker extends Worker {
                 }
             }
         };
-        configure(updater, context, config, prefs, packageInfo, versionCode);
+        configure(updater, context, config, prefs, packageInfo, versionCode, logger);
         try {
             String updateUrl = config.getString("updateUrl", CapacitorUpdaterPlugin.updateUrlDefault);
             if (config.getBoolean("persistModifyUrl", false) && prefs.contains(CapacitorUpdaterPlugin.UPDATE_URL_PREF_KEY)) {
@@ -293,7 +293,8 @@ public class HeadlessUpdateWorker extends Worker {
         final PluginConfig config,
         final SharedPreferences prefs,
         final PackageInfo packageInfo,
-        final String versionCode
+        final String versionCode,
+        final Logger headlessLogger
     ) {
         updater.appContext = context;
         updater.prefs = prefs;
@@ -319,7 +320,7 @@ public class HeadlessUpdateWorker extends Worker {
         DownloadService.setHttpsOnly(httpsOnly);
         updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
         if (DownloadService.getLogger() == null) {
-            DownloadService.setLogger(logger);
+            DownloadService.setLogger(headlessLogger);
         }
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);

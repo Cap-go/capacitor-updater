@@ -142,10 +142,11 @@ public class HeadlessUpdateTest {
             PluginConfig.class,
             SharedPreferences.class,
             PackageInfo.class,
-            String.class
+            String.class,
+            Logger.class
         );
         configure.setAccessible(true);
-        configure.invoke(null, updater, context, config, prefs, packageInfo, "42");
+        configure.invoke(null, updater, context, config, prefs, packageInfo, "42", new Logger("test"));
 
         assertTrue(updater.builtinMinimum);
         assertFalse(updater.httpsOnly);
@@ -184,6 +185,7 @@ public class HeadlessUpdateTest {
         final Context context = RuntimeEnvironment.getApplication();
         final SharedPreferences prefs = context.getSharedPreferences("headless-logger-test", Context.MODE_PRIVATE);
         final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        final Logger headlessLogger = new Logger("configure-logger-test");
 
         final Method configure = HeadlessUpdateWorker.class.getDeclaredMethod(
             "configure",
@@ -192,11 +194,12 @@ public class HeadlessUpdateTest {
             PluginConfig.class,
             SharedPreferences.class,
             PackageInfo.class,
-            String.class
+            String.class,
+            Logger.class
         );
         configure.setAccessible(true);
-        configure.invoke(null, updater, context, config, prefs, packageInfo, "42");
+        configure.invoke(null, updater, context, config, prefs, packageInfo, "42", headlessLogger);
 
-        assertEquals("configure-logger-test", DownloadService.getLogger().getTag());
+        assertEquals(headlessLogger.getTag(), DownloadService.getLogger().getTag());
     }
 }
