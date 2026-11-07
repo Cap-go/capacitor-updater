@@ -261,16 +261,39 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
+          # CapacitorUpdaterTests is large; parallel workers keep this shard under the job cap.
           - shard: core
+            parallel_testing: '1'
             select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
           # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
           - shard: delta
+            parallel_testing: '0'
             select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
-          - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -skip-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -skip-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -skip-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -skip-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+          - shard: rest-a
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/BuiltinHashesTests
+              -only-testing:CapacitorUpdaterPluginTests/BundleHardeningTests
+              -only-testing:CapacitorUpdaterPluginTests/CapgoSemanticVersionTests
+              -only-testing:CapacitorUpdaterPluginTests/ChecksumRequiredTests
+              -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
+              -only-testing:CapacitorUpdaterPluginTests/HttpsOnlyBuiltinMinimumTests
+              -only-testing:CapacitorUpdaterPluginTests/ListChannelsTests
+              -only-testing:CapacitorUpdaterPluginTests/LoggerSecurityTests
+          - shard: rest-b
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
+              -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+              -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
+              -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
+              -only-testing:CapacitorUpdaterPluginTests/SessionKeyRequiredTests
+              -only-testing:CapacitorUpdaterPluginTests/UpdateLifecycleTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipArchiveReaderTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipBundleExtractionTests
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+      CAPGO_IOS_PARALLEL_TESTING: ${{ matrix.parallel_testing }}
     steps:
       - name: Check out
         uses: actions/checkout@v7

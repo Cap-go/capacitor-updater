@@ -33,8 +33,10 @@ if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" ]]; then
 fi
 
 # Parallel testing clones the simulator once per worker, and on 3-core CI
-# runners the clone and boot cost (about 70s) outweighs the test time it saves.
-if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" ]]; then
+# runners the clone and boot cost (about 70s) outweighs the test time it saves
+# for small shards. CapacitorUpdaterTests alone needs parallel workers to stay
+# under the CI job cap when CAPGO_IOS_PARALLEL_TESTING is set.
+if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" && "${CAPGO_IOS_PARALLEL_TESTING:-0}" != "1" ]]; then
   EXTRA_ARGS+=(-parallel-testing-enabled NO)
 fi
 
