@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
@@ -53,6 +54,7 @@ else
 fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
 cleanup() {
@@ -471,6 +473,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 
   set +e
   run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
+    --config "$MAESTRO_WORKSPACE_CONFIG" \
     -p ios \
     --device "$SIMULATOR_ID" \
     --no-reinstall-driver \

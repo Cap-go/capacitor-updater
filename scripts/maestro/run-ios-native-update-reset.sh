@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-ios/native-reset"
@@ -100,6 +101,8 @@ run_maestro_flow() {
   local -a command=(
     maestro
     test
+    --config
+    "$MAESTRO_WORKSPACE_CONFIG"
     -p
     ios
     --device
@@ -271,6 +274,7 @@ if ! command -v xcrun >/dev/null 2>&1; then
 fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 if [[ -z "${SIMULATOR_ID:-}" ]]; then
   echo "No available iPhone simulator found for the iOS native reset Maestro test." >&2
   exit 1

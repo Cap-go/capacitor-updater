@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
@@ -998,6 +999,7 @@ prepare_device_for_maestro() {
   wait_for_android_boot
   wait_for_package_manager
   unlock_android_device
+  "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" android
   configure_server_routing
   return 0
 }
@@ -1165,12 +1167,12 @@ run_flow() {
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     else
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     fi
     command_status=${PIPESTATUS[0]}
     set -e

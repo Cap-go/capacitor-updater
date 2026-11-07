@@ -12,14 +12,18 @@ appId: app.capgo.updater
       HOST_SERVER_URL: '${HOST_SERVER_URL}'
       SCENARIO_ID: '${SCENARIO_ID}'
 # Cold launch: the launch check downloads the release and queues it as next.
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:
       SUMMARY_PATTERN: '${DOWNLOADED_PATTERN}'
 # Background applies the queued release; the next launch runs it.
 - pressKey: Home
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:

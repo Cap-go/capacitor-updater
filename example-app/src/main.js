@@ -1,5 +1,7 @@
 import './style.css';
+import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { SplashScreen } from '@capacitor/splash-screen';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 if (window.__capgoProbe) {
@@ -9,6 +11,8 @@ console.log('[Harness] module boot', window.__capgoProbe ?? null);
 
 const plugin = CapacitorUpdater;
 const platform = Capacitor.getPlatform();
+const isMaestroE2E =
+  import.meta.env.VITE_CAPGO_MAESTRO_BUILD === 'true' || window.__capgoMaestroIsE2E === true;
 const buildLabel = import.meta.env.VITE_CAPGO_APP_LABEL ?? 'manual-build';
 const scenarioId = import.meta.env.VITE_CAPGO_SCENARIO ?? 'manual';
 const directUpdateMode = import.meta.env.VITE_CAPGO_DIRECT_UPDATE ?? 'false';
@@ -196,10 +200,10 @@ const quickActionIds = [
   'open-app-store',
   'queue-boot-verify-persisted-config',
 ];
-const smokeSequenceDefaultDelayMs = 150;
-const smokeSequenceMutationDelayMs = 300;
-const actionTriggerCooldownMs = 250;
-const reloadActionTriggerCooldownMs = 8000;
+const smokeSequenceDefaultDelayMs = isMaestroE2E ? 0 : 150;
+const smokeSequenceMutationDelayMs = isMaestroE2E ? 40 : 300;
+const actionTriggerCooldownMs = isMaestroE2E ? 50 : 250;
+const reloadActionTriggerCooldownMs = isMaestroE2E ? 1500 : 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
   'set-custom-id',
@@ -376,7 +380,8 @@ function getServerBaseUrl() {
 }
 
 function pause(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  const delayMs = isMaestroE2E ? Math.min(ms, Math.max(0, Math.floor(ms * 0.2))) : ms;
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
 function getSmokeSequenceDelayMs(actionId) {
@@ -970,7 +975,11 @@ function resetScrollPosition() {
   window.setTimeout(scrollToTop, 500);
 }
 
-async function waitForCondition(check, timeoutMs = 45000, intervalMs = 500) {
+async function waitForCondition(
+  check,
+  timeoutMs = 45000,
+  intervalMs = isMaestroE2E ? 150 : 500,
+) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -2873,7 +2882,7 @@ async function runSmokeSequence() {
   }
 
   const sequenceActions = getSmokeSequenceActions();
-  suppressNonSequenceActionsUntil = Date.now() + 1500;
+  suppressNonSequenceActionsUntil = Date.now() + (isMaestroE2E ? 200 : 1500);
 
   smokeSequencePromise = (async () => {
     elements.sequenceStatus.textContent = 'Sequence: running';
@@ -3226,6 +3235,80 @@ function clearElementChildren(element) {
   }
 }
 
+function scrollHarnessElementIntoView(element) {
+  if (!element) {
+    return false;
+  }
+
+  element.scrollIntoView({
+    block: 'center',
+    inline: 'nearest',
+    behavior: isMaestroE2E ? 'instant' : 'smooth',
+  });
+  return true;
+}
+
+function focusQuickAction(actionId) {
+  return scrollHarnessElementIntoView(document.getElementById(`quick-action-${actionId}`));
+}
+
+function focusByVisibleText(label) {
+  const nodes = document.querySelectorAll('button, [role="button"]');
+
+  for (const node of nodes) {
+    if ((node.textContent ?? '').trim().includes(label)) {
+      return scrollHarnessElementIntoView(node);
+    }
+  }
+
+  return false;
+}
+
+async function handleMaestroDeepLink(rawUrl) {
+  if (!rawUrl?.startsWith('capgo-maestro://')) {
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return;
+  }
+
+  const route = parsed.host;
+  const value = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+
+  if (route === 'action' && value) {
+    focusQuickAction(value);
+    return;
+  }
+
+  if (route === 'focus-text' && value) {
+    focusByVisibleText(value);
+    return;
+  }
+
+  if (route === 'harness' && value === 'smoke-sequence') {
+    scrollHarnessElementIntoView(elements.quickRunSmokeSequenceButton);
+  }
+}
+
+async function attachMaestroDeepLinks() {
+  if (platform === 'web') {
+    return;
+  }
+
+  App.addListener('appUrlOpen', ({ url }) => {
+    void handleMaestroDeepLink(url);
+  });
+
+  const launch = await App.getLaunchUrl();
+  if (launch?.url) {
+    await handleMaestroDeepLink(launch.url);
+  }
+}
+
 function pinMaestroQuickActions() {
   if (platform === 'web') {
     return;
@@ -3370,12 +3453,12 @@ function startStateRefreshWatchers() {
 
     window.setTimeout(() => {
       void pollState();
-    }, 5000);
+    }, isMaestroE2E ? 15000 : 5000);
   };
 
   window.setTimeout(() => {
     void pollState();
-  }, 5000);
+  }, isMaestroE2E ? 15000 : 5000);
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !actionInProgress && !sequenceInProgress) {
@@ -3397,7 +3480,13 @@ async function bootstrap() {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  if (isMaestroE2E && platform !== 'web') {
+    void SplashScreen.hide({ fadeOutDuration: 0 });
+  }
   document.body.classList.add(`platform-${platform}`);
+  if (isMaestroE2E) {
+    document.documentElement.classList.add('maestro-e2e');
+  }
   resetScrollPosition();
   configureQaToolsPanel();
   renderQuickActions();
@@ -3405,6 +3494,7 @@ async function bootstrap() {
   renderActions();
   bindDemoActions();
   renderState();
+  await attachMaestroDeepLinks();
   await attachListeners();
 
   if (!skipNotifyAppReady) {
@@ -3439,7 +3529,7 @@ async function bootstrap() {
   const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
   if (bootActionIds.length) {
-    await pause(platform === 'ios' ? 500 : 100);
+    await pause(isMaestroE2E ? 0 : platform === 'ios' ? 500 : 100);
   }
   for (const bootActionId of bootActionIds) {
     try {

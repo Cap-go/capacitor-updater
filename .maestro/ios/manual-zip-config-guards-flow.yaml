@@ -1,6 +1,8 @@
 appId: app.capgo.updater
 ---
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -9,29 +11,16 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick reset release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20reset%20release
 - tapOn:
     text: 'Quick reset release'
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      text: 'Quick download latest bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20download%20latest%20bundle
 - tapOn:
     text: 'Quick download latest bundle'
     retryTapIfNoChange: true
@@ -58,16 +47,10 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Build label: manual-zip-config-guards-builtin.*'
-- scrollUntilVisible:
-    element:
-      text: 'Quick mark bundle error'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20mark%20bundle%20error
 - tapOn:
     text: 'Quick mark bundle error'
     retryTapIfNoChange: true

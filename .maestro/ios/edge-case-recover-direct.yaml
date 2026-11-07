@@ -12,7 +12,9 @@ appId: app.capgo.updater
       HOST_SERVER_URL: '${HOST_SERVER_URL}'
       SCENARIO_ID: '${SCENARIO_ID}'
 # Cold launch: the direct update downloads and installs the release before the app shows.
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:

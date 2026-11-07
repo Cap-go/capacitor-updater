@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
@@ -410,6 +411,7 @@ run_maestro_test_with_retries() {
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
       "$TIMEOUT_CMD" --foreground "${MAESTRO_TIMEOUT_SECONDS}s" \
       maestro test \
+      --config "$MAESTRO_WORKSPACE_CONFIG" \
       "$FLOW_PATH" \
       --platform android \
       --udid "$ANDROID_DEVICE_ID" \
@@ -508,9 +510,7 @@ if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
 fi
 
 wait_for_android_package_service || true
-adb shell settings put global window_animation_scale 0 || true
-adb shell settings put global transition_animation_scale 0 || true
-adb shell settings put global animator_duration_scale 0 || true
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" android
 adb shell input keyevent 82 || true
 configure_server_routing
 prepare_example_app_for_maestro
