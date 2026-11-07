@@ -345,8 +345,6 @@ import UIKit
             let body: Data?
             if let data {
                 body = data.isEmpty ? nil : data
-            } else if error == nil, let status = httpResponse?.statusCode, [204, 205].contains(status) {
-                body = nil
             } else {
                 body = nil
             }

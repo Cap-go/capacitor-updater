@@ -711,7 +711,9 @@ public class DownloadService extends Worker {
             String checksum = getInputData().getString(CHECKSUM);
             String publicKey = getInputData().getString(PUBLIC_KEY);
 
-            logger.debug("doWork isManifest: " + isManifest);
+            if (logger != null) {
+                logger.debug("doWork isManifest: " + isManifest);
+            }
 
             if (isManifest) {
                 JSONArray manifest = DataManager.getInstance().getAndClearManifest(id);
@@ -722,7 +724,9 @@ public class DownloadService extends Worker {
                     CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
                     return createFailureResult("download_cancelled", version, dest, true);
                 } else {
-                    logger.error("Manifest is null");
+                    if (logger != null) {
+                        logger.error("Manifest is null");
+                    }
                     CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
                     return createFailureResult("Manifest is null", version, dest, true);
                 }

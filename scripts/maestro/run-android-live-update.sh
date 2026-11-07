@@ -664,6 +664,11 @@ wait_for_edge_network_drop_recovery() {
     return $?
   fi
 
+  if wait_for_ui_state_with_timeout "${description} (after queued checks): deferred release applied" \
+    "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+    return 0
+  fi
+
   return 1
 }
 
