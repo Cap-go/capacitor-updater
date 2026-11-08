@@ -451,17 +451,7 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 ios_simulator_is_booted() {
-  xcrun simctl list devices "$SIMULATOR_ID" -j 2>/dev/null |
-    SIMULATOR_ID="$SIMULATOR_ID" python3 -c "
-import json, os, sys
-target = os.environ.get('SIMULATOR_ID', '')
-payload = json.load(sys.stdin)
-for devices in payload.get('devices', {}).values():
-  for device in devices:
-    if device.get('udid') == target and device.get('state') == 'Booted':
-      sys.exit(0)
-sys.exit(1)
-"
+  bash "$ROOT_DIR/scripts/maestro/ios-simulator-booted.sh" "$SIMULATOR_ID"
 }
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
