@@ -3541,18 +3541,21 @@ async function bootstrap() {
   startStateRefreshWatchers();
   if (bootActionIds.length) {
     if (serverUrl.startsWith('http')) {
-      await waitForCondition(
-        async () => {
-          try {
-            await refreshServerState();
-            return Boolean(state.serverDebug?.debug);
-          } catch {
-            return false;
-          }
-        },
-        45000,
-        isMaestroE2E ? 200 : 500,
-      );
+      await refreshServerState().catch(() => {});
+      if (!state.serverDebug?.debug) {
+        await waitForCondition(
+          async () => {
+            try {
+              await refreshServerState();
+              return Boolean(state.serverDebug?.debug);
+            } catch {
+              return false;
+            }
+          },
+          isMaestroE2E ? 15000 : 45000,
+          isMaestroE2E ? 100 : 500,
+        );
+      }
     } else {
       await waitForCondition(
         () => (state.notifyStatus ?? '').startsWith('ok'),

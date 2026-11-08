@@ -16,10 +16,14 @@ inputs:
   install-example:
     description: Run bun install in example-app.
     default: 'false'
+  setup-node:
+    description: Run actions/setup-node before installing Bun. Maestro-only jobs can skip this.
+    default: 'true'
 runs:
   using: composite
   steps:
     - name: Setup Node.js
+      if: inputs.setup-node == 'true'
       uses: actions/setup-node@v7
       with:
         node-version: 26.x

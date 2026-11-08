@@ -305,10 +305,28 @@ assert_prebuilt_maestro_assets() {
   exit 1
 }
 
+ios_simulator_is_booted() {
+  xcrun simctl list devices "$SIMULATOR_ID" -j 2>/dev/null |
+    SIMULATOR_ID="$SIMULATOR_ID" python3 -c "
+import json, os, sys
+target = os.environ.get('SIMULATOR_ID', '')
+payload = json.load(sys.stdin)
+for devices in payload.get('devices', {}).values():
+  for device in devices:
+    if device.get('udid') == target and device.get('state') == 'Booted':
+      sys.exit(0)
+sys.exit(1)
+"
+}
+
 boot_simulator() {
   local status=0
 
   xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+
+  if [[ "${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}" == "1" ]] && ios_simulator_is_booted; then
+    return 0
+  fi
 
   if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
     return 0

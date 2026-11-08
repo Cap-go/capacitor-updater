@@ -273,7 +273,7 @@ process.exit(ok ? 0 : 1);
 " "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
       return 0
     fi
-    sleep 2
+    sleep 1
   done
 
   echo "Queued iOS boot verification did not hit the fake server after relaunch." >&2
@@ -450,8 +450,24 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+ios_simulator_is_booted() {
+  xcrun simctl list devices "$SIMULATOR_ID" -j 2>/dev/null |
+    SIMULATOR_ID="$SIMULATOR_ID" python3 -c "
+import json, os, sys
+target = os.environ.get('SIMULATOR_ID', '')
+payload = json.load(sys.stdin)
+for devices in payload.get('devices', {}).values():
+  for device in devices:
+    if device.get('udid') == target and device.get('state') == 'Booted':
+      sys.exit(0)
+sys.exit(1)
+"
+}
+
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+if [[ "${ASSUME_CLEAN_INSTALL:-0}" == "1" ]] && ios_simulator_is_booted; then
+  :
+elif run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
   :
 else
   status=$?
