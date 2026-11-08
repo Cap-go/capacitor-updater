@@ -3460,12 +3460,12 @@ function startStateRefreshWatchers() {
 
     window.setTimeout(() => {
       void pollState();
-    }, isMaestroE2E ? 15000 : 5000);
+    }, 5000);
   };
 
   window.setTimeout(() => {
     void pollState();
-  }, isMaestroE2E ? 15000 : 5000);
+  }, 5000);
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !actionInProgress && !sequenceInProgress) {
