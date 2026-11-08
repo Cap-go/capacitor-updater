@@ -18,7 +18,6 @@ appId: app.capgo.updater
     env:
       SUMMARY_PATTERN: '${DOWNLOADED_PATTERN}'
 # Background applies the queued release; the next launch runs it.
-- stopApp
 - pressKey: Home
 - launchApp
 - runFlow:
