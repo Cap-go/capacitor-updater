@@ -93,8 +93,15 @@ else
 fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
-"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app}"
+
+maestro_runtime_js() {
+  if command -v bun >/dev/null 2>&1 && [[ "${CAPGO_MAESTRO_PREFER_BUN_JS:-0}" == "1" ]]; then
+    bun "$@"
+    return
+  fi
+  node "$@"
+}
 RESULTS_DIR_READY=0
 
 cleanup() {
@@ -278,7 +285,7 @@ ensure_server_port_available() {
 start_fake_server() {
   ensure_server_port_available
 
-  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios.log" 2>&1 &
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios.log" 2>&1 &
   SERVER_PID=$!
 
   sleep 1
@@ -318,11 +325,13 @@ boot_simulator() {
   if [[ "${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}" == "1" ]]; then
     boot_wait_seconds="${CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS:-90}"
     if ios_simulator_is_booted; then
+      "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
       return 0
     fi
   fi
 
   if run_with_timeout "$boot_wait_seconds" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+    "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
     return 0
   else
     status=$?
@@ -372,7 +381,7 @@ assert_server_debug_state() {
   local server_state=""
 
   server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
-  bun --eval "$assertion_script" "$server_state" "$scenario"
+  node --eval "$assertion_script" "$server_state" "$scenario"
 }
 
 load_scenario_config() {
@@ -982,11 +991,6 @@ if ! command -v maestro >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v bun >/dev/null 2>&1; then
-  echo "bun is required to run parts of this script." >&2
-  exit 1
-fi
-
 if ! command -v node >/dev/null 2>&1; then
   echo "node is required to run Capacitor CLI commands." >&2
   exit 1
@@ -1047,6 +1051,10 @@ cd "$ROOT_DIR"
 if [[ "$SKIP_BUILD" == "1" || "$SKIP_BUNDLE_BUILD" == "1" ]]; then
   assert_prebuilt_maestro_assets
 else
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required to build Maestro web assets locally." >&2
+    exit 1
+  fi
   if [[ ! -d node_modules ]]; then
     bun install
   fi

@@ -5,11 +5,17 @@
 # adb reverse / the host loopback, so toggling the emulator or simulator radio would not cut it.
 
 EDGE_CASE_SERVER_TIMEOUT_SECONDS="${CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS:-180}"
+
+maestro_runtime_js() {
+  if command -v bun >/dev/null 2>&1 && [[ "${CAPGO_MAESTRO_PREFER_BUN_JS:-0}" == "1" ]]; then
+    bun "$@"
+    return
+  fi
+  node "$@"
+}
+
 # edgeCases in scenarios.mjs is the single source of truth for case ids and their app scenario.
-read -r -a EDGE_CASE_IDS <<<"$(bun --eval "
-import { edgeCases } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
-console.log(Object.keys(edgeCases).join(' '));
-")"
+read -r -a EDGE_CASE_IDS <<<"$(maestro_runtime_js "$ROOT_DIR/scripts/maestro/edge-case-ids.mjs")"
 
 is_edge_case() {
   local candidate="$1"
@@ -27,16 +33,7 @@ is_edge_case() {
 edge_case_app_scenario() {
   local edge_case_id="$1"
 
-  bun --eval "
-import { edgeCases } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
-
-const app = edgeCases[process.argv[1]]?.app;
-if (!app) {
-  console.error('Unknown edge case: ' + process.argv[1]);
-  process.exit(1);
-}
-console.log(app);
-" "$edge_case_id"
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/edge-case-app.mjs" "$edge_case_id"
   return $?
 }
 
@@ -66,13 +63,8 @@ wait_for_server_condition() {
   while ((SECONDS < deadline)); do
     server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario" || true)"
 
-    if [[ -n "$server_state" ]] && bun --eval "
-const state = JSON.parse(process.argv[1]);
-const debug = state.debug ?? {};
-const downloads = debug.bundleDownloads ?? {};
-const stats = debug.statsActionCounts ?? {};
-process.exit((${condition}) ? 0 : 1);
-" "$server_state" >/dev/null 2>&1; then
+    if [[ -n "$server_state" ]] && maestro_runtime_js \
+      "$ROOT_DIR/scripts/maestro/server-condition.mjs" "$server_state" "$condition" >/dev/null 2>&1; then
       echo "Verified fake server state: ${description}"
       return 0
     fi
