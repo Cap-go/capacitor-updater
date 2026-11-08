@@ -324,34 +324,6 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  maestro_macos_toolchain:
-    permissions:
-      contents: read
-      actions: write
-    timeout-minutes: 10
-    runs-on: macOS-latest
-    name: Package Maestro macOS CLI
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Package Maestro CLI for iOS Maestro jobs
-        run: |
-          set -euo pipefail
-          mkdir -p maestro-cli
-          tar -czf maestro-cli/maestro-cli.tgz -C "$HOME" .maestro
-      - name: Upload Maestro CLI
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-cli-macos
-          path: maestro-cli
-          if-no-files-found: error
-
   maestro_android_apps:
     permissions:
       contents: read
@@ -676,7 +648,6 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_apps
-      - maestro_macos_toolchain
     timeout-minutes: 10
     runs-on: macOS-latest
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
@@ -698,13 +669,10 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 </dev/null &
-      - name: Download Maestro CLI
-        uses: actions/download-artifact@v8
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
         with:
-          name: maestro-cli-macos
-          path: maestro-cli
-      - name: Install Maestro CLI from artifact
-        run: bash ./scripts/ci/install-maestro-cli-from-artifact.sh maestro-cli/maestro-cli.tgz
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -743,7 +711,6 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_apps
-      - maestro_macos_toolchain
     timeout-minutes: 10
     runs-on: macOS-latest
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
@@ -765,13 +732,10 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 </dev/null &
-      - name: Download Maestro CLI
-        uses: actions/download-artifact@v8
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
         with:
-          name: maestro-cli-macos
-          path: maestro-cli
-      - name: Install Maestro CLI from artifact
-        run: bash ./scripts/ci/install-maestro-cli-from-artifact.sh maestro-cli/maestro-cli.tgz
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -871,7 +835,6 @@ jobs:
     needs:
       - maestro_web_assets
       - maestro_ios_edge_apps
-      - maestro_macos_toolchain
     timeout-minutes: 10
     runs-on: macOS-latest
     name: iOS example app Maestro edge case / ${{ matrix.scenario }}
@@ -905,13 +868,10 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 </dev/null &
-      - name: Download Maestro CLI
-        uses: actions/download-artifact@v8
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
         with:
-          name: maestro-cli-macos
-          path: maestro-cli
-      - name: Install Maestro CLI from artifact
-        run: bash ./scripts/ci/install-maestro-cli-from-artifact.sh maestro-cli/maestro-cli.tgz
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:

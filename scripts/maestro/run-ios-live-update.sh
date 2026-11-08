@@ -390,18 +390,7 @@ load_scenario_config() {
 
   builtin_version="$(read_app_marketing_version)" || return $?
 
-  bun --eval "
-import { getScenario, resolveAppScenarioId } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
-
-const scenario = getScenario(resolveAppScenarioId(process.argv[1]));
-const builtinVersion = process.argv[2];
-
-if (!builtinVersion) {
-  throw new Error('Unable to determine example-app iOS MARKETING_VERSION');
-}
-
-console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
-" "$scenario_id" "$builtin_version"
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/load-scenario-labels.mjs" "$scenario_id" "$builtin_version"
 }
 
 clear_swiftpm_capacitor_artifact_cache() {
