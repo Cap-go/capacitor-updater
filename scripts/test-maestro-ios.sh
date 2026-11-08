@@ -455,9 +455,17 @@ ios_simulator_is_booted() {
 }
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-if [[ "${ASSUME_CLEAN_INSTALL:-0}" == "1" ]] && ios_simulator_is_booted; then
+boot_wait_seconds="$SIMULATOR_BOOT_TIMEOUT_SECONDS"
+if [[ "${ASSUME_CLEAN_INSTALL:-0}" == "1" ]]; then
+  boot_wait_seconds="${CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS:-90}"
+  if ios_simulator_is_booted; then
+    boot_wait_seconds=0
+  fi
+fi
+
+if [[ "$boot_wait_seconds" == "0" ]]; then
   :
-elif run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+elif run_with_timeout "$boot_wait_seconds" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
   :
 else
   status=$?

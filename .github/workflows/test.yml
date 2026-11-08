@@ -668,7 +668,7 @@ jobs:
           set -euo pipefail
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
@@ -735,7 +735,7 @@ jobs:
           set -euo pipefail
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
         with:
