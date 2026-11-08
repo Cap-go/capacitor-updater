@@ -7,7 +7,7 @@ This plugin is the live update layer of [Capgo](https://capgo.app/), the AI-read
 <a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
 
 <div align="center">
-  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <p><b>Capgo</b>: the AI-ready platform to build, ship, and maintain Capacitor apps. Ship live updates to your users instantly, without waiting for app store review.</p>
   <h2><a href="https://capgo.app/register/?ref=plugin_updater_v7">➡️ Get started for free</a></h2>
   <p>14-day unlimited free trial. No credit card required</p>
   <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v7">Missing a feature? We'll build the plugin for you 💪</a></p>

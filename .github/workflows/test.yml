@@ -110,7 +110,7 @@ jobs:
         run: bun run verify:android
       - name: Verify packed package in example app (Android)
         shell: bash
-        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh android
+        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 CAPGO_VERIFY_PACKED_RELEASE_ANDROID=1 bash ./.github/scripts/verify-packed-example.sh android
       - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
         # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
         run: bun run generate:cli-crypto && bun run native:contract:cli:android

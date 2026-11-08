@@ -3868,8 +3868,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self, requestToken == self.splashscreenInvocationToken else {
                 return
             }
-            let handleSplashSuccess = { [weak self] in
+            webView.capgo_callAsyncJavaScriptInPage(script, arguments: [:]) { [weak self] (_, error) in
                 guard let self = self, requestToken == self.splashscreenInvocationToken else {
+                    return
+                }
+                if let error {
+                    self.retrySplashscreenAction(
+                        action,
+                        retriesRemaining: retriesRemaining,
+                        requestToken: requestToken,
+                        message: "Failed to invoke SplashScreen \(action.methodName) via Capacitor bridge: \(error.localizedDescription)"
+                    )
                     return
                 }
                 if action == .hide {
