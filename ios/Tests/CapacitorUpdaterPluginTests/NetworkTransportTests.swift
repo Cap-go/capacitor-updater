@@ -16,6 +16,9 @@ private final class LoopbackHTTPServer {
         /// Stream the response body in chunks of this size with `chunkDelay` between writes.
         var chunkSize: Int?
         var chunkDelay: TimeInterval = 0.01
+        /// When set, waits until this returns true before sending each body chunk after the first.
+        var waitBeforeContinuingBody: (() -> Bool)?
+        var waitBeforeContinuingBodyTimeout: TimeInterval = 2
     }
 
     struct RecordedRequest {
@@ -30,6 +33,7 @@ private final class LoopbackHTTPServer {
     private let lock = NSLock()
     private var handler: (RecordedRequest) -> Response = { _ in Response(status: 200, body: Data()) }
     private var recorded: [RecordedRequest] = []
+    private var activeConnections = 0
 
     init() throws {
         let parameters = NWParameters.tcp
@@ -68,7 +72,39 @@ private final class LoopbackHTTPServer {
         listener.cancel()
     }
 
+    /// Waits until accepted connections finish or `timeout` elapses (stray URLSession tasks after invalidate).
+    func drain(timeout: TimeInterval = 2) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            lock.lock()
+            let active = activeConnections
+            lock.unlock()
+            if active == 0 {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+    }
+
+    private func connectionOpened() {
+        lock.lock()
+        activeConnections += 1
+        lock.unlock()
+    }
+
+    private func connectionClosed() {
+        lock.lock()
+        activeConnections = max(0, activeConnections - 1)
+        lock.unlock()
+    }
+
     private func accept(_ connection: NWConnection) {
+        connectionOpened()
+        connection.stateUpdateHandler = { [weak self] state in
+            if case .cancelled = state {
+                self?.connectionClosed()
+            }
+        }
         connection.start(queue: queue)
         receive(on: connection, buffer: Data())
     }
@@ -141,7 +177,11 @@ private final class LoopbackHTTPServer {
 
         if let chunkSize = response.chunkSize, chunkSize > 0, bodyData.count > chunkSize {
             connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
-                self?.sendChunks(of: bodyData, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay, on: connection)
+                self?.sendChunks(
+                    of: bodyData, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay,
+                    waitBeforeContinuingBody: response.waitBeforeContinuingBody,
+                    waitTimeout: response.waitBeforeContinuingBodyTimeout, on: connection
+                )
             })
             return
         }
@@ -170,7 +210,10 @@ private final class LoopbackHTTPServer {
     }
 
     /// Recursively writes slices of `body` over `connection` separated by `delay`.
-    private func sendChunks(of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval, on connection: NWConnection) {
+    private func sendChunks(
+        of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval,
+        waitBeforeContinuingBody: (() -> Bool)?, waitTimeout: TimeInterval, on connection: NWConnection
+    ) {
         guard offset < body.count else {
             connection.cancel()
             return
@@ -184,7 +227,17 @@ private final class LoopbackHTTPServer {
             }
             if end < body.count {
                 self.queue.asyncAfter(deadline: .now() + delay) {
-                    self.sendChunks(of: body, offset: end, chunkSize: chunkSize, delay: delay, on: connection)
+                    if let wait = waitBeforeContinuingBody {
+                        let deadline = Date().addingTimeInterval(waitTimeout)
+                        while !wait() && Date() < deadline {
+                            Thread.sleep(forTimeInterval: 0.005)
+                        }
+                    }
+                    self.sendChunks(
+                        of: body, offset: end, chunkSize: chunkSize, delay: delay,
+                        waitBeforeContinuingBody: waitBeforeContinuingBody, waitTimeout: waitTimeout,
+                        on: connection
+                    )
                 }
             } else {
                 connection.cancel()
@@ -196,14 +249,20 @@ private final class LoopbackHTTPServer {
 final class NetworkTransportTests: XCTestCase {
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
+    private var activeUpdaters: [CapgoUpdater] = []
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         server = try LoopbackHTTPServer()
+        activeUpdaters = []
     }
 
     override func tearDownWithError() throws {
+        finishAllUpdaters()
+        server.drain(timeout: 0.25)
         server.stop()
         server = nil
+        try super.tearDownWithError()
     }
 
     private func makeUpdater() -> CapgoUpdater {
@@ -212,7 +271,23 @@ final class NetworkTransportTests: XCTestCase {
         updater.timeout = 5
         // The loopback test server is plain http.
         updater.httpsOnly = false
+        activeUpdaters.append(updater)
         return updater
+    }
+
+    /// Shutdown and drop references before URLSession invalidation so the loopback port is not reused mid-flight.
+    private func releaseUpdater(_ updater: CapgoUpdater) {
+        updater.shutdown()
+        activeUpdaters.removeAll { $0 === updater }
+        server.drain(timeout: 0.25)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func finishAllUpdaters() {
+        for updater in activeUpdaters {
+            updater.shutdown()
+        }
+        activeUpdaters.removeAll()
     }
 
     func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
@@ -231,6 +306,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: status, body: status == 200 ? body : Data())
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-retry-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
@@ -262,6 +338,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: 200, body: body, dropConnection: drop)
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-drop-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
@@ -307,6 +384,7 @@ final class NetworkTransportTests: XCTestCase {
             return .init(status: 206, body: body.subdata(in: start..<body.count), headers: headers)
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-resume-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "app.js", file_hash: hash,
@@ -347,6 +425,7 @@ final class NetworkTransportTests: XCTestCase {
     func testManifestPermanentFailuresAndRetryBudget() throws {
         for status in [404, 429, 503, 200] {
             let updater = makeUpdater()
+            defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
             let version = UUID().uuidString
             defer {
@@ -557,11 +636,13 @@ final class NetworkTransportTests: XCTestCase {
                 done.fulfill()
             }
         }
-        wait(for: [done], timeout: 10)
+        let waitResult = XCTWaiter.wait(for: [done], timeout: 10)
+        XCTAssertEqual(waitResult, .completed, "zip download did not finish before teardown")
         defer {
             if let installed = downloadedBundle {
                 _ = updater.delete(id: installed.getId())
             }
+            releaseUpdater(updater)
         }
         XCTAssertNil(downloadError)
         XCTAssertEqual(percents.first, 0)
@@ -576,7 +657,19 @@ final class NetworkTransportTests: XCTestCase {
     /// Verifies that `Range` requests offset progress only when the server responds with `206 Partial Content`.
     func testPerformDownloadRequestSendsRangeHeader() {
         let tail = Data(repeating: 0x42, count: 100_000)
-        server.respond { _ in .init(status: 206, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
+        let expectedTotal = Int64(10 + tail.count)
+        let flowLock = NSLock()
+        var resumeBody = false
+        server.respond { _ in
+            var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
+            response.waitBeforeContinuingBody = {
+                flowLock.lock()
+                let go = resumeBody
+                flowLock.unlock()
+                return go
+            }
+            return response
+        }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
 
@@ -585,6 +678,11 @@ final class NetworkTransportTests: XCTestCase {
         let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
             sampleLock.lock()
             partialSamples.append((received, expected))
+            if received > 10 {
+                flowLock.lock()
+                resumeBody = true
+                flowLock.unlock()
+            }
             sampleLock.unlock()
         }
         if let fileURL = result.fileURL {
@@ -594,8 +692,14 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(result.response?.statusCode, 206)
         XCTAssertEqual(server.requests.first?.headers["range"], "bytes=10-")
         XCTAssertFalse(partialSamples.isEmpty)
+        XCTAssertTrue(partialSamples.contains(where: { $0.0 > 10 }), "expected resumed bytes beyond the 10 byte offset, got \(partialSamples)")
+        for sample in partialSamples {
+            XCTAssertLessThanOrEqual(sample.0, sample.1)
+            XCTAssertEqual(sample.1, expectedTotal)
+        }
         if let lastPartial = partialSamples.last {
-            XCTAssertEqual(lastPartial.1, Int64(10 + tail.count))
+            XCTAssertEqual(lastPartial.1, expectedTotal)
+            XCTAssertGreaterThan(lastPartial.0, 10)
         }
 
         server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }

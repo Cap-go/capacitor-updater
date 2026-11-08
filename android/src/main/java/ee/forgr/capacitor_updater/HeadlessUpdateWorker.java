@@ -71,9 +71,12 @@ public class HeadlessUpdateWorker extends Worker {
     @NonNull
     @Override
     public Result doWork() {
-        final Logger logger = new Logger("CapgoUpdater");
+        final Context context = getApplicationContext();
+        final PluginConfig config = CapConfig.loadDefault(context).getPluginConfiguration("CapacitorUpdater");
+        final boolean osLogging = config.getBoolean("osLogging", true);
+        final Logger logger = new Logger("CapgoUpdater", new Logger.Options(osLogging));
         try {
-            final String status = run(getApplicationContext(), logger);
+            final String status = run(context, logger);
             logger.info("Headless update check finished: " + status);
         } catch (final Exception e) {
             logger.error("Headless update check failed: " + e.getMessage());
