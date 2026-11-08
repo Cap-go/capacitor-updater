@@ -6,6 +6,9 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
+- extendedWaitUntil:
+    visible: '${BUILD_LABEL}'
+    timeout: 180000
 - scrollUntilVisible:
     element:
       text: '${BUILD_LABEL}'
