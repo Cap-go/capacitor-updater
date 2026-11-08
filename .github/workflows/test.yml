@@ -855,13 +855,13 @@ jobs:
             edge_case_retries: 2
           - scenario: edge-kill-download
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-corrupt-bundle
             app: edge-deferred
             edge_case_retries: 1
           - scenario: edge-offline-check
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-direct-network-drop
             app: edge-direct
             edge_case_retries: 1
@@ -909,6 +909,7 @@ jobs:
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=360 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts

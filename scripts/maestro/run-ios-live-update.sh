@@ -549,18 +549,22 @@ run_core_assert() {
   local notify_ready_line="$7"
   local current_source_line="$8"
   local current_version_line="$9"
+  local summary_pattern=""
+
+  summary_pattern="$(edge_summary_pattern \
+    "$build_label" \
+    "$scenario_line" \
+    "$direct_update_line" \
+    "$auto_update_enabled_line" \
+    "$auto_update_available_line" \
+    "$notify_ready_line" \
+    "$current_source_line" \
+    "$current_version_line")"
 
   run_flow \
     "$label" \
     "$ROOT_DIR/.maestro/ios/assert-live-update-core.yaml" \
-    "BUILD_LABEL=$(regex_contains_for_maestro "$build_label")" \
-    "SCENARIO_LINE=$(regex_contains_for_maestro "$scenario_line")" \
-    "DIRECT_UPDATE_LINE=$(regex_contains_for_maestro "$direct_update_line")" \
-    "AUTO_UPDATE_ENABLED_LINE=$(regex_contains_for_maestro "$auto_update_enabled_line")" \
-    "AUTO_UPDATE_AVAILABLE_LINE=$(regex_contains_for_maestro "$auto_update_available_line")" \
-    "NOTIFY_READY_LINE=$(regex_contains_for_maestro "$notify_ready_line")" \
-    "CURRENT_SOURCE_LINE=$(regex_contains_for_maestro "$current_source_line")" \
-    "CURRENT_VERSION_LINE=$(regex_contains_for_maestro "$current_version_line")"
+    "SUMMARY_PATTERN=$summary_pattern"
 }
 
 run_download_assert() {

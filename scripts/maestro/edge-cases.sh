@@ -77,7 +77,11 @@ process.exit((${condition}) ? 0 : 1);
       return 0
     fi
 
-    sleep 1
+    if [[ "${CAPGO_MAESTRO_FAST_SERVER_POLL:-0}" == "1" ]]; then
+      sleep 0.2
+    else
+      sleep 1
+    fi
   done
 
   echo "Timed out waiting for fake server state: ${description}" >&2

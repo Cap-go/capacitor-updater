@@ -1,75 +1,13 @@
 appId: app.capgo.updater
 ---
+# E2E summary is a single pinned line; one regex proves the full live-update state (faster
+# and more reliable than long scrollUntilVisible chains on macOS runners).
 - launchApp:
     arguments:
       isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
-    timeout: 180000
+    timeout: 120000
 - extendedWaitUntil:
-    visible: '${CURRENT_VERSION_LINE}'
-    timeout: 180000
-- scrollUntilVisible:
-    element:
-      text: '${BUILD_LABEL}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${SCENARIO_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${DIRECT_UPDATE_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${AUTO_UPDATE_ENABLED_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${AUTO_UPDATE_AVAILABLE_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${NOTIFY_READY_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${CURRENT_SOURCE_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: '${CURRENT_VERSION_LINE}'
-    direction: DOWN
-    speed: 80
-    timeout: 60000
-    centerElement: true
-    visibilityPercentage: 1
+    visible: '${SUMMARY_PATTERN}'
+    timeout: 120000

@@ -3298,6 +3298,11 @@ async function handleMaestroDeepLink(rawUrl) {
 
   if (route === 'run' && value === 'smoke-sequence') {
     void runSmokeSequence();
+    return;
+  }
+
+  if (route === 'run' && value === 'refresh-state') {
+    void refreshState();
   }
 }
 
@@ -3462,14 +3467,20 @@ function startStateRefreshWatchers() {
       await refreshState();
     }
 
-    window.setTimeout(() => {
-      void pollState();
-    }, 5000);
+    window.setTimeout(
+      () => {
+        void pollState();
+      },
+      isMaestroE2E ? 1000 : 5000,
+    );
   };
 
-  window.setTimeout(() => {
-    void pollState();
-  }, 5000);
+  window.setTimeout(
+    () => {
+      void pollState();
+    },
+    isMaestroE2E ? 1000 : 5000,
+  );
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !actionInProgress && !sequenceInProgress) {
