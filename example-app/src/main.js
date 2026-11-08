@@ -3422,7 +3422,11 @@ async function attachListeners() {
     },
     { eventName: 'set', label: 'Set event', refreshAfter: true },
     { eventName: 'setNext', label: 'Set next event', refreshAfter: true },
-    { eventName: 'updateAvailable', label: 'Update available event', refreshAfter: false },
+    {
+      eventName: 'updateAvailable',
+      label: 'Update available event',
+      refreshAfter: isMaestroE2E,
+    },
     { eventName: 'updateFailed', label: 'Update failed event', refreshAfter: true },
   ];
 
