@@ -41,6 +41,8 @@ const runtimeStoreAppId = '361309726';
 const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
 const reloadActionFromStorage =
   window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
+const hadQueuedBootActionAtLoad = bootActionFromStorage !== 'none';
+const hadQueuedReloadActionAtLoad = reloadActionFromStorage !== 'none';
 
 if (bootActionFromStorage === 'none' && reloadActionFromStorage === 'none') {
   window.localStorage.removeItem(lastActionStorageKey);
@@ -3534,7 +3536,26 @@ async function bootstrap() {
   const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
   if (bootActionIds.length) {
-    await pause(isMaestroE2E ? 0 : platform === 'ios' ? 500 : 100);
+    if (serverUrl.startsWith('http')) {
+      await waitForCondition(
+        async () => {
+          try {
+            await refreshServerState();
+            return Boolean(state.serverDebug?.debug);
+          } catch {
+            return false;
+          }
+        },
+        45000,
+        isMaestroE2E ? 200 : 500,
+      );
+    } else {
+      await waitForCondition(
+        () => (state.notifyStatus ?? '').startsWith('ok'),
+        45000,
+        isMaestroE2E ? 200 : 500,
+      );
+    }
   }
   for (const bootActionId of bootActionIds) {
     try {
@@ -3553,7 +3574,9 @@ async function bootstrap() {
   if (
     isMaestroE2E &&
     platform === 'ios' &&
-    import.meta.env.VITE_CAPGO_AUTO_SMOKE_ON_BOOT === 'true'
+    import.meta.env.VITE_CAPGO_AUTO_SMOKE_ON_BOOT === 'true' &&
+    !hadQueuedBootActionAtLoad &&
+    !hadQueuedReloadActionAtLoad
   ) {
     void runSmokeSequence().catch((error) => {
       console.error('Auto smoke sequence failed', error);
