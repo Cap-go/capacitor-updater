@@ -58,10 +58,10 @@ APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
 
 maestro_runtime_js() {
   if command -v bun >/dev/null 2>&1 && [[ "${CAPGO_MAESTRO_PREFER_BUN_JS:-0}" == "1" ]]; then
-    bun
+    bun "$@"
     return
   fi
-  node
+  node "$@"
 }
 
 cleanup() {
