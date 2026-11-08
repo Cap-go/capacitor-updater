@@ -3550,7 +3550,11 @@ async function bootstrap() {
     renderState();
   }
 
-  if (isMaestroE2E && import.meta.env.VITE_CAPGO_AUTO_SMOKE_ON_BOOT === 'true') {
+  if (
+    isMaestroE2E &&
+    platform === 'ios' &&
+    import.meta.env.VITE_CAPGO_AUTO_SMOKE_ON_BOOT === 'true'
+  ) {
     void runSmokeSequence().catch((error) => {
       console.error('Auto smoke sequence failed', error);
     });
