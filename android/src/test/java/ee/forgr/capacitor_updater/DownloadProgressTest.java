@@ -2,6 +2,7 @@ package ee.forgr.capacitor_updater;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doAnswer;
@@ -32,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -40,6 +42,18 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
 public class DownloadProgressTest {
+
+    @After
+    public void restoreHttpsOnly() {
+        DownloadService.setHttpsOnly(true);
+    }
+
+    @Test
+    public void restoreHttpsOnlyResetsVolatileFlag() {
+        DownloadService.setHttpsOnly(false);
+        restoreHttpsOnly();
+        assertTrue(DownloadService.httpsOnly);
+    }
 
     @Test
     public void repeatedOrLatePercentagesDoNotWriteWorkManagerProgressAgain() throws Exception {

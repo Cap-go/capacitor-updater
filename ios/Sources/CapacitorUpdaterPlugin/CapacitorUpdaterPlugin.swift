@@ -3870,16 +3870,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self, requestToken == self.splashscreenInvocationToken else {
                 return
             }
-            webView.callAsyncJavaScript(
-                script,
-                arguments: [:],
-                in: nil,
-                in: .page
-            ) { [weak self] (result: Result<Any, Error>) in
+            webView.capgo_callAsyncJavaScriptInPage(script, arguments: [:]) { [weak self] (_, error) in
                 guard let self = self, requestToken == self.splashscreenInvocationToken else {
                     return
                 }
-                if case .failure(let error) = result {
+                if let error {
                     self.retrySplashscreenAction(
                         action,
                         retriesRemaining: retriesRemaining,
