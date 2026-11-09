@@ -711,6 +711,12 @@ public class CapgoUpdater {
         return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
     }
 
+    private void logBuiltinMinimumParseSkipped(final String version) {
+        logger.debug(
+            "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
+        );
+    }
+
     /**
      * builtinMinimum gate: a bundle may never roll the app below its native version. Skipped (debug log) when
      * either version string does not parse, so unversioned bundles keep working.
@@ -726,15 +732,11 @@ public class CapgoUpdater {
             bundle = new Version(stripBuildMetadata(version));
             nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
         } catch (final NumberFormatException e) {
-            logger.debug(
-                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
-            );
+            logBuiltinMinimumParseSkipped(version);
             return;
         }
         if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
-            logger.debug(
-                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
-            );
+            logBuiltinMinimumParseSkipped(version);
             return;
         }
         // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.

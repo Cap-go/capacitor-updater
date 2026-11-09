@@ -247,6 +247,35 @@ private final class LoopbackHTTPServer {
 }
 
 final class NetworkTransportTests: XCTestCase {
+    private final class NoGetAfterSuccessGuard {
+        private let lock = NSLock()
+        private(set) var attempts = 0
+        private(set) var postSuccessAttempts = 0
+        private var servedSuccess = false
+
+        enum Phase {
+            case rejectPostSuccess
+            case attempt(number: Int)
+        }
+
+        func next() -> Phase {
+            lock.lock()
+            defer { lock.unlock() }
+            if servedSuccess {
+                postSuccessAttempts += 1
+                return .rejectPostSuccess
+            }
+            attempts += 1
+            return .attempt(number: attempts)
+        }
+
+        func markSuccess() {
+            lock.lock()
+            servedSuccess = true
+            lock.unlock()
+        }
+    }
+
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
     private var activeUpdaters: [CapgoUpdater] = []
@@ -296,24 +325,18 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
-        var postSuccessAttempts = 0
-        var servedSuccess = false
+        let attemptGuard = NoGetAfterSuccessGuard()
         server.respond { _ in
-            lock.lock()
-            if servedSuccess {
-                postSuccessAttempts += 1
-                lock.unlock()
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
                 return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let status = number == 1 ? 503 : 200
+                if status == 200 {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: status, body: status == 200 ? body : Data())
             }
-            attempts += 1
-            let status = attempts == 1 ? 503 : 200
-            if status == 200 {
-                servedSuccess = true
-            }
-            lock.unlock()
-            return .init(status: status, body: status == 200 ? body : Data())
         }
         let updater = makeUpdater()
         defer { releaseUpdater(updater) }
@@ -325,9 +348,9 @@ final class NetworkTransportTests: XCTestCase {
         defer { _ = updater.delete(id: installed.getId()) }
         // URLSession may issue an extra GET after 503 before surfacing the failure to our retry loop,
         // so expect at least one 503 and a final 200, and at most three hits on the test server.
-        XCTAssertGreaterThanOrEqual(attempts, 2)
-        XCTAssertLessThanOrEqual(attempts, 3)
-        XCTAssertEqual(postSuccessAttempts, 0, "unexpected GET after successful download")
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 2)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -338,25 +361,19 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
-        var postSuccessAttempts = 0
-        var servedSuccess = false
+        let attemptGuard = NoGetAfterSuccessGuard()
         // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
         server.respond { _ in
-            lock.lock()
-            if servedSuccess {
-                postSuccessAttempts += 1
-                lock.unlock()
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
                 return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let drop = number <= 2
+                if !drop {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: 200, body: body, dropConnection: drop)
             }
-            attempts += 1
-            let drop = attempts <= 2
-            if !drop {
-                servedSuccess = true
-            }
-            lock.unlock()
-            return .init(status: 200, body: body, dropConnection: drop)
         }
         let updater = makeUpdater()
         defer { releaseUpdater(updater) }
@@ -367,9 +384,9 @@ final class NetworkTransportTests: XCTestCase {
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
         // Two drops plus URLSession's own replays can hit the server more than three times before success.
-        XCTAssertGreaterThanOrEqual(attempts, 3)
-        XCTAssertLessThanOrEqual(attempts, 5)
-        XCTAssertEqual(postSuccessAttempts, 0, "unexpected GET after successful download")
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 5)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }

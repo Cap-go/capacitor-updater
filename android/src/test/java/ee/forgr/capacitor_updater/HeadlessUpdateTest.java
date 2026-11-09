@@ -177,39 +177,8 @@ public class HeadlessUpdateTest {
     public void configureInitializesDownloadLoggerWhenUnset() throws Exception {
         DownloadService.setLogger(null);
         DownloadWorkerManager.setLogger(null);
-        final PluginConfig config = mock(PluginConfig.class);
-        when(config.getString("publicKey", "")).thenReturn("");
-        when(config.getBoolean("allowHttpsToHttpRedirect", false)).thenReturn(false);
-        when(config.getBoolean("httpsOnly", true)).thenReturn(true);
-        when(config.getBoolean("builtinMinimum", false)).thenReturn(false);
-        when(config.getBoolean("persistModifyUrl", false)).thenReturn(false);
-        when(config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)).thenReturn(CapacitorUpdaterPlugin.statsUrlDefault);
-        when(config.getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)).thenReturn(CapacitorUpdaterPlugin.channelUrlDefault);
-        when(config.getString("defaultChannel", "")).thenReturn("");
-        when(config.getBoolean("persistCustomId", false)).thenReturn(false);
-        when(config.getInt("responseTimeout", 20)).thenReturn(20);
-        when(config.getString("version", "2.0.0")).thenReturn("2.0.0");
-        when(config.getString("appId", "app")).thenReturn("app");
-
-        final CapgoUpdater updater = new CapgoUpdater(new Logger("configure-logger-test"));
-        final Context context = RuntimeEnvironment.getApplication();
-        final SharedPreferences prefs = context.getSharedPreferences("headless-logger-test", Context.MODE_PRIVATE);
-        final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         final Logger headlessLogger = new Logger("configure-logger-test");
-
-        final Method configure = HeadlessUpdateWorker.class.getDeclaredMethod(
-            "configure",
-            CapgoUpdater.class,
-            Context.class,
-            PluginConfig.class,
-            SharedPreferences.class,
-            PackageInfo.class,
-            String.class,
-            Logger.class
-        );
-        configure.setAccessible(true);
-        configure.invoke(null, updater, context, config, prefs, packageInfo, "42", headlessLogger);
-
+        invokeHeadlessConfigure("headless-logger-test", headlessLogger);
         org.junit.Assert.assertSame(headlessLogger, DownloadService.getLogger());
         org.junit.Assert.assertSame(headlessLogger, DownloadWorkerManager.getLogger());
     }
@@ -219,25 +188,18 @@ public class HeadlessUpdateTest {
         final Logger preset = new Logger("preset-service");
         DownloadService.setLogger(preset);
         DownloadWorkerManager.setLogger(null);
-        final PluginConfig config = mock(PluginConfig.class);
-        when(config.getString("publicKey", "")).thenReturn("");
-        when(config.getBoolean("allowHttpsToHttpRedirect", false)).thenReturn(false);
-        when(config.getBoolean("httpsOnly", true)).thenReturn(true);
-        when(config.getBoolean("builtinMinimum", false)).thenReturn(false);
-        when(config.getBoolean("persistModifyUrl", false)).thenReturn(false);
-        when(config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)).thenReturn(CapacitorUpdaterPlugin.statsUrlDefault);
-        when(config.getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)).thenReturn(CapacitorUpdaterPlugin.channelUrlDefault);
-        when(config.getString("defaultChannel", "")).thenReturn("");
-        when(config.getBoolean("persistCustomId", false)).thenReturn(false);
-        when(config.getInt("responseTimeout", 20)).thenReturn(20);
-        when(config.getString("version", "2.0.0")).thenReturn("2.0.0");
-        when(config.getString("appId", "app")).thenReturn("app");
-
-        final CapgoUpdater updater = new CapgoUpdater(new Logger("configure-partial-logger-test"));
-        final Context context = RuntimeEnvironment.getApplication();
-        final SharedPreferences prefs = context.getSharedPreferences("headless-partial-logger-test", Context.MODE_PRIVATE);
-        final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         final Logger headlessLogger = new Logger("configure-partial-logger-test");
+        invokeHeadlessConfigure("headless-partial-logger-test", headlessLogger);
+        org.junit.Assert.assertSame(preset, DownloadService.getLogger());
+        org.junit.Assert.assertSame(headlessLogger, DownloadWorkerManager.getLogger());
+    }
+
+    private static void invokeHeadlessConfigure(final String prefsName, final Logger headlessLogger) throws Exception {
+        final PluginConfig config = mockHeadlessPluginConfig();
+        final CapgoUpdater updater = new CapgoUpdater(headlessLogger);
+        final Context context = RuntimeEnvironment.getApplication();
+        final SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
+        final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
 
         final Method configure = HeadlessUpdateWorker.class.getDeclaredMethod(
             "configure",
@@ -251,8 +213,22 @@ public class HeadlessUpdateTest {
         );
         configure.setAccessible(true);
         configure.invoke(null, updater, context, config, prefs, packageInfo, "42", headlessLogger);
+    }
 
-        org.junit.Assert.assertSame(preset, DownloadService.getLogger());
-        org.junit.Assert.assertSame(headlessLogger, DownloadWorkerManager.getLogger());
+    private static PluginConfig mockHeadlessPluginConfig() {
+        final PluginConfig config = mock(PluginConfig.class);
+        when(config.getString("publicKey", "")).thenReturn("");
+        when(config.getBoolean("allowHttpsToHttpRedirect", false)).thenReturn(false);
+        when(config.getBoolean("httpsOnly", true)).thenReturn(true);
+        when(config.getBoolean("builtinMinimum", false)).thenReturn(false);
+        when(config.getBoolean("persistModifyUrl", false)).thenReturn(false);
+        when(config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)).thenReturn(CapacitorUpdaterPlugin.statsUrlDefault);
+        when(config.getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)).thenReturn(CapacitorUpdaterPlugin.channelUrlDefault);
+        when(config.getString("defaultChannel", "")).thenReturn("");
+        when(config.getBoolean("persistCustomId", false)).thenReturn(false);
+        when(config.getInt("responseTimeout", 20)).thenReturn(20);
+        when(config.getString("version", "2.0.0")).thenReturn("2.0.0");
+        when(config.getString("appId", "app")).thenReturn("app");
+        return config;
     }
 }
