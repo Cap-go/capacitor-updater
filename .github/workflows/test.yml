@@ -926,6 +926,8 @@ jobs:
       - maestro_ios_edge_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
     name: iOS example app Maestro edge case / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -958,16 +960,7 @@ jobs:
           set -euo pipefail
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -978,6 +971,15 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       # Default summary waits are 180s per step; multiple Maestro steps plus a 300s flow timeout and
       # a full job retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows
@@ -1010,7 +1012,7 @@ jobs:
           else
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=70000
           fi
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
@@ -1018,37 +1020,13 @@ jobs:
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
-      - name: Upload edge case Maestro artifacts (attempt 1)
-        if: always()
-        id: upload_maestro_ios_edge_1
-        continue-on-error: true
+      - name: Upload edge case Maestro artifacts
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-edge-${{ matrix.scenario }}
-          path: maestro-results-ios-live-update/${{ matrix.scenario }}
-      - name: Wait before retrying edge case Maestro artifacts upload
-        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
-        run: sleep 15
-      - name: Upload edge case Maestro artifacts (attempt 2)
-        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure'
-        id: upload_maestro_ios_edge_2
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-edge-${{ matrix.scenario }}
-          overwrite: true
-          path: maestro-results-ios-live-update/${{ matrix.scenario }}
-      - name: Wait before final edge case Maestro artifacts upload
-        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
-        run: sleep 15
-      - name: Upload edge case Maestro artifacts (attempt 3)
-        if: always() && steps.upload_maestro_ios_edge_1.outcome == 'failure' && steps.upload_maestro_ios_edge_2.outcome == 'failure'
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-results-ios-edge-${{ matrix.scenario }}
-          overwrite: true
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
   web:
