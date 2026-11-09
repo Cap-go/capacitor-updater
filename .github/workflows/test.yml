@@ -261,10 +261,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # CapacitorUpdaterTests is large; parallel workers keep this shard under the job cap.
-          - shard: core
-            parallel_testing: '1'
-            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+          # CapacitorUpdaterTests is large; split across two shards so each stays under the 5 minute job cap.
+          - shard: core-a
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh a
+          - shard: core-b
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh b
           # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
           - shard: delta
             parallel_testing: '0'
@@ -310,8 +313,7 @@ jobs:
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
-          dependency-cache-path: node_modules
+          install-dependencies: 'false'
       - name: Download iOS test build and CLI fresh fixtures
         uses: actions/download-artifact@v8
         with:
@@ -324,7 +326,13 @@ jobs:
           key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
-        run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
+        run: |
+          if [[ -n "${{ matrix.select_cmd }}" ]]; then
+            mapfile -t SELECT_ARGS < <(./${{ matrix.select_cmd }})
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh "${SELECT_ARGS[@]}"
+          else
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
+          fi
 
   maestro_web_assets:
     permissions:
@@ -717,6 +725,10 @@ jobs:
       - maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS: '25'
+      CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS: '1'
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -783,6 +795,10 @@ jobs:
       - maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS: '25'
+      CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS: '1'
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -831,7 +847,7 @@ jobs:
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=240 \
           CAPGO_MAESTRO_TEST_RETRIES=2 \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
         if: always()

@@ -1037,7 +1037,11 @@ RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 
-boot_simulator
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" == "1" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+else
+  boot_simulator
+fi
 
 cd "$ROOT_DIR"
 
