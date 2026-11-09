@@ -3265,7 +3265,7 @@ public class CapgoUpdater {
                                 ret.put(key, jsonResponse.get(key));
                             }
                         }
-                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
+                        persistDefaultChannelFromResponse(ret.get("channel"), ret.get("status"), editor, defaultChannelKey);
                         logger.info("Channel get to \"" + ret);
                         callback.callback(ret);
                     } catch (JSONException e) {
@@ -3279,7 +3279,16 @@ public class CapgoUpdater {
         );
     }
 
-    void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+    void persistDefaultChannelFromResponse(
+        final Object channel,
+        final Object status,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey
+    ) {
+        if (status instanceof String && "default".equals(status)) {
+            return;
+        }
+
         if (!(channel instanceof String)) {
             return;
         }

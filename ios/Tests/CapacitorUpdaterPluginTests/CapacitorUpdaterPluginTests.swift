@@ -1464,9 +1464,51 @@ class CapacitorUpdaterTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
 
-        updater.persistDefaultChannelFromResponse(channel: "builtin", defaultChannelKey: defaultsKey)
+        updater.persistDefaultChannelFromResponse(channel: "builtin", status: "ok", defaultChannelKey: defaultsKey)
 
         XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testGetChannelDoesNotPersistDefaultStatusChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = "https://example.com/channel"
+        updater.defaultChannel = ""
+
+        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"channel":"production","status":"default","allowSet":true}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.getChannel(defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(result.channel, "production")
+        XCTAssertEqual(result.status, "default")
+        XCTAssertEqual(updater.defaultChannel, "")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testPersistDefaultChannelFromResponseIgnoresDefaultStatus() {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "dev"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(channel: "production", status: "default", defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(updater.defaultChannel, "dev")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 

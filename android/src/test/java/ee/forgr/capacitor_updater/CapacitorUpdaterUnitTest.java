@@ -4399,7 +4399,7 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
 
-        updater.persistDefaultChannelFromResponse(" company-a ", editor, "CapacitorUpdater.defaultChannel");
+        updater.persistDefaultChannelFromResponse(" company-a ", "ok", editor, "CapacitorUpdater.defaultChannel");
 
         assertEquals("company-a", updater.defaultChannel);
         verify(editor).putString("CapacitorUpdater.defaultChannel", "company-a");
@@ -4477,9 +4477,22 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         updater.defaultChannel = "stable";
 
-        updater.persistDefaultChannelFromResponse("builtin", editor, "CapacitorUpdater.defaultChannel");
+        updater.persistDefaultChannelFromResponse("builtin", "ok", editor, "CapacitorUpdater.defaultChannel");
 
         assertEquals("stable", updater.defaultChannel);
+        verify(editor, never()).putString(anyString(), anyString());
+        verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseIgnoresDefaultStatus() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.defaultChannel = "dev";
+
+        updater.persistDefaultChannelFromResponse("production", "default", editor, "CapacitorUpdater.defaultChannel");
+
+        assertEquals("dev", updater.defaultChannel);
         verify(editor, never()).putString(anyString(), anyString());
         verify(editor, never()).apply();
     }
