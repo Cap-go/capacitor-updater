@@ -748,7 +748,6 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -768,6 +767,8 @@ jobs:
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -819,7 +820,6 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -839,6 +839,8 @@ jobs:
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -963,7 +965,6 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -983,6 +984,8 @@ jobs:
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       # Default summary waits are 180s per step; multiple Maestro steps plus a 300s flow timeout and
       # a full job retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows

@@ -817,6 +817,9 @@ run_scenario() {
     fi
     run_edge_case "$scenario_id"
     echo "=== Completed iOS Maestro edge case: $scenario_id ==="
+    if [[ -n "${CI:-}" ]]; then
+      reset_ios_maestro_driver
+    fi
     return 0
   fi
 
@@ -919,6 +922,9 @@ if (failures.length) {
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
+  if [[ -n "${CI:-}" ]]; then
+    reset_ios_maestro_driver
+  fi
   return 0
 }
 
