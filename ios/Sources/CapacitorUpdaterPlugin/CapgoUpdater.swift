@@ -3832,6 +3832,26 @@ import UIKit
 
     func persistDefaultChannelFromResponse(channel: String?, status: String?, defaultChannelKey: String?) {
         if status == "default" {
+            guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !channelName.isEmpty else {
+                return
+            }
+            var persisted = defaultChannel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let defaultChannelKey, !defaultChannelKey.isEmpty,
+               let stored = UserDefaults.standard.string(forKey: defaultChannelKey) {
+                let trimmedStored = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedStored.isEmpty {
+                    persisted = trimmedStored
+                }
+            }
+            if channelName == persisted {
+                self.defaultChannel = ""
+                if let defaultChannelKey, !defaultChannelKey.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+                    UserDefaults.standard.synchronize()
+                }
+                logger.info("defaultChannel cleared stale getChannel() fallback: \(channelName)")
+            }
             return
         }
         guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),

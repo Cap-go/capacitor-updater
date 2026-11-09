@@ -3286,6 +3286,17 @@ public class CapgoUpdater {
         final String defaultChannelKey
     ) {
         if (status instanceof String && "default".equals(status)) {
+            if (channel instanceof String) {
+                final String channelName = ((String) channel).trim();
+                if (!channelName.isEmpty() && channelName.equals(this.defaultChannel)) {
+                    this.defaultChannel = "";
+                    if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+                        editor.remove(defaultChannelKey);
+                        editor.apply();
+                    }
+                    logger.info("defaultChannel cleared stale getChannel() fallback: " + channelName);
+                }
+            }
             return;
         }
 
