@@ -748,6 +748,7 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -818,6 +819,7 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -961,6 +963,7 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+          nohup xcrun simctl bootstatus "$simulator_id" -b >/dev/null 2>&1 &
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
