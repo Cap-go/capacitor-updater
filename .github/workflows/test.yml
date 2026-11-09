@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26.x
       - name: Check plugin wiring
         if: runner.os != 'Windows'
         run: bun run check:wiring
