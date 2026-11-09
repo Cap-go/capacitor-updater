@@ -3821,12 +3821,19 @@ import UIKit
             getChannel.message = responseValue.message ?? ""
             getChannel.channel = responseValue.channel ?? ""
             getChannel.allowSet = responseValue.allowSet ?? true
-            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
+            persistDefaultChannelFromResponse(
+                channel: responseValue.channel,
+                status: responseValue.status,
+                defaultChannelKey: defaultChannelKey
+            )
         }
         return getChannel
     }
 
-    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
+    func persistDefaultChannelFromResponse(channel: String?, status: String?, defaultChannelKey: String?) {
+        if status == "default" {
+            return
+        }
         guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
               !channelName.isEmpty,
               channelName != BundleInfo.ID_BUILTIN else {
