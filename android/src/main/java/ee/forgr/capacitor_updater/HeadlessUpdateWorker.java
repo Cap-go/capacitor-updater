@@ -323,6 +323,8 @@ public class HeadlessUpdateWorker extends Worker {
         updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
         if (DownloadService.getLogger() == null) {
             DownloadService.setLogger(headlessLogger);
+        }
+        if (DownloadWorkerManager.getLogger() == null) {
             DownloadWorkerManager.setLogger(headlessLogger);
         }
 

@@ -298,10 +298,20 @@ final class NetworkTransportTests: XCTestCase {
         let hash = CryptoCipher.calcChecksum(filePath: file)
         let lock = NSLock()
         var attempts = 0
+        var postSuccessAttempts = 0
+        var servedSuccess = false
         server.respond { _ in
             lock.lock()
+            if servedSuccess {
+                postSuccessAttempts += 1
+                lock.unlock()
+                return .init(status: 500, body: Data())
+            }
             attempts += 1
             let status = attempts == 1 ? 503 : 200
+            if status == 200 {
+                servedSuccess = true
+            }
             lock.unlock()
             return .init(status: status, body: status == 200 ? body : Data())
         }
@@ -317,6 +327,7 @@ final class NetworkTransportTests: XCTestCase {
         // so expect at least one 503 and a final 200, and at most three hits on the test server.
         XCTAssertGreaterThanOrEqual(attempts, 2)
         XCTAssertLessThanOrEqual(attempts, 3)
+        XCTAssertEqual(postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -329,11 +340,21 @@ final class NetworkTransportTests: XCTestCase {
         let hash = CryptoCipher.calcChecksum(filePath: file)
         let lock = NSLock()
         var attempts = 0
+        var postSuccessAttempts = 0
+        var servedSuccess = false
         // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
         server.respond { _ in
             lock.lock()
+            if servedSuccess {
+                postSuccessAttempts += 1
+                lock.unlock()
+                return .init(status: 500, body: Data())
+            }
             attempts += 1
             let drop = attempts <= 2
+            if !drop {
+                servedSuccess = true
+            }
             lock.unlock()
             return .init(status: 200, body: body, dropConnection: drop)
         }
@@ -348,6 +369,7 @@ final class NetworkTransportTests: XCTestCase {
         // Two drops plus URLSession's own replays can hit the server more than three times before success.
         XCTAssertGreaterThanOrEqual(attempts, 3)
         XCTAssertLessThanOrEqual(attempts, 5)
+        XCTAssertEqual(postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }

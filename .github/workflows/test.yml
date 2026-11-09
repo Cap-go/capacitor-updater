@@ -283,6 +283,7 @@ jobs:
               -only-testing:CapacitorUpdaterPluginTests/HttpsOnlyBuiltinMinimumTests
               -only-testing:CapacitorUpdaterPluginTests/ListChannelsTests
               -only-testing:CapacitorUpdaterPluginTests/LoggerSecurityTests
+              -only-testing:CapacitorUpdaterPluginTests/WebKitOverlayGuardTests
           - shard: rest-c
             parallel_testing: '0'
             select: >-
@@ -922,7 +923,7 @@ jobs:
             edge_case_retries: 1
           - scenario: edge-corrupt-bundle
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-offline-check
             app: edge-deferred
             edge_case_retries: 1
@@ -980,10 +981,10 @@ jobs:
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
             export CAPGO_MAESTRO_SUMMARY_WAIT_MS=80000
           elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" ]]; then
-            # Three summary waits in the deferred recovery flow.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
+            # One matrix retry and tighter waits keep flow plus artifact uploads under the 10 minute job cap.
+            export CAPGO_MAESTRO_TIMEOUT_SECONDS=210
+            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=75
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=65000
           elif [[ "$MATRIX_SCENARIO" == "edge-network-drop" ]]; then
             # Shell clears the drop fault before Maestro; slightly shorter summary waits keep
             # three deferred steps within the 240s flow cap and the 10 minute job cap.

@@ -720,8 +720,17 @@ public class CapgoUpdater {
             return;
         }
         // Build metadata (+...) never takes part in ordering.
-        final Version bundle = new Version(stripBuildMetadata(version));
-        final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
+        final Version bundle;
+        final Version nativeVersion;
+        try {
+            bundle = new Version(stripBuildMetadata(version));
+            nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
+        } catch (final NumberFormatException e) {
+            logger.debug(
+                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
+            );
+            return;
+        }
         if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
             logger.debug(
                 "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
