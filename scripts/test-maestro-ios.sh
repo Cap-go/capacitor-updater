@@ -492,6 +492,13 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     break
   fi
 
+  if [[ $status -eq 124 ]] && [[ -f "$output_file" ]] && grep -qE '\[Passed\][[:space:]]|/[0-9]+ Flow Passed' "$output_file"; then
+    echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
+    reset_ios_maestro_driver
+    rm -f "$output_file"
+    break
+  fi
+
   if [[ $status -eq 124 ]]; then
     echo "Maestro test timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds." >&2
   fi

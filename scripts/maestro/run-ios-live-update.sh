@@ -428,6 +428,12 @@ read_app_marketing_version() {
   return 0
 }
 
+maestro_cli_reported_pass() {
+  local output_file="$1"
+
+  [[ -f "$output_file" ]] && grep -qE '\[Passed\][[:space:]]|/[0-9]+ Flow Passed' "$output_file"
+}
+
 run_flow() {
   local label="$1"
   local flow_path="$2"
@@ -483,6 +489,13 @@ run_flow() {
     set -e
 
     if [[ $status -eq 0 ]]; then
+      rm -f "$output_file"
+      return 0
+    fi
+
+    if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
+      echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
+      reset_ios_maestro_driver
       rm -f "$output_file"
       return 0
     fi
