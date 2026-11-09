@@ -751,7 +751,10 @@ run_edge_case_once() {
     "$ASSERT_SOURCE_DOWNLOADED" \
     "Current bundle version: $first_release")"
 
-  reset_ios_maestro_driver
+  # kill-download just relaunched the app; resetting the XCTest driver here can crash it mid-recovery.
+  if [[ "$edge_case_id" != "edge-kill-download" ]]; then
+    reset_ios_maestro_driver
+  fi
 
   if [[ "$app_scenario" == "edge-direct" ]]; then
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
