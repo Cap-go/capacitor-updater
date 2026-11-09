@@ -1502,6 +1502,7 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.defaultChannel = "dev"
 
         let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("dev", forKey: defaultsKey)
         defer {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
@@ -1509,6 +1510,23 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.persistDefaultChannelFromResponse(channel: "production", status: "default", defaultChannelKey: defaultsKey)
 
         XCTAssertEqual(updater.defaultChannel, "dev")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "dev")
+    }
+
+    func testPersistDefaultChannelFromResponseClearsStaleDefaultFallback() {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "production"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("production", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(channel: "production", status: "default", defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(updater.defaultChannel, "")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
     }
 

@@ -42,6 +42,8 @@ import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -4494,7 +4496,70 @@ public class CapacitorUpdaterUnitTest {
 
         assertEquals("dev", updater.defaultChannel);
         verify(editor, never()).putString(anyString(), anyString());
+        verify(editor, never()).remove(anyString());
         verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseClearsStaleDefaultFallback() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.remove("CapacitorUpdater.defaultChannel")).thenReturn(editor);
+        updater.defaultChannel = "production";
+
+        updater.persistDefaultChannelFromResponse("production", "default", editor, "CapacitorUpdater.defaultChannel");
+
+        assertEquals("", updater.defaultChannel);
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).apply();
+        verify(editor, never()).putString(anyString(), anyString());
+    }
+
+    @Test
+    public void getChannelDoesNotPersistDefaultStatusChannel() throws Exception {
+        DownloadService.setHttpsOnly(false);
+        final MockWebServer server = new MockWebServer();
+        try {
+            server.enqueue(
+                new MockResponse()
+                    .setResponseCode(200)
+                    .setBody("{\"channel\":\"production\",\"status\":\"default\",\"allowSet\":true}")
+                    .addHeader("Content-Type", "application/json")
+            );
+            server.start();
+
+            final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+            updater.channelUrl = server.url("/channel").toString();
+            updater.defaultChannel = "dev";
+            updater.CAP_SERVER_PATH = "server-path";
+            updater.prefs = mock(SharedPreferences.class);
+            when(updater.prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+            when(updater.prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+            final String defaultChannelKey = "CapacitorUpdater.defaultChannel";
+            final CountDownLatch latch = new CountDownLatch(1);
+            final AtomicReference<Map<String, Object>> response = new AtomicReference<>();
+
+            updater.getChannel(
+                ret -> {
+                    response.set(ret);
+                    latch.countDown();
+                },
+                editor,
+                defaultChannelKey
+            );
+
+            assertTrue("getChannel callback timed out", latch.await(5, TimeUnit.SECONDS));
+            assertEquals("production", response.get().get("channel"));
+            assertEquals("default", response.get().get("status"));
+            assertEquals("dev", updater.defaultChannel);
+            verify(editor, never()).putString(eq(defaultChannelKey), anyString());
+            verify(editor, never()).remove(defaultChannelKey);
+        } finally {
+            server.shutdown();
+            DownloadService.setHttpsOnly(true);
+        }
     }
 
     @Test
