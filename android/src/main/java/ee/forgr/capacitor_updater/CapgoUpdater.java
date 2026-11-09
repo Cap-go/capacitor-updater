@@ -712,9 +712,7 @@ public class CapgoUpdater {
     }
 
     private void logBuiltinMinimumParseSkipped(final String version) {
-        logger.debug(
-            "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
-        );
+        logger.debug("builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'");
     }
 
     /**
