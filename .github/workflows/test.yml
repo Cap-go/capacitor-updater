@@ -782,7 +782,7 @@ jobs:
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-${{ matrix.scenario }}
