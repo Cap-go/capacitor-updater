@@ -261,6 +261,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
           # CapacitorUpdaterTests is large; split across two shards so each stays under the 5 minute job cap.
           - shard: core-a
             parallel_testing: '0'
@@ -328,8 +329,7 @@ jobs:
         id: test_ios
         run: |
           if [[ -n "${{ matrix.select_cmd }}" ]]; then
-            mapfile -t SELECT_ARGS < <(./${{ matrix.select_cmd }})
-            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh "${SELECT_ARGS[@]}"
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh $(./${{ matrix.select_cmd }})
           else
             CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
           fi
@@ -748,15 +748,6 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -767,6 +758,15 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -818,15 +818,6 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Download reusable Maestro web assets
         uses: actions/download-artifact@v8
         with:
@@ -837,6 +828,15 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+          install-dependencies: 'false'
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -850,7 +850,7 @@ jobs:
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}

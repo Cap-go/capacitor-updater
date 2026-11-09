@@ -15,6 +15,9 @@ const workflowPath = path.join(root, ".github/workflows/test.yml");
 /** Timing-only; scripts/test-ios.sh skips it in CI via -skip-testing. */
 const EXCLUDED = new Set(["InstallPerfTests"]);
 
+/** Method-level core shards; see scripts/ci/ios-capacitor-updater-core-shard-args.sh */
+const CORE_SHARD_SCRIPT = "ios-capacitor-updater-core-shard-args.sh";
+
 const workflow = fs.readFileSync(workflowPath, "utf8");
 const listed = new Set(
   [...workflow.matchAll(/-only-testing:CapacitorUpdaterPluginTests\/(\w+)/g)].map((m) => m[1])
@@ -28,6 +31,9 @@ for (const file of fs.readdirSync(testsDir).filter((f) => f.endsWith(".swift")))
   for (const match of text.matchAll(classRe)) {
     const name = match[1];
     if (EXCLUDED.has(name)) {
+      continue;
+    }
+    if (name === "CapacitorUpdaterTests" && workflow.includes(CORE_SHARD_SCRIPT)) {
       continue;
     }
     if (!listed.has(name)) {
