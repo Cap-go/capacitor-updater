@@ -4577,7 +4577,6 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         when(prefs.getBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false)).thenReturn(true);
         when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
-        when(editor.apply()).thenReturn(null);
         updater.prefs = prefs;
         updater.defaultChannel = "company-a";
 
