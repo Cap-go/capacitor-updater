@@ -3153,6 +3153,9 @@ public class CapgoUpdater {
         });
     }
 
+    /**
+     * Legacy entry point. Does not persist or clear channel state because editor and preference keys are null.
+     */
     public void getChannel(final Callback callback) {
         this.getChannel(callback, null, null, null, null);
     }
@@ -3307,6 +3310,7 @@ public class CapgoUpdater {
             if (channel instanceof String) {
                 final String channelName = ((String) channel).trim();
                 if (!channelName.isEmpty() && channelName.equals(this.defaultChannel)) {
+                    // Match iOS: compare in-memory defaultChannel; iOS also consults prefs when memory diverges.
                     boolean fromSetChannel = false;
                     if (this.prefs != null && defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
                         fromSetChannel = this.prefs.getBoolean(defaultChannelFromSetChannelKey, false);
@@ -3336,10 +3340,17 @@ public class CapgoUpdater {
             return;
         }
 
+        final boolean preserveSetChannelMarker =
+            this.prefs != null
+                && defaultChannelFromSetChannelKey != null
+                && !defaultChannelFromSetChannelKey.isEmpty()
+                && this.prefs.getBoolean(defaultChannelFromSetChannelKey, false)
+                && channelName.equals(this.defaultChannel);
+
         this.defaultChannel = channelName;
         if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
             editor.putString(defaultChannelKey, channelName);
-            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty() && !preserveSetChannelMarker) {
                 editor.putBoolean(defaultChannelFromSetChannelKey, false);
             }
             editor.apply();

@@ -3871,6 +3871,7 @@ import UIKit
             } else {
                 fromSetChannel = false
             }
+            // Upgrades: values from setChannel() before this marker existed read as stale fallbacks and may clear here.
             if channelName == persisted, !fromSetChannel {
                 self.defaultChannel = configDefaultChannel
                 if let defaultChannelKey, !defaultChannelKey.isEmpty {
@@ -3890,10 +3891,18 @@ import UIKit
             return
         }
 
+        let preserveSetChannelMarker: Bool
+        if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+            preserveSetChannelMarker =
+                UserDefaults.standard.bool(forKey: defaultChannelFromSetChannelKey) && channelName == defaultChannel
+        } else {
+            preserveSetChannelMarker = false
+        }
+
         self.defaultChannel = channelName
         if let defaultChannelKey, !defaultChannelKey.isEmpty {
             UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
-            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty, !preserveSetChannelMarker {
                 UserDefaults.standard.set(false, forKey: defaultChannelFromSetChannelKey)
             }
             UserDefaults.standard.synchronize()

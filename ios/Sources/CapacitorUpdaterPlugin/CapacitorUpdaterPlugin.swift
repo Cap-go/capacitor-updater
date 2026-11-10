@@ -122,7 +122,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
-    private let defaultChannelFromSetChannelDefaultsKey = "CapacitorUpdater.defaultChannelFromSetChannel"
+    static let defaultChannelFromSetChannelStorageKey = "CapacitorUpdater.defaultChannelFromSetChannel"
+    private let defaultChannelFromSetChannelDefaultsKey = CapacitorUpdaterPlugin.defaultChannelFromSetChannelStorageKey
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
     private let lastVersionOsDefaultsKey = "CapacitorUpdater.lastVersionOs"
     private let lastVersionBuildDefaultsKey = "CapacitorUpdater.lastVersionBuild"

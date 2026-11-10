@@ -4517,6 +4517,7 @@ public class CapacitorUpdaterUnitTest {
 
         assertEquals("dev", updater.defaultChannel);
         verify(editor, never()).putString(anyString(), anyString());
+        verify(editor, never()).putBoolean(anyString(), anyBoolean());
         verify(editor, never()).remove(anyString());
         verify(editor, never()).apply();
     }
@@ -4565,7 +4566,42 @@ public class CapacitorUpdaterUnitTest {
 
         assertEquals("company-a", updater.defaultChannel);
         verify(editor, never()).remove(anyString());
+        verify(editor, never()).putBoolean(anyString(), anyBoolean());
         verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseKeepsSetChannelMarkerAfterOverrideRefresh() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(prefs.getBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false)).thenReturn(true);
+        when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
+        when(editor.apply()).thenReturn(null);
+        updater.prefs = prefs;
+        updater.defaultChannel = "company-a";
+
+        updater.persistDefaultChannelFromResponse(
+            "company-a",
+            "ok",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        updater.persistDefaultChannelFromResponse(
+            "company-a",
+            "default",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        assertEquals("company-a", updater.defaultChannel);
+        verify(editor, never()).putBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false);
+        verify(editor, never()).remove(anyString());
     }
 
     @Test
