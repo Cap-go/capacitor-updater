@@ -32,6 +32,8 @@ public class HeadlessUpdateTest {
         CapacitorUpdaterPlugin.instanceLoaded = false;
         DownloadService.setHttpsOnly(true);
         DownloadService.setAllowHttpsToHttpRedirect(false);
+        DownloadService.setLogger(null);
+        DownloadWorkerManager.setLogger(null);
     }
 
     private static PluginConfig config(final String autoUpdate, final boolean autoUpdateBool, final String directUpdate) {
@@ -116,37 +118,13 @@ public class HeadlessUpdateTest {
     public void configureMirrorsDownloadSecurityFlagsFromPluginConfig() throws Exception {
         DownloadService.setHttpsOnly(true);
         DownloadService.setAllowHttpsToHttpRedirect(false);
-        final PluginConfig config = mock(PluginConfig.class);
-        when(config.getString("publicKey", "")).thenReturn("");
+        final PluginConfig config = mockHeadlessPluginConfig();
         when(config.getBoolean("allowHttpsToHttpRedirect", false)).thenReturn(true);
         when(config.getBoolean("httpsOnly", true)).thenReturn(false);
         when(config.getBoolean("builtinMinimum", false)).thenReturn(true);
-        when(config.getBoolean("persistModifyUrl", false)).thenReturn(false);
-        when(config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault)).thenReturn(CapacitorUpdaterPlugin.statsUrlDefault);
-        when(config.getString("channelUrl", CapacitorUpdaterPlugin.channelUrlDefault)).thenReturn(CapacitorUpdaterPlugin.channelUrlDefault);
-        when(config.getString("defaultChannel", "")).thenReturn("");
-        when(config.getBoolean("persistCustomId", false)).thenReturn(false);
-        when(config.getInt("responseTimeout", 20)).thenReturn(20);
-        when(config.getString("version", "2.0.0")).thenReturn("2.0.0");
-        when(config.getString("appId", "app")).thenReturn("app");
-
-        final CapgoUpdater updater = new CapgoUpdater(new Logger("test"));
-        final Context context = RuntimeEnvironment.getApplication();
-        final SharedPreferences prefs = context.getSharedPreferences("headless-config-test", Context.MODE_PRIVATE);
-        final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-
-        final Method configure = HeadlessUpdateWorker.class.getDeclaredMethod(
-            "configure",
-            CapgoUpdater.class,
-            Context.class,
-            PluginConfig.class,
-            SharedPreferences.class,
-            PackageInfo.class,
-            String.class,
-            Logger.class
-        );
-        configure.setAccessible(true);
-        configure.invoke(null, updater, context, config, prefs, packageInfo, "42", new Logger("test"));
+        final Logger headlessLogger = new Logger("headless-config-test");
+        final CapgoUpdater updater = new CapgoUpdater(headlessLogger);
+        invokeHeadlessConfigureWith("headless-config-test", config, headlessLogger, updater);
 
         assertTrue(updater.builtinMinimum);
         assertFalse(updater.httpsOnly);
@@ -165,11 +143,12 @@ public class HeadlessUpdateTest {
     }
 
     @Test
-    public void builtinMinimumBlocksExistingBundleTreatsNumericOverflowAsUnparsable() {
+    public void builtinMinimumBlocksExistingBundleRejectsOversizedCoreBelowNative() {
         final CapgoUpdater updater = new CapgoUpdater(new Logger("test"));
         updater.builtinMinimum = true;
         updater.versionBuild = "2.0.0";
         final Logger logger = new Logger("test");
+        assertTrue(HeadlessUpdateWorker.builtinMinimumBlocksExistingBundle(updater, "1.9223372036854775808.0", logger));
         assertFalse(HeadlessUpdateWorker.builtinMinimumBlocksExistingBundle(updater, "9223372036854775808.0.0", logger));
     }
 
@@ -195,8 +174,16 @@ public class HeadlessUpdateTest {
     }
 
     private static void invokeHeadlessConfigure(final String prefsName, final Logger headlessLogger) throws Exception {
-        final PluginConfig config = mockHeadlessPluginConfig();
         final CapgoUpdater updater = new CapgoUpdater(headlessLogger);
+        invokeHeadlessConfigureWith(prefsName, mockHeadlessPluginConfig(), headlessLogger, updater);
+    }
+
+    private static void invokeHeadlessConfigureWith(
+        final String prefsName,
+        final PluginConfig config,
+        final Logger headlessLogger,
+        final CapgoUpdater updater
+    ) throws Exception {
         final Context context = RuntimeEnvironment.getApplication();
         final SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
         final PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);

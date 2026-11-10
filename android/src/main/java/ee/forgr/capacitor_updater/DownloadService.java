@@ -97,10 +97,22 @@ public class DownloadService extends Worker {
         }
     }
 
-    private static Logger logger;
+    private static volatile Logger logger;
+    private static final Object LOGGER_LOCK = new Object();
 
     public static void setLogger(Logger loggerInstance) {
         logger = loggerInstance;
+    }
+
+    public static void setLoggerIfAbsent(Logger loggerInstance) {
+        if (loggerInstance == null) {
+            return;
+        }
+        synchronized (LOGGER_LOCK) {
+            if (logger == null) {
+                logger = loggerInstance;
+            }
+        }
     }
 
     public static Logger getLogger() {
@@ -700,6 +712,9 @@ public class DownloadService extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        if (logger == null) {
+            setLoggerIfAbsent(new Logger("CapgoUpdater", new Logger.Options(true)));
+        }
         final String documentsDir = getInputData().getString(DOCDIR);
         final String dest = getInputData().getString(FILEDEST);
         final String version = getInputData().getString(VERSION);

@@ -274,6 +274,8 @@ final class NetworkTransportTests: XCTestCase {
             servedSuccess = true
             lock.unlock()
         }
+
+        deinit {}
     }
 
     // swiftlint:disable:next implicitly_unwrapped_optional
@@ -346,6 +348,7 @@ final class NetworkTransportTests: XCTestCase {
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
+        server.drain(timeout: 0.25)
         // URLSession may issue an extra GET after 503 before surfacing the failure to our retry loop,
         // so expect at least one 503 and a final 200, and at most three hits on the test server.
         XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 2)

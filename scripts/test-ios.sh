@@ -34,8 +34,8 @@ fi
 
 # Parallel testing clones the simulator once per worker, and on 3-core CI
 # runners the clone and boot cost (about 70s) outweighs the test time it saves
-# for small shards. CapacitorUpdaterTests alone needs parallel workers to stay
-# under the CI job cap when CAPGO_IOS_PARALLEL_TESTING is set.
+# for small shards. CI keeps CAPGO_IOS_PARALLEL_TESTING at 0 so shards run
+# serially and stay under the 5 minute job cap.
 if [[ "$ACTION" != "build-for-testing" && -n "${CI:-}" && "${CAPGO_IOS_PARALLEL_TESTING:-0}" != "1" ]]; then
   EXTRA_ARGS+=(-parallel-testing-enabled NO)
 fi

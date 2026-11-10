@@ -72,14 +72,20 @@ public class HeadlessUpdateWorker extends Worker {
     @Override
     public Result doWork() {
         final Context context = getApplicationContext();
-        final PluginConfig config = CapConfig.loadDefault(context).getPluginConfiguration("CapacitorUpdater");
-        final boolean osLogging = config.getBoolean("osLogging", true);
-        final Logger logger = new Logger("CapgoUpdater", new Logger.Options(osLogging));
+        final Logger logger;
         try {
-            final String status = run(context, logger);
-            logger.info("Headless update check finished: " + status);
+            final PluginConfig config = CapConfig.loadDefault(context).getPluginConfiguration("CapacitorUpdater");
+            final boolean osLogging = config.getBoolean("osLogging", true);
+            logger = new Logger("CapgoUpdater", new Logger.Options(osLogging));
+            try {
+                final String status = run(context, logger);
+                logger.info("Headless update check finished: " + status);
+            } catch (final Exception e) {
+                logger.error("Headless update check failed: " + e.getMessage());
+            }
         } catch (final Exception e) {
-            logger.error("Headless update check failed: " + e.getMessage());
+            final Logger fallback = new Logger("CapgoUpdater", new Logger.Options(true));
+            fallback.error("Headless update check skipped: invalid Capacitor config (" + e.getMessage() + ")");
         }
         // Never retry: the next launch or push runs a fresh check.
         return Result.success();
@@ -178,6 +184,9 @@ public class HeadlessUpdateWorker extends Worker {
             }
             if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
                 if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
+                    if (CapacitorUpdaterPlugin.instanceLoaded) {
+                        updater.handOverPendingStats();
+                    }
                     return "skipped";
                 }
                 if (setNext && updater.setNextBundle(existing.getId())) {
@@ -321,12 +330,8 @@ public class HeadlessUpdateWorker extends Worker {
         updater.httpsOnly = httpsOnly;
         DownloadService.setHttpsOnly(httpsOnly);
         updater.builtinMinimum = config.getBoolean("builtinMinimum", false);
-        if (DownloadService.getLogger() == null) {
-            DownloadService.setLogger(headlessLogger);
-        }
-        if (DownloadWorkerManager.getLogger() == null) {
-            DownloadWorkerManager.setLogger(headlessLogger);
-        }
+        DownloadService.setLoggerIfAbsent(headlessLogger);
+        DownloadWorkerManager.setLoggerIfAbsent(headlessLogger);
 
         final boolean persistModifyUrl = config.getBoolean("persistModifyUrl", false);
         updater.statsUrl = config.getString("statsUrl", CapacitorUpdaterPlugin.statsUrlDefault);

@@ -210,6 +210,7 @@ jobs:
 
   # One macOS job builds for testing and writes cli-fresh crypto fixtures. Shards download that build
   # and those fixtures as workflow artifacts so they always match this run. SwiftPM stays on actions/cache only.
+  # Builds once for all iOS shards; the 10 minute cap is the repo policy max. Every test_ios shard stays under 5 minutes.
   test_ios_setup:
     permissions:
       contents: read
@@ -328,8 +329,14 @@ jobs:
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
         run: |
+          set -euo pipefail
           if [[ -n "${{ matrix.select_cmd }}" ]]; then
-            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh $(./${{ matrix.select_cmd }})
+            mapfile -t select_args < <(./${{ matrix.select_cmd }})
+            if [[ ${#select_args[@]} -eq 0 ]]; then
+              echo "select_cmd produced no -only-testing arguments"
+              exit 1
+            fi
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh "${select_args[@]}"
           else
             CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
           fi
@@ -799,8 +806,6 @@ jobs:
     runs-on: macOS-latest
     env:
       CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
-      CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS: '25'
-      CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS: '1'
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -1003,7 +1008,7 @@ jobs:
             # One matrix retry only (edge_case_retries: 1) keeps total wall time under the 10 minute job cap.
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
             export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=80000
+            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=60000
           elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" ]]; then
             # One matrix retry and tighter waits keep flow plus artifact uploads under the 10 minute job cap.
             export CAPGO_MAESTRO_TIMEOUT_SECONDS=210

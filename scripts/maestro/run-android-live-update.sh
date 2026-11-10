@@ -336,6 +336,66 @@ wait_for_ui_state_with_timeout() {
   return 1
 }
 
+hierarchy_contains_all_fragments() {
+  local hierarchy="$1"
+  shift
+  local fragment
+  for fragment in "$@"; do
+    if [[ "$hierarchy" != *"$fragment"* ]]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Returns 0 when activated fragments match, 2 when queued fragments match, 1 on timeout.
+wait_for_activated_or_queued_ui_state() {
+  local description="$1"
+  local timeout_seconds="$2"
+  local -n activated_fragments_ref="$3"
+  local -n queued_fragments_ref="$4"
+  local deadline=$((SECONDS + timeout_seconds))
+  local hierarchy=""
+  local swipe_count=0
+
+  echo "Waiting for activated or queued UI state: ${description}"
+
+  while ((SECONDS < deadline)); do
+    scroll_page_to_top
+
+    for swipe_count in 0 1 2 3 4 5; do
+      hierarchy="$(dump_ui_hierarchy)"
+      tap_android_anr_wait_button_if_present "$hierarchy" || true
+
+      if hierarchy_contains_all_fragments "$hierarchy" "${activated_fragments_ref[@]}"; then
+        echo "Verified activated UI state: ${description}"
+        return 0
+      fi
+      if hierarchy_contains_all_fragments "$hierarchy" "${queued_fragments_ref[@]}"; then
+        echo "Verified queued UI state: ${description}"
+        return 2
+      fi
+
+      scroll_page_down
+    done
+
+    sleep 2
+  done
+
+  echo "Timed out waiting for activated or queued UI state: ${description}" >&2
+  return 1
+}
+
+resume_and_wait_for_activated_fragments() {
+  local label="$1"
+  local wait_seconds="$2"
+  shift 2
+  local -a activated_fragments=("$@")
+
+  background_and_resume_app
+  wait_for_ui_state_with_timeout "$label" "$wait_seconds" "${activated_fragments[@]}"
+}
+
 wait_for_ui_state() {
   local description="$1"
   shift
@@ -614,22 +674,51 @@ wait_for_edge_network_drop_recovery() {
     "Last completed download: $first_release"
   )
   local cycle=1
+  local recovery_deadline=$((SECONDS + recovery_wait_seconds * (EDGE_CASE_RECOVERY_CYCLES + 2)))
+  local wait_budget=0
+  local poll_result=0
 
-  while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
-    if wait_for_ui_state_with_timeout "$description (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
-      "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+  recovery_wait_budget_seconds() {
+    local requested="$1"
+    local budget=$((recovery_deadline - SECONDS))
+    if ((budget <= 0)); then
+      return 1
+    fi
+    if ((requested > budget)); then
+      echo "$budget"
+    else
+      echo "$requested"
+    fi
+  }
+
+  try_finish_queued_or_activated() {
+    local label="$1"
+    local requested_wait="$2"
+    local -a activated=("${activated_fragments[@]}")
+    local -a queued=("${queued_fragments[@]}")
+
+    wait_budget="$(recovery_wait_budget_seconds "$requested_wait")" || return 1
+    poll_result=0
+    wait_for_activated_or_queued_ui_state "$label" "$wait_budget" activated queued || poll_result=$?
+    if [[ $poll_result -eq 0 ]]; then
       return 0
     fi
+    if [[ $poll_result -eq 2 ]]; then
+      wait_budget="$(recovery_wait_budget_seconds "$requested_wait")" || return 1
+      resume_and_wait_for_activated_fragments \
+        "${label}: deferred release applies after resume from queued" \
+        "$wait_budget" \
+        "${activated_fragments[@]}"
+      return $?
+    fi
+    return 1
+  }
 
-    if wait_for_ui_state_with_timeout \
-      "${description}: download finished, release queued for activation (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
-      "$recovery_wait_seconds" "${queued_fragments[@]}"; then
-      background_and_resume_app
-      if wait_for_ui_state_with_timeout \
-        "${description}: deferred release applies after resume from queued (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
-        "$recovery_wait_seconds" "${activated_fragments[@]}"; then
-        return 0
-      fi
+  while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
+    if try_finish_queued_or_activated \
+      "${description} (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+      "$recovery_wait_seconds"; then
+      return 0
     fi
 
     if [[ "$cycle_mode" == "cold-launch" ]]; then
@@ -641,31 +730,12 @@ wait_for_edge_network_drop_recovery() {
     cycle=$((cycle + 1))
   done
 
-  if wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+  if try_finish_queued_or_activated "${description} (final)" "$recovery_wait_seconds"; then
     return 0
   fi
 
-  if wait_for_ui_state_with_timeout \
-    "${description} (final): download finished, release queued for activation" \
-    "$recovery_wait_seconds" "${queued_fragments[@]}"; then
-    background_and_resume_app
-    wait_for_ui_state_with_timeout "${description} (final): deferred release applies after resume from queued" \
-      "$recovery_wait_seconds" "${activated_fragments[@]}"
-    return $?
-  fi
-
   # WorkManager can finish a retry after the last cycle: one more background and resume before giving up.
-  if wait_for_ui_state_with_timeout \
-    "${description} (late retry): download finished, release queued for activation" \
-    "$recovery_wait_seconds" "${queued_fragments[@]}"; then
-    background_and_resume_app
-    wait_for_ui_state_with_timeout "${description} (late retry): deferred release applies after resume from queued" \
-      "$recovery_wait_seconds" "${activated_fragments[@]}"
-    return $?
-  fi
-
-  if wait_for_ui_state_with_timeout "${description} (after queued checks): deferred release applied" \
-    "$recovery_wait_seconds" "${activated_fragments[@]}"; then
+  if try_finish_queued_or_activated "${description} (late retry)" "$recovery_wait_seconds"; then
     return 0
   fi
 

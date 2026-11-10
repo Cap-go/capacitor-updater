@@ -34,6 +34,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.SecureRandom;
@@ -707,8 +708,54 @@ public class CapgoUpdater {
         return 0;
     }
 
-    static boolean isParsableVersion(final Version version) {
-        return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
+    /** Parses major, minor, patch as arbitrary-precision integers; returns null when the core is not numeric. */
+    static BigInteger[] parseCoreVersionComponents(final String version) {
+        final String core = stripBuildMetadata(version);
+        if (core == null || core.isEmpty() || !Character.isDigit(core.charAt(0))) {
+            return null;
+        }
+        final String[] tokens = core.replaceAll("\\s", "").split("\\.");
+        final BigInteger[] components = new BigInteger[3];
+        for (int i = 0; i < 3; i++) {
+            if (i < tokens.length) {
+                final String token = tokens[i];
+                int end = 0;
+                while (end < token.length() && Character.isDigit(token.charAt(end))) {
+                    end++;
+                }
+                if (end == 0) {
+                    components[i] = BigInteger.ZERO;
+                } else {
+                    try {
+                        components[i] = new BigInteger(token.substring(0, end));
+                    } catch (final NumberFormatException e) {
+                        return null;
+                    }
+                }
+            } else {
+                components[i] = BigInteger.ZERO;
+            }
+        }
+        return components;
+    }
+
+    /**
+     * Compares major.minor.patch without {@link Long} limits. Returns {@code Integer.MIN_VALUE} when either
+     * version core is not parseable.
+     */
+    static int compareCoreVersionStrings(final String left, final String right) {
+        final BigInteger[] a = parseCoreVersionComponents(left);
+        final BigInteger[] b = parseCoreVersionComponents(right);
+        if (a == null || b == null) {
+            return Integer.MIN_VALUE;
+        }
+        for (int i = 0; i < 3; i++) {
+            final int cmp = a[i].compareTo(b[i]);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return 0;
     }
 
     private void logBuiltinMinimumParseSkipped(final String version) {
@@ -723,22 +770,13 @@ public class CapgoUpdater {
         if (!this.builtinMinimum) {
             return;
         }
-        // Build metadata (+...) never takes part in ordering.
-        final Version bundle;
-        final Version nativeVersion;
-        try {
-            bundle = new Version(stripBuildMetadata(version));
-            nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
-        } catch (final NumberFormatException e) {
-            logBuiltinMinimumParseSkipped(version);
-            return;
-        }
-        if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
+        final int cmp = compareCoreVersionStrings(version, this.versionBuild);
+        if (cmp == Integer.MIN_VALUE) {
             logBuiltinMinimumParseSkipped(version);
             return;
         }
         // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.
-        if (compareCoreVersion(bundle, nativeVersion) < 0) {
+        if (cmp < 0) {
             final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
             logger.error(message);
             this.sendStats("version_below_native", version);

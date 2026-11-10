@@ -15,7 +15,7 @@ import fs from 'node:fs'
 
 const [testFile, shard] = process.argv.slice(2)
 const text = fs.readFileSync(testFile, 'utf8')
-const tests = [...text.matchAll(/func (test[A-Za-z0-9_]+)/g)].map((m) => m[1])
+const tests = [...text.matchAll(/func\s+(test[A-Za-z0-9_]+)/g)].map((m) => m[1])
 const midpoint = Math.ceil(tests.length / 2)
 const selected = shard === 'a' ? tests.slice(0, midpoint) : tests.slice(midpoint)
 if (selected.length === 0) {
