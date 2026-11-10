@@ -3600,7 +3600,12 @@ import UIKit
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func unsetChannel(
+        defaultChannelKey: String,
+        defaultChannelFromSetChannelKey: String,
+        configDefaultChannel: String,
+        allowSetDefaultChannel: Bool
+    ) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         if !allowSetDefaultChannel {
@@ -3612,6 +3617,7 @@ import UIKit
 
         // Clear persisted defaultChannel and revert to config value
         UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
         UserDefaults.standard.synchronize()
         self.defaultChannel = configDefaultChannel
         self.logger.info("Persisted defaultChannel cleared, reverted to config value: \(configDefaultChannel)")
@@ -3624,6 +3630,7 @@ import UIKit
     func setChannel(
         channel: String,
         defaultChannelKey: String,
+        defaultChannelFromSetChannelKey: String,
         allowSetDefaultChannel: Bool,
         configDefaultChannel: String = ""
     ) -> SetChannel {
@@ -3710,6 +3717,7 @@ import UIKit
             setChannel.error = error
         } else if responseValue.unset == true {
             UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
             UserDefaults.standard.synchronize()
             self.defaultChannel = configDefaultChannel
             self.logger.info("Public channel requested, channel override removed")
@@ -3720,6 +3728,7 @@ import UIKit
         } else {
             self.defaultChannel = channel
             UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+            UserDefaults.standard.set(true, forKey: defaultChannelFromSetChannelKey)
             UserDefaults.standard.synchronize()
             self.logger.info("defaultChannel persisted locally: \(channel)")
 
@@ -3729,7 +3738,11 @@ import UIKit
         return setChannel
     }
 
-    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
+    func getChannel(
+        defaultChannelKey: String? = nil,
+        defaultChannelFromSetChannelKey: String? = nil,
+        configDefaultChannel: String = ""
+    ) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
         // Check if rate limit was exceeded
         if isRemoteBlocked() {
@@ -3824,13 +3837,21 @@ import UIKit
             persistDefaultChannelFromResponse(
                 channel: responseValue.channel,
                 status: responseValue.status,
-                defaultChannelKey: defaultChannelKey
+                defaultChannelKey: defaultChannelKey,
+                defaultChannelFromSetChannelKey: defaultChannelFromSetChannelKey,
+                configDefaultChannel: configDefaultChannel
             )
         }
         return getChannel
     }
 
-    func persistDefaultChannelFromResponse(channel: String?, status: String?, defaultChannelKey: String?) {
+    func persistDefaultChannelFromResponse(
+        channel: String?,
+        status: String?,
+        defaultChannelKey: String?,
+        defaultChannelFromSetChannelKey: String? = nil,
+        configDefaultChannel: String = ""
+    ) {
         if status == "default" {
             guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !channelName.isEmpty else {
@@ -3844,10 +3865,19 @@ import UIKit
                     persisted = trimmedStored
                 }
             }
-            if channelName == persisted {
-                self.defaultChannel = ""
+            let fromSetChannel: Bool
+            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+                fromSetChannel = UserDefaults.standard.bool(forKey: defaultChannelFromSetChannelKey)
+            } else {
+                fromSetChannel = false
+            }
+            if channelName == persisted, !fromSetChannel {
+                self.defaultChannel = configDefaultChannel
                 if let defaultChannelKey, !defaultChannelKey.isEmpty {
                     UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+                    if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+                        UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
+                    }
                     UserDefaults.standard.synchronize()
                 }
                 logger.info("defaultChannel cleared stale getChannel() fallback: \(channelName)")
@@ -3863,6 +3893,9 @@ import UIKit
         self.defaultChannel = channelName
         if let defaultChannelKey, !defaultChannelKey.isEmpty {
             UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
+            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+                UserDefaults.standard.set(false, forKey: defaultChannelFromSetChannelKey)
+            }
             UserDefaults.standard.synchronize()
         }
         logger.info("defaultChannel synchronized from getChannel(): \(channelName)")

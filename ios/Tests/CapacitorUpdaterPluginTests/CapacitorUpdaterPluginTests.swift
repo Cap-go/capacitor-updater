@@ -1072,7 +1072,13 @@ class CapacitorUpdaterTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
 
-        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
+        let fromSetKey = "\(defaultsKey).fromSet"
+        let result = updater.setChannel(
+            channel: "beta",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            allowSetDefaultChannel: true
+        )
 
         XCTAssertEqual(result.error, "response_error")
         XCTAssertEqual(result.message, "Unauthorized")
@@ -1086,13 +1092,16 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.defaultChannel = "beta"
 
         let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
         UserDefaults.standard.set("beta", forKey: defaultsKey)
         defer {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
         }
 
         let result = updater.unsetChannel(
             defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
             configDefaultChannel: "stable",
             allowSetDefaultChannel: true
         )
@@ -1109,13 +1118,16 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.defaultChannel = "beta"
 
         let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
         UserDefaults.standard.set("beta", forKey: defaultsKey)
         defer {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
         }
 
         let result = updater.unsetChannel(
             defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
             configDefaultChannel: "stable",
             allowSetDefaultChannel: false
         )
@@ -1524,10 +1536,42 @@ class CapacitorUpdaterTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
 
-        updater.persistDefaultChannelFromResponse(channel: "production", status: "default", defaultChannelKey: defaultsKey)
+        updater.persistDefaultChannelFromResponse(
+            channel: "production",
+            status: "default",
+            defaultChannelKey: defaultsKey,
+            configDefaultChannel: "stable"
+        )
 
-        XCTAssertEqual(updater.defaultChannel, "")
+        XCTAssertEqual(updater.defaultChannel, "stable")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testPersistDefaultChannelFromResponsePreservesSetChannelOnDefaultStatus() {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.defaultChannel = "company-a"
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
+        UserDefaults.standard.set("company-a", forKey: defaultsKey)
+        UserDefaults.standard.set(true, forKey: fromSetKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(
+            channel: "company-a",
+            status: "default",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            configDefaultChannel: "stable"
+        )
+
+        XCTAssertEqual(updater.defaultChannel, "company-a")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: fromSetKey))
     }
 
     // MARK: - DelayCondition Tests

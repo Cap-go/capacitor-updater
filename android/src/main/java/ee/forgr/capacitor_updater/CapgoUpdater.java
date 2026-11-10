@@ -3058,6 +3058,7 @@ public class CapgoUpdater {
 
         // Clear persisted defaultChannel and revert to config value
         editor.remove(defaultChannelKey);
+        editor.remove(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         editor.apply();
         this.defaultChannel = configDefaultChannel;
         logger.info("Persisted defaultChannel cleared, reverted to config value: " + configDefaultChannel);
@@ -3136,6 +3137,7 @@ public class CapgoUpdater {
                 // Server requested to unset channel (public channel was requested)
                 // Clear persisted defaultChannel and revert to config value
                 editor.remove(defaultChannelKey);
+                editor.remove(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
                 editor.apply();
                 this.defaultChannel = configDefaultChannel;
                 logger.info("Public channel requested, channel override removed");
@@ -3143,6 +3145,7 @@ public class CapgoUpdater {
             } else {
                 this.defaultChannel = channel;
                 editor.putString(defaultChannelKey, channel);
+                editor.putBoolean(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY, true);
                 editor.apply();
                 logger.info("defaultChannel persisted locally: " + channel);
                 callback.callback(res);
@@ -3151,10 +3154,16 @@ public class CapgoUpdater {
     }
 
     public void getChannel(final Callback callback) {
-        this.getChannel(callback, null, null);
+        this.getChannel(callback, null, null, null, null);
     }
 
-    public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+    public void getChannel(
+        final Callback callback,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final String defaultChannelFromSetChannelKey,
+        final String configDefaultChannel
+    ) {
         if (isRemoteBlocked()) {
             final RemoteBlockResult blocked = remoteBlockedClientError();
             logger.debug("Skipping getChannel due to remote block (" + blocked.error + ").");
@@ -3265,7 +3274,14 @@ public class CapgoUpdater {
                                 ret.put(key, jsonResponse.get(key));
                             }
                         }
-                        persistDefaultChannelFromResponse(ret.get("channel"), ret.get("status"), editor, defaultChannelKey);
+                        persistDefaultChannelFromResponse(
+                            ret.get("channel"),
+                            ret.get("status"),
+                            editor,
+                            defaultChannelKey,
+                            defaultChannelFromSetChannelKey,
+                            configDefaultChannel
+                        );
                         logger.info("Channel get to \"" + ret);
                         callback.callback(ret);
                     } catch (JSONException e) {
@@ -3283,18 +3299,29 @@ public class CapgoUpdater {
         final Object channel,
         final Object status,
         final SharedPreferences.Editor editor,
-        final String defaultChannelKey
+        final String defaultChannelKey,
+        final String defaultChannelFromSetChannelKey,
+        final String configDefaultChannel
     ) {
         if (status instanceof String && "default".equals(status)) {
             if (channel instanceof String) {
                 final String channelName = ((String) channel).trim();
                 if (!channelName.isEmpty() && channelName.equals(this.defaultChannel)) {
-                    this.defaultChannel = "";
-                    if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
-                        editor.remove(defaultChannelKey);
-                        editor.apply();
+                    boolean fromSetChannel = false;
+                    if (this.prefs != null && defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+                        fromSetChannel = this.prefs.getBoolean(defaultChannelFromSetChannelKey, false);
                     }
-                    logger.info("defaultChannel cleared stale getChannel() fallback: " + channelName);
+                    if (!fromSetChannel) {
+                        this.defaultChannel = configDefaultChannel != null ? configDefaultChannel : "";
+                        if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+                            editor.remove(defaultChannelKey);
+                            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+                                editor.remove(defaultChannelFromSetChannelKey);
+                            }
+                            editor.apply();
+                        }
+                        logger.info("defaultChannel cleared stale getChannel() fallback: " + channelName);
+                    }
                 }
             }
             return;
@@ -3312,6 +3339,9 @@ public class CapgoUpdater {
         this.defaultChannel = channelName;
         if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
             editor.putString(defaultChannelKey, channelName);
+            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+                editor.putBoolean(defaultChannelFromSetChannelKey, false);
+            }
             editor.apply();
         }
         logger.info("defaultChannel synchronized from getChannel(): " + channelName);
