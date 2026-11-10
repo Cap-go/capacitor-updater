@@ -29,7 +29,9 @@ public class HeadlessUpdateTest {
 
     @After
     public void resetInstanceFlag() {
-        CapacitorUpdaterPlugin.instanceLoaded = false;
+        synchronized (CapacitorUpdaterPlugin.INSTANCE_LOADED_LOCK) {
+            CapacitorUpdaterPlugin.instanceLoaded = false;
+        }
         DownloadService.setHttpsOnly(true);
         DownloadService.setAllowHttpsToHttpRedirect(false);
         DownloadService.setLogger(null);
@@ -74,7 +76,9 @@ public class HeadlessUpdateTest {
 
     @Test
     public void keepsTheBundleAsNextWhenThePluginRuns() {
-        CapacitorUpdaterPlugin.instanceLoaded = true;
+        synchronized (CapacitorUpdaterPlugin.INSTANCE_LOADED_LOCK) {
+            CapacitorUpdaterPlugin.instanceLoaded = true;
+        }
         final CapgoUpdater updater = updaterWithDelays("[]");
         final BundleInfo bundle = new BundleInfo("id1", "1.0.1", BundleStatus.PENDING, "", "");
 

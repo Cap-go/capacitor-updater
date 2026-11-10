@@ -18,8 +18,15 @@ const EXCLUDED = new Set(["InstallPerfTests"]);
 const workflow = fs.readFileSync(workflowPath, "utf8");
 const testIosBlock =
   workflow.match(/^  test_ios:[\s\S]*?(?=^  [a-zA-Z0-9_]+:)/m)?.[0] ?? "";
+const activeTestIosLines = testIosBlock
+  .split("\n")
+  .filter((line) => {
+    const trimmed = line.trim();
+    return trimmed.length > 0 && !trimmed.startsWith("#");
+  })
+  .join("\n");
 const listed = new Set(
-  [...testIosBlock.matchAll(/-only-testing:CapacitorUpdaterPluginTests\/(\w+)/g)].map((m) => m[1])
+  [...activeTestIosLines.matchAll(/-only-testing:CapacitorUpdaterPluginTests\/(\w+)/g)].map((m) => m[1])
 );
 const coreShardUsed = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh/.test(testIosBlock);
 

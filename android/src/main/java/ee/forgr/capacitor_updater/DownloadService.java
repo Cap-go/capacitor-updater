@@ -101,7 +101,9 @@ public class DownloadService extends Worker {
     private static final Object LOGGER_LOCK = new Object();
 
     public static void setLogger(Logger loggerInstance) {
-        logger = loggerInstance;
+        synchronized (LOGGER_LOCK) {
+            logger = loggerInstance;
+        }
     }
 
     public static void setLoggerIfAbsent(Logger loggerInstance) {

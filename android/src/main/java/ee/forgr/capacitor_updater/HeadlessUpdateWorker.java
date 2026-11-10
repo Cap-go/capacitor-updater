@@ -92,7 +92,7 @@ public class HeadlessUpdateWorker extends Worker {
     }
 
     static String run(final Context context, final Logger logger) throws PackageManager.NameNotFoundException {
-        if (CapacitorUpdaterPlugin.instanceLoaded) {
+        if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
             // The running plugin instance owns downloads and installs in this process.
             return "handed_over";
         }
@@ -184,7 +184,7 @@ public class HeadlessUpdateWorker extends Worker {
             }
             if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
                 if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
-                    if (CapacitorUpdaterPlugin.instanceLoaded) {
+                    if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
                         updater.handOverPendingStats();
                     }
                     return "skipped";
@@ -207,7 +207,7 @@ public class HeadlessUpdateWorker extends Worker {
                 // the app meanwhile, its plugin instance takes over the download (it restarts downloads it
                 // does not observe), so stop waiting.
                 while (!finished.await(1, TimeUnit.SECONDS)) {
-                    if (CapacitorUpdaterPlugin.instanceLoaded) {
+                    if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
                         return "handed_over";
                     }
                     if (System.currentTimeMillis() > deadline) {
@@ -222,11 +222,13 @@ public class HeadlessUpdateWorker extends Worker {
         } finally {
             // Once the plugin instance is up it owns the stats file: hand it our unsent events
             // instead of overwriting its newer file.
-            if (CapacitorUpdaterPlugin.instanceLoaded) {
-                updater.handOverPendingStats();
-                updater.shutdown(false);
-            } else {
-                updater.shutdown(true);
+            synchronized (CapacitorUpdaterPlugin.INSTANCE_LOADED_LOCK) {
+                if (CapacitorUpdaterPlugin.instanceLoaded) {
+                    updater.handOverPendingStats();
+                    updater.shutdown(false);
+                } else {
+                    updater.shutdown(true);
+                }
             }
         }
     }
@@ -236,7 +238,7 @@ public class HeadlessUpdateWorker extends Worker {
      * it is the same as installing on a background transition. Delay conditions keep it as next.
      */
     static boolean applyIfNoUi(final CapgoUpdater updater, final BundleInfo bundle, final Logger logger) {
-        if (CapacitorUpdaterPlugin.instanceLoaded) {
+        if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
             return false;
         }
         final String delays = updater.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");

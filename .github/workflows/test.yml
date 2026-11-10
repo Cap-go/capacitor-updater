@@ -240,10 +240,26 @@ jobs:
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
       - name: Encrypt fresh bundles with the pinned Capgo CLI
         run: bun run generate:cli-crypto native-contract-tests/cli-fresh
-      - name: Upload iOS test build and CLI fresh fixtures
+      - name: Upload iOS test build and CLI fresh fixtures (attempt 1)
+        id: upload_ios_test_build_1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: ios-test-build
+          path: |
+            .ci-ios-test-dd
+            native-contract-tests/cli-fresh
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Wait before retrying iOS test build upload
+        if: steps.upload_ios_test_build_1.outcome == 'failure'
+        run: sleep 15
+      - name: Upload iOS test build and CLI fresh fixtures (attempt 2)
+        if: steps.upload_ios_test_build_1.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-build
+          overwrite: true
           path: |
             .ci-ios-test-dd
             native-contract-tests/cli-fresh
@@ -332,9 +348,14 @@ jobs:
           set -euo pipefail
           if [[ -n "${{ matrix.select_cmd }}" ]]; then
             select_args=()
+            select_cmd_output=""
+            if ! select_cmd_output=$(./${{ matrix.select_cmd }}); then
+              echo "select_cmd failed: ./${{ matrix.select_cmd }}"
+              exit 1
+            fi
             while IFS= read -r arg; do
               [[ -n "$arg" ]] && select_args+=("$arg")
-            done < <(./${{ matrix.select_cmd }})
+            done <<< "$select_cmd_output"
             if [[ ${#select_args[@]} -eq 0 ]]; then
               echo "select_cmd produced no -only-testing arguments"
               exit 1
