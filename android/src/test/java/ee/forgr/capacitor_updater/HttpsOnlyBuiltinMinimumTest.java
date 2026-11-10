@@ -96,7 +96,7 @@ public class HttpsOnlyBuiltinMinimumTest {
     }
 
     @Test
-    public void builtinMinimumRejectsBundleBelowNativeWhenCoreNumericOverflowWouldTruncate() {
+    public void builtinMinimumRejectsBundleBelowNativeWhenCoreNumericOverflowWouldTruncate() throws Exception {
         StatsCapturingUpdater updater = new StatsCapturingUpdater();
         updater.builtinMinimum = true;
         updater.versionBuild = "2.0.0";
