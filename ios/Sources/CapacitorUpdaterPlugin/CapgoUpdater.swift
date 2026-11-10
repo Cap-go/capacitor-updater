@@ -107,6 +107,8 @@ import UIKit
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
     private let pendingStatsFileName = "capgo_pending_stats.json"
+    /// When set, pending stats persist under this directory instead of `libraryDir` (unit tests only).
+    internal var pendingStatsDirectoryOverride: URL?
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -4054,8 +4056,32 @@ import UIKit
         persistStatsQueue()
     }
 
+    private func pendingStatsRootDirectory() -> URL {
+        pendingStatsDirectoryOverride ?? libraryDir
+    }
+
     private func pendingStatsFileURL() -> URL {
-        libraryDir.appendingPathComponent(pendingStatsFileName)
+        pendingStatsRootDirectory().appendingPathComponent(pendingStatsFileName)
+    }
+
+    private func writePendingStatsFile(events: [StatsEvent]) {
+        let fileURL = pendingStatsFileURL()
+        let root = pendingStatsRootDirectory()
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(events)
+            let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
+            defer { try? FileManager.default.removeItem(at: temp) }
+            try data.write(to: temp, options: .atomic)
+            try replaceItemAtomically(at: fileURL, withItemAt: temp)
+            var resourceURL = fileURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try resourceURL.setResourceValues(values)
+        } catch {
+            logger.error("Failed to persist stats queue")
+            logger.debug("Error: \(error.localizedDescription)")
+        }
     }
 
     private func persistStatsQueue(force: Bool = false) {
@@ -4072,23 +4098,7 @@ import UIKit
             events = Array(events.suffix(CapgoUpdater.maxPendingStats))
         }
 
-        let fileURL = pendingStatsFileURL()
-        if events.isEmpty {
-            try? FileManager.default.removeItem(at: fileURL)
-            return
-        }
-
-        do {
-            let data = try JSONEncoder().encode(events)
-            try data.write(to: fileURL, options: .atomic)
-            var resourceURL = fileURL
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try resourceURL.setResourceValues(values)
-        } catch {
-            logger.error("Failed to persist stats queue")
-            logger.debug("Error: \(error.localizedDescription)")
-        }
+        writePendingStatsFile(events: events)
     }
 
     private func ensureStatsTimerStarted() {

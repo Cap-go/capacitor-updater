@@ -283,15 +283,21 @@ final class NetworkTransportTests: XCTestCase {
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
     private var activeUpdaters: [CapgoUpdater] = []
+    private var pendingStatsDirs: [URL] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         server = try LoopbackHTTPServer()
         activeUpdaters = []
+        pendingStatsDirs = []
     }
 
     override func tearDownWithError() throws {
         finishAllUpdaters()
+        for dir in pendingStatsDirs {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        pendingStatsDirs = []
         server.drain(timeout: 0.25)
         server.stop()
         server = nil
@@ -304,6 +310,11 @@ final class NetworkTransportTests: XCTestCase {
         updater.timeout = 5
         // The loopback test server is plain http.
         updater.httpsOnly = false
+        let statsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capgo-stats-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: statsDir, withIntermediateDirectories: true)
+        updater.pendingStatsDirectoryOverride = statsDir
+        pendingStatsDirs.append(statsDir)
         activeUpdaters.append(updater)
         return updater
     }
@@ -314,6 +325,19 @@ final class NetworkTransportTests: XCTestCase {
         activeUpdaters.removeAll { $0 === updater }
         server.drain(timeout: 0.25)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        waitForPendingStatsFileRemoval(in: updater.pendingStatsDirectoryOverride)
+    }
+
+    private func waitForPendingStatsFileRemoval(in root: URL?) {
+        guard let root else { return }
+        let fileURL = root.appendingPathComponent("capgo_pending_stats.json")
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
     }
 
     private func finishAllUpdaters() {

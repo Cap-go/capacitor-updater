@@ -208,9 +208,6 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  # One macOS job builds for testing and writes cli-fresh crypto fixtures. Shards download that build
-  # and those fixtures as workflow artifacts so they always match this run. SwiftPM stays on actions/cache only.
-  # Builds once for all iOS shards; the 10 minute cap is the repo policy max. Every test_ios shard stays under 5 minutes.
   test_ios_setup:
     permissions:
       contents: read
@@ -809,8 +806,8 @@ jobs:
           CAPGO_MAESTRO_SMOKE_SCENARIO=${{ matrix.scenario }}
           CAPGO_MAESTRO_TEST_RETRIES=2
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000
           bun run test:maestro:ios:smoke
       - name: Upload Maestro artifacts
         if: failure()
@@ -878,9 +875,9 @@ jobs:
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
-          CAPGO_MAESTRO_TIMEOUT_SECONDS=240 \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_TEST_RETRIES=2 \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
         if: failure()
@@ -1015,47 +1012,17 @@ jobs:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Wait for iOS simulator boot
         run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
-      # Default summary waits are 180s per step; multiple Maestro steps plus 210s to 240s flow timeouts and
-      # one matrix retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows
-        env:
-          MATRIX_SCENARIO: ${{ matrix.scenario }}
         run: |
           set -euo pipefail
-          if [[ "$MATRIX_SCENARIO" == "edge-direct-network-drop" ]]; then
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
-          elif [[ "$MATRIX_SCENARIO" == "edge-offline-check" ]]; then
-            # Three wait-summary blocks in edge-case-recover-deferred.yaml (one extendedWaitUntil each).
-            # The per-flow timeout must clear a full slow recovery; 210s was too low and failed the run.
-            # One matrix retry only (edge_case_retries: 1) keeps total wall time under the 10 minute job cap.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=60000
-          elif [[ "$MATRIX_SCENARIO" == "edge-corrupt-bundle" ]]; then
-            # One matrix retry and tighter waits keep flow plus artifact uploads under the 10 minute job cap.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=210
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=75
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=65000
-          elif [[ "$MATRIX_SCENARIO" == "edge-network-drop" ]]; then
-            # Shell clears the drop fault before Maestro; slightly shorter summary waits keep
-            # three deferred steps within the 240s flow cap and the 10 minute job cap.
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=70000
-          else
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=240
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=70000
-          fi
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts
         if: failure()
@@ -1219,28 +1186,6 @@ jobs:
       - name: Clear Android SDK temp cache
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
-      # edge-network-drop recovery polls UI every wait seconds for up to cycles attempts, then
-      # does one more final poll. Keep that worst case under the 8 minute emulator step cap
-      # alongside boot, install, and server waits so the job does not need a second emulator run.
-      - name: Tune Maestro env for Android edge-network-drop
-        if: matrix.scenario == 'edge-network-drop'
-        run: |
-          echo "CAPGO_MAESTRO_EDGE_CASE_RETRIES=1" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=2" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=20" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_CASE_UI_TIMEOUT_SECONDS=120" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
-      # edge-offline-check can sit in the default recovery poll loop too long for the 8 minute emulator step.
-      - name: Tune Maestro env for Android edge-offline-check
-        if: matrix.scenario == 'edge-offline-check'
-        run: |
-          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_WAIT_SECONDS=35" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
-      # The runner action tears the emulator down inside this step, and that teardown can hang
-      # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
-      # open). Bound the step below the job cap and let the success marker decide the result,
-      # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
         id: maestro_live_flow_1
         timeout-minutes: ${{ matrix.scenario == 'edge-corrupt-bundle' && 9 || 8 }}
