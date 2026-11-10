@@ -331,7 +331,10 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${{ matrix.select_cmd }}" ]]; then
-            mapfile -t select_args < <(./${{ matrix.select_cmd }})
+            select_args=()
+            while IFS= read -r arg; do
+              [[ -n "$arg" ]] && select_args+=("$arg")
+            done < <(./${{ matrix.select_cmd }})
             if [[ ${#select_args[@]} -eq 0 ]]; then
               echo "select_cmd produced no -only-testing arguments"
               exit 1
