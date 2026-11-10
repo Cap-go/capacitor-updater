@@ -3341,11 +3341,11 @@ public class CapgoUpdater {
         }
 
         final boolean preserveSetChannelMarker =
-            this.prefs != null
-                && defaultChannelFromSetChannelKey != null
-                && !defaultChannelFromSetChannelKey.isEmpty()
-                && this.prefs.getBoolean(defaultChannelFromSetChannelKey, false)
-                && channelName.equals(this.defaultChannel);
+            this.prefs != null &&
+            defaultChannelFromSetChannelKey != null &&
+            !defaultChannelFromSetChannelKey.isEmpty() &&
+            this.prefs.getBoolean(defaultChannelFromSetChannelKey, false) &&
+            channelName.equals(this.defaultChannel);
 
         this.defaultChannel = channelName;
         if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
