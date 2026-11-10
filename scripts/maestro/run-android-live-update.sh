@@ -694,12 +694,10 @@ wait_for_edge_network_drop_recovery() {
   try_finish_queued_or_activated() {
     local label="$1"
     local requested_wait="$2"
-    local -a activated=("${activated_fragments[@]}")
-    local -a queued=("${queued_fragments[@]}")
 
     wait_budget="$(recovery_wait_budget_seconds "$requested_wait")" || return 1
     poll_result=0
-    wait_for_activated_or_queued_ui_state "$label" "$wait_budget" activated queued || poll_result=$?
+    wait_for_activated_or_queued_ui_state "$label" "$wait_budget" activated_fragments queued_fragments || poll_result=$?
     if [[ $poll_result -eq 0 ]]; then
       return 0
     fi

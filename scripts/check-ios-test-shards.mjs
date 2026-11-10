@@ -28,7 +28,9 @@ const activeTestIosLines = testIosBlock
 const listed = new Set(
   [...activeTestIosLines.matchAll(/-only-testing:CapacitorUpdaterPluginTests\/(\w+)/g)].map((m) => m[1])
 );
-const coreShardUsed = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh/.test(testIosBlock);
+const coreShardA = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh a\b/.test(testIosBlock);
+const coreShardB = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh b\b/.test(testIosBlock);
+const coreShardUsed = coreShardA && coreShardB;
 
 const classRe = /(?:final\s+)?class\s+(\w+)\s*:\s*XCTestCase/g;
 const missing = [];

@@ -29,6 +29,8 @@ EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 
 # shellcheck source=scripts/maestro/edge-cases.sh
 source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
+# shellcheck source=scripts/maestro/maestro-cli-pass.sh
+source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 SCENARIO_SEQUENCE+=("${EDGE_CASE_IDS[@]}")
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
@@ -426,12 +428,6 @@ read_app_marketing_version() {
 
   printf '%s\n' "$APP_MARKETING_VERSION"
   return 0
-}
-
-maestro_cli_reported_pass() {
-  local output_file="$1"
-
-  [[ -f "$output_file" ]] && grep -qE '\[Passed\][[:space:]]|/[0-9]+ Flow Passed' "$output_file"
 }
 
 run_flow() {

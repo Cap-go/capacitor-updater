@@ -1015,8 +1015,8 @@ jobs:
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Wait for iOS simulator boot
         run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
-      # Default summary waits are 180s per step; multiple Maestro steps plus a 300s flow timeout and
-      # a full job retry can exceed the 10 minute job cap. Cap waits for every edge case here.
+      # Default summary waits are 180s per step; multiple Maestro steps plus 210s to 240s flow timeouts and
+      # one matrix retry can exceed the 10 minute job cap. Cap waits for every edge case here.
       - name: Run edge case Maestro flows
         env:
           MATRIX_SCENARIO: ${{ matrix.scenario }}

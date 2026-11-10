@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/maestro/maestro-cli-pass.sh
+source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
@@ -492,7 +494,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
     break
   fi
 
-  if [[ $status -eq 124 ]] && [[ -f "$output_file" ]] && grep -qE '\[Passed\][[:space:]]|/[0-9]+ Flow Passed' "$output_file"; then
+  if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
     echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
     reset_ios_maestro_driver
     rm -f "$output_file"

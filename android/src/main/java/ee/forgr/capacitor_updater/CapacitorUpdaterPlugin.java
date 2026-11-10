@@ -169,6 +169,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return instanceLoaded;
         }
     }
+
     private final String pluginVersion = PLUGIN_VERSION;
     private static final String DELAY_CONDITION_PREFERENCES = "";
 

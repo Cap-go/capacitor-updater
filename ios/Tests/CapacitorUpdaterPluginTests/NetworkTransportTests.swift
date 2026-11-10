@@ -275,7 +275,9 @@ final class NetworkTransportTests: XCTestCase {
             lock.unlock()
         }
 
-        deinit {}
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
     }
 
     // swiftlint:disable:next implicitly_unwrapped_optional
