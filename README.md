@@ -4,13 +4,13 @@ Ship live updates to your Capacitor app: push JavaScript, HTML and CSS fixes to 
 
 This plugin is the live update layer of [Capgo](https://capgo.app/), the AI-ready platform to build, ship, and maintain Capacitor apps: Capacitor skills and MCP servers for AI coding agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI), [maintained Capacitor plugins](https://capgo.app/plugins/), [cloud native iOS/Android builds](https://capgo.app/native-build/) with App Store and Google Play publishing, live updates with channels and rollback, and release monitoring.
 
-<a href="https://capgo.app/?ref=plugin_updater_v7"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
+<a href="https://capgo.app/?ref=plugin_updater_v8"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-updater" alt="Capgo - Instant updates for Capacitor" /></a>
 
 <div align="center">
   <p><b>Capgo</b>: the AI-ready platform to build, ship, and maintain Capacitor apps. Ship live updates to your users instantly, without waiting for app store review.</p>
-  <h2><a href="https://capgo.app/register/?ref=plugin_updater_v7">➡️ Get started for free</a></h2>
+  <h2><a href="https://capgo.app/register/?ref=plugin_updater_v8">➡️ Get started for free</a></h2>
   <p>14-day unlimited free trial. No credit card required</p>
-  <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v7">Missing a feature? We'll build the plugin for you 💪</a></p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_updater_v8">Missing a feature? We'll build the plugin for you 💪</a></p>
 </div>
 
 <p align="center">
@@ -3066,7 +3066,9 @@ Payload emitted by {@link CapacitorUpdaterPlugin.addListener} with `breakingAvai
 
 Construct a type with a set of properties K of type T
 
-<code>{ [P in K]: T; }</code>
+<code>{
+ [P in K]: T;
+ }</code>
 
 
 ##### ShakeMenuGesture
