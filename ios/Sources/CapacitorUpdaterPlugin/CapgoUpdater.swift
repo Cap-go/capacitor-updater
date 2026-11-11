@@ -477,6 +477,8 @@ import UIKit
     }
 
     /// Downloads a URL to a temporary file, reporting cumulative `(received, expected)` bytes for `2xx` responses.
+    /// The body is streamed to an updater-owned file as bytes arrive, so a mid-transfer
+    /// failure still leaves a partial file for a later Range retry.
     func performDownloadRequest(
         _ request: URLRequest,
         label: String,
@@ -491,48 +493,7 @@ import UIKit
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        var interruptedResumeData: Data?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let completion: (URL?, URLResponse?, Error?) -> Void = { location, response, error in
-            // URLSession deletes `location` once this handler returns, so move it synchronously here.
-            var movedFileURL: URL?
-            var resultError: Error?
-            var resultResumeData: Data?
-            // Keep any file URLSession already wrote, including when the
-            // transfer later fails (truncated body or dropped connection).
-            // URLSession deletes `location` when this handler returns.
-            if let location {
-                do {
-                    let fileManager = FileManager.default
-                    try fileManager.createDirectory(
-                        at: temporaryDownloadURL.deletingLastPathComponent(),
-                        withIntermediateDirectories: true,
-                        attributes: nil
-                    )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
-                    try fileManager.moveItem(at: location, to: temporaryDownloadURL)
-                    movedFileURL = temporaryDownloadURL
-                } catch {
-                    resultError = NetworkError.downloadedFileMoveFailed(error, source: location, destination: temporaryDownloadURL)
-                }
-            }
-            if let error {
-                resultError = NetworkError.sessionTaskFailed(error)
-                resultResumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-            }
-            let taskResponse = response as? HTTPURLResponse
-            self.networkResponseQueue.async {
-                tempFileURL = movedFileURL
-                httpResponse = taskResponse
-                requestError = resultError
-                interruptedResumeData = resultResumeData
-                semaphore.signal()
-            }
-        }
-        let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
-            ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
         let resumedBytes: Int64 = {
             guard let range = request.value(forHTTPHeaderField: "Range"),
                   range.hasPrefix("bytes="),
@@ -541,40 +502,27 @@ import UIKit
             }
             return Int64(start) ?? 0
         }()
-        let progressObservation: NSKeyValueObservation? = onProgress.map { progressHandler in
-            downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
-                guard let httpResponse = downloadTask.response as? HTTPURLResponse,
-                      (200..<300).contains(httpResponse.statusCode) else {
-                    return
-                }
-                let responseExpected = httpResponse.expectedContentLength
-                let taskExpected = downloadTask.countOfBytesExpectedToReceive
-                let expected = responseExpected > 0
-                    ? responseExpected
-                    : (taskExpected > 0 ? taskExpected : progress.totalUnitCount)
-                let taskReceived = downloadTask.countOfBytesReceived
-                let received: Int64
-                if progress.fractionCompleted >= 1.0 && expected > 0 {
-                    received = expected
-                } else if progress.totalUnitCount == expected && progress.completedUnitCount > taskReceived {
-                    received = min(expected, progress.completedUnitCount)
-                } else if taskReceived > 0 {
-                    received = expected > 0 ? min(expected, taskReceived) : taskReceived
-                } else if expected > 0 && progress.fractionCompleted > 0 {
-                    received = min(expected, Int64((progress.fractionCompleted * Double(expected)).rounded()))
-                } else {
-                    received = progress.completedUnitCount
-                }
-                if expected > 0 && received >= 0 {
-                    let baseline = Self.shouldAppendHttpBody(statusCode: httpResponse.statusCode, existingBytes: resumedBytes)
-                        ? resumedBytes
-                        : 0
-                    progressHandler(baseline + received, baseline + expected)
+        // resumeData is unused: URLSession download-task resume data is not
+        // produced by a streamed data task, and a kept partial file plus Range
+        // is the reliable retry path.
+        _ = resumeData
+        let downloadTask = self.urlSession.dataTask(with: request)
+        do {
+            try redirectPolicy.registerStream(
+                for: downloadTask,
+                fileURL: temporaryDownloadURL,
+                resumedBytes: resumedBytes,
+                onProgress: onProgress
+            ) { response, error in
+                self.networkResponseQueue.async {
+                    tempFileURL = temporaryDownloadURL
+                    httpResponse = response
+                    requestError = error
+                    semaphore.signal()
                 }
             }
-        }
-        defer {
-            progressObservation?.invalidate()
+        } catch {
+            return DownloadRequestResult(fileURL: nil, response: nil, error: error, timedOut: false)
         }
         downloadTask.resume()
 
@@ -597,8 +545,7 @@ import UIKit
             fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
-            timedOut: isTimedOutError(requestError),
-            resumeData: interruptedResumeData
+            timedOut: isTimedOutError(requestError)
         )
     }
 
