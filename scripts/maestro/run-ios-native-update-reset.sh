@@ -192,7 +192,8 @@ build_ios_app() {
 
   (
     cd "$EXAMPLE_DIR"
-    VITE_CAPGO_APP_LABEL="$app_label" \
+    VITE_CAPGO_MAESTRO_BUILD=true \
+      VITE_CAPGO_APP_LABEL="$app_label" \
       VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
       VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
       VITE_CAPGO_SERVER_URL="$update_url" \
@@ -203,7 +204,8 @@ build_ios_app() {
       CAPGO_CHANNEL_URL="$DEVICE_SERVER_URL/api/channel" \
       bun run build
 
-    VITE_CAPGO_APP_LABEL="$app_label" \
+    VITE_CAPGO_MAESTRO_BUILD=true \
+      VITE_CAPGO_APP_LABEL="$app_label" \
       VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
       VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
       VITE_CAPGO_SERVER_URL="$update_url" \
@@ -274,7 +276,6 @@ if ! command -v xcrun >/dev/null 2>&1; then
 fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
-"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 if [[ -z "${SIMULATOR_ID:-}" ]]; then
   echo "No available iPhone simulator found for the iOS native reset Maestro test." >&2
   exit 1
@@ -303,6 +304,8 @@ if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus 
     exit 1
   fi
 fi
+
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
 build_ios_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1" "$DERIVED_DATA_V1"

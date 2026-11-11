@@ -51,6 +51,9 @@ jobs:
       - name: Check plugin wiring
         if: runner.os != 'Windows'
         run: bun run check:wiring
+      - name: Check Maestro teardown handling
+        if: runner.os != 'Windows'
+        run: python3 scripts/maestro/test-run-maestro.py
       - name: Check plugin wiring (Windows)
         if: runner.os == 'Windows'
         shell: bash

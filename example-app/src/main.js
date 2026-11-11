@@ -41,8 +41,6 @@ const runtimeStoreAppId = '361309726';
 const bootActionFromStorage = window.localStorage.getItem(pendingBootActionStorageKey) ?? 'none';
 const reloadActionFromStorage =
   window.localStorage.getItem(pendingReloadActionStorageKey) ?? 'none';
-const hadQueuedBootActionAtLoad = bootActionFromStorage !== 'none';
-const hadQueuedReloadActionAtLoad = reloadActionFromStorage !== 'none';
 
 if (bootActionFromStorage === 'none' && reloadActionFromStorage === 'none') {
   window.localStorage.removeItem(lastActionStorageKey);
@@ -167,6 +165,7 @@ let refreshStatePromise = null;
 let refreshStateQueued = false;
 let actionInProgress = false;
 let sequenceInProgress = false;
+let smokeSequenceStatus = 'idle';
 let lastTouchLikeActionAt = 0;
 let lastGlobalActionTriggerAt = 0;
 let suppressNonSequenceActionsUntil = 0;
@@ -204,7 +203,7 @@ const quickActionIds = [
 ];
 const smokeSequenceDefaultDelayMs = isMaestroE2E ? 0 : 150;
 const smokeSequenceMutationDelayMs = isMaestroE2E ? 0 : 300;
-const actionTriggerCooldownMs = isMaestroE2E ? 0 : 250;
+const actionTriggerCooldownMs = 250;
 const reloadActionTriggerCooldownMs = isMaestroE2E ? 1500 : 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
@@ -916,6 +915,7 @@ function renderState() {
   renderDemoActionButtons();
 
   elements.e2eSummary.textContent =
+    `Smoke sequence: ${smokeSequenceStatus} | ` +
     `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'}${runtimeUrlsLabel} | ` +
@@ -2887,6 +2887,7 @@ async function runSmokeSequence() {
   suppressNonSequenceActionsUntil = Date.now() + (isMaestroE2E ? 200 : 1500);
 
   smokeSequencePromise = (async () => {
+    smokeSequenceStatus = 'running';
     elements.sequenceStatus.textContent = 'Sequence: running';
     elements.resultMarker.textContent = 'M:smoke-sequence:running';
     elements.output.textContent = 'Running smoke test sequence...';
@@ -2894,8 +2895,6 @@ async function runSmokeSequence() {
     elements.quickRunSmokeSequenceButton.disabled = true;
     state.sequenceRuns += 1;
     sequenceInProgress = true;
-
-    await waitForPendingRefresh('pending refreshState before smoke sequence');
 
     state.lastAction = 'Smoke test sequence';
     state.lastActionMarker = 'smoke-sequence:running';
@@ -2908,6 +2907,8 @@ async function runSmokeSequence() {
     renderState();
 
     try {
+      await waitForCondition(() => !actionInProgress, 20000, 100);
+      await waitForPendingRefresh('pending refreshState before smoke sequence');
       for (const action of sequenceActions) {
         state.lastPhase = `smoke-sequence:next:${action.id}`;
         renderState();
@@ -2929,6 +2930,7 @@ async function runSmokeSequence() {
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
       window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
+      smokeSequenceStatus = 'success';
       elements.sequenceStatus.textContent = 'Sequence: success';
       elements.resultMarker.textContent = 'M:smoke-sequence:success';
       renderState();
@@ -2948,6 +2950,7 @@ async function runSmokeSequence() {
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
       window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
+      smokeSequenceStatus = 'error';
       elements.sequenceStatus.textContent = 'Sequence: error';
       elements.resultMarker.textContent = `M:${state.lastActionResult}`;
       elements.output.textContent = `Error: ${failureSummary}`;
@@ -3267,7 +3270,7 @@ function focusByVisibleText(label) {
 }
 
 async function handleMaestroDeepLink(rawUrl) {
-  if (!rawUrl?.startsWith('capgo-maestro://')) {
+  if (import.meta.env.VITE_CAPGO_MAESTRO_BUILD !== 'true' || !rawUrl?.startsWith('capgo-maestro://')) {
     return;
   }
 
@@ -3297,27 +3300,30 @@ async function handleMaestroDeepLink(rawUrl) {
   }
 
   if (route === 'run' && value === 'smoke-sequence') {
-    void runSmokeSequence();
+    await runSmokeSequence();
     return;
   }
 
   if (route === 'run' && value === 'refresh-state') {
-    void refreshState();
+    await refreshState();
   }
 }
 
 async function attachMaestroDeepLinks() {
-  if (platform === 'web') {
+  if (import.meta.env.VITE_CAPGO_MAESTRO_BUILD !== 'true' || !Capacitor.isPluginAvailable('App')) {
     return;
   }
 
-  App.addListener('appUrlOpen', ({ url }) => {
-    void handleMaestroDeepLink(url);
-  });
-
-  const launch = await App.getLaunchUrl();
-  if (launch?.url) {
-    await handleMaestroDeepLink(launch.url);
+  try {
+    await App.addListener('appUrlOpen', ({ url }) => {
+      void handleMaestroDeepLink(url).catch((error) => console.error('Maestro deep link failed', error));
+    });
+    const launch = await App.getLaunchUrl();
+    if (launch?.url) {
+      await handleMaestroDeepLink(launch.url);
+    }
+  } catch (error) {
+    console.error('Maestro deep links unavailable', error);
   }
 }
 
@@ -3516,7 +3522,6 @@ async function bootstrap() {
   renderActions();
   bindDemoActions();
   renderState();
-  await attachMaestroDeepLinks();
   await attachListeners();
 
   if (!skipNotifyAppReady) {
@@ -3589,17 +3594,7 @@ async function bootstrap() {
     renderState();
   }
 
-  if (
-    isMaestroE2E &&
-    platform === 'ios' &&
-    import.meta.env.VITE_CAPGO_AUTO_SMOKE_ON_BOOT === 'true' &&
-    !hadQueuedBootActionAtLoad &&
-    !hadQueuedReloadActionAtLoad
-  ) {
-    void runSmokeSequence().catch((error) => {
-      console.error('Auto smoke sequence failed', error);
-    });
-  }
+  await attachMaestroDeepLinks();
 }
 
 bindActionButton(elements.refreshButton, () => {

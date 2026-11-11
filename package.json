@@ -75,7 +75,7 @@
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "bun run build",
-    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs && bun scripts/test-cli-crypto-output-guard.mjs && node scripts/test-builtin-hashes-hook.mjs",
+    "check:wiring": "node scripts/check-capacitor-plugin-wiring.mjs && bun scripts/test-cli-crypto-output-guard.mjs && node scripts/test-builtin-hashes-hook.mjs && node scripts/maestro/test-helpers.mjs && node scripts/maestro/test-smoke-sequence.mjs",
     "check:cap9-deprecated": "bun scripts/check-cap9-deprecated.mjs",
     "changelog:ai": "node scripts/generate-ai-changelog.mjs",
     "example:install": "cd example-app && bun install --frozen-lockfile",

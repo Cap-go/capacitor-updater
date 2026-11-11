@@ -409,8 +409,7 @@ run_maestro_test_with_retries() {
     set +e
     MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
-      "$TIMEOUT_CMD" --foreground "${MAESTRO_TIMEOUT_SECONDS}s" \
-      maestro test \
+      python3 "$ROOT_DIR/scripts/maestro/run-maestro.py" "$MAESTRO_TIMEOUT_SECONDS" "$RESULTS_DIR/junit.xml" \
       --config "$MAESTRO_WORKSPACE_CONFIG" \
       "$FLOW_PATH" \
       --platform android \

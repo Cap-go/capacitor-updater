@@ -11,6 +11,14 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
     timeout: 90000
+- scrollUntilVisible:
+    element: 'Quick run smoke test sequence'
+    direction: UP
+    timeout: 30000
+    speed: 80
+- tapOn:
+    text: 'Quick run smoke test sequence'
+    retryTapIfNoChange: false
 - extendedWaitUntil:
-    visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
+    visible: '.*Smoke sequence: success.*'
     timeout: 180000

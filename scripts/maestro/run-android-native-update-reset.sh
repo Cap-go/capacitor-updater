@@ -171,6 +171,7 @@ build_android_app() {
 
   (
     cd "$EXAMPLE_DIR"
+    export VITE_CAPGO_MAESTRO_BUILD=true
     export VITE_CAPGO_APP_LABEL="$app_label"
     export VITE_CAPGO_SCENARIO="$SCENARIO_ID"
     export VITE_CAPGO_DIRECT_UPDATE="$direct_update"

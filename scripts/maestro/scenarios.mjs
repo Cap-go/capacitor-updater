@@ -107,7 +107,6 @@ export const scenarios = {
     builtinLabel: 'manual-zip-builtin',
     env: {
       ...sharedMutableConfig,
-      VITE_CAPGO_AUTO_SMOKE_ON_BOOT: 'true',
     },
     releases: [
       { version: 'manual-zip-v1', label: 'manual-zip-v1' },
@@ -149,7 +148,6 @@ export const scenarios = {
       ...sharedMutableConfig,
       CAPGO_PERSIST_CUSTOM_ID: 'false',
       CAPGO_PERSIST_MODIFY_URL: 'false',
-      VITE_CAPGO_AUTO_SMOKE_ON_BOOT: 'true',
     },
     releases: [{ version: 'manual-zip-no-persist-v1', label: 'manual-zip-no-persist-v1' }],
   },
@@ -166,7 +164,6 @@ export const scenarios = {
       CAPGO_ALLOW_MODIFY_APP_ID: 'false',
       CAPGO_ALLOW_MODIFY_URL: 'false',
       CAPGO_ALLOW_SET_DEFAULT_CHANNEL: 'false',
-      VITE_CAPGO_AUTO_SMOKE_ON_BOOT: 'true',
     },
     releases: [{ version: 'manual-zip-config-guards-v1', label: 'manual-zip-config-guards-v1' }],
   },
