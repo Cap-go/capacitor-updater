@@ -4014,6 +4014,83 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testLaunchSplashSchedulesAutoSplashscreenTimeoutOnForeground() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlerConstruction = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            plugin.setAutoUpdateModeForTesting("onLaunch");
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+
+            assertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            assertEquals(1, handlerConstruction.constructed().size());
+            verify(handlerConstruction.constructed().get(0)).postDelayed(any(Runnable.class), eq(10_000L));
+        }
+    }
+
+    @Test
+    public void testLaunchSplashDoesNotScheduleTimeoutWhenDirectUpdateIsNotActive() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+
+            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+        }
+    }
+
+    @Test
+    public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
+            final ArrayList<DelayCondition> delayConditions = new ArrayList<>();
+            delayConditions.add(new DelayCondition(DelayUntilNext.background, ""));
+
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[{\"kind\":\"background\"}]");
+            when(delayUpdateUtils.parseDelayConditions("[{\"kind\":\"background\"}]")).thenReturn(delayConditions);
+
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
+
+            plugin.scheduleDirectUpdateFinish(latest);
+
+            assertTrue(plugin.startNewThreadCalled);
+            assertFalse(plugin.reloadCalled);
+            assertEquals(0, updater.stagePendingReloadCalls);
+        }
+    }
+
+    @Test
     public void testScheduleDirectUpdateFinishUsesBackgroundDispatchPath() {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);

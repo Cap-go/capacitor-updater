@@ -4139,6 +4139,24 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    private func scheduleLaunchSplashscreenTimeoutIfNeeded() {
+        guard self.autoSplashscreen else {
+            return
+        }
+        guard self.shouldUseDirectUpdate() else {
+            return
+        }
+        self.scheduleSplashscreenTimeout()
+    }
+
+    func hasSplashscreenTimeoutScheduledForTesting() -> Bool {
+        self.autoSplashscreenTimeoutWorkItem != nil
+    }
+
+    func scheduleLaunchSplashscreenTimeoutIfNeededForTesting() {
+        self.scheduleLaunchSplashscreenTimeoutIfNeeded()
+    }
+
     private func scheduleSplashscreenTimeout() {
         guard self.autoSplashscreenTimeout > 0 else {
             return
@@ -4387,6 +4405,11 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
         self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
+    }
+
+    func configureAutoSplashscreenForTesting(enabled: Bool, timeoutMs: Int) {
+        self.autoSplashscreen = enabled
+        self.autoSplashscreenTimeout = max(0, timeoutMs)
     }
 
     func setUpdateUrlForTesting(_ updateUrl: String) {
@@ -5144,6 +5167,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.installQueuedBundleOnForegroundIfNeeded()
         if self._isAutoUpdateEnabled() {
+            self.scheduleLaunchSplashscreenTimeoutIfNeeded()
             // Check if download is already in progress (with timeout protection)
             if !isDownloadStuckOrTimedOut() {
                 self.backgroundDownload()

@@ -1532,6 +1532,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private void scheduleLaunchSplashscreenTimeoutIfNeeded() {
+        if (!Boolean.TRUE.equals(this.autoSplashscreen)) {
+            return;
+        }
+        if (!this.shouldUseDirectUpdate()) {
+            return;
+        }
+        this.scheduleSplashscreenTimeout();
+    }
+
+    boolean hasSplashscreenTimeoutScheduledForTesting() {
+        return this.splashscreenTimeoutRunnable != null;
+    }
+
+    void scheduleLaunchSplashscreenTimeoutIfNeededForTesting() {
+        this.scheduleLaunchSplashscreenTimeoutIfNeeded();
+    }
+
     private void scheduleSplashscreenTimeout() {
         if (this.autoSplashscreenTimeout == null || this.autoSplashscreenTimeout <= 0) {
             return;
@@ -2566,6 +2584,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Skipping direct update finish while preview session state is active");
             this.implementation.directUpdate = false;
             this.clearBackgroundDownloadState();
+            return;
+        }
+        final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+        final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
+        if (!delayConditionList.isEmpty()) {
+            logger.info("Update delayed until delay conditions met");
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+            if ("onLaunch".equals(this.directUpdateMode)) {
+                this.onLaunchDirectUpdateUsed = true;
+            }
+            this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true);
             return;
         }
         if ("onLaunch".equals(this.directUpdateMode)) {
@@ -5843,6 +5873,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.delayUpdateUtils.unsetBackgroundTimestamp();
 
         if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
+            this.scheduleLaunchSplashscreenTimeoutIfNeeded();
             if (!this.isDownloadStuckOrTimedOut()) {
                 this.backgroundDownload();
             } else {
