@@ -1469,8 +1469,9 @@ Use this to:
 - Check if a device is on a specific channel before showing features
 - Verify channel assignment after calling {@link setChannel}
 
-On native platforms, a successful response also refreshes the default channel used by update checks.
-This refresh is persisted across app restarts.
+On native platforms, a successful response with a device channel override also refreshes the
+default channel used by update checks. Responses with `status: 'default'` are reported only and
+are not persisted. This refresh is persisted across app restarts.
 
 **Returns:** <code>Promise&lt;<a href="#getchannelres">GetChannelRes</a>&gt;</code>
 
