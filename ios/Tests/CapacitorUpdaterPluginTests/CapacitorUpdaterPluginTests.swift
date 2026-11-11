@@ -2996,6 +2996,17 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting())
     }
 
+    func testLaunchSplashTimeoutDoesNotConsumeAtInstallDirectUpdateWindow() {
+        plugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        plugin.configureDirectUpdateModeForTesting("atInstall", onLaunchDirectUpdateUsed: false)
+        plugin.setWasRecentlyInstalledOrUpdatedForTesting(true)
+
+        plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+
+        XCTAssertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting())
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
+    }
+
     func testShowSplashscreenOptionsDisableAutoHide() {
         let options = plugin.splashscreenOptionsForTesting(methodName: "show")
 

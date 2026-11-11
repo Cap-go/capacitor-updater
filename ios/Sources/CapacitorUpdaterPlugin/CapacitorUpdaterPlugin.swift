@@ -4139,11 +4139,32 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    private func isDirectUpdateEligibleForLaunchSplashTimeout() -> Bool {
+        if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
+            return false
+        }
+        if self.autoSplashscreenTimedOut {
+            return false
+        }
+        switch directUpdateMode {
+        case "false":
+            return false
+        case "always":
+            return true
+        case "atInstall":
+            return self.wasRecentlyInstalledOrUpdated
+        case "onLaunch":
+            return !self.getOnLaunchDirectUpdateUsed()
+        default:
+            return false
+        }
+    }
+
     private func scheduleLaunchSplashscreenTimeoutIfNeeded() {
         guard self.autoSplashscreen else {
             return
         }
-        guard self.shouldUseDirectUpdate() else {
+        guard self.isDirectUpdateEligibleForLaunchSplashTimeout() else {
             return
         }
         self.scheduleSplashscreenTimeout()
@@ -4410,6 +4431,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     func configureAutoSplashscreenForTesting(enabled: Bool, timeoutMs: Int) {
         self.autoSplashscreen = enabled
         self.autoSplashscreenTimeout = max(0, timeoutMs)
+    }
+
+    func setWasRecentlyInstalledOrUpdatedForTesting(_ value: Bool) {
+        self.wasRecentlyInstalledOrUpdated = value
     }
 
     func setUpdateUrlForTesting(_ updateUrl: String) {

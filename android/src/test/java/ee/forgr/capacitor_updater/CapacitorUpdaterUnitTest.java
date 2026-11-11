@@ -660,8 +660,13 @@ public class CapacitorUpdaterUnitTest {
             return this.setResult;
         }
 
+        private int setNextBundleCalls = 0;
+        private String lastSetNextBundleId;
+
         @Override
         public boolean setNextBundle(final String next) {
+            this.setNextBundleCalls++;
+            this.lastSetNextBundleId = next;
             return true;
         }
 
@@ -4059,6 +4064,29 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testLaunchSplashTimeoutDoesNotConsumeAtInstallDirectUpdateWindow() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlerConstruction = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            plugin.configureDirectUpdateModeForTesting("atInstall", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            setPrivateField(plugin, "wasRecentlyInstalledOrUpdated", true);
+
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+
+            assertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            assertTrue(plugin.shouldUseDirectUpdateForTesting());
+        }
+    }
+
+    @Test
     public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -4087,6 +4115,8 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.startNewThreadCalled);
             assertFalse(plugin.reloadCalled);
             assertEquals(0, updater.stagePendingReloadCalls);
+            assertEquals(1, updater.setNextBundleCalls);
+            assertEquals("download-id", updater.lastSetNextBundleId);
         }
     }
 
