@@ -4013,8 +4013,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    @Test
-    public void testLaunchSplashSchedulesAutoSplashscreenTimeoutOnForeground() {
+  @Test
+  public void testLaunchSplashSchedulesAutoSplashscreenTimeoutOnForeground() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> handlerConstruction = mockConstruction(Handler.class)
@@ -4037,8 +4037,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    @Test
-    public void testLaunchSplashDoesNotScheduleTimeoutWhenDirectUpdateIsNotActive() {
+  @Test
+  public void testLaunchSplashDoesNotScheduleTimeoutWhenDirectUpdateIsNotActive() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4058,8 +4058,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    @Test
-    public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() {
+  @Test
+  public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
