@@ -42,6 +42,8 @@ import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -4399,7 +4401,14 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
 
-        updater.persistDefaultChannelFromResponse(" company-a ", editor, "CapacitorUpdater.defaultChannel");
+        updater.persistDefaultChannelFromResponse(
+            " company-a ",
+            "ok",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            ""
+        );
 
         assertEquals("company-a", updater.defaultChannel);
         verify(editor).putString("CapacitorUpdater.defaultChannel", "company-a");
@@ -4477,11 +4486,171 @@ public class CapacitorUpdaterUnitTest {
         final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         updater.defaultChannel = "stable";
 
-        updater.persistDefaultChannelFromResponse("builtin", editor, "CapacitorUpdater.defaultChannel");
+        updater.persistDefaultChannelFromResponse(
+            "builtin",
+            "ok",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            ""
+        );
 
         assertEquals("stable", updater.defaultChannel);
         verify(editor, never()).putString(anyString(), anyString());
         verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseIgnoresDefaultStatus() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.defaultChannel = "dev";
+
+        updater.persistDefaultChannelFromResponse(
+            "production",
+            "default",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        assertEquals("dev", updater.defaultChannel);
+        verify(editor, never()).putString(anyString(), anyString());
+        verify(editor, never()).putBoolean(anyString(), anyBoolean());
+        verify(editor, never()).remove(anyString());
+        verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseClearsStaleDefaultFallback() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(editor.remove("CapacitorUpdater.defaultChannel")).thenReturn(editor);
+        when(editor.remove("CapacitorUpdater.defaultChannelFromSetChannel")).thenReturn(editor);
+        updater.defaultChannel = "production";
+
+        updater.persistDefaultChannelFromResponse(
+            "production",
+            "default",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        assertEquals("stable", updater.defaultChannel);
+        verify(editor).remove("CapacitorUpdater.defaultChannel");
+        verify(editor).remove("CapacitorUpdater.defaultChannelFromSetChannel");
+        verify(editor).apply();
+        verify(editor, never()).putString(anyString(), anyString());
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponsePreservesSetChannelOnDefaultStatus() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(prefs.getBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false)).thenReturn(true);
+        updater.prefs = prefs;
+        updater.defaultChannel = "company-a";
+
+        updater.persistDefaultChannelFromResponse(
+            "company-a",
+            "default",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        assertEquals("company-a", updater.defaultChannel);
+        verify(editor, never()).remove(anyString());
+        verify(editor, never()).putBoolean(anyString(), anyBoolean());
+        verify(editor, never()).apply();
+    }
+
+    @Test
+    public void persistDefaultChannelFromResponseKeepsSetChannelMarkerAfterOverrideRefresh() {
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        when(prefs.getBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false)).thenReturn(true);
+        when(editor.putString("CapacitorUpdater.defaultChannel", "company-a")).thenReturn(editor);
+        updater.prefs = prefs;
+        updater.defaultChannel = "company-a";
+
+        updater.persistDefaultChannelFromResponse(
+            "company-a",
+            "ok",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        updater.persistDefaultChannelFromResponse(
+            "company-a",
+            "default",
+            editor,
+            "CapacitorUpdater.defaultChannel",
+            "CapacitorUpdater.defaultChannelFromSetChannel",
+            "stable"
+        );
+
+        assertEquals("company-a", updater.defaultChannel);
+        verify(editor, never()).putBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false);
+        verify(editor, never()).remove(anyString());
+    }
+
+    @Test
+    public void getChannelDoesNotPersistDefaultStatusChannel() throws Exception {
+        DownloadService.setHttpsOnly(false);
+        final MockWebServer server = new MockWebServer();
+        try {
+            server.enqueue(
+                new MockResponse()
+                    .setResponseCode(200)
+                    .setBody("{\"channel\":\"production\",\"status\":\"default\",\"allowSet\":true}")
+                    .addHeader("Content-Type", "application/json")
+            );
+            server.start();
+
+            final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+            updater.channelUrl = server.url("/channel").toString();
+            updater.defaultChannel = "dev";
+            updater.CAP_SERVER_PATH = "server-path";
+            updater.prefs = mock(SharedPreferences.class);
+            when(updater.prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+            when(updater.prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+            final String defaultChannelKey = "CapacitorUpdater.defaultChannel";
+            final String fromSetChannelKey = "CapacitorUpdater.defaultChannelFromSetChannel";
+            final CountDownLatch latch = new CountDownLatch(1);
+            final AtomicReference<Map<String, Object>> response = new AtomicReference<>();
+
+            updater.getChannel(
+                (ret) -> {
+                    response.set(ret);
+                    latch.countDown();
+                },
+                editor,
+                defaultChannelKey,
+                fromSetChannelKey,
+                "stable"
+            );
+
+            assertTrue("getChannel callback timed out", latch.await(5, TimeUnit.SECONDS));
+            assertEquals("production", response.get().get("channel"));
+            assertEquals("default", response.get().get("status"));
+            assertEquals("dev", updater.defaultChannel);
+            verify(editor, never()).putString(eq(defaultChannelKey), anyString());
+            verify(editor, never()).remove(defaultChannelKey);
+        } finally {
+            server.shutdown();
+            DownloadService.setHttpsOnly(true);
+        }
     }
 
     @Test

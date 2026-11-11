@@ -116,6 +116,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
+    static final String DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannelFromSetChannel";
     static final String PREVIEW_SESSION_PREF_KEY = "CapacitorUpdater.previewSession";
     private static final String DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY = "CapacitorUpdater.defaultChannelInstallMarkerCreated";
     private static final String DEFAULT_CHANNEL_INSTALL_MARKER_FILE = "CapacitorUpdater.defaultChannelInstallMarker";
@@ -161,7 +162,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final String PLUGIN_VERSION = "8.52.1";
     // Set while a plugin instance (with its bridge) runs in this process. The headless update
     // check then leaves installing to that instance instead of swapping bundles under it.
+    static final Object INSTANCE_LOADED_LOCK = new Object();
     static volatile boolean instanceLoaded = false;
+
+    static boolean isInstanceLoaded() {
+        synchronized (INSTANCE_LOADED_LOCK) {
+            return instanceLoaded;
+        }
+    }
+
     private final String pluginVersion = PLUGIN_VERSION;
     private static final String DELAY_CONDITION_PREFERENCES = "";
 
@@ -738,7 +747,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
-        instanceLoaded = true;
+        synchronized (INSTANCE_LOADED_LOCK) {
+            instanceLoaded = true;
+        }
 
         // Initialize logger with osLogging config
         // Default to true for both platforms to enable system logging by default
@@ -1571,6 +1582,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     static boolean clearPersistedDefaultChannel(final SharedPreferences.Editor editor) {
         editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
         editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
         return editor.commit();
@@ -3019,7 +3031,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                     },
                     CapacitorUpdaterPlugin.this.editor,
-                    DEFAULT_CHANNEL_PREF_KEY
+                    DEFAULT_CHANNEL_PREF_KEY,
+                    DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY,
+                    CapacitorUpdaterPlugin.this.getConfig().getString("defaultChannel", "")
                 )
             );
         } catch (final Exception e) {
@@ -4045,6 +4059,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        this.editor.remove(DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         this.implementation.defaultChannel = configDefaultChannel;
         this.editor.apply();
         logger.info("Restored defaultChannel after preview to config value");
@@ -6439,7 +6454,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void handleOnDestroyInternal() {
-        instanceLoaded = false;
+        synchronized (INSTANCE_LOADED_LOCK) {
+            instanceLoaded = false;
+        }
         if (this.implementation != null) {
             this.implementation.releaseStatsOwnership();
         }

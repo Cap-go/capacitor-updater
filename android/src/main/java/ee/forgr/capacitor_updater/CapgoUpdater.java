@@ -34,6 +34,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.SecureRandom;
@@ -707,8 +708,58 @@ public class CapgoUpdater {
         return 0;
     }
 
-    static boolean isParsableVersion(final Version version) {
-        return version != null && version.getOriginalString() != null && !version.getSubversionNumbers().isEmpty();
+    /** Parses major, minor, patch as arbitrary-precision integers; returns null when the core is not numeric. */
+    static BigInteger[] parseCoreVersionComponents(final String version) {
+        final String core = stripBuildMetadata(version);
+        if (core == null || core.isEmpty() || !Character.isDigit(core.charAt(0))) {
+            return null;
+        }
+        final String[] tokens = core.replaceAll("\\s", "").split("\\.");
+        final BigInteger[] components = new BigInteger[3];
+        for (int i = 0; i < 3; i++) {
+            if (i < tokens.length) {
+                final String token = tokens[i];
+                int end = 0;
+                while (end < token.length() && Character.isDigit(token.charAt(end))) {
+                    end++;
+                }
+                if (end == 0) {
+                    components[i] = BigInteger.ZERO;
+                } else {
+                    try {
+                        components[i] = new BigInteger(token.substring(0, end));
+                    } catch (final NumberFormatException e) {
+                        return null;
+                    }
+                }
+            } else {
+                components[i] = BigInteger.ZERO;
+            }
+        }
+        return components;
+    }
+
+    /**
+     * Compares major.minor.patch without {@link Long} limits. Returns {@code Integer.MIN_VALUE} when either
+     * version core is not parseable.
+     */
+    static int compareCoreVersionStrings(final String left, final String right) {
+        final BigInteger[] a = parseCoreVersionComponents(left);
+        final BigInteger[] b = parseCoreVersionComponents(right);
+        if (a == null || b == null) {
+            return Integer.MIN_VALUE;
+        }
+        for (int i = 0; i < 3; i++) {
+            final int cmp = a[i].compareTo(b[i]);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return 0;
+    }
+
+    private void logBuiltinMinimumParseSkipped(final String version) {
+        logger.debug("builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'");
     }
 
     /**
@@ -719,17 +770,13 @@ public class CapgoUpdater {
         if (!this.builtinMinimum) {
             return;
         }
-        // Build metadata (+...) never takes part in ordering.
-        final Version bundle = new Version(stripBuildMetadata(version));
-        final Version nativeVersion = new Version(stripBuildMetadata(this.versionBuild));
-        if (!isParsableVersion(bundle) || !isParsableVersion(nativeVersion)) {
-            logger.debug(
-                "builtinMinimum skipped: cannot parse bundle version '" + version + "' or native version '" + this.versionBuild + "'"
-            );
+        final int cmp = compareCoreVersionStrings(version, this.versionBuild);
+        if (cmp == Integer.MIN_VALUE) {
+            logBuiltinMinimumParseSkipped(version);
             return;
         }
         // Only major.minor.patch matter: prerelease suffixes and a fourth component are not a rollback.
-        if (compareCoreVersion(bundle, nativeVersion) < 0) {
+        if (cmp < 0) {
             final String message = "Bundle version " + version + " is below native version " + this.versionBuild + " (builtinMinimum)";
             logger.error(message);
             this.sendStats("version_below_native", version);
@@ -3058,6 +3105,7 @@ public class CapgoUpdater {
 
         // Clear persisted defaultChannel and revert to config value
         editor.remove(defaultChannelKey);
+        editor.remove(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         editor.apply();
         this.defaultChannel = configDefaultChannel;
         logger.info("Persisted defaultChannel cleared, reverted to config value: " + configDefaultChannel);
@@ -3136,6 +3184,7 @@ public class CapgoUpdater {
                 // Server requested to unset channel (public channel was requested)
                 // Clear persisted defaultChannel and revert to config value
                 editor.remove(defaultChannelKey);
+                editor.remove(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
                 editor.apply();
                 this.defaultChannel = configDefaultChannel;
                 logger.info("Public channel requested, channel override removed");
@@ -3143,6 +3192,7 @@ public class CapgoUpdater {
             } else {
                 this.defaultChannel = channel;
                 editor.putString(defaultChannelKey, channel);
+                editor.putBoolean(CapacitorUpdaterPlugin.DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY, true);
                 editor.apply();
                 logger.info("defaultChannel persisted locally: " + channel);
                 callback.callback(res);
@@ -3150,11 +3200,20 @@ public class CapgoUpdater {
         });
     }
 
+    /**
+     * Legacy entry point. Does not persist or clear channel state because editor and preference keys are null.
+     */
     public void getChannel(final Callback callback) {
-        this.getChannel(callback, null, null);
+        this.getChannel(callback, null, null, null, null);
     }
 
-    public void getChannel(final Callback callback, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+    public void getChannel(
+        final Callback callback,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final String defaultChannelFromSetChannelKey,
+        final String configDefaultChannel
+    ) {
         if (isRemoteBlocked()) {
             final RemoteBlockResult blocked = remoteBlockedClientError();
             logger.debug("Skipping getChannel due to remote block (" + blocked.error + ").");
@@ -3265,7 +3324,14 @@ public class CapgoUpdater {
                                 ret.put(key, jsonResponse.get(key));
                             }
                         }
-                        persistDefaultChannelFromResponse(ret.get("channel"), editor, defaultChannelKey);
+                        persistDefaultChannelFromResponse(
+                            ret.get("channel"),
+                            ret.get("status"),
+                            editor,
+                            defaultChannelKey,
+                            defaultChannelFromSetChannelKey,
+                            configDefaultChannel
+                        );
                         logger.info("Channel get to \"" + ret);
                         callback.callback(ret);
                     } catch (JSONException e) {
@@ -3279,7 +3345,39 @@ public class CapgoUpdater {
         );
     }
 
-    void persistDefaultChannelFromResponse(final Object channel, final SharedPreferences.Editor editor, final String defaultChannelKey) {
+    void persistDefaultChannelFromResponse(
+        final Object channel,
+        final Object status,
+        final SharedPreferences.Editor editor,
+        final String defaultChannelKey,
+        final String defaultChannelFromSetChannelKey,
+        final String configDefaultChannel
+    ) {
+        if (status instanceof String && "default".equals(status)) {
+            if (channel instanceof String) {
+                final String channelName = ((String) channel).trim();
+                if (!channelName.isEmpty() && channelName.equals(this.defaultChannel)) {
+                    // Match iOS: compare in-memory defaultChannel; iOS also consults prefs when memory diverges.
+                    boolean fromSetChannel = false;
+                    if (this.prefs != null && defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+                        fromSetChannel = this.prefs.getBoolean(defaultChannelFromSetChannelKey, false);
+                    }
+                    if (!fromSetChannel) {
+                        this.defaultChannel = configDefaultChannel != null ? configDefaultChannel : "";
+                        if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
+                            editor.remove(defaultChannelKey);
+                            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty()) {
+                                editor.remove(defaultChannelFromSetChannelKey);
+                            }
+                            editor.apply();
+                        }
+                        logger.info("defaultChannel cleared stale getChannel() fallback: " + channelName);
+                    }
+                }
+            }
+            return;
+        }
+
         if (!(channel instanceof String)) {
             return;
         }
@@ -3289,9 +3387,19 @@ public class CapgoUpdater {
             return;
         }
 
+        final boolean preserveSetChannelMarker =
+            this.prefs != null &&
+            defaultChannelFromSetChannelKey != null &&
+            !defaultChannelFromSetChannelKey.isEmpty() &&
+            this.prefs.getBoolean(defaultChannelFromSetChannelKey, false) &&
+            channelName.equals(this.defaultChannel);
+
         this.defaultChannel = channelName;
         if (editor != null && defaultChannelKey != null && !defaultChannelKey.isEmpty()) {
             editor.putString(defaultChannelKey, channelName);
+            if (defaultChannelFromSetChannelKey != null && !defaultChannelFromSetChannelKey.isEmpty() && !preserveSetChannelMarker) {
+                editor.putBoolean(defaultChannelFromSetChannelKey, false);
+            }
             editor.apply();
         }
         logger.info("defaultChannel synchronized from getChannel(): " + channelName);
