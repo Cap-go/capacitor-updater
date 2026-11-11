@@ -96,6 +96,26 @@ public class HttpsOnlyBuiltinMinimumTest {
     }
 
     @Test
+    public void builtinMinimumRejectsBundleBelowNativeByMajor() throws Exception {
+        StatsCapturingUpdater updater = new StatsCapturingUpdater();
+        updater.builtinMinimum = true;
+        updater.versionBuild = "2.0.0";
+        IOException error = assertThrows(IOException.class, () -> updater.requireVersionNotBelowBuiltin("1.9223372036854775808.0"));
+        assertEquals("Bundle version 1.9223372036854775808.0 is below native version 2.0.0 (builtinMinimum)", error.getMessage());
+    }
+
+    @Test
+    public void builtinMinimumAcceptsBundleWhenMinorComponentExceedsLongMax() throws Exception {
+        StatsCapturingUpdater updater = new StatsCapturingUpdater();
+        updater.builtinMinimum = true;
+        updater.versionBuild = "1.0.0";
+        updater.requireVersionNotBelowBuiltin("1.9223372036854775808.0");
+        updater.versionBuild = "2.0.0";
+        updater.requireVersionNotBelowBuiltin("9223372036854775808.0.0");
+        assertTrue(updater.stats.isEmpty());
+    }
+
+    @Test
     public void builtinMinimumSkipsUnparseableAndDisabled() throws Exception {
         StatsCapturingUpdater updater = new StatsCapturingUpdater();
         updater.builtinMinimum = true;

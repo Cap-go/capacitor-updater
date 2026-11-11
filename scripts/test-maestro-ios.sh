@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/maestro/maestro-cli-pass.sh
+source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios}"
 SKIP_BUILD="${CAPGO_MAESTRO_SKIP_BUILD:-0}"
@@ -217,6 +219,8 @@ wait_for_queued_boot_verification() {
   local before_state=""
   local before_channel_count="0"
   local server_state=""
+  local max_attempts="${CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS:-60}"
+  local sleep_seconds="${CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS:-2}"
 
   before_state="$(read_smoke_server_state)"
   before_channel_count="$(server_request_count "$before_state" channel)"
@@ -225,7 +229,7 @@ wait_for_queued_boot_verification() {
   xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
 
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "$max_attempts"); do
     server_state="$(read_smoke_server_state)"
     if bun --eval "
 const state = JSON.parse(process.argv[1]);
@@ -271,7 +275,7 @@ process.exit(ok ? 0 : 1);
 " "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
       return 0
     fi
-    sleep 2
+    sleep "$sleep_seconds"
   done
 
   echo "Queued iOS boot verification did not hit the fake server after relaunch." >&2
@@ -449,14 +453,16 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
-  :
-else
-  status=$?
-  if [[ $status -eq 124 ]]; then
-    echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
+  if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+    :
+  else
+    status=$?
+    if [[ $status -eq 124 ]]; then
+      echo "Simulator failed to boot within ${SIMULATOR_BOOT_TIMEOUT_SECONDS} seconds." >&2
+    fi
+    exit "$status"
   fi
-  exit "$status"
 fi
 
 install_example_app
@@ -484,6 +490,13 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
   set -e
 
   if [[ $status -eq 0 ]]; then
+    rm -f "$output_file"
+    break
+  fi
+
+  if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
+    echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
+    reset_ios_maestro_driver
     rm -f "$output_file"
     break
   fi
@@ -542,4 +555,8 @@ elif [[ "$RUN_NATIVE_RESET" == "1" ]]; then
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_SKIP_BUILD=1." >&2
 else
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
+fi
+
+if [[ -n "${CI:-}" ]]; then
+  reset_ios_maestro_driver
 fi

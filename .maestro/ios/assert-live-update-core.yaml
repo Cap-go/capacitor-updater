@@ -3,60 +3,60 @@ appId: app.capgo.updater
 - launchApp
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
-    timeout: 180000
+    timeout: 120000
 - scrollUntilVisible:
     element:
       text: '${BUILD_LABEL}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${SCENARIO_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${DIRECT_UPDATE_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${AUTO_UPDATE_ENABLED_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${AUTO_UPDATE_AVAILABLE_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${NOTIFY_READY_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${CURRENT_SOURCE_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: '${CURRENT_VERSION_LINE}'
     direction: DOWN
-    timeout: 60000
+    timeout: 30000
     centerElement: true
     visibilityPercentage: 1
