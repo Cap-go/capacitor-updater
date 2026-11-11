@@ -144,7 +144,18 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate, URLSession
             lock.unlock()
             return
         }
-        state.handle.write(data)
+        do {
+            try state.handle.write(contentsOf: data)
+        } catch {
+            state.finished = true
+            streams.removeValue(forKey: dataTask.taskIdentifier)
+            let response = state.response ?? dataTask.response as? HTTPURLResponse
+            try? state.handle.close()
+            lock.unlock()
+            dataTask.cancel()
+            state.completion(response, error)
+            return
+        }
         state.received += Int64(data.count)
         let response = state.response ?? dataTask.response as? HTTPURLResponse
         let received = state.received
