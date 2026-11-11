@@ -498,10 +498,10 @@ import UIKit
             var movedFileURL: URL?
             var resultError: Error?
             var resultResumeData: Data?
-            if let error {
-                resultError = NetworkError.sessionTaskFailed(error)
-                resultResumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-            } else if let location {
+            // Keep any file URLSession already wrote, including when the
+            // transfer later fails (truncated body or dropped connection).
+            // URLSession deletes `location` when this handler returns.
+            if let location {
                 do {
                     let fileManager = FileManager.default
                     try fileManager.createDirectory(
@@ -517,6 +517,10 @@ import UIKit
                 } catch {
                     resultError = NetworkError.downloadedFileMoveFailed(error, source: location, destination: temporaryDownloadURL)
                 }
+            }
+            if let error {
+                resultError = NetworkError.sessionTaskFailed(error)
+                resultResumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
             }
             let taskResponse = response as? HTTPURLResponse
             self.networkResponseQueue.async {
@@ -2258,10 +2262,6 @@ import UIKit
         let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, downloadId: bundleId, hash: fileHash, fileName: fileName)
         let resumeData = resume.data
         resume.data = nil
-        if resumeData != nil {
-            // URLSession resumes its own interrupted transfer and returns the whole file.
-            try? FileManager.default.removeItem(at: partialURL)
-        }
         let existingBytes: Int64
         if FileManager.default.fileExists(atPath: partialURL.path) {
             existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
@@ -2272,11 +2272,20 @@ import UIKit
             request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
         }
         // True while the bytes on disk come from more than one response; a bad result then earns a clean GET.
-        var resumed = resumeData != nil
+        var resumed = existingBytes > 0 || resumeData != nil
 
         let label = "downloadManifestFile \(fileName)"
-        let result = resumeData.map { performDownloadRequest(request, label: label, resumeData: $0) }
-            ?? performDownloadRequest(request, label: label)
+        // Prefer an on-disk partial plus Range over URLSession resumeData.
+        // Resume data may retry without a Range header against a short-lived
+        // connection, which restarts the transfer from byte 0.
+        let result: DownloadRequestResult
+        if existingBytes > 0 {
+            result = performDownloadRequest(request, label: label)
+        } else if let resumeData {
+            result = performDownloadRequest(request, label: label, resumeData: resumeData)
+        } else {
+            result = performDownloadRequest(request, label: label)
+        }
         resume.data = result.resumeData
         defer {
             if let fileURL = result.fileURL {
@@ -4138,10 +4147,20 @@ import UIKit
         let root = pendingStatsRootDirectory()
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            if events.isEmpty {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+                return
+            }
             let data = try JSONEncoder().encode(events)
             let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
             defer { try? FileManager.default.removeItem(at: temp) }
-            try data.write(to: temp, options: .atomic)
+            // Write the unique temp in place. `.atomic` would create another
+            // aux file and can fail with "couldn't be removed" (ENOENT) when
+            // that aux is already gone. Foundation may raise that as an
+            // NSException, which escapes the Swift catch below.
+            try data.write(to: temp)
             try replaceItemAtomically(at: fileURL, withItemAt: temp)
             var resourceURL = fileURL
             var values = URLResourceValues()

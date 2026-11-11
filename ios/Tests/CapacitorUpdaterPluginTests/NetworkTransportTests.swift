@@ -441,7 +441,9 @@ final class NetworkTransportTests: XCTestCase {
             lock.unlock()
             let validators = ["ETag": "\"capgo-resume\"", "Accept-Ranges": "bytes"]
             if first {
-                return .init(status: 200, body: body, headers: validators, truncateBodyAt: cut)
+                // Stream the truncated body in chunks so URLSession has bytes
+                // on disk before the connection is closed mid-transfer.
+                return .init(status: 200, body: body, headers: validators, truncateBodyAt: cut, chunkSize: 16_384)
             }
             guard let range = request.headers["range"], range.hasPrefix("bytes="),
                   let start = Int(range.dropFirst("bytes=".count).split(separator: "-").first ?? "") else {
