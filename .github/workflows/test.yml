@@ -111,9 +111,13 @@ jobs:
       - name: Verify packed package in example app (Android)
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 CAPGO_VERIFY_PACKED_RELEASE_ANDROID=1 bash ./.github/scripts/verify-packed-example.sh android
-      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
-        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        run: bun run generate:cli-crypto && bun run native:contract:cli:android
+      - name: Decrypt bundles freshly encrypted by the latest Capgo CLI
+        # The committed fixtures ran above; also check compatibility with the current CLI release.
+        run: |
+          bun add --no-save @capgo/cli@latest
+          bunx --no-install capgo --version
+          bun run generate:cli-crypto
+          bun run native:contract:cli:android
 
   build_android_next_capacitor:
     permissions:
@@ -235,8 +239,11 @@ jobs:
             ${{ runner.os }}-swiftpm-
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
-      - name: Encrypt fresh bundles with the pinned Capgo CLI
-        run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Encrypt fresh bundles with the latest Capgo CLI
+        run: |
+          bun add --no-save @capgo/cli@latest
+          bunx --no-install capgo --version
+          bun run generate:cli-crypto native-contract-tests/cli-fresh
       - name: Upload iOS test build and CLI fresh fixtures (attempt 1)
         id: upload_ios_test_build_1
         continue-on-error: true
