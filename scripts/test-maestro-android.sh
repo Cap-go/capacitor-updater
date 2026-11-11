@@ -409,16 +409,8 @@ run_maestro_test_with_retries() {
     set +e
     MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
-      python3 "$ROOT_DIR/scripts/maestro/run-maestro.py" "$MAESTRO_TIMEOUT_SECONDS" "$RESULTS_DIR/junit.xml" \
-      --config "$MAESTRO_WORKSPACE_CONFIG" \
-      "$FLOW_PATH" \
-      --platform android \
-      --udid "$ANDROID_DEVICE_ID" \
-      --format junit \
-      --output "$RESULTS_DIR/junit.xml" \
-      --debug-output "$RESULTS_DIR/debug" \
-      --flatten-debug-output \
-      --test-output-dir "$RESULTS_DIR/artifacts" 2>&1 | tee "$output_file"
+      python3 "$ROOT_DIR/scripts/maestro/run-maestro.py" \
+      "$MAESTRO_TIMEOUT_SECONDS" "$SCENARIO_ID" "$ANDROID_DEVICE_ID" 2>&1 | tee "$output_file"
     command_status=${PIPESTATUS[0]}
     set -e
 

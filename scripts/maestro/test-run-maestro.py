@@ -1,6 +1,7 @@
 import os
 import pathlib
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -11,7 +12,11 @@ RUNNER = pathlib.Path(__file__).with_name('run-maestro.py')
 class MaestroTeardownTests(unittest.TestCase):
     def run_fixture(self, content, summary, timeout=1, stale=False, exit_code=None):
         with tempfile.TemporaryDirectory() as directory:
-            report = pathlib.Path(directory) / 'junit.xml'
+            runner = pathlib.Path(directory) / 'scripts/maestro/run-maestro.py'
+            runner.parent.mkdir(parents=True)
+            shutil.copyfile(RUNNER, runner)
+            report = pathlib.Path(directory) / 'maestro-results/junit.xml'
+            report.parent.mkdir()
             if stale:
                 report.write_text(content)
             script = (
@@ -24,7 +29,7 @@ class MaestroTeardownTests(unittest.TestCase):
             fake_maestro.write_text(f'#!{sys.executable}\n' + script)
             fake_maestro.chmod(0o755)
             return subprocess.run(
-                [sys.executable, str(RUNNER), str(timeout), str(report)],
+                [sys.executable, str(runner), str(timeout), 'manual-zip', 'emulator-5554'],
                 env={**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH']},
                 capture_output=True, timeout=15,
             ).returncode

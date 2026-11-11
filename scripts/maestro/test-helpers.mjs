@@ -7,6 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+assert.equal(process.versions.bun, undefined, 'Run this regression with Node, not Bun');
+
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const temp = await mkdtemp(path.join(os.tmpdir(), 'capgo-maestro-test-'));
 let server;
@@ -36,7 +38,7 @@ try {
   const base = `http://127.0.0.1:${port}`;
   let logs = '';
   // Explicitly use Node: running this fixture under Bun would conceal the original CI bug.
-  server = spawn('node', [path.join(scripts, 'fake-capgo-server.mjs')], {
+  server = spawn(process.execPath, [path.join(scripts, 'fake-capgo-server.mjs')], {
     env: { ...process.env, CAPGO_MAESTRO_PORT: String(port), CAPGO_MAESTRO_DEVICE_BASE_URL: base },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -92,10 +94,10 @@ try {
   ]);
   const conditionScript = path.join(dir, 'server-condition.mjs');
   for (const [condition, debug] of conditions) {
-    assert.equal(spawnSync('node', [conditionScript, JSON.stringify({ debug }), condition]).status, 0, condition);
-    assert.equal(spawnSync('node', [conditionScript, '{}', condition]).status, 1, condition);
+    assert.equal(spawnSync(process.execPath, [conditionScript, JSON.stringify({ debug }), condition]).status, 0, condition);
+    assert.equal(spawnSync(process.execPath, [conditionScript, '{}', condition]).status, 1, condition);
   }
-  assert.equal(spawnSync('node', [conditionScript, '{}', 'process.exit(0)']).status, 2);
+  assert.equal(spawnSync(process.execPath, [conditionScript, '{}', 'process.exit(0)']).status, 2);
   console.log(
     'Maestro helper regression checks passed (Node server, ZIP, Range, corruption, manifest, condition allowlist).',
   );

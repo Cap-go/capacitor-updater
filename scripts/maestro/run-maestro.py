@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bound Maestro teardown after its final summary and successful JUnit report."""
 import os
+from pathlib import Path
 import re
 import selectors
 import signal
@@ -24,15 +25,37 @@ def report_passed(report):
         return False
 
 
-def run(timeout, report, arguments):
+ROOT = Path(__file__).resolve().parents[2]
+FLOWS = {
+    'manual-zip': ROOT / '.maestro/android/example-app-smoke.yaml',
+    'manual-zip-no-persist': ROOT / '.maestro/android/example-app-smoke-no-persist.yaml',
+    'manual-zip-config-guards': ROOT / '.maestro/android/example-app-smoke-config-guards.yaml',
+}
+
+
+def run(timeout, scenario, device):
     if not 0 < timeout <= 600:
         raise ValueError('Maestro timeout must be between 0 and 600 seconds')
+    if scenario not in FLOWS:
+        raise ValueError('Unknown Android smoke scenario')
+    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}', device):
+        raise ValueError('Invalid Android device identifier')
+    results = ROOT / 'maestro-results'
+    results.mkdir(exist_ok=True)
+    report = results / 'junit.xml'
+    command = [
+        'maestro', 'test', '--config', str(ROOT / '.maestro/config.yaml'), str(FLOWS[scenario]),
+        '--platform', 'android', '--udid', device,
+        '--format', 'junit', '--output', str(report),
+        '--debug-output', str(results / 'debug'), '--flatten-debug-output',
+        '--test-output-dir', str(results / 'artifacts'),
+    ]
     # A report from an earlier attempt must never authorize success.
     try:
         os.remove(report)
     except FileNotFoundError:
         pass
-    process = subprocess.Popen(["maestro", "test", *arguments], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout
@@ -77,4 +100,4 @@ def run(timeout, report, arguments):
 
 
 if __name__ == '__main__':
-    sys.exit(run(float(sys.argv[1]), sys.argv[2], sys.argv[3:]))
+    sys.exit(run(float(sys.argv[1]), sys.argv[2], sys.argv[3]))

@@ -41,7 +41,8 @@ function harness(overrides = {}) {
     console: { error() {} },
     ...overrides,
   });
-  vm.runInContext(sequence, context);
+  // The executed source is only the fixed, checked-in example-app function above, never CLI or network input.
+  vm.runInContext(sequence, context); // NOSONAR trusted repository code executed in this isolated test harness
   return context;
 }
 
