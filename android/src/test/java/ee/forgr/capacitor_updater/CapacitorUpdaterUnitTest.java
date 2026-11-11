@@ -4013,8 +4013,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-  @Test
-  public void testLaunchSplashSchedulesAutoSplashscreenTimeoutOnForeground() throws Exception {
+    @Test
+    public void testLaunchSplashSchedulesAutoSplashscreenTimeoutOnForeground() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> handlerConstruction = mockConstruction(Handler.class)
@@ -4037,8 +4037,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-  @Test
-  public void testLaunchSplashDoesNotScheduleTimeoutWhenDirectUpdateIsNotActive() throws Exception {
+    @Test
+    public void testLaunchSplashDoesNotScheduleTimeoutWhenDirectUpdateIsNotActive() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4058,8 +4058,8 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-  @Test
-  public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() throws Exception {
+    @Test
+    public void testDirectUpdateFinishHonoursDelayConditionsOnFreshDownload() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4091,7 +4091,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testScheduleDirectUpdateFinishUsesBackgroundDispatchPath() {
+    public void testScheduleDirectUpdateFinishUsesBackgroundDispatchPath() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4101,9 +4101,15 @@ public class CapacitorUpdaterUnitTest {
             final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
             final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
             final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
 
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
 
             plugin.scheduleDirectUpdateFinish(latest);
 
