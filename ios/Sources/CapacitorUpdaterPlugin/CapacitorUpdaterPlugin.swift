@@ -122,6 +122,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let statsUrlDefaultsKey = "CapacitorUpdater.statsUrl"
     private let channelUrlDefaultsKey = "CapacitorUpdater.channelUrl"
     private let defaultChannelDefaultsKey = "CapacitorUpdater.defaultChannel"
+    static let defaultChannelFromSetChannelStorageKey = "CapacitorUpdater.defaultChannelFromSetChannel"
+    private let defaultChannelFromSetChannelDefaultsKey = CapacitorUpdaterPlugin.defaultChannelFromSetChannelStorageKey
     private let lastFailedBundleDefaultsKey = "CapacitorUpdater.lastFailedBundle"
     private let lastVersionOsDefaultsKey = "CapacitorUpdater.lastVersionOs"
     private let lastVersionBuildDefaultsKey = "CapacitorUpdater.lastVersionBuild"
@@ -670,6 +672,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 file: previewSnapshotFile
             )
             UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelDefaultsKey)
             UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelDefaultsKey)
             UserDefaults.standard.removeObject(forKey: previewPreviousDefaultChannelWasSetDefaultsKey)
             return true
@@ -881,6 +884,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.set(channel, forKey: defaultChannelDefaultsKey)
         } else {
             UserDefaults.standard.removeObject(forKey: defaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelDefaultsKey)
         }
     }
 
@@ -2666,6 +2670,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             logger.info("Restored defaultChannel after preview")
         } else {
             UserDefaults.standard.removeObject(forKey: self.defaultChannelDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: self.defaultChannelFromSetChannelDefaultsKey)
             self.implementation.defaultChannel = configDefaultChannel
             logger.info("Restored defaultChannel after preview to config value")
         }
@@ -3129,6 +3134,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
             let res = self.implementation.unsetChannel(
                 defaultChannelKey: self.defaultChannelDefaultsKey,
+                defaultChannelFromSetChannelKey: self.defaultChannelFromSetChannelDefaultsKey,
                 configDefaultChannel: configDefaultChannel,
                 allowSetDefaultChannel: self.allowSetDefaultChannel
             )
@@ -3173,6 +3179,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             let res = self.implementation.setChannel(
                 channel: channel,
                 defaultChannelKey: self.defaultChannelDefaultsKey,
+                defaultChannelFromSetChannelKey: self.defaultChannelFromSetChannelDefaultsKey,
                 allowSetDefaultChannel: self.allowSetDefaultChannel,
                 configDefaultChannel: configDefaultChannel
             )
@@ -3221,7 +3228,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getChannel(_ call: CAPPluginCall) {
         self.saveCallForAsyncHandling(call)
         DispatchQueue.global(qos: .utility).async {
-            let res = self.implementation.getChannel(defaultChannelKey: self.defaultChannelDefaultsKey)
+            let configDefaultChannel = self.getConfig().getString("defaultChannel", "")!
+            let res = self.implementation.getChannel(
+                defaultChannelKey: self.defaultChannelDefaultsKey,
+                defaultChannelFromSetChannelKey: self.defaultChannelFromSetChannelDefaultsKey,
+                configDefaultChannel: configDefaultChannel
+            )
             if res.error != "" {
                 self.rejectCall(call, message: res.error, code: "GETCHANNEL_FAILED", data: [
                     "message": res.error,

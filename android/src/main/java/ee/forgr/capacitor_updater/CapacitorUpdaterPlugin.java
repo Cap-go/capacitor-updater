@@ -116,6 +116,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     static final String STATS_URL_PREF_KEY = "CapacitorUpdater.statsUrl";
     static final String CHANNEL_URL_PREF_KEY = "CapacitorUpdater.channelUrl";
     static final String DEFAULT_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannel";
+    static final String DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY = "CapacitorUpdater.defaultChannelFromSetChannel";
     static final String PREVIEW_SESSION_PREF_KEY = "CapacitorUpdater.previewSession";
     private static final String DEFAULT_CHANNEL_INSTALL_MARKER_PREF_KEY = "CapacitorUpdater.defaultChannelInstallMarkerCreated";
     private static final String DEFAULT_CHANNEL_INSTALL_MARKER_FILE = "CapacitorUpdater.defaultChannelInstallMarker";
@@ -1571,6 +1572,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     static boolean clearPersistedDefaultChannel(final SharedPreferences.Editor editor) {
         editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        editor.remove(DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_PREF_KEY);
         editor.remove(PREVIEW_PREVIOUS_DEFAULT_CHANNEL_WAS_SET_PREF_KEY);
         return editor.commit();
@@ -3019,7 +3021,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         }
                     },
                     CapacitorUpdaterPlugin.this.editor,
-                    DEFAULT_CHANNEL_PREF_KEY
+                    DEFAULT_CHANNEL_PREF_KEY,
+                    DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY,
+                    CapacitorUpdaterPlugin.this.getConfig().getString("defaultChannel", "")
                 )
             );
         } catch (final Exception e) {
@@ -4045,6 +4049,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         this.editor.remove(DEFAULT_CHANNEL_PREF_KEY);
+        this.editor.remove(DEFAULT_CHANNEL_FROM_SET_CHANNEL_PREF_KEY);
         this.implementation.defaultChannel = configDefaultChannel;
         this.editor.apply();
         logger.info("Restored defaultChannel after preview to config value");
