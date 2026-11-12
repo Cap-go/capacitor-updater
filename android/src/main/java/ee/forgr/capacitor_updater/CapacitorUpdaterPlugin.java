@@ -5882,6 +5882,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 startNewThread(() -> {
                     boolean installed = false;
                     try {
+                        if (!this.appInBackground) {
+                            logger.info("App returned to foreground before deferred install, keeping bundle queued");
+                            return;
+                        }
                         if (this.implementation.set(next) && this._reload()) {
                             logger.info("Updated to bundle: " + next.getVersionName());
                             this.notifyBundleSet(next);

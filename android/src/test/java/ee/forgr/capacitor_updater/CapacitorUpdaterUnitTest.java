@@ -3659,6 +3659,7 @@ public class CapacitorUpdaterUnitTest {
 
             final InstallNextDispatchPlugin plugin = new InstallNextDispatchPlugin();
             final InstallNextCapgoUpdater updater = new InstallNextCapgoUpdater();
+            setPrivateField(plugin, "appInBackground", true);
             final SharedPreferences prefs = mock(SharedPreferences.class);
             final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
 
@@ -3758,6 +3759,36 @@ public class CapacitorUpdaterUnitTest {
             assertNull(updater.getNextBundle());
             assertEquals(2, updater.setCalls);
             assertEquals(2, plugin.reloadCalls);
+        }
+    }
+
+    @Test
+    public void testBackgroundInstallDefersIfForegroundWinsDispatch() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
+            updater.setNextBundle("first-id");
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.appMovedToBackground();
+            // Foreground handling changes this flag before the admitted worker gets CPU time.
+            setPrivateField(plugin, "appInBackground", false);
+            plugin.workers.remove(0).run();
+
+            assertEquals(0, updater.setCalls);
+            assertEquals(0, plugin.reloadCalls);
+            assertEquals("current-id", updater.getCurrentBundle().getId());
+            assertEquals("first-id", updater.getNextBundle().getId());
+            assertFalse(plugin.hasNotifiedEvent("set"));
+            assertTrue(plugin.workers.isEmpty());
+
+            plugin.appMovedToBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals("first-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
         }
     }
 
