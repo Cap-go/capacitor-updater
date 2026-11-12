@@ -3991,6 +3991,72 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testStaleBuiltinResponseAfterCleanupPreservesNewerCheck() throws Exception {
+        assertStaleResponseAfterCleanupPreservesNewerCheck(true);
+    }
+
+    @Test
+    public void testStaleCachedResponseAfterCleanupPreservesNewerCheck() throws Exception {
+        assertStaleResponseAfterCleanupPreservesNewerCheck(false);
+    }
+
+    private void assertStaleResponseAfterCleanupPreservesNewerCheck(final boolean builtin) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo staleBundle = updater.getBundleInfo("bundleA001");
+            doReturn(staleBundle).when(updater).getBundleInfoByName(anyString());
+            final List<Callback> responses = new ArrayList<>();
+            doAnswer((inv) -> {
+                responses.add(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("background");
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final CountDownLatch cleanup = mock(CountDownLatch.class);
+            final AtomicReference<Object> newerTask = new AtomicReference<>();
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            doAnswer((inv) -> {
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(0).run();
+                newerTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                assertTrue(updater.setNextBundle("bundleB002"));
+                setPrivateField(plugin, "cleanupComplete", true);
+                return null;
+            })
+                .when(cleanup)
+                .await();
+            setPrivateField(plugin, "cleanupLatch", cleanup);
+            setPrivateField(plugin, "cleanupComplete", false);
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", builtin ? "builtin" : staleBundle.getVersionName());
+            response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "checksum");
+            responses.get(0).callback(response);
+
+            verify(cleanup).await();
+            assertEquals(2, responses.size());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            assertSame(newerTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+            assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+            assertFalse(plugin.hasNotifiedEvent("appReady"));
+            assertFalse(plugin.hasNotifiedEvent("updateAvailable"));
+            assertTrue(updater.getCurrentBundle().isBuiltin());
+            assertEquals(0, plugin.reloadCalls);
+        }
+    }
+
+    @Test
     public void testBuiltinBackgroundInstallPreservesBundleQueuedDuringReload() throws Exception {
         assertBuiltinBackgroundInstallPreservesNewerBundle(true);
     }
@@ -4738,6 +4804,62 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting());
             assertEquals(1, handlerConstruction.constructed().size());
             verify(handlerConstruction.constructed().get(0)).postDelayed(any(Runnable.class), eq(10_000L));
+        }
+    }
+
+    @Test
+    public void testRepeatedForegroundPreservesOriginalSplashDeadline() throws Exception {
+        assertRepeatedForegroundPreservesSplashDeadline(false);
+    }
+
+    @Test
+    public void testRepeatedForegroundPreservesAdmittedInstallDeadline() throws Exception {
+        assertRepeatedForegroundPreservesSplashDeadline(true);
+    }
+
+    private void assertRepeatedForegroundPreservesSplashDeadline(final boolean installStarted) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class);
+            MockedStatic<CapConfig> configMock = mockStatic(CapConfig.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            configMock.when(() -> CapConfig.loadDefault(any())).thenReturn(mock(CapConfig.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(persistentQueuedInstallUpdater(), new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "updateUrl", "https://example.com/updates");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.appMovedToForeground();
+            final Runnable original = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            assertNotNull(original);
+            if (installStarted) {
+                final Method admit = CapacitorUpdaterPlugin.class.getDeclaredMethod("beginDirectUpdateInstallBeforeTimeout", long.class);
+                admit.setAccessible(true);
+                assertEquals(true, admit.invoke(plugin, getPrivateField(plugin, "splashscreenTimeoutGeneration")));
+            }
+            plugin.appMovedToForeground();
+            original.run();
+
+            assertEquals("The original deadline must still expire", true, getPrivateField(plugin, "autoSplashscreenTimedOut"));
+            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            assertEquals(installStarted, plugin.implementation.directUpdate);
+            verify(handlers.constructed().get(0)).postDelayed(original, 10_000L);
+            verify(handlers.constructed().get(0), times(1)).postDelayed(any(Runnable.class), eq(10_000L));
+
+            // An explicit splash show starts a new cycle, unlike another foreground callback.
+            invokePrivateVoidMethod(plugin, "showSplashscreenNow");
+            final Runnable next = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            assertNotNull(next);
+            assertNotSame(original, next);
+            assertEquals(false, getPrivateField(plugin, "autoSplashscreenTimedOut"));
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            original.run();
+            assertSame(next, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+            next.run();
+            assertEquals(true, getPrivateField(plugin, "autoSplashscreenTimedOut"));
         }
     }
 

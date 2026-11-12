@@ -1605,13 +1605,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void scheduleLaunchSplashscreenTimeoutIfNeeded() {
-        if (!Boolean.TRUE.equals(this.autoSplashscreen)) {
-            return;
+        synchronized (this.splashscreenTimeoutLock) {
+            if (
+                this.splashscreenTimeoutRunnable != null ||
+                !Boolean.TRUE.equals(this.autoSplashscreen) ||
+                !this.isDirectUpdateEligibleForLaunchSplashTimeout()
+            ) {
+                return;
+            }
+            this.scheduleSplashscreenTimeout();
         }
-        if (!this.isDirectUpdateEligibleForLaunchSplashTimeout()) {
-            return;
-        }
-        this.scheduleSplashscreenTimeout();
     }
 
     boolean hasSplashscreenTimeoutScheduledForTesting() {
@@ -5646,6 +5649,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     try {
                         // File mutations wait here. getLatest already ran in parallel with cleanup.
                         waitForCleanupIfNeeded();
+                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                            return;
+                        }
                         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                         final String latestVersionName = jsRes.getString("version");
 
