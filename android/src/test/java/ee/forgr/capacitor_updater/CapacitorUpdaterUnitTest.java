@@ -5627,6 +5627,66 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDownloadSurvivesFailedFollowUpNetworkCheck() throws Exception {
+        assertOriginatingDownloadOwnership("followup-network-before-success", false, true);
+    }
+
+    @Test
+    public void testDownloadSurvivesFailedFollowUpHttpCheck() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-before-success", false, true);
+    }
+
+    @Test
+    public void testDownloadFinishingDuringFollowUpNetworkCheckRemainsQueued() throws Exception {
+        assertOriginatingDownloadOwnership("followup-network-pending-success", false, true);
+    }
+
+    @Test
+    public void testDownloadFinishingDuringFollowUpHttpCheckRemainsQueued() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-pending-success", false, true);
+    }
+
+    @Test
+    public void testExpiredDownloadSurvivesFailedFollowUpCheck() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-pending-success", true, true);
+    }
+
+    @Test
+    public void testRetainedDownloadPreservesExistingQueueDuringFollowUpCheck() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-pending-queued-success", false, true);
+    }
+
+    @Test
+    public void testRetainedDownloadInstallsWhenFollowUpFailsInBackground() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-background-before-success", false, true);
+    }
+
+    @Test
+    public void testFollowUpStartedAfterDownloadDispatchPreservesCompletion() throws Exception {
+        assertOriginatingDownloadOwnership("followup-503-pending-dispatch-success", false, true);
+    }
+
+    @Test
+    public void testCachedReplacementSupersedesRetainedDownload() throws Exception {
+        assertOriginatingDownloadOwnership("replacement-cached-success", false, true);
+    }
+
+    @Test
+    public void testBuiltinReplacementSupersedesRetainedDownload() throws Exception {
+        assertOriginatingDownloadOwnership("replacement-builtin-success", false, true);
+    }
+
+    @Test
+    public void testQueuedCachedReplacementSupersedesRetainedDownload() throws Exception {
+        assertOriginatingDownloadOwnership("replacement-cached-queued-success", false, true);
+    }
+
+    @Test
+    public void testQueuedBuiltinReplacementSupersedesRetainedDownload() throws Exception {
+        assertOriginatingDownloadOwnership("replacement-builtin-queued-success", false, true);
+    }
+
+    @Test
     public void testOriginatingDownloadStaysQueuedAfterDeadline() throws Exception {
         assertOriginatingDownloadOwnership("success", true, false);
     }
@@ -6047,6 +6107,18 @@ public class CapacitorUpdaterUnitTest {
         final boolean reuse = outcome.startsWith("reuse-");
         final boolean reuseAfterRetry = outcome.startsWith("reuse-after-retry");
         final boolean retryDuringCheck = outcome.startsWith("reuse-retry-during-check");
+        final boolean failedFollowUp = outcome.startsWith("followup-");
+        final boolean pendingFollowUp = failedFollowUp && outcome.contains("pending");
+        final boolean existingQueue = failedFollowUp && outcome.contains("queued");
+        final boolean completesInBackground = failedFollowUp && outcome.contains("background");
+        final boolean checkAfterDispatch = failedFollowUp && outcome.contains("dispatch");
+        final boolean replacement = outcome.startsWith("replacement-");
+        final boolean queuedReplacement = replacement && outcome.contains("queued");
+        final String replacementId = outcome.contains("builtin") ? BundleInfo.ID_BUILTIN : "bundleB002";
+        final Map<String, Object> failedCheck = new HashMap<>();
+        failedCheck.put("kind", "failed");
+        failedCheck.put("error", outcome.contains("503") ? "http_error" : "network_error");
+        failedCheck.put("statusCode", outcome.contains("503") ? 503 : 0);
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, context) -> {
@@ -6152,7 +6224,37 @@ public class CapacitorUpdaterUnitTest {
                 plugin.appMovedToBackground();
                 setPrivateField(plugin, "appInBackground", false);
             }
-            if (newer) {
+            if (failedFollowUp) {
+                plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+                if (!checkAfterDispatch) {
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                }
+                if (!pendingFollowUp) {
+                    responses.remove(0).callback(failedCheck);
+                    assertTrue(plugin.hasNotifiedEvent("appReady"));
+                }
+                if (existingQueue) {
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                }
+                if (completesInBackground) {
+                    plugin.appMovedToBackground();
+                }
+            } else if (replacement) {
+                if (queuedReplacement) {
+                    plugin.setAutoUpdateModeForTesting("background");
+                }
+                final BundleInfo replacementBundle = updater.getBundleInfo(replacementId);
+                doReturn(replacementBundle).when(updater).getBundleInfoByName(replacementBundle.getVersionName());
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(0).run();
+                response.put("version", replacementBundle.getVersionName());
+                // Builtin cancellation needs a real application context and is covered separately.
+                doReturn(null).when(updater).context();
+                responses.remove(0).callback(response);
+                assertEquals(queuedReplacement ? 0 : 1, plugin.reloadCalls);
+                assertEquals(queuedReplacement ? "bundleA001" : replacementId, updater.getCurrentBundle().getId());
+            } else if (newer) {
                 plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
                 invokeBackgroundDownload(plugin);
                 plugin.workers.remove(0).run();
@@ -6190,12 +6292,17 @@ public class CapacitorUpdaterUnitTest {
                     assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
                 }
             }
-            final Object owningTask = getPrivateField(plugin, "backgroundDownloadTask");
+            Object owningTask = getPrivateField(plugin, "backgroundDownloadTask");
             if ("deferred-success".equals(outcome)) {
                 ((Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable")).run();
             }
             final Object owningDeadline = getPrivateField(plugin, "splashscreenTimeoutRunnable");
             final boolean owningDirectUpdate = updater.directUpdate;
+            Object owningContext = getPrivateField(plugin, "backgroundDownloadContext");
+            final long readyEventsBeforeCompletion = ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames
+                .stream()
+                .filter("appReady"::equals)
+                .count();
             doReturn(null).when(updater).context();
             final Path staging = updater.documentsDir.toPath().resolve("old-staging");
             Files.createDirectories(staging);
@@ -6223,6 +6330,14 @@ public class CapacitorUpdaterUnitTest {
                     .build()
             );
             observers.get(0).onChanged(List.of(work));
+            if (checkAfterDispatch) {
+                assertEquals(1, plugin.workers.size());
+                invokeBackgroundDownload(plugin);
+                // Keep the completion worker pending while the follow-up check starts.
+                plugin.workers.remove(1).run();
+                owningTask = getPrivateField(plugin, "backgroundDownloadTask");
+                owningContext = getPrivateField(plugin, "backgroundDownloadContext");
+            }
             if (outcome.endsWith("success")) {
                 assertTrue(new File(updater.documentsDir, "versions/" + ids.get(0) + "/index.html").exists());
                 assertEquals(BundleStatus.PENDING, updater.getBundleInfo(ids.get(0)).getStatus());
@@ -6230,7 +6345,52 @@ public class CapacitorUpdaterUnitTest {
             while (!plugin.workers.isEmpty()) {
                 plugin.workers.remove(0).run();
             }
-            if (newer && !reuse) {
+            if (completesInBackground) {
+                assertEquals("The retained download must be installed without another lifecycle transition", 1, plugin.reloadCalls);
+                assertEquals(ids.get(0), updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+                assertSame(owningContext, getPrivateField(plugin, "backgroundDownloadContext"));
+            } else if (replacement) {
+                assertEquals("A superseded download must not trigger another reload", queuedReplacement ? 0 : 1, plugin.reloadCalls);
+                assertEquals(queuedReplacement ? "bundleA001" : replacementId, updater.getCurrentBundle().getId());
+                if (queuedReplacement) {
+                    assertNotNull(updater.getNextBundle());
+                    assertEquals(replacementId, updater.getNextBundle().getId());
+                } else {
+                    assertNull("A superseded download must not be queued", updater.getNextBundle());
+                }
+                assertSame(owningTask, getPrivateField(plugin, "backgroundDownloadTask"));
+                assertSame(owningContext, getPrivateField(plugin, "backgroundDownloadContext"));
+                assertEquals(
+                    readyEventsBeforeCompletion,
+                    ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+                );
+            } else if (failedFollowUp) {
+                assertEquals("A retained download must not reload the foreground app", 0, plugin.reloadCalls);
+                assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                assertNotNull("A follow-up check must not orphan the admitted download", updater.getNextBundle());
+                final String expectedNext = existingQueue ? "bundleB002" : ids.get(0);
+                assertEquals(expectedNext, updater.getNextBundle().getId());
+                assertSame(owningTask, getPrivateField(plugin, "backgroundDownloadTask"));
+                assertSame(owningContext, getPrivateField(plugin, "backgroundDownloadContext"));
+                assertSame(owningDeadline, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+                assertEquals(owningDirectUpdate, updater.directUpdate);
+                assertEquals(
+                    "The retained completion must not release the newer check",
+                    readyEventsBeforeCompletion,
+                    ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+                );
+                if (pendingFollowUp) {
+                    responses.remove(0).callback(failedCheck);
+                    assertEquals(expectedNext, updater.getNextBundle().getId());
+                }
+                assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
+                plugin.appMovedToBackground();
+                plugin.workers.remove(0).run();
+                assertEquals(1, plugin.reloadCalls);
+                assertEquals(expectedNext, updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+            } else if (newer && !reuse) {
                 assertEquals("An old download must not reload the active bundle", 0, plugin.reloadCalls);
                 assertEquals("bundleA001", updater.getCurrentBundle().getId());
                 assertEquals("bundleB002", updater.getNextBundle().getId());

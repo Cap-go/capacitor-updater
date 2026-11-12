@@ -245,8 +245,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean isPreviousMainActivity = true;
 
     private volatile Thread backgroundDownloadTask;
-    // Guarded by this. Retained after launch release so the same retry can finish until a newer check takes ownership.
+    // Guarded by this. Check readiness and accepted update work have separate owners.
     private CapgoUpdater.BackgroundDownloadContext backgroundDownloadContext;
+    private CapgoUpdater.BackgroundDownloadContext backgroundUpdateContext;
     private BackgroundReadyState backgroundReadyState = new BackgroundReadyState(-1);
 
     private static final class BackgroundReadyState {
@@ -2733,6 +2734,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return downloadContext == null || this.backgroundDownloadContext == downloadContext;
     }
 
+    private synchronized boolean canFinishBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        return this.ownsBackgroundDownload(downloadContext) || this.backgroundUpdateContext == downloadContext;
+    }
+
     private synchronized boolean ownsBackgroundReadiness(
         final CapgoUpdater.BackgroundDownloadContext downloadContext,
         final BackgroundReadyState readyState
@@ -2750,6 +2755,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
             this.backgroundDownloadContext = original;
+            this.backgroundUpdateContext = original;
             releaseRetry = original.deferredForRetry;
             this.implementation.directUpdate =
                 !releaseRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
@@ -2787,7 +2793,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final long timeoutGeneration;
         final Thread downloadTask;
         synchronized (this) {
-            if (!this.ownsBackgroundDownload(downloadContext)) {
+            if (!this.canFinishBackgroundDownload(downloadContext)) {
                 return;
             }
             timeoutGeneration = downloadContext != null ? downloadContext.timeoutGeneration : this.getSplashscreenTimeoutGeneration();
@@ -2795,7 +2801,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         startNewThread(() -> {
             try {
-                if (!this.ownsBackgroundDownload(downloadContext)) {
+                if (!this.canFinishBackgroundDownload(downloadContext)) {
                     return;
                 }
                 if (this.shouldBlockAutoUpdateForPreviewSession()) {
@@ -2834,7 +2840,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (!this.queueDeferredDirectUpdate(latest, downloadTask, downloadContext)) {
                 return;
             }
-            if ("onLaunch".equals(this.directUpdateMode)) {
+            if ("onLaunch".equals(this.directUpdateMode) && this.ownsBackgroundDownload(downloadContext)) {
                 this.onLaunchDirectUpdateUsed = true;
             }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true, downloadContext);
@@ -2845,11 +2851,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         boolean installed = false;
         try {
             synchronized (this) {
-                if (!this.ownsBackgroundDownload(downloadContext) || this.backgroundDownloadTask != downloadTask) {
-                    return;
-                }
                 final boolean directUpdateAllowed =
-                    downloadContext == null || (downloadContext.directUpdate && !downloadContext.deferredForRetry);
+                    this.ownsBackgroundDownload(downloadContext) &&
+                    this.backgroundDownloadTask == downloadTask &&
+                    (downloadContext == null || (downloadContext.directUpdate && !downloadContext.deferredForRetry));
                 installAdmitted = directUpdateAllowed && this.claimDirectUpdateInstall(timeoutGeneration);
                 if (installAdmitted) {
                     this.implementation.directUpdate = false;
@@ -5641,6 +5646,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
         this.clearBackgroundDownloadState();
+        this.backgroundUpdateContext = downloadContext;
         this.implementation.setNextBundle(bundleId);
         // A current response still completes readiness if the bundle is no longer queueable.
         return true;
@@ -5665,6 +5671,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     return false;
                 }
                 installAdmitted = true;
+                this.backgroundUpdateContext = downloadContext;
                 previousState = bundle.isBuiltin() ? this.implementation.captureResetState() : null;
                 previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                 this.consumeOnLaunchDirectUpdateAttempt(true);
@@ -5750,6 +5757,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final Thread downloadTask,
         final CapgoUpdater.BackgroundDownloadContext downloadContext
     ) {
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            // A pending or failed check does not supersede accepted work. Preserve its result,
+            // without changing that check's readiness, timer, direct-install plan, or newer queue.
+            return (
+                downloadContext != null &&
+                this.backgroundUpdateContext == downloadContext &&
+                this.implementation.setNextBundleIfEmpty(latest.getId())
+            );
+        }
         if (!this.clearDirectUpdateDownloadState(downloadTask, downloadContext)) {
             return false;
         }
@@ -6185,6 +6201,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
                                     return;
                                 }
+                                CapacitorUpdaterPlugin.this.backgroundUpdateContext = downloadContext;
                                 CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                                 final boolean directUpdateStillAllowed = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                     initialDirectUpdateAllowed,
