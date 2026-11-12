@@ -1344,7 +1344,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     if (this.autoSplashscreen) {
-                        this.hideSplashscreenInternal();
+                        this.hideSplashscreenInternal(downloadContext, readyState);
                     }
                     if (this.ownsBackgroundReadiness(downloadContext, readyState)) {
                         this.hidePreviewTransitionLoader("app-ready");
@@ -1380,9 +1380,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void hideSplashscreenInternal() {
+        this.hideSplashscreenInternal(null, null);
+    }
+
+    private void hideSplashscreenInternal(
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
         cancelSplashscreenTimeout();
         removeSplashscreenLoader();
-        invokeSplashScreenPluginMethod("hide", new JSObject(), SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
+        invokeSplashScreenPluginMethod(
+            "hide",
+            new JSObject(),
+            SPLASH_SCREEN_MAX_RETRIES,
+            ++this.splashscreenInvocationToken,
+            downloadContext,
+            readyState
+        );
     }
 
     private void showSplashscreen() {
@@ -1411,7 +1425,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final int retriesRemaining,
         final int requestToken
     ) {
-        if (requestToken != this.splashscreenInvocationToken) {
+        this.invokeSplashScreenPluginMethod(methodName, options, retriesRemaining, requestToken, null, null);
+    }
+
+    private synchronized void invokeSplashScreenPluginMethod(
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
+        if (
+            requestToken != this.splashscreenInvocationToken ||
+            (readyState != null && !this.ownsBackgroundReadiness(downloadContext, readyState))
+        ) {
             return;
         }
 
@@ -1423,6 +1451,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     options,
                     retriesRemaining,
                     requestToken,
+                    downloadContext,
+                    readyState,
                     "Bridge not ready for " + ("show".equals(methodName) ? "showing" : "hiding") + " splashscreen"
                 );
                 return;
@@ -1435,6 +1465,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     options,
                     retriesRemaining,
                     requestToken,
+                    downloadContext,
+                    readyState,
                     "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
                 );
                 return;
@@ -1448,6 +1480,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 options,
                 retriesRemaining,
                 requestToken,
+                downloadContext,
+                readyState,
                 "Failed to call SplashScreen " + methodName + " method: " + e.getMessage()
             );
         }
@@ -1458,12 +1492,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final JSObject options,
         final int retriesRemaining,
         final int requestToken,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState,
         final String message
     ) {
         if (retriesRemaining > 0) {
             logger.info(message + ". Retrying.");
             this.mainHandler.postDelayed(
-                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken),
+                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken, downloadContext, readyState),
                 SPLASH_SCREEN_RETRY_DELAY_MS
             );
             return;
@@ -2894,7 +2930,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.notifyBundleSet(latest);
                 sendReadyToJs(latest, "update installed", true, downloadContext);
             } else {
-                final boolean queued = this.implementation.setNextBundleIfEmpty(latest.getId());
+                final boolean queued =
+                    !CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get() &&
+                    this.implementation.setNextBundleIfEmpty(latest.getId());
                 if (queued) {
                     final JSObject ret = new JSObject();
                     ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
@@ -2916,6 +2954,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
         final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
 
@@ -6172,19 +6211,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 }
                                 if (latest.isDeleted()) {
                                     logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
                                     try {
-                                        final Boolean deleted;
-                                        synchronized (CapacitorUpdaterPlugin.this) {
-                                            if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                                return;
-                                            }
-                                            deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
-                                        }
+                                        final boolean deleted = CapacitorUpdaterPlugin.this.implementation.deleteDeletedBundle(
+                                            latest.getId()
+                                        );
                                         if (deleted) {
                                             logger.info("Failed bundle deleted: " + latest.getVersionName());
                                         }
                                     } catch (final IOException e) {
                                         logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
+                                    }
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
                                     }
                                 }
                             }

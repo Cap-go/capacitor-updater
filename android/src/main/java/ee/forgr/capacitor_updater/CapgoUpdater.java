@@ -2357,6 +2357,17 @@ public class CapgoUpdater {
         return this.delete(id, removeInfo, true);
     }
 
+    boolean deleteDeletedBundle(final String id) throws IOException {
+        synchronized (this.deleteLock) {
+            if (!this.getBundleInfo(id).isDeleted()) {
+                return false;
+            }
+            // Downloads get fresh IDs, and a DELETED ID cannot be installed. Clean only this
+            // tombstone; version-wide cancellation could stop a newer download of the same version.
+            return Boolean.TRUE.equals(this.delete(id, true, false));
+        }
+    }
+
     public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
         synchronized (this.deleteLock) {
             final File bundle;
