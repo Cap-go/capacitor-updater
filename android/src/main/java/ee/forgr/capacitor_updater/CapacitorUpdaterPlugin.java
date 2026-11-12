@@ -254,6 +254,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         boolean claimed;
         int waitPhase;
+        boolean pageReplaced;
 
         BackgroundReadyState(final int waitPhase) {
             this.waitPhase = waitPhase;
@@ -1194,14 +1195,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return semaphoreReady.register();
     }
 
-    private void semaphoreDown() {
+    private synchronized void semaphoreDown() {
         if (semaphoreReady.getRegisteredParties() == 0) {
             logger.info("semaphoreDown skipped, no pending app ready wait");
             return;
         }
         logger.info("semaphoreDown");
         logger.info("semaphoreDown count " + semaphoreReady.getPhase());
+        final int phase = semaphoreReady.getPhase();
         semaphoreReady.arriveAndDeregister();
+        this.retirePendingNotifyAppReadyPhase(phase);
     }
 
     private synchronized void cleanupTimedOutSemaphoreWait(final int phase) {
@@ -1210,12 +1213,33 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         logger.info("Cleaning up stale app ready wait for phase " + phase);
         semaphoreReady.arriveAndDeregister();
+        this.retirePendingNotifyAppReadyPhase(phase);
     }
 
-    private synchronized void armPendingNotifyAppReadyWait() {
+    private void retirePendingNotifyAppReadyPhase(final int phase) {
+        if (this.pendingNotifyAppReadyPhase == phase) {
+            this.pendingNotifyAppReadyWait = false;
+            this.pendingNotifyAppReadyPhase = -1;
+        }
+    }
+
+    private synchronized int armPendingNotifyAppReadyWait() {
+        final BackgroundReadyState readyState = this.backgroundReadyState;
+        final boolean carryCompletion =
+            readyState.claimed &&
+            readyState.waitPhase >= 0 &&
+            this.semaphoreReady.getPhase() == readyState.waitPhase &&
+            this.semaphoreReady.getRegisteredParties() > 0;
         this.clearPendingNotifyAppReadyWait();
         this.pendingNotifyAppReadyPhase = this.semaphoreUp();
         this.pendingNotifyAppReadyWait = true;
+        if (carryCompletion) {
+            // This check still owns a completion, even if a different check initiated the reload.
+            readyState.waitPhase = this.pendingNotifyAppReadyPhase;
+            readyState.pageReplaced = true;
+            this.backgroundReadyState = readyState;
+        }
+        return this.pendingNotifyAppReadyPhase;
     }
 
     private synchronized void clearPendingNotifyAppReadyWait() {
@@ -1315,14 +1339,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final Runnable emitReady = () -> {
-            final JSObject ret = new JSObject();
-            ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-            ret.put("status", msg);
-
             synchronized (this) {
                 if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
                     return;
                 }
+                final BundleInfo readyBundle = readyState.pageReplaced ? this.implementation.getCurrentBundle() : current;
+                final JSObject ret = new JSObject();
+                ret.put("bundle", InternalUtils.mapToJSObject(readyBundle.toJSONMap()));
+                ret.put("status", msg);
                 this.notifyListeners("appReady", ret, true);
                 // A listener can synchronously start another check on this same thread.
                 if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
@@ -1366,8 +1390,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         // Completion callers may hold download ownership locks or still need to dispatch an install.
         // Keep every readiness wait off their stack, not only waits originating on the UI thread.
         startNewThread(() -> {
-            this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
-            emitReady.run();
+            int phase = pendingPhase[0];
+            while (true) {
+                this.semaphoreWait(phase, this.appReadyTimeout);
+                synchronized (this) {
+                    if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                        return;
+                    }
+                    if (phase == readyState.waitPhase) {
+                        emitReady.run();
+                        return;
+                    }
+                    // Page replacement retires the old party without completing this check.
+                    phase = readyState.waitPhase;
+                }
+            }
         });
     }
 
@@ -3638,9 +3675,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (this.appInBackground) {
             return this.reloadInBackground();
         }
-        // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
-        this.clearPendingNotifyAppReadyWait();
-        final int phase = this.semaphoreUp();
+        // Replace the page gate without discarding the current check's pending completion.
+        final int phase = this.armPendingNotifyAppReadyWait();
         if (!this.applyCurrentBundleToBridge()) {
             this.cleanupTimedOutSemaphoreWait(phase);
             return false;
@@ -5722,7 +5758,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
                 installAdmitted = true;
                 this.backgroundUpdateContext = downloadContext;
-                previousState = bundle.isBuiltin() ? this.implementation.captureResetState() : null;
+                previousState = this.implementation.captureResetState();
                 previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                 this.consumeOnLaunchDirectUpdateAttempt(true);
                 this.clearBackgroundDownloadState();
@@ -5734,7 +5770,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
             }
             // Reload can wait for the bridge; it must not hold the ownership monitor.
-            installed = staged && this._reload();
+            installed = staged && this.reloadAutomaticBundle(bundle, previousState);
             if (installed) {
                 if (bundle.isBuiltin()) {
                     this.implementation.finalizeBuiltinUpdate(previousBundleName);
@@ -5742,18 +5778,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.implementation.clearNextBundleIfMatches(bundle.getId());
                     this.notifyBundleSet(bundle);
                 }
-            } else if (
-                bundle.isBuiltin() &&
-                CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
-                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
-                    this.implementation.getCurrentBundle(),
-                    false,
-                    null,
-                    this.isPreviewSessionStateActive()
-                )
-            ) {
-                this.implementation.restoreResetStatePreservingNextBundle(previousState);
-                this.restoreLiveBundleStateAfterFailedReload();
             }
             this.endBackGroundTaskWithNotif(
                 installed ? (bundle.isBuiltin() ? "Updated to builtin version" : "Update installed") : "Update install failed",
@@ -5768,6 +5792,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (installAdmitted) {
                 this.releaseAutomaticInstall();
                 this.installNextIfInBackground(installed ? null : bundle.getId());
+            }
+        }
+    }
+
+    private boolean reloadAutomaticBundle(final BundleInfo bundle, final CapgoUpdater.ResetState previousState) {
+        boolean reloaded = false;
+        try {
+            reloaded = this._reload();
+            return reloaded;
+        } finally {
+            if (
+                !reloaded &&
+                CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                    this.implementation.getCurrentBundle(),
+                    false,
+                    bundle,
+                    this.isPreviewSessionStateActive()
+                )
+            ) {
+                this.implementation.restoreResetStatePreservingNextBundle(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
             }
         }
     }
@@ -6428,7 +6474,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             logger.info("App returned to foreground before deferred install, keeping bundle queued");
                             return;
                         }
-                        if (this.implementation.setQueuedBundle(next) && this._reload()) {
+                        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
+                        if (this.implementation.setQueuedBundle(next) && this.reloadAutomaticBundle(next, previousState)) {
                             logger.info("Updated to bundle: " + next.getVersionName());
                             this.notifyBundleSet(next);
                             this.implementation.clearNextBundleIfMatches(next.getId());
