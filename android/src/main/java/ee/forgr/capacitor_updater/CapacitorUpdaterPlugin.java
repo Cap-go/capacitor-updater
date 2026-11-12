@@ -1315,33 +1315,47 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         final Runnable emitReady = () -> {
-            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
-                return;
-            }
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
             ret.put("status", msg);
 
-            this.notifyListeners("appReady", ret, true);
-
-            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
-                return;
-            }
-
-            // Auto hide splashscreen if enabled
-            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-            if (this.autoSplashscreen) {
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    this.hideSplashscreenInternal();
-                } else {
-                    this.mainHandler.post(() -> {
-                        if (this.ownsBackgroundReadiness(downloadContext, readyState)) {
-                            this.hideSplashscreenInternal();
-                        }
-                    });
+            synchronized (this) {
+                if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                    return;
+                }
+                this.notifyListeners("appReady", ret, true);
+                // A listener can synchronously start another check on this same thread.
+                if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                    return;
+                }
+                if (
+                    !this.autoSplashscreen &&
+                    !this.previewTransitionLoaderRequested &&
+                    this.previewTransitionLoaderOverlay == null &&
+                    this.previewTransitionLoaderTimeoutRunnable == null
+                ) {
+                    return;
                 }
             }
-            this.hidePreviewTransitionLoader("app-ready");
+
+            final Runnable hideReadyLoaders = () -> {
+                synchronized (this) {
+                    if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                        return;
+                    }
+                    if (this.autoSplashscreen) {
+                        this.hideSplashscreenInternal();
+                    }
+                    if (this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                        this.hidePreviewTransitionLoader("app-ready");
+                    }
+                }
+            };
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                hideReadyLoaders.run();
+            } else {
+                this.mainHandler.post(hideReadyLoaders);
+            }
         };
 
         if (!shouldWait) {

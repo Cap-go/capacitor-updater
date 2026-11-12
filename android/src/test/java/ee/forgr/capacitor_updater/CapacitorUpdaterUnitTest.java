@@ -6633,7 +6633,22 @@ public class CapacitorUpdaterUnitTest {
         assertNotificationAdmissionBlocksReplacement(false, "noNeedUpdate");
     }
 
+    @Test
+    public void testReadyNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(false, "appReady");
+    }
+
+    @Test
+    public void testContextlessReadyNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(false, "appReady", true);
+    }
+
     private void assertNotificationAdmissionBlocksReplacement(final boolean startFailure, final String event) throws Exception {
+        assertNotificationAdmissionBlocksReplacement(startFailure, event, false);
+    }
+
+    private void assertNotificationAdmissionBlocksReplacement(final boolean startFailure, final String event, final boolean contextless)
+        throws Exception {
         try (
             MockedStatic<Looper> loopers = mockStatic(Looper.class);
             MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
@@ -6659,7 +6674,15 @@ public class CapacitorUpdaterUnitTest {
             invokeBackgroundDownload(plugin);
             plugin.workers.remove(0).run();
             final Runnable completion;
-            if (startFailure) {
+            if (contextless) {
+                completion = () -> {
+                    try {
+                        invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "disabled");
+                    } catch (Exception error) {
+                        throw new AssertionError(error);
+                    }
+                };
+            } else if (startFailure) {
                 response
                     .get()
                     .callback(
@@ -6726,6 +6749,115 @@ public class CapacitorUpdaterUnitTest {
             assertSame(replacementContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
             assertSame(replacementTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
             assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter(event::equals).count());
+        }
+    }
+
+    @Test
+    public void testDirectReadySplashHideBlocksOwnershipReplacement() throws Exception {
+        assertReadySplashHideBlocksReplacement(false);
+    }
+
+    @Test
+    public void testPostedReadySplashHideBlocksOwnershipReplacement() throws Exception {
+        assertReadySplashHideBlocksReplacement(true);
+    }
+
+    private void assertReadySplashHideBlocksReplacement(final boolean posted) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            doNothing().when(updater).getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            final Bridge bridge = mock(Bridge.class);
+            final PluginHandle splash = mock(PluginHandle.class);
+            when(bridge.getPlugin("SplashScreen")).thenReturn(splash);
+            plugin.setBridge(bridge);
+            final Handler handler = (Handler) getPrivateField(plugin, "mainHandler");
+            final List<Runnable> postedHides = new ArrayList<>();
+            doAnswer((inv) -> {
+                postedHides.add(inv.getArgument(0));
+                return true;
+            })
+                .when(handler)
+                .post(any(Runnable.class));
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final CapgoUpdater.BackgroundDownloadContext original = (CapgoUpdater.BackgroundDownloadContext) getPrivateField(
+                plugin,
+                "backgroundDownloadContext"
+            );
+            final Runnable emitReady = () -> plugin.emitLaunchDownloadReady(updater.getCurrentBundle(), "ready", original);
+            final Runnable completion;
+            if (posted) {
+                loopers.when(Looper::myLooper).thenReturn(null);
+                emitReady.run();
+                loopers.when(Looper::myLooper).thenReturn(main);
+                assertEquals(1, postedHides.size());
+                completion = postedHides.remove(0);
+            } else {
+                completion = emitReady;
+            }
+            final CountDownLatch beforeHide = new CountDownLatch(1);
+            final CountDownLatch finishHide = new CountDownLatch(1);
+            final List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
+            doAnswer((inv) -> {
+                beforeHide.countDown();
+                assertTrue(finishHide.await(5, TimeUnit.SECONDS));
+                order.add("hide");
+                return null;
+            })
+                .when(splash)
+                .invoke(eq("hide"), any(PluginCall.class));
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            final AtomicReference<Object> newerDeadline = new AtomicReference<>();
+            final Thread hiding = new Thread(() -> {
+                try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
+                    workerLooper.when(Looper::getMainLooper).thenReturn(main);
+                    workerLooper.when(Looper::myLooper).thenReturn(main);
+                    completion.run();
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread replacing = new Thread(() -> {
+                try {
+                    invokeBackgroundDownload(plugin);
+                    newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                    plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+                    newerDeadline.set(getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+                    order.add("replacement");
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            try {
+                hiding.start();
+                assertTrue(beforeHide.await(5, TimeUnit.SECONDS));
+                replacing.start();
+                assertBlockedOnMonitor(replacing, plugin, hiding);
+            } finally {
+                finishHide.countDown();
+                hiding.join(5000);
+                replacing.join(5000);
+            }
+            assertFalse(hiding.isAlive());
+            assertFalse(replacing.isAlive());
+            assertNull(failure.get());
+            assertEquals(List.of("hide", "replacement"), order);
+            assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+            assertNotNull(newerDeadline.get());
+            assertSame(newerDeadline.get(), getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+            verify(splash, times(1)).invoke(eq("hide"), any(PluginCall.class));
         }
     }
 
