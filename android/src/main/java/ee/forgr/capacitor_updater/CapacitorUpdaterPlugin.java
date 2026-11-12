@@ -253,6 +253,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final class BackgroundReadyState {
 
         boolean claimed;
+        int pendingCompletions;
         int waitPhase;
         boolean pageReplaced;
 
@@ -288,6 +289,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Object readyGuardLock = new Object();
     private volatile int readyGeneration = 0;
     private volatile boolean readyGuardArmed = false;
+    // The document actually dispatched to the WebView, not a bundle staged for a future load.
+    private ReadyPageState liveReadyPage;
+
+    private static final class ReadyPageState {
+
+        final String bundlePath;
+        final int generation;
+        final boolean guardArmed;
+
+        ReadyPageState(final String bundlePath, final int generation, final boolean guardArmed) {
+            this.bundlePath = bundlePath;
+            this.generation = generation;
+            this.guardArmed = guardArmed;
+        }
+    }
+
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
@@ -1094,6 +1111,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
         this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
+        this.captureInitialReadyPage();
         this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
@@ -1257,7 +1275,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private synchronized int armPendingNotifyAppReadyWait() {
         final BackgroundReadyState readyState = this.backgroundReadyState;
         final boolean carryCompletion =
-            readyState.claimed &&
+            readyState.pendingCompletions > 0 &&
             readyState.waitPhase >= 0 &&
             this.semaphoreReady.getPhase() == readyState.waitPhase &&
             this.semaphoreReady.getRegisteredParties() > 0;
@@ -1367,6 +1385,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 pendingPhase[0] = readyState.waitPhase;
                 shouldWait = true;
             }
+            if (shouldWait) {
+                readyState.pendingCompletions++;
+            }
         }
 
         final Runnable emitReady = () -> {
@@ -1420,23 +1441,42 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         // Completion callers may hold download ownership locks or still need to dispatch an install.
         // Keep every readiness wait off their stack, not only waits originating on the UI thread.
-        startNewThread(() -> {
-            int phase = pendingPhase[0];
-            while (true) {
-                this.semaphoreWait(phase, this.appReadyTimeout);
-                synchronized (this) {
-                    if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
-                        return;
+        final java.util.concurrent.atomic.AtomicBoolean completionReleased = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            startNewThread(() -> {
+                try {
+                    int phase = pendingPhase[0];
+                    while (true) {
+                        this.semaphoreWait(phase, this.appReadyTimeout);
+                        synchronized (this) {
+                            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                                return;
+                            }
+                            if (phase == readyState.waitPhase) {
+                                emitReady.run();
+                                return;
+                            }
+                            // Page replacement retires the old party without completing this check.
+                            phase = readyState.waitPhase;
+                        }
                     }
-                    if (phase == readyState.waitPhase) {
-                        emitReady.run();
-                        return;
-                    }
-                    // Page replacement retires the old party without completing this check.
-                    phase = readyState.waitPhase;
+                } finally {
+                    this.releasePendingReadyCompletion(readyState, completionReleased);
                 }
-            }
-        });
+            });
+        } catch (final RuntimeException e) {
+            this.releasePendingReadyCompletion(readyState, completionReleased);
+            throw e;
+        }
+    }
+
+    private synchronized void releasePendingReadyCompletion(
+        final BackgroundReadyState readyState,
+        final java.util.concurrent.atomic.AtomicBoolean released
+    ) {
+        if (released.compareAndSet(false, true)) {
+            readyState.pendingCompletions--;
+        }
     }
 
     private void hideSplashscreen() {
@@ -3638,7 +3678,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final int generation = this.armReloadReadyGuard();
         final Object dispatchLock = new Object();
         final FutureTask<Void> dispatch = new FutureTask<>(() -> {
-            this.stampReadyGenerationBeforeReload(generation);
+            final boolean guardArmed = this.stampReadyGenerationBeforeReload(generation);
             String targetUrl = this.bridge.getAppUrl();
             if (this.keepUrlPathAfterReload) {
                 this.syncKeepUrlPathFlag(true);
@@ -3666,6 +3706,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.bridge.getLocalServer().hostFiles(path);
             }
             webView.loadUrl(targetUrl);
+            synchronized (this.readyGuardLock) {
+                this.liveReadyPage = new ReadyPageState(path, generation, guardArmed);
+            }
             if (!this.keepUrlPathAfterReload) {
                 webView.clearHistory();
             }
@@ -3694,8 +3737,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } finally {
             // Cancel a queued dispatch before releasing install admission. If it has started,
             // let its short native loadUrl call finish before another bundle can be staged.
+            final boolean cancelled;
             synchronized (dispatchLock) {
-                dispatch.cancel(false);
+                cancelled = dispatch.cancel(false);
+            }
+            if (cancelled) {
+                this.restoreUndispatchedReadyGuard(generation);
             }
         }
         return false;
@@ -5343,9 +5390,41 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private int armReadyGuard() {
         synchronized (this.readyGuardLock) {
+            this.captureInitialReadyPage();
             this.readyGeneration = this.readyGeneration + 1;
             this.readyGuardArmed = true;
             return this.readyGeneration;
+        }
+    }
+
+    private void captureInitialReadyPage() {
+        synchronized (this.readyGuardLock) {
+            if (this.liveReadyPage == null && this.implementation != null) {
+                try {
+                    final String path = this.implementation.getCurrentBundlePath();
+                    if (path != null) {
+                        this.liveReadyPage = new ReadyPageState(path, this.readyGeneration, this.readyGuardArmed);
+                    }
+                } catch (final RuntimeException e) {
+                    // Without a known live path, a failed dispatch must keep rejecting stale readiness.
+                    logger.warn("Cannot capture live page readiness: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private synchronized void restoreUndispatchedReadyGuard(final int generation) {
+        synchronized (this.readyGuardLock) {
+            final ReadyPageState livePage = this.liveReadyPage;
+            if (
+                this.readyGeneration == generation &&
+                livePage != null &&
+                livePage.bundlePath.equals(this.implementation.getCurrentBundlePath())
+            ) {
+                // A staged replacement must be restored before its predecessor can report ready.
+                this.readyGeneration = livePage.generation;
+                this.readyGuardArmed = livePage.guardArmed;
+            }
         }
     }
 
@@ -5358,15 +5437,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void stampReadyGenerationBeforeReload(final int generation) {
+    private boolean stampReadyGenerationBeforeReload(final int generation) {
         final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
         if (webView == null) {
             this.disarmReadyGuard(generation);
-            return;
+            return false;
         }
         if (!this.installReadyGenerationScript(webView, generation)) {
             this.disarmReadyGuard(generation);
+            return false;
         }
+        return true;
     }
 
     private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {

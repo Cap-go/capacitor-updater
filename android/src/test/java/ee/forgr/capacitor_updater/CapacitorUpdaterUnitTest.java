@@ -3359,6 +3359,16 @@ public class CapacitorUpdaterUnitTest {
         });
     }
 
+    private static void configureReadinessBridge(final CapacitorUpdaterPlugin plugin, final Bridge bridge) {
+        final PluginHandle handle = mock(PluginHandle.class);
+        final CapConfig config = mock(CapConfig.class);
+        when(handle.getId()).thenReturn("CapacitorUpdater");
+        when(bridge.getConfig()).thenReturn(config);
+        when(config.getPluginConfiguration("CapacitorUpdater")).thenReturn(mock(PluginConfig.class));
+        plugin.setPluginHandle(handle);
+        plugin.setBridge(bridge);
+    }
+
     @Test
     public void testReplacedFreshReloadPreservesWatchdogState() throws Exception {
         assertReplacedReloadPreservesWatchdogState(true);
@@ -3861,7 +3871,7 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testBackgroundReloadReplacesConsumedReadinessGate() throws Exception {
+    public void testBackgroundReloadCarriesContextlessReadinessCompletion() throws Exception {
         try (
             MockedStatic<Looper> loopers = mockStatic(Looper.class);
             MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
@@ -3879,13 +3889,14 @@ public class CapacitorUpdaterUnitTest {
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             assertEquals("Replacing the page must retire the consumed waiter party", 1, gate.getRegisteredParties());
             assertNotEquals(oldPhase, gate.getPhase());
-            plugin.workers.remove(0).run();
-            assertFalse("An old page's waiter must not report readiness for the new page", plugin.hasNotifiedEvent("appReady"));
             invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "new page");
             assertFalse(plugin.hasNotifiedEvent("appReady"));
             invokePrivateVoidMethod(plugin, "semaphoreDown");
             plugin.workers.remove(0).run();
+            assertEquals("old page", plugin.getNotifiedEventPayload("appReady").getString("status"));
             assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
+            plugin.workers.remove(0).run();
+            assertEquals(2, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
             assertEquals("new page", plugin.getNotifiedEventPayload("appReady").getString("status"));
         }
     }
@@ -4928,6 +4939,8 @@ public class CapacitorUpdaterUnitTest {
             plugin.setLoggerForTesting(mock(Logger.class));
             plugin.setBridge(bridge);
             setPrivateField(plugin, "appInBackground", background);
+            setPrivateField(plugin, "readyGeneration", 7);
+            setPrivateField(plugin, "readyGuardArmed", true);
             final java.util.concurrent.BlockingQueue<Runnable> mainQueue = new java.util.concurrent.LinkedBlockingQueue<>();
             when(webView.post(any())).thenAnswer((inv) -> {
                 if ("dispatch-throw".equals(mode)) {
@@ -4976,6 +4989,14 @@ public class CapacitorUpdaterUnitTest {
                 assertFalse(plugin.hasNotifiedEvent("appReloaded"));
                 assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
                 assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+                if (!"throwing".equals(mode)) {
+                    assertEquals(
+                        "An undispatched reload must retain the live page's readiness token",
+                        7,
+                        getPrivateField(plugin, "readyGeneration")
+                    );
+                    assertEquals(true, getPrivateField(plugin, "readyGuardArmed"));
+                }
                 if (delayed != null) {
                     // A timed-out or interrupted callback must remain inert even after another bundle is active.
                     plugin.implementation = new FixedPathCapgoUpdater("/tmp/newer-bundle", false);
@@ -4992,6 +5013,68 @@ public class CapacitorUpdaterUnitTest {
                 worker.interrupt();
                 worker.join(2000);
             }
+        }
+    }
+
+    @Test
+    public void testRejectedReloadRetainsLastDispatchedPageGuard() throws Exception {
+        try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appInBackground", true);
+            setPrivateField(plugin, "autoDeletePrevious", false);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            configureImmediateWebViewReload(bridge, webView);
+            configureReadinessBridge(plugin, bridge);
+            assertTrue(plugin._reload());
+            final Object liveGeneration = getPrivateField(plugin, "readyGeneration");
+            final Object liveGuard = getPrivateField(plugin, "readyGuardArmed");
+            when(webView.post(any())).thenReturn(false);
+            assertFalse(plugin._reload());
+            assertEquals(liveGeneration, getPrivateField(plugin, "readyGeneration"));
+            assertEquals(liveGuard, getPrivateField(plugin, "readyGuardArmed"));
+            final PluginCall ready = mock(PluginCall.class);
+            when(ready.getData()).thenReturn(new JSObject().put("loadGeneration", liveGeneration));
+            plugin.notifyAppReady(ready);
+            assertEquals(BundleStatus.SUCCESS, updater.getCurrentBundle().getStatus());
+            verify(webView, times(1)).loadUrl(anyString());
+        }
+    }
+
+    @Test
+    public void testCancelledDispatchCannotRestoreOverNewerReadinessGuard() throws Exception {
+        try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appInBackground", true);
+            setPrivateField(plugin, "readyGeneration", 7);
+            setPrivateField(plugin, "readyGuardArmed", true);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(webView.post(any())).thenAnswer((inv) -> {
+                invokePrivateVoidMethod(plugin, "armReloadReadyGuard");
+                return false;
+            });
+            configureReadinessBridge(plugin, bridge);
+            assertFalse(plugin._reload());
+            assertEquals(9, getPrivateField(plugin, "readyGeneration"));
+            final PluginCall ready = mock(PluginCall.class);
+            when(ready.getData()).thenReturn(new JSObject().put("loadGeneration", 7));
+            plugin.notifyAppReady(ready);
+            assertEquals(BundleStatus.PENDING, updater.getCurrentBundle().getStatus());
+            verify(webView, never()).loadUrl(anyString());
         }
     }
 
@@ -6101,6 +6184,66 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testContextlessForegroundCompletionSurvivesQueuedReload() throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedStatic<CapConfig> configs = mockStatic(CapConfig.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("false");
+            plugin.useRealReload = true;
+            setPrivateField(plugin, "appInBackground", true);
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoDeletePrevious", false);
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final PluginHandle handle = mock(PluginHandle.class);
+            final CapConfig config = mock(CapConfig.class);
+            configs.when(() -> CapConfig.loadDefault(any())).thenReturn(config);
+            when(handle.getId()).thenReturn("CapacitorUpdater");
+            when(bridge.getConfig()).thenReturn(config);
+            when(config.getPluginConfiguration("CapacitorUpdater")).thenReturn(mock(PluginConfig.class));
+            plugin.setPluginHandle(handle);
+            plugin.setBridge(bridge);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            configureImmediateWebViewReload(bridge, webView);
+            final AtomicReference<Runnable> completion = new AtomicReference<>();
+            plugin.beforeReload = () -> {
+                assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                plugin.appMovedToForeground();
+                completion.set(plugin.workers.remove(0));
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+            };
+            doAnswer((inv) -> {
+                final PluginCall ready = mock(PluginCall.class);
+                when(ready.getData()).thenReturn(new JSObject().put("loadGeneration", getPrivateField(plugin, "readyGeneration")));
+                plugin.notifyAppReady(ready);
+                return null;
+            })
+                .when(webView)
+                .loadUrl(anyString());
+            assertTrue(updater.setNextBundle("bundleA001"));
+            plugin.installNextIfInBackground();
+            plugin.workers.remove(0).run();
+            assertNotNull(completion.get());
+            completion.get().run();
+            assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
+            assertEquals("disabled", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertEquals("bundleA001", plugin.getNotifiedEventPayload("appReady").getJSObject("bundle").getString("id"));
+            assertEquals(1, getPrivateField(plugin, "splashscreenInvocationToken"));
+            assertEquals(BundleStatus.SUCCESS, updater.getCurrentBundle().getStatus());
+            assertNull(updater.getNextBundle());
+        }
+    }
+
+    @Test
     public void testInterruptedCachedReloadRestoresPreviousBundle() throws Exception {
         assertFailedAutomaticDispatchRestoresState(false, "interrupted");
     }
@@ -6147,6 +6290,8 @@ public class CapacitorUpdaterUnitTest {
             final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
             plugin.setAutoUpdateModeForTesting("always");
             plugin.useRealReload = true;
+            setPrivateField(plugin, "readyGeneration", 7);
+            setPrivateField(plugin, "readyGuardArmed", true);
             final boolean watchdog = "watchdog".equals(failure);
             if (watchdog) {
                 plugin.useRealReload = false;
@@ -6164,6 +6309,16 @@ public class CapacitorUpdaterUnitTest {
             final List<Runnable> rejectedDispatches = new ArrayList<>();
             when(webView.post(any())).thenAnswer((inv) -> {
                 rejectedDispatches.add(inv.getArgument(0));
+                if (updater.getCurrentBundle().getId().equals(incoming.getId())) {
+                    final PluginCall staleReady = mock(PluginCall.class);
+                    when(staleReady.getData()).thenReturn(new JSObject().put("loadGeneration", 7));
+                    plugin.notifyAppReady(staleReady);
+                    assertEquals(
+                        "An unloaded incoming bundle cannot be certified by the old page",
+                        BundleStatus.PENDING,
+                        updater.getCurrentBundle().getStatus()
+                    );
+                }
                 assertTrue(updater.setNextBundle(BundleInfo.ID_BUILTIN));
                 if ("interrupted".equals(failure)) {
                     Thread.currentThread().interrupt();
@@ -6171,7 +6326,7 @@ public class CapacitorUpdaterUnitTest {
                 }
                 return false;
             });
-            plugin.setBridge(bridge);
+            configureReadinessBridge(plugin, bridge);
             try {
                 if (queued) {
                     assertTrue(updater.setNextBundle(incoming.getId()));
@@ -6195,6 +6350,12 @@ public class CapacitorUpdaterUnitTest {
                     assertNull(updater.getNextBundle());
                 } else {
                     assertEquals(BundleInfo.ID_BUILTIN, updater.getNextBundle().getId());
+                    assertEquals(
+                        "Restoring native state must also restore the undisplaced page's token",
+                        7,
+                        getPrivateField(plugin, "readyGeneration")
+                    );
+                    assertEquals(true, getPrivateField(plugin, "readyGuardArmed"));
                 }
                 assertFalse(plugin.hasNotifiedEvent("set"));
                 assertFalse(plugin.hasNotifiedEvent("appReloaded"));
