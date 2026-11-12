@@ -104,7 +104,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     }
 }
 
-private final class FreshDownloadCapgoUpdater: CapgoUpdater {
+private class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
     var existingBundleValue: BundleInfo?
@@ -117,6 +117,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         checksum: "builtin"
     )
     var onDownloadStart: (() -> Void)?
+    var onGetLatest: (() -> Void)?
     var downloadCalls = 0
     var deleteCalls = 0
     var lastDeletedId: String?
@@ -128,7 +129,8 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
-        latestResponse
+        onGetLatest?()
+        return latestResponse
     }
 
     override func getCurrentBundle() -> BundleInfo {
@@ -188,6 +190,41 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         sentStatsActions.append(action)
         lastStatsVersionName = versionName
         lastStatsMetadata = metadata
+    }
+}
+
+private final class SplashTimeoutCapgoUpdater: FreshDownloadCapgoUpdater {
+    var stagePendingReloadCalls = 0
+
+    override func getNextBundle() -> BundleInfo? {
+        nil
+    }
+
+    override func stagePendingReload(bundle: BundleInfo) -> Bool {
+        stagePendingReloadCalls += 1
+        return true
+    }
+
+    override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        currentBundleValue = bundle
+    }
+}
+
+private final class SplashTimeoutCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var reloadCalls = 0
+    var resetCalls = 0
+
+    override func beginDownloadBackgroundTask() {}
+    override func checkAppReady() {}
+
+    override func _reload() -> Bool {
+        reloadCalls += 1
+        return true
+    }
+
+    override func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
+        resetCalls += 1
+        return true
     }
 }
 
@@ -2985,6 +3022,107 @@ class CapacitorUpdaterTests: XCTestCase {
         plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
 
         XCTAssertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting())
+    }
+
+    private func makeSplashTimeoutPlugin(mode: String = "onLaunch") throws -> (SplashTimeoutCapacitorUpdaterPlugin, SplashTimeoutCapgoUpdater) {
+        clearDelayStorage()
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
+        let implementation = SplashTimeoutCapgoUpdater()
+        implementation.currentBundleValue = makeOnlyDownloadBundle(id: "current-id", version: "1.0.0", status: .SUCCESS)
+        implementation.latestResponse = makeOnlyDownloadLatest()
+        implementation.downloadedBundleValue = makeOnlyDownloadBundle()
+        let testPlugin = SplashTimeoutCapacitorUpdaterPlugin()
+        testPlugin.implementation = implementation
+        testPlugin.configureDirectUpdateModeForTesting(mode)
+        testPlugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+        testPlugin.setDelayUpdateUtilsForTesting(try makeDelayUpdateUtils())
+        testPlugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+        return (testPlugin, implementation)
+    }
+
+    private func resumeAfterSplashTimeout(_ testPlugin: SplashTimeoutCapacitorUpdaterPlugin) {
+        XCTAssertTrue(testPlugin.hasSplashscreenTimeoutScheduledForTesting())
+        testPlugin.fireSplashscreenTimeoutForTesting()
+        XCTAssertFalse(testPlugin.shouldUseDirectUpdateForTesting())
+        testPlugin.appMovedToBackground()
+        testPlugin.appMovedToForeground()
+    }
+
+    func testExpiredLaunchDownloadStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = {
+            XCTAssertTrue(testPlugin.hasConsumedOnLaunchDirectUpdateForTesting)
+            self.resumeAfterSplashTimeout(testPlugin)
+            XCTAssertFalse(testPlugin.hasSplashscreenTimeoutScheduledForTesting())
+        }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "1.0.0")
+        XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+    }
+
+    func testExpiredLaunchCachedBundleStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        implementation.existingBundleValue = makeOnlyDownloadBundle()
+        defer { implementation.onGetLatest = nil; clearDelayStorage() }
+        implementation.onGetLatest = { self.resumeAfterSplashTimeout(testPlugin) }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 0)
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+    }
+
+    func testExpiredLaunchBuiltinStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        implementation.latestResponse.version = "builtin"
+        defer { implementation.onGetLatest = nil; clearDelayStorage() }
+        implementation.onGetLatest = { self.resumeAfterSplashTimeout(testPlugin) }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(testPlugin.resetCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.lastSetNextBundleId, BundleInfo.ID_BUILTIN)
+    }
+
+    func testUnexpiredLaunchDownloadCanInstallAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = {
+            testPlugin.appMovedToBackground()
+            testPlugin.appMovedToForeground()
+        }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(testPlugin.reloadCalls, 1)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "2.0.0")
+        XCTAssertNil(implementation.lastSetNextBundleId)
+    }
+
+    func testLaterAlwaysDownloadCanInstallAfterEarlierSplashTimeout() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin(mode: "always")
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = { self.resumeAfterSplashTimeout(testPlugin) }
+        testPlugin.backgroundDownload()
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+
+        implementation.onDownloadStart = nil
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(testPlugin.reloadCalls, 1)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "2.0.0")
     }
 
     func testLaunchSplashDoesNotScheduleTimeoutAfterOnLaunchDirectUpdateConsumed() {
