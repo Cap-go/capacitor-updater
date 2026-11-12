@@ -261,6 +261,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private static final class ReloadReadyWait {
+
+        final int phase;
+        volatile boolean notified;
+
+        ReloadReadyWait(final int phase) {
+            this.phase = phase;
+        }
+    }
+
+    // A phase can advance because it was retired, without its page ever reporting ready.
+    private final Map<Integer, ReloadReadyWait> reloadReadyWaits = new HashMap<>();
+    private final ThreadLocal<Boolean> reloadSupersededByPageReplacement = ThreadLocal.withInitial(() -> false);
     private volatile Thread appReadyCheck;
     // Between appMovedToBackground and appMovedToForeground. Android freezes backgrounded apps, so the
     // page cannot call notifyAppReady until the next foreground, which arms a fresh rollback check.
@@ -1149,12 +1162,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
-            cleanupTimedOutSemaphoreWait(phase);
+            cleanupFailedSemaphoreWait(phase, trackReloadAppReadyTimeout);
             Thread.currentThread().interrupt(); // Restore interrupted status
             return false;
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
-            cleanupTimedOutSemaphoreWait(phase);
+            cleanupFailedSemaphoreWait(phase, trackReloadAppReadyTimeout);
             if (trackReloadAppReadyTimeout) {
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
             }
@@ -1205,8 +1218,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("semaphoreDown");
         logger.info("semaphoreDown count " + semaphoreReady.getPhase());
         final int phase = semaphoreReady.getPhase();
+        final ReloadReadyWait reloadWait = this.reloadReadyWaits.get(phase);
+        if (reloadWait != null) {
+            reloadWait.notified = true;
+        }
         semaphoreReady.arriveAndDeregister();
         this.retirePendingNotifyAppReadyPhase(phase);
+    }
+
+    private synchronized void cleanupFailedSemaphoreWait(final int phase, final boolean reloadWait) {
+        if (reloadWait || !this.reloadReadyWaits.containsKey(phase)) {
+            this.cleanupTimedOutSemaphoreWait(phase);
+        }
+    }
+
+    private synchronized ReloadReadyWait armReloadReadyWait() {
+        final ReloadReadyWait wait = new ReloadReadyWait(this.armPendingNotifyAppReadyWait());
+        this.reloadReadyWaits.put(wait.phase, wait);
+        return wait;
     }
 
     private synchronized void cleanupTimedOutSemaphoreWait(final int phase) {
@@ -2973,6 +3002,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             } else {
                 final boolean queued =
                     !CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get() &&
+                    !this.reloadSupersededByPageReplacement.get() &&
                     this.implementation.setNextBundleIfEmpty(latest.getId());
                 if (queued) {
                     final JSObject ret = new JSObject();
@@ -2996,6 +3026,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
         CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        this.reloadSupersededByPageReplacement.set(false);
         final CapgoUpdater.ResetState previousState;
         final String previousBundleName;
         synchronized (this) {
@@ -3014,6 +3045,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         if (
+            !this.reloadSupersededByPageReplacement.get() &&
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 latest,
@@ -3679,22 +3711,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     protected boolean _reload() {
         CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        this.reloadSupersededByPageReplacement.set(false);
         if (this.appInBackground) {
             return this.reloadInBackground();
         }
-        // Replace the page gate without discarding the current check's pending completion.
-        final int phase = this.armPendingNotifyAppReadyWait();
-        if (!this.applyCurrentBundleToBridge()) {
-            this.cleanupTimedOutSemaphoreWait(phase);
-            return false;
+        // Register reload ownership before a carried notification waiter can time out.
+        final ReloadReadyWait readyWait = this.armReloadReadyWait();
+        try {
+            if (!this.applyCurrentBundleToBridge()) {
+                this.cleanupTimedOutSemaphoreWait(readyWait.phase);
+                return false;
+            }
+
+            final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
+            this.checkAppReady(waitTimeMs);
+            this.notifyListeners("appReloaded", new JSObject(), false);
+
+            // Retirement and timeout cleanup can advance a phase too. Only the page's
+            // notifyAppReady acknowledgement makes this installation successful.
+            final boolean advanced = this.semaphoreWait(readyWait.phase, waitTimeMs, true);
+            if (advanced && !readyWait.notified) {
+                this.reloadSupersededByPageReplacement.set(true);
+            }
+            return advanced && readyWait.notified;
+        } finally {
+            synchronized (this) {
+                this.reloadReadyWaits.remove(readyWait.phase);
+            }
         }
-
-        final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
-        this.checkAppReady(waitTimeMs);
-        this.notifyListeners("appReloaded", new JSObject(), false);
-
-        // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWait(phase, waitTimeMs, true);
     }
 
     /**
@@ -3754,6 +3798,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     if (
+                        !this.reloadSupersededByPageReplacement.get() &&
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
@@ -4987,6 +5032,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean performResetBody(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
+        this.reloadSupersededByPageReplacement.set(false);
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
@@ -5019,6 +5065,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return true;
             }
             if (
+                !this.reloadSupersededByPageReplacement.get() &&
                 CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                     CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                     this.implementation.getCurrentBundle(),
@@ -5049,6 +5096,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
                     if (
                         !internal &&
+                        !this.reloadSupersededByPageReplacement.get() &&
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
@@ -5061,7 +5109,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.restoreLiveBundleStateAfterFailedReload();
                         return false;
                     }
-                    if (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                    if (
+                        this.reloadSupersededByPageReplacement.get() ||
+                        (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get())
+                    ) {
                         return false;
                     }
                 } else if (!internal) {
@@ -5082,6 +5133,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         if (
             !internal &&
+            !this.reloadSupersededByPageReplacement.get() &&
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 this.implementation.getCurrentBundle(),
@@ -5841,6 +5893,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         } finally {
             if (
                 !reloaded &&
+                !this.reloadSupersededByPageReplacement.get() &&
                 CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                     CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                     this.implementation.getCurrentBundle(),

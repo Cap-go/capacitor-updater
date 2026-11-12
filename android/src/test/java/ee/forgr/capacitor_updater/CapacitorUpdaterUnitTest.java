@@ -3360,6 +3360,223 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testReplacedFreshReloadPreservesWatchdogState() throws Exception {
+        assertReplacedReloadPreservesWatchdogState(true);
+    }
+
+    @Test
+    public void testReplacedCachedReloadPreservesWatchdogState() throws Exception {
+        assertReplacedReloadPreservesWatchdogState(false);
+    }
+
+    private void assertReplacedReloadPreservesWatchdogState(final boolean fresh) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            updater.setSuccess(updater.getCurrentBundle(), false);
+            final CapgoUpdater.ResetState previous = updater.captureResetState();
+            final BundleInfo incoming = updater.getBundleInfo("bundleB002");
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.useRealReload = true;
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            configureImmediateWebViewReload(bridge, webView);
+            plugin.setBridge(bridge);
+            final CountDownLatch dispatched = new CountDownLatch(1);
+            plugin.beforeNotification = (event) -> {
+                if ("appReloaded".equals(event)) dispatched.countDown();
+            };
+            final Runnable finishDownload;
+            if (fresh) {
+                plugin.setAutoUpdateModeForTesting("always");
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(0);
+                plugin.scheduleDirectUpdateFinish(
+                    incoming,
+                    (CapgoUpdater.BackgroundDownloadContext) getPrivateField(plugin, "backgroundDownloadContext")
+                );
+                finishDownload = plugin.workers.remove(0);
+            } else {
+                finishDownload = null;
+            }
+            final AtomicReference<Boolean> result = new AtomicReference<>();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread installing = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    if (fresh) {
+                        finishDownload.run();
+                        result.set(plugin.hasNotifiedEvent("set"));
+                    } else {
+                        assertTrue(updater.set(incoming));
+                        final Method reload = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+                            "reloadAutomaticBundle",
+                            BundleInfo.class,
+                            CapgoUpdater.ResetState.class
+                        );
+                        reload.setAccessible(true);
+                        result.set((Boolean) reload.invoke(plugin, incoming, previous));
+                    }
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            installing.start();
+            try {
+                assertTrue(dispatched.await(2, TimeUnit.SECONDS));
+                synchronized (plugin) {
+                    updater.setError(incoming);
+                    updater.prepareBuiltinTransition();
+                    // The watchdog's fallback page retires the failed install's readiness phase.
+                    invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+                }
+                installing.join(2000);
+                assertFalse(installing.isAlive());
+                assertNull(failure.get());
+                assertEquals(Boolean.FALSE, result.get());
+                assertEquals(
+                    "Old reload recovery must not undo watchdog rollback",
+                    BundleInfo.ID_BUILTIN,
+                    updater.getCurrentBundle().getId()
+                );
+                assertEquals(BundleInfo.ID_BUILTIN, updater.getFallbackBundle().getId());
+                assertEquals(BundleStatus.ERROR, updater.getBundleInfo(incoming.getId()).getStatus());
+                assertNull("A superseded install must not requeue the failed bundle", updater.getNextBundle());
+                assertFalse(plugin.hasNotifiedEvent("updateAvailable"));
+            } finally {
+                installing.interrupt();
+                installing.join(2000);
+                invokePrivateVoidMethod(plugin, "clearPendingNotifyAppReadyWait");
+            }
+        }
+    }
+
+    @Test
+    public void testNotificationTimeoutCannotCompleteReload() throws Exception {
+        assertReloadRequiresItsPageReadiness("timeout");
+    }
+
+    @Test
+    public void testNotificationInterruptionCannotCompleteReload() throws Exception {
+        assertReloadRequiresItsPageReadiness("interrupted");
+    }
+
+    @Test
+    public void testPageReplacementCannotCompletePreviousReload() throws Exception {
+        assertReloadRequiresItsPageReadiness("replaced");
+    }
+
+    @Test
+    public void testAcknowledgedReloadRemainsSuccessfulAfterPageReplacement() throws Exception {
+        assertReloadRequiresItsPageReadiness("acknowledged-then-replaced");
+    }
+
+    private void assertReloadRequiresItsPageReadiness(final String outcome) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.useRealReload = true;
+            setPrivateField(plugin, "appReadyTimeout", 1);
+            setPrivateField(plugin, "autoDeletePrevious", false);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final PluginHandle handle = mock(PluginHandle.class);
+            final CapConfig config = mock(CapConfig.class);
+            plugin.setPluginHandle(handle);
+            when(handle.getId()).thenReturn("CapacitorUpdater");
+            when(bridge.getConfig()).thenReturn(config);
+            when(config.getPluginConfiguration("CapacitorUpdater")).thenReturn(mock(PluginConfig.class));
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            configureImmediateWebViewReload(bridge, webView);
+            plugin.setBridge(bridge);
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0); // The check's response is completed explicitly below.
+            plugin.emitLaunchDownloadReady(
+                updater.getCurrentBundle(),
+                "disabled",
+                (CapgoUpdater.BackgroundDownloadContext) getPrivateField(plugin, "backgroundDownloadContext")
+            );
+            final Runnable notification = plugin.workers.remove(0);
+            final CountDownLatch dispatched = new CountDownLatch(1);
+            plugin.beforeNotification = (event) -> {
+                if ("appReloaded".equals(event)) dispatched.countDown();
+            };
+            final AtomicReference<Boolean> result = new AtomicReference<>();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread reload = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    result.set(plugin._reload());
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            reload.start();
+            try {
+                assertTrue(dispatched.await(2, TimeUnit.SECONDS));
+                final Phaser semaphore = (Phaser) getPrivateField(plugin, "semaphoreReady");
+                final int reloadPhase = semaphore.getPhase();
+                if ("timeout".equals(outcome) || "interrupted".equals(outcome)) {
+                    try {
+                        if ("interrupted".equals(outcome)) Thread.currentThread().interrupt();
+                        notification.run();
+                        if ("interrupted".equals(outcome)) assertTrue(Thread.currentThread().isInterrupted());
+                    } finally {
+                        Thread.interrupted();
+                    }
+                    assertTrue("Notification still completes on its own deadline", plugin.hasNotifiedEvent("appReady"));
+                    assertEquals("Notification cleanup must leave the reload phase pending", reloadPhase, semaphore.getPhase());
+                    assertEquals(1, semaphore.getRegisteredParties());
+                    assertNull("No page has reported ready", result.get());
+                    assertEquals(BundleStatus.PENDING, updater.getCurrentBundle().getStatus());
+                }
+                if ("replaced".equals(outcome)) {
+                    invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+                } else {
+                    final PluginCall ready = mock(PluginCall.class);
+                    final JSObject data = new JSObject();
+                    data.put("loadGeneration", getPrivateField(plugin, "readyGeneration"));
+                    when(ready.getData()).thenReturn(data);
+                    synchronized (plugin) {
+                        plugin.notifyAppReady(ready);
+                        if ("acknowledged-then-replaced".equals(outcome)) {
+                            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+                        }
+                    }
+                    verify(ready).resolve(any(JSObject.class));
+                }
+                reload.join(2000);
+                assertFalse(reload.isAlive());
+                assertNull(failure.get());
+                assertEquals(!"replaced".equals(outcome), result.get());
+                assertEquals(
+                    "replaced".equals(outcome) ? BundleStatus.PENDING : BundleStatus.SUCCESS,
+                    updater.getCurrentBundle().getStatus()
+                );
+            } finally {
+                reload.interrupt();
+                reload.join(2000);
+                invokePrivateVoidMethod(plugin, "clearPendingNotifyAppReadyWait");
+            }
+        }
+    }
+
+    @Test
     public void testReloadTimeoutUsesMilliseconds() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
