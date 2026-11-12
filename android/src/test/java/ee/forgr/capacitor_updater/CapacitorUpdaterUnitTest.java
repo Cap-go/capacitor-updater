@@ -4598,8 +4598,273 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testFreshStagingDoesNotBlockReadinessDuringDeleteCancellation() throws Exception {
+        assertStagingDuringDeleteCancellation("fresh");
+    }
+
+    @Test
+    public void testCachedStagingDoesNotBlockReadinessDuringDeleteCancellation() throws Exception {
+        assertStagingDuringDeleteCancellation("cached");
+    }
+
+    @Test
+    public void testQueuedStagingDoesNotBlockReadinessDuringDeleteCancellation() throws Exception {
+        assertStagingDuringDeleteCancellation("queued");
+    }
+
+    private void assertStagingDuringDeleteCancellation(final String kind) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final android.content.Context context = mock(android.content.Context.class);
+            final android.content.res.AssetManager assets = mock(android.content.res.AssetManager.class);
+            when(context.getAssets()).thenReturn(assets);
+            when(assets.open(anyString())).thenAnswer((inv) -> new ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)));
+            doReturn(context).when(updater).context();
+            final BundleInfo incoming = updater.getBundleInfo("bundleA001");
+            doReturn(incoming).when(updater).getBundleInfoByName(incoming.getVersionName());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            final CountDownLatch cancelling = new CountDownLatch(1);
+            final CountDownLatch releaseDelete = new CountDownLatch(1);
+            final CountDownLatch staging = new CountDownLatch(1);
+            final CountDownLatch installed = new CountDownLatch(1);
+            final CountDownLatch checked = new CountDownLatch(1);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final org.mockito.stubbing.Answer<Object> observeStage = (inv) -> {
+                staging.countDown();
+                return inv.callRealMethod();
+            };
+            if ("fresh".equals(kind)) doAnswer(observeStage).when(updater).stagePendingReload(any());
+            else if ("queued".equals(kind)) doAnswer(observeStage).when(updater).setQueuedBundle(any());
+            else doAnswer(observeStage).when(updater).set(any(BundleInfo.class));
+            final Thread deleting = new Thread(() -> {
+                try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+                    downloads
+                        .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"))
+                        .thenAnswer((inv) -> {
+                            cancelling.countDown();
+                            assertTrue(releaseDelete.await(5, TimeUnit.SECONDS));
+                            return true;
+                        });
+                    assertTrue(updater.delete("bundleB002", true));
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread installing = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    runAutomaticInstall(plugin, updater, kind, incoming, response);
+                    if ("queued".equals(kind)) plugin.workers.remove(0).run();
+                    assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                    installed.countDown();
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread checking = new Thread(() -> {
+                try {
+                    invokeBackgroundDownload(plugin);
+                    checked.countDown();
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            boolean installedWhileCancelling = false;
+            boolean checkedWhileCancelling = false;
+            try {
+                deleting.start();
+                assertTrue(cancelling.await(2, TimeUnit.SECONDS));
+                installing.start();
+                assertTrue(staging.await(2, TimeUnit.SECONDS));
+                checking.start();
+                installedWhileCancelling = installed.await(1, TimeUnit.SECONDS);
+                checkedWhileCancelling = checked.await(1, TimeUnit.SECONDS);
+            } finally {
+                releaseDelete.countDown();
+                deleting.join(3000);
+                installing.join(3000);
+                checking.join(3000);
+            }
+            assertNull(failure.get());
+            assertTrue("Automatic staging must finish while unrelated cancellation is held", installedWhileCancelling);
+            assertTrue("A foreground check must retain access to the plugin monitor", checkedWhileCancelling);
+            assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+        }
+    }
+
+    @Test
     public void testPendingActivationExcludesConcurrentDeletion() throws Exception {
         assertActivationExcludesConcurrentDeletion("pending");
+    }
+
+    @Test
+    public void testManualDiskDeletionDoesNotHoldActivationLock() throws Exception {
+        assertDiskDeletionDoesNotHoldActivationLock(false);
+    }
+
+    @Test
+    public void testTombstoneDiskDeletionDoesNotHoldActivationLock() throws Exception {
+        assertDiskDeletionDoesNotHoldActivationLock(true);
+    }
+
+    private void assertDiskDeletionDoesNotHoldActivationLock(final boolean tombstone) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        if (tombstone) assertTrue(
+            updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.DELETED))
+        );
+        final CountDownLatch removing = new CountDownLatch(1);
+        final CountDownLatch releaseDelete = new CountDownLatch(1);
+        final CountDownLatch activated = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        doAnswer((inv) -> {
+            removing.countDown();
+            assertTrue(releaseDelete.await(5, TimeUnit.SECONDS));
+            return inv.callRealMethod();
+        })
+            .when(updater)
+            .deleteDirectory(any(File.class));
+        final Thread deletion = new Thread(() -> {
+            try {
+                assertTrue(tombstone ? updater.deleteDeletedBundle("bundleB002") : updater.delete("bundleB002", true, false));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final Thread activation = new Thread(() -> {
+            try {
+                assertTrue(updater.set("bundleA001"));
+                activated.countDown();
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        boolean activatedBeforeDelete;
+        try {
+            deletion.start();
+            assertTrue(removing.await(2, TimeUnit.SECONDS));
+            assertEquals(BundleStatus.DELETING, updater.getBundleInfo("bundleB002").getStatus());
+            activation.start();
+            activatedBeforeDelete = activated.await(1, TimeUnit.SECONDS);
+        } finally {
+            releaseDelete.countDown();
+            deletion.join(3000);
+            activation.join(3000);
+        }
+        assertNull(failure.get());
+        assertTrue("Disk removal must not delay activation of a different bundle", activatedBeforeDelete);
+        assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+        assertTrue(new File(updater.documentsDir, "versions/bundleA001/index.html").exists());
+    }
+
+    @Test
+    public void testDeleteClaimRejectsSameBundleActivationAndDuplicateCleanup() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        final BundleInfo deleting = updater.getBundleInfo("bundleB002");
+        final CountDownLatch removing = new CountDownLatch(1);
+        final CountDownLatch releaseDelete = new CountDownLatch(1);
+        final CountDownLatch rejected = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        doAnswer((inv) -> {
+            removing.countDown();
+            assertTrue(releaseDelete.await(5, TimeUnit.SECONDS));
+            return inv.callRealMethod();
+        })
+            .when(updater)
+            .deleteDirectory(any(File.class));
+        final Thread deletion = new Thread(() -> {
+            try {
+                assertTrue(updater.delete(deleting.getId(), false, false));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final Thread contender = new Thread(() -> {
+            try {
+                assertFalse(updater.set(deleting));
+                assertEquals(BundleStatus.DELETING, updater.getBundleInfo(deleting.getId()).getStatus());
+                // A download's delayed registry write cannot bypass the active deletion claim.
+                assertTrue(updater.saveBundleInfo(deleting.getId(), deleting.setStatus(BundleStatus.PENDING)));
+                assertFalse(updater.set(deleting));
+                assertFalse(updater.stagePendingReload(deleting));
+                assertFalse(updater.stagePreviewFallbackReload(deleting));
+                assertFalse(updater.setNextBundle(deleting.getId()));
+                assertFalse(updater.delete(deleting.getId(), true, false));
+                assertFalse(updater.deleteDeletedBundle(deleting.getId()));
+                rejected.countDown();
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        boolean rejectedBeforeDelete;
+        try {
+            deletion.start();
+            assertTrue(removing.await(2, TimeUnit.SECONDS));
+            contender.start();
+            rejectedBeforeDelete = rejected.await(1, TimeUnit.SECONDS);
+        } finally {
+            releaseDelete.countDown();
+            deletion.join(3000);
+            contender.join(3000);
+        }
+        assertNull(failure.get());
+        assertTrue("Deleting IDs must be rejected without waiting for disk cleanup", rejectedBeforeDelete);
+        assertEquals(BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+        assertEquals(BundleStatus.DELETED, updater.getBundleInfo(deleting.getId()).getStatus());
+        verify(updater, times(1)).deleteDirectory(any(File.class));
+        assertTrue(updater.deleteDeletedBundle(deleting.getId()));
+    }
+
+    @Test
+    public void testDeleteFailureRetainsMarkerAndReleasesClaimForRetry() throws Exception {
+        for (String mode : new String[] { "cancel", "cancel-throw", "disk" }) {
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final android.content.Context context = mock(android.content.Context.class);
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getPreviewFallbackBundle();
+            doReturn(null).when(updater).getNextBundle();
+            try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+                downloads
+                    .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"))
+                    .thenAnswer((inv) -> {
+                        if ("cancel-throw".equals(mode)) throw new IllegalStateException("Test cancellation failure");
+                        if ("cancel".equals(mode)) {
+                            assertTrue(
+                                updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.PENDING))
+                            );
+                            return false;
+                        }
+                        return true;
+                    });
+                if ("disk".equals(mode)) doThrow(new IOException("Test disk failure")).when(updater).deleteDirectory(any(File.class));
+                if ("cancel-throw".equals(mode)) assertThrows(IllegalStateException.class, () -> updater.delete("bundleB002", true));
+                else assertFalse(updater.delete("bundleB002", true));
+                assertEquals(BundleStatus.DELETING, updater.getBundleInfo("bundleB002").getStatus());
+                assertFalse(updater.set("bundleB002"));
+                assertEquals(
+                    "Rejected activation must preserve the durable retry marker",
+                    BundleStatus.DELETING,
+                    updater.getBundleInfo("bundleB002").getStatus()
+                );
+                assertTrue(new File(updater.documentsDir, "versions/bundleB002/index.html").exists());
+                downloads.when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002")).thenReturn(true);
+                doCallRealMethod().when(updater).deleteDirectory(any(File.class));
+                assertTrue(updater.delete("bundleB002", true));
+                assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+            }
+        }
     }
 
     @Test
@@ -5884,12 +6149,13 @@ public class CapacitorUpdaterUnitTest {
             final CountDownLatch deleting = new CountDownLatch(1);
             final CountDownLatch finishDelete = new CountDownLatch(1);
             doAnswer((inv) -> {
+                final Object result = inv.callRealMethod();
                 deleting.countDown();
                 assertTrue(finishDelete.await(5, TimeUnit.SECONDS));
-                return inv.callRealMethod();
+                return result;
             })
                 .when(updater)
-                .delete(eq(deleted.getId()), eq(true), anyBoolean());
+                .saveBundleInfo(eq(deleted.getId()), argThat((BundleInfo info) -> info != null && info.isDeleting()));
             final Map<String, Object> response = new HashMap<>();
             response.put("version", deleted.getVersionName());
             response.put("url", "https://example.com/update.zip");
@@ -6967,7 +7233,7 @@ public class CapacitorUpdaterUnitTest {
         Files.createDirectories(newerDir);
         newerDir.toFile().deleteOnExit();
         Files.createFile(newerDir.resolve("index.html")).toFile().deleteOnExit();
-        final Map<String, String> store = new HashMap<>();
+        final Map<String, String> store = new java.util.concurrent.ConcurrentHashMap<>();
         for (String id : new String[] { "bundleA001", "bundleB002" }) {
             store.put(id + "_info", new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "checksum").toString());
         }
@@ -6984,6 +7250,7 @@ public class CapacitorUpdaterUnitTest {
         updater.prefs = prefs;
         updater.editor = editor;
         updater.statsUrl = "";
+        when(prefs.contains(anyString())).thenAnswer((inv) -> store.containsKey(inv.getArgument(0)));
         when(prefs.getString(anyString(), any())).thenAnswer((inv) -> store.getOrDefault(inv.getArgument(0), inv.getArgument(1)));
         when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
             store.put(inv.getArgument(0), inv.getArgument(1));

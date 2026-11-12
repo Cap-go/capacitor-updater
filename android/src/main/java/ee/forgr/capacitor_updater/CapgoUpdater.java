@@ -88,6 +88,7 @@ public class CapgoUpdater {
     private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
     private final Object deleteLock = new Object();
+    private final Set<String> activeBundleDeletes = ConcurrentHashMap.newKeySet();
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
@@ -1680,7 +1681,7 @@ public class CapgoUpdater {
         return true;
     }
 
-    private void deleteDirectory(final File file) throws IOException {
+    void deleteDirectory(final File file) throws IOException {
         deleteDirectory(file, null);
     }
 
@@ -2382,19 +2383,23 @@ public class CapgoUpdater {
     }
 
     boolean deleteDeletedBundle(final String id) throws IOException {
-        synchronized (this.deleteLock) {
-            if (!this.getBundleInfo(id).isDeleted()) {
-                return false;
-            }
-            // Downloads get fresh IDs, and a DELETED ID cannot be installed. Clean only this
-            // tombstone; version-wide cancellation could stop a newer download of the same version.
-            return Boolean.TRUE.equals(this.delete(id, true, false));
-        }
+        // Admit only this tombstone; version-wide cancellation could stop a newer download.
+        return this.deleteBundle(id, true, false, true);
     }
 
     public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
+        return this.deleteBundle(id, removeInfo, cancelActiveDownload, false);
+    }
+
+    private boolean deleteBundle(
+        final String id,
+        final Boolean removeInfo,
+        final boolean cancelActiveDownload,
+        final boolean requireDeleted
+    ) throws IOException {
+        final File bundle;
+        final BundleInfo deleted;
         synchronized (this.deleteLock) {
-            final File bundle;
             try {
                 bundle = this.getBundleDirectory(id);
             } catch (IOException e) {
@@ -2402,7 +2407,10 @@ public class CapgoUpdater {
                 logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
                 return false;
             }
-            final BundleInfo deleted = this.getBundleInfo(id);
+            deleted = this.getBundleInfo(id);
+            if (this.activeBundleDeletes.contains(id) || (requireDeleted && !deleted.isDeleted())) {
+                return false;
+            }
             if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
                 logger.error("Cannot delete current or builtin bundle");
                 logger.debug("Bundle ID: " + id);
@@ -2444,6 +2452,11 @@ public class CapgoUpdater {
                 }
             }
 
+            this.activeBundleDeletes.add(id);
+        }
+
+        boolean completed = false;
+        try {
             // Cancel download for this version if active
             if (cancelActiveDownload && this.context() != null) {
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), deleted.getVersionName())) {
@@ -2469,22 +2482,36 @@ public class CapgoUpdater {
                 return false;
             }
 
-            final boolean finalized;
-            if (Boolean.FALSE.equals(removeInfo)) {
-                finalized = this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
-            } else {
-                finalized = this.saveBundleInfo(id, null);
-            }
-            if (!finalized) {
-                logger.error("Failed to finalize delete registry update, will retry later");
-                logger.debug("Bundle ID: " + id);
-                return false;
+            synchronized (this.deleteLock) {
+                final boolean finalized;
+                if (Boolean.FALSE.equals(removeInfo)) {
+                    finalized = this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
+                } else {
+                    finalized = this.saveBundleInfo(id, null);
+                }
+                if (!finalized) {
+                    logger.error("Failed to finalize delete registry update, will retry later");
+                    logger.debug("Bundle ID: " + id);
+                    return false;
+                }
+                this.dequeuePendingDelete(id);
+                completed = true;
             }
             this.sendStats("delete", deleted.getVersionName());
-            this.dequeuePendingDelete(id);
             logger.info("Bundle deleted and confirmed gone");
             logger.debug("Bundle ID: " + id);
             return true;
+        } finally {
+            synchronized (this.deleteLock) {
+                try {
+                    if (!completed && !this.getBundleInfo(id).isDeleting()) {
+                        // A download callback may have updated its registry while cancellation waited.
+                        this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING));
+                    }
+                } finally {
+                    this.activeBundleDeletes.remove(id);
+                }
+            }
         }
     }
 
@@ -2579,6 +2606,9 @@ public class CapgoUpdater {
     }
 
     private boolean bundleExists(final String id) {
+        if (id != null && this.activeBundleDeletes.contains(id)) {
+            return false;
+        }
         final File bundle;
         try {
             bundle = this.getBundleDirectory(id);
@@ -2701,6 +2731,9 @@ public class CapgoUpdater {
     public Boolean set(final String id) {
         synchronized (this.deleteLock) {
             final BundleInfo newBundle = this.getBundleInfo(id);
+            if ((id != null && this.activeBundleDeletes.contains(id)) || newBundle.isDeleting()) {
+                return false;
+            }
             if (newBundle.isBuiltin()) {
                 this.reset();
                 return true;
