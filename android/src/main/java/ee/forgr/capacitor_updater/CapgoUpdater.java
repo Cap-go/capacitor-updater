@@ -3037,6 +3037,8 @@ public class CapgoUpdater {
                             }
                         }
                         callback.callback(ret);
+                    } catch (IOException e) {
+                        onFailure(call, e);
                     } catch (JSONException e) {
                         Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "JSON parse error: " + e.getMessage());

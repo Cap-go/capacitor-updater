@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
@@ -44,6 +45,7 @@ import java.util.zip.ZipOutputStream;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -4954,6 +4956,53 @@ public class CapacitorUpdaterUnitTest {
         assertEquals("company-a", updater.defaultChannel);
         verify(editor, never()).putBoolean("CapacitorUpdater.defaultChannelFromSetChannel", false);
         verify(editor, never()).remove(anyString());
+    }
+
+    @Test
+    public void getLatestCompletesAfterInterruptedResponseBodyAndCanRecover() throws Exception {
+        DownloadService.setHttpsOnly(false);
+        final MockWebServer server = new MockWebServer();
+        try {
+            server.enqueue(
+                new MockResponse()
+                    .setBody("{\"version\":\"" + "x".repeat(4096) + "\"}")
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            );
+            server.enqueue(new MockResponse().setBody("{\"version\":\"recovered-v1\"}"));
+            server.start();
+
+            final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+            updater.CAP_SERVER_PATH = "server-path";
+            updater.prefs = mock(SharedPreferences.class);
+            when(updater.prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+            when(updater.prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+            final CountDownLatch failed = new CountDownLatch(1);
+            final AtomicInteger failureCallbacks = new AtomicInteger();
+            final AtomicReference<Map<String, Object>> failure = new AtomicReference<>();
+            updater.getLatest(server.url("/updates").toString(), null, (ret) -> {
+                failureCallbacks.incrementAndGet();
+                failure.set(ret);
+                failed.countDown();
+            });
+
+            assertTrue("interrupted body must complete the update callback", failed.await(5, TimeUnit.SECONDS));
+            assertEquals("network_error", failure.get().get("error"));
+            assertEquals("failed", failure.get().get("kind"));
+
+            final CountDownLatch recovered = new CountDownLatch(1);
+            final AtomicReference<Map<String, Object>> response = new AtomicReference<>();
+            updater.getLatest(server.url("/updates").toString(), null, (ret) -> {
+                response.set(ret);
+                recovered.countDown();
+            });
+            assertTrue("subsequent update check must recover", recovered.await(5, TimeUnit.SECONDS));
+            assertEquals("recovered-v1", response.get().get("version"));
+            assertEquals(1, failureCallbacks.get());
+            assertEquals(2, server.getRequestCount());
+        } finally {
+            server.shutdown();
+            DownloadService.setHttpsOnly(true);
+        }
     }
 
     @Test
