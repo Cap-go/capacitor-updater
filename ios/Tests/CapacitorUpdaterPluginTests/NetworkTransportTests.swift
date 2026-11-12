@@ -247,6 +247,22 @@ private final class LoopbackHTTPServer {
 }
 
 final class NetworkTransportTests: XCTestCase {
+    private final class CountingDownloadUpdater: CapgoUpdater {
+        private(set) var downloadAttempts = 0
+
+        override func performDownloadRequest(
+            _ request: URLRequest, label: String, resumeData: Data? = nil,
+            onProgress: ((Int64, Int64) -> Void)? = nil
+        ) -> DownloadRequestResult {
+            downloadAttempts += 1
+            return super.performDownloadRequest(request, label: label, resumeData: resumeData, onProgress: onProgress)
+        }
+
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
+    }
+
     private final class NoGetAfterSuccessGuard {
         private let lock = NSLock()
         private(set) var attempts = 0
@@ -304,8 +320,7 @@ final class NetworkTransportTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private func makeUpdater() -> CapgoUpdater {
-        let updater = CapgoUpdater()
+    private func makeUpdater(_ updater: CapgoUpdater = CapgoUpdater()) -> CapgoUpdater {
         updater.setLogger(Logger(withTag: "network-transport-tests", options: Logger.Options(level: .silent)))
         updater.timeout = 5
         // The loopback test server is plain http.
@@ -491,8 +506,17 @@ final class NetworkTransportTests: XCTestCase {
     }
 
     func testManifestPermanentFailuresAndRetryBudget() throws {
+        try assertManifestRetryBudget(dropFirstConnection: false)
+    }
+
+    func testManifestRetryBudgetExcludesURLSessionReplay() throws {
+        try assertManifestRetryBudget(dropFirstConnection: true)
+    }
+
+    private func assertManifestRetryBudget(dropFirstConnection: Bool) throws {
         for status in [404, 429, 503, 200] {
-            let updater = makeUpdater()
+            let updater = CountingDownloadUpdater()
+            _ = makeUpdater(updater)
             defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
             let version = UUID().uuidString
@@ -505,13 +529,22 @@ final class NetworkTransportTests: XCTestCase {
             try Data(UUID().uuidString.utf8).write(to: expected)
             defer { try? FileManager.default.removeItem(at: expected) }
             let hash = CryptoCipher.calcChecksum(filePath: expected)
-            let before = server.requests.count
-            server.respond { _ in .init(status: status, body: Data("incorrect".utf8)) }
+            var responseCount = 0
+            server.respond { _ in
+                responseCount += 1
+                return .init(status: status, body: Data("incorrect".utf8), dropConnection: dropFirstConnection && responseCount == 1)
+            }
             XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
                 file_name: "index.html", file_hash: hash,
                 download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
-            )], version: version, sessionKey: ""))
-            XCTAssertEqual(server.requests.count - before, status == 503 ? 3 : 1)
+            )], version: version, sessionKey: "")) { error in
+                let failure = error as NSError
+                XCTAssertEqual(failure.domain, status == 200 ? "ChecksumError" : "StatusCodeError")
+                XCTAssertEqual(failure.code, status == 200 ? 1 : status)
+            }
+            // URLSession may replay a GET internally. Count entries into the plugin's transport
+            // method so those replays do not consume the manifest retry budget.
+            XCTAssertEqual(updater.downloadAttempts, status == 503 ? 3 : 1, "HTTP status \(status)")
         }
     }
 
