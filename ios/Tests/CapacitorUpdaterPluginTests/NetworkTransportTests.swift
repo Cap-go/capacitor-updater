@@ -250,6 +250,13 @@ private final class LoopbackHTTPServer {
 private final class ProgressObservingCapgoUpdater: CapgoUpdater {
     private let progressLock = NSLock()
     private var partialBytesReceived: Int64 = 0
+    private var transportAttempts: [String] = []
+
+    var transportDiagnostics: [String] {
+        progressLock.lock()
+        defer { progressLock.unlock() }
+        return transportAttempts
+    }
 
     var partialDownloadBytes: Int64 {
         progressLock.lock()
@@ -264,7 +271,8 @@ private final class ProgressObservingCapgoUpdater: CapgoUpdater {
         resumeData: Data? = nil,
         onProgress: ((Int64, Int64) -> Void)? = nil
     ) -> DownloadRequestResult {
-        super.performDownloadRequest(request, label: label, resumeData: resumeData) { received, expected in
+        let startedAt = Date()
+        let result = super.performDownloadRequest(request, label: label, resumeData: resumeData) { received, expected in
             if received > 0 && received < expected {
                 self.progressLock.lock()
                 self.partialBytesReceived = max(self.partialBytesReceived, received)
@@ -272,6 +280,22 @@ private final class ProgressObservingCapgoUpdater: CapgoUpdater {
             }
             onProgress?(received, expected)
         }
+        let failure: NSError?
+        if case let .sessionTaskFailed(underlying)? = result.error as? CapgoUpdater.NetworkError {
+            failure = underlying as NSError
+        } else {
+            failure = result.error as NSError?
+        }
+        progressLock.lock()
+        transportAttempts.append(
+            "resumeIn=\(resumeData?.count ?? 0) resumeOut=\(result.resumeData?.count ?? 0) " +
+                "status=\(result.response?.statusCode ?? 0) " +
+                "contentRange=\(result.response?.value(forHTTPHeaderField: "Content-Range") ?? "none") " +
+                "timedOut=\(result.timedOut) error=\(failure?.domain ?? "none"):\(failure?.code ?? 0) " +
+                "elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
+        )
+        progressLock.unlock()
+        return result
     }
 }
 
@@ -460,6 +484,13 @@ final class NetworkTransportTests: XCTestCase {
         let cut = body.count / 2
         let chunkSize = 32_768
         let progressUpdater = ProgressObservingCapgoUpdater()
+        defer {
+            let requests = server.requests.map {
+                "\($0.method) range=\($0.headers["range"] ?? "none") ifRange=\($0.headers["if-range"] ?? "none")"
+            }
+            print("Manifest resume requests: \(requests)")
+            print("Manifest resume transport: \(progressUpdater.transportDiagnostics)")
+        }
         let lock = NSLock()
         var attempts = 0
         var resumedFrom: String?
