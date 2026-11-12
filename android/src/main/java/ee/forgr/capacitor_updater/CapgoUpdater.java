@@ -329,10 +329,16 @@ public class CapgoUpdater {
     static final class BackgroundDownloadContext {
 
         final long timeoutGeneration;
+        final long checkSequence;
         final boolean directUpdate;
         volatile boolean deferredForRetry;
 
         BackgroundDownloadContext(final long timeoutGeneration, final boolean directUpdate) {
+            this(timeoutGeneration, directUpdate, 0);
+        }
+
+        BackgroundDownloadContext(final long timeoutGeneration, final boolean directUpdate, final long checkSequence) {
+            this.checkSequence = checkSequence;
             this.timeoutGeneration = timeoutGeneration;
             this.directUpdate = directUpdate;
         }
@@ -372,6 +378,8 @@ public class CapgoUpdater {
     void backgroundDownloadSettled(final BundleInfo bundle, final String status, final BackgroundDownloadContext downloadContext) {
         this.backgroundDownloadSettled(bundle, status);
     }
+
+    void backgroundDownloadStarted(final BackgroundDownloadContext downloadContext) {}
 
     void backgroundDownloadReused(final BackgroundDownloadContext original, final BackgroundDownloadContext replacement) {}
 
@@ -2240,7 +2248,15 @@ public class CapgoUpdater {
         this.notifyDownload(id, 5);
 
         final String dest = manifest != null ? this.manifestStagingDest() : this.randomString();
-        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, downloadContext);
+        if (downloadContext == null) {
+            this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, null);
+        } else {
+            // Terminal delivery and same-version reuse cannot overtake successful registration.
+            synchronized (downloadContext) {
+                this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, downloadContext);
+                this.backgroundDownloadStarted(downloadContext);
+            }
+        }
         return BackgroundDownloadResult.started(id);
     }
 
@@ -2721,10 +2737,8 @@ public class CapgoUpdater {
         if (!bundle.isBuiltin()) {
             return this.set(bundle);
         }
-        final String previousBundleName = this.getCurrentBundle().getVersionName();
         this.prepareBuiltinTransition();
-        // The installing worker clears only its own queue entry after reload succeeds.
-        this.finalizeBuiltinUpdate(previousBundleName);
+        // The installing worker finalizes statistics and its own queue entry after reload succeeds.
         return true;
     }
 

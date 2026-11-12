@@ -248,6 +248,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Guarded by this. Check readiness and accepted update work have separate owners.
     private CapgoUpdater.BackgroundDownloadContext backgroundDownloadContext;
     private CapgoUpdater.BackgroundDownloadContext backgroundUpdateContext;
+    private long backgroundCheckSequence;
+    private long acceptedBackgroundCheckSequence;
     private BackgroundReadyState backgroundReadyState = new BackgroundReadyState(-1);
 
     private static final class BackgroundReadyState {
@@ -848,6 +850,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     final CapgoUpdater.BackgroundDownloadContext downloadContext
                 ) {
                     CapacitorUpdaterPlugin.this.emitLaunchDownloadReady(bundle, status, downloadContext);
+                }
+
+                @Override
+                public void backgroundDownloadStarted(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+                    CapacitorUpdaterPlugin.this.acceptBackgroundUpdate(downloadContext);
                 }
 
                 @Override
@@ -2891,6 +2898,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return downloadContext == null || this.backgroundDownloadContext == downloadContext;
     }
 
+    synchronized void acceptBackgroundUpdate(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        if (downloadContext.checkSequence < this.acceptedBackgroundCheckSequence) {
+            return;
+        }
+        // A later pending check does not discard accepted work, but a later accepted update does.
+        this.backgroundUpdateContext = downloadContext;
+        this.acceptedBackgroundCheckSequence = downloadContext.checkSequence;
+    }
+
     private synchronized boolean canFinishBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
         return this.ownsBackgroundDownload(downloadContext) || this.backgroundUpdateContext == downloadContext;
     }
@@ -2913,6 +2929,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             this.backgroundDownloadContext = original;
             this.backgroundUpdateContext = original;
+            this.acceptedBackgroundCheckSequence = replacement.checkSequence;
             releaseRetry = original.deferredForRetry;
             this.implementation.directUpdate =
                 !releaseRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
@@ -3920,7 +3937,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Preview session set active bundle " + id + " without waiting for preview app readiness");
                     final BundleInfo bundle = this.implementation.getBundleInfo(id);
                     this.recordPreviewBundle(bundle);
-                    this.reloadWithoutWaitingForAppReady();
+                    if (!this.reloadWithoutWaitingForAppReady()) {
+                        logger.error("Reload failed after setting bundle " + id);
+                        call.reject("Reload failed after setting bundle " + id);
+                        return;
+                    }
                     this.notifyBundleSet(bundle);
                     this.showPreviewSessionNoticeIfNeeded();
                     call.resolve();
@@ -5901,7 +5922,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
         this.clearBackgroundDownloadState();
-        this.backgroundUpdateContext = downloadContext;
+        this.acceptBackgroundUpdate(downloadContext);
         this.implementation.setNextBundle(bundleId);
         // A current response still completes readiness if the bundle is no longer queueable.
         return true;
@@ -5926,7 +5947,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     return false;
                 }
                 installAdmitted = true;
-                this.backgroundUpdateContext = downloadContext;
+                this.acceptBackgroundUpdate(downloadContext);
                 previousState = this.implementation.captureResetState();
                 previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                 this.consumeOnLaunchDirectUpdateAttempt(true);
@@ -6131,7 +6152,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate, timeoutGeneration);
         final CapgoUpdater.BackgroundDownloadContext downloadContext = new CapgoUpdater.BackgroundDownloadContext(
             timeoutGeneration,
-            initialDirectUpdateAllowed
+            initialDirectUpdateAllowed,
+            ++this.backgroundCheckSequence
         );
         this.backgroundDownloadContext = downloadContext;
         // Download identity survives reuse; readiness belongs to each individual check.
@@ -6472,7 +6494,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
                                     return;
                                 }
-                                CapacitorUpdaterPlugin.this.backgroundUpdateContext = downloadContext;
                                 CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
                                 final boolean directUpdateStillAllowed = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                     initialDirectUpdateAllowed,
@@ -6642,12 +6663,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             return;
                         }
                         final CapgoUpdater.ResetState previousState;
+                        final String previousBundleName;
                         final boolean staged;
                         synchronized (this) {
                             previousState = this.implementation.captureResetState();
+                            previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                             staged = this.stageBundleForReload(() -> this.implementation.setQueuedBundle(next));
                         }
                         if (staged && this.reloadAutomaticBundle(next, previousState)) {
+                            if (next.isBuiltin()) {
+                                this.implementation.finalizeBuiltinUpdate(previousBundleName);
+                            }
                             logger.info("Updated to bundle: " + next.getVersionName());
                             this.notifyBundleSet(next);
                             this.implementation.clearNextBundleIfMatches(next.getId());

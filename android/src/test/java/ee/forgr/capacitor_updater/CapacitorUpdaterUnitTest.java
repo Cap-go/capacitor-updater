@@ -6769,6 +6769,70 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testQueuedBuiltinResetStatRequiresSuccessfulReload() throws Exception {
+        for (final boolean success : new boolean[] { false, true }) {
+            try (
+                MockedStatic<Looper> loopers = mockStatic(Looper.class);
+                MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+            ) {
+                loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+                final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+                assertTrue(updater.set("bundleA001"));
+                final String previousVersion = updater.getCurrentBundle().getVersionName();
+                final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+                plugin.reloadResult = success;
+                plugin.beforeReload = () -> verify(updater, never()).sendStats(eq("reset"), anyString(), anyString());
+                assertTrue(updater.setNextBundle(BundleInfo.ID_BUILTIN));
+                setPrivateField(plugin, "appInBackground", true);
+                plugin.installNextIfInBackground();
+                plugin.workers.remove(0).run();
+                assertEquals(1, plugin.reloadCalls);
+                verify(updater, times(success ? 1 : 0)).sendStats("reset", "builtin", previousVersion);
+                assertEquals(success, plugin.hasNotifiedEvent("set"));
+                if (success) assertNull(updater.getNextBundle());
+                else {
+                    assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                    assertTrue(updater.getNextBundle().isBuiltin());
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testPreviewSetRejectsFailedReload() throws Exception {
+        assertPreviewSetReloadResult(false);
+    }
+
+    @Test
+    public void testPreviewSetResolvesSuccessfulReload() throws Exception {
+        assertPreviewSetReloadResult(true);
+    }
+
+    private void assertPreviewSetReloadResult(final boolean success) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            final TestableCapacitorUpdaterPlugin plugin = success
+                ? new ReloadBypassCapacitorUpdaterPlugin()
+                : new ReloadFailureCapacitorUpdaterPlugin();
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.previewSessionEnabled = true;
+            setPrivateField(plugin, "prefs", updater.prefs);
+            setPrivateField(plugin, "editor", updater.editor);
+            final PluginCall call = mock(PluginCall.class);
+            when(call.getString("id")).thenReturn("bundleB002");
+            plugin.set(call);
+            verify(call, times(success ? 1 : 0)).resolve();
+            verify(call, times(success ? 0 : 1)).reject("Reload failed after setting bundle bundleB002");
+            assertEquals(success, plugin.hasNotifiedEvent("set"));
+        }
+    }
+
+    @Test
     public void testQueuedBuiltinFinalizationPreservesNewerWorkManagerDownload() throws Exception {
         assertBuiltinFinalizationPreservesNewerDownload(true);
     }
@@ -6813,6 +6877,12 @@ public class CapacitorUpdaterUnitTest {
                 .when(io)
                 .execute(any(Runnable.class));
             setPrivateField(updater, "io", io);
+            doAnswer((inv) -> {
+                plugin.acceptBackgroundUpdate(inv.getArgument(0));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadStarted(any());
             doAnswer((inv) -> {
                 plugin.scheduleDirectUpdateFinish(inv.getArgument(0), inv.getArgument(1));
                 return null;
@@ -8119,6 +8189,36 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDownloadSurvivesReplacementBlockedByManualDownload() throws Exception {
+        assertOriginatingDownloadOwnership("followup-manual-before-success", false, true);
+    }
+
+    @Test
+    public void testDownloadSurvivesReplacementObserverFailure() throws Exception {
+        assertOriginatingDownloadOwnership("followup-observer-before-success", false, true);
+    }
+
+    @Test
+    public void testAcceptedDownloadSurvivesCheckStartedDuringRegistration() throws Exception {
+        assertOriginatingDownloadOwnership("followup-registration-pending-success", false, true);
+    }
+
+    @Test
+    public void testLateRegistrationCannotSupersedeAcceptedCachedUpdate() throws Exception {
+        assertOriginatingDownloadOwnership("replacement-cached-registration-success", false, true);
+    }
+
+    @Test
+    public void testDownloadSurvivesReplacementCleanupFailure() throws Exception {
+        assertOriginatingDownloadOwnership("followup-cleanup-before-success", false, true);
+    }
+
+    @Test
+    public void testDownloadCompletesWhileReplacementStartIsPending() throws Exception {
+        assertOriginatingDownloadOwnership("followup-manual-pending-success", false, true);
+    }
+
+    @Test
     public void testDownloadSurvivesFailedFollowUpNetworkCheck() throws Exception {
         assertOriginatingDownloadOwnership("followup-network-before-success", false, true);
     }
@@ -9108,6 +9208,9 @@ public class CapacitorUpdaterUnitTest {
         final boolean reuseAfterRetry = outcome.startsWith("reuse-after-retry");
         final boolean retryDuringCheck = outcome.contains("retry-during-check");
         final boolean failedFollowUp = outcome.startsWith("followup-");
+        final boolean rejectedReplacement = outcome.contains("manual") || outcome.contains("cleanup") || outcome.contains("observer");
+        final boolean checkDuringRegistration = outcome.contains("-registration-");
+        final AtomicReference<Runnable> pendingReplacement = new AtomicReference<>();
         final boolean pendingFollowUp = failedFollowUp && outcome.contains("pending");
         final boolean existingQueue = failedFollowUp && outcome.contains("queued");
         final boolean completesInBackground = failedFollowUp && outcome.contains("background");
@@ -9145,6 +9248,9 @@ public class CapacitorUpdaterUnitTest {
             setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
             final android.content.Context context = mock(android.content.Context.class);
             when(context.getApplicationContext()).thenReturn(context);
+            final android.content.res.AssetManager assets = mock(android.content.res.AssetManager.class);
+            when(context.getAssets()).thenReturn(assets);
+            when(assets.open(anyString())).thenAnswer((inv) -> new java.io.ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)));
             doReturn(context).when(updater).context();
             doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
             doReturn(null).when(updater).getBundleInfoByName(anyString());
@@ -9158,6 +9264,7 @@ public class CapacitorUpdaterUnitTest {
             final Field ioField = CapgoUpdater.class.getDeclaredField("io");
             ioField.setAccessible(true);
             ioField.set(updater, io);
+
             doAnswer((inv) -> {
                 plugin.scheduleDirectUpdateFinish(inv.getArgument(0), inv.getArgument(1));
                 return null;
@@ -9198,6 +9305,37 @@ public class CapacitorUpdaterUnitTest {
                     .observeForever(any());
                 return liveData;
             });
+
+            doAnswer((inv) -> {
+                if (checkDuringRegistration) {
+                    // WorkManager has accepted A, but the plugin has not received its acceptance yet.
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                    if (replacement) {
+                        final BundleInfo cached = updater.getBundleInfo(replacementId);
+                        doReturn(cached).when(updater).getBundleInfoByName(cached.getVersionName());
+                        responses
+                            .remove(0)
+                            .callback(
+                                new HashMap<>(
+                                    Map.of(
+                                        "version",
+                                        cached.getVersionName(),
+                                        "url",
+                                        "https://example.com/update.zip",
+                                        "manifest",
+                                        new JSONArray()
+                                    )
+                                )
+                            );
+                        assertEquals(1, plugin.reloadCalls);
+                    }
+                }
+                plugin.acceptBackgroundUpdate(inv.getArgument(0));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadStarted(any());
 
             plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
             final Runnable originalTimeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
@@ -9242,12 +9380,30 @@ public class CapacitorUpdaterUnitTest {
             }
             if (failedFollowUp) {
                 plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
-                if (!checkAfterDispatch) {
+                if (!checkAfterDispatch && !checkDuringRegistration) {
                     invokeBackgroundDownload(plugin);
                     plugin.workers.remove(0).run();
                 }
+                if (rejectedReplacement) {
+                    response.put("version", "rejected-replacement");
+                    responses.remove(0).callback(response);
+                    pendingReplacement.set(plugin.workers.remove(0));
+                    if (outcome.contains("manual")) {
+                        downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "rejected-replacement")).thenReturn(true);
+                        ((Set<String>) getPrivateField(updater, "observedDownloadVersions")).add("rejected-replacement");
+                    } else if (outcome.contains("observer")) {
+                        when(manager.getWorkInfosByTagLiveData(anyString())).thenThrow(
+                            new IllegalStateException("Observer registration failed")
+                        );
+                    } else {
+                        updater.downloadGate = () -> {
+                            throw new IllegalStateException("Cleanup has not finished");
+                        };
+                    }
+                }
                 if (!pendingFollowUp) {
-                    responses.remove(0).callback(failedCheck);
+                    if (rejectedReplacement) pendingReplacement.get().run();
+                    else responses.remove(0).callback(failedCheck);
                     assertTrue(plugin.hasNotifiedEvent("appReady"));
                 }
                 if (existingQueue) {
@@ -9262,12 +9418,14 @@ public class CapacitorUpdaterUnitTest {
                 }
                 final BundleInfo replacementBundle = updater.getBundleInfo(replacementId);
                 doReturn(replacementBundle).when(updater).getBundleInfoByName(replacementBundle.getVersionName());
-                invokeBackgroundDownload(plugin);
-                plugin.workers.remove(0).run();
-                response.put("version", replacementBundle.getVersionName());
-                // Builtin cancellation needs a real application context and is covered separately.
-                doReturn(null).when(updater).context();
-                responses.remove(0).callback(response);
+                if (!checkDuringRegistration) {
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                    response.put("version", replacementBundle.getVersionName());
+                    // Builtin cancellation needs a real application context and is covered separately.
+                    doReturn(null).when(updater).context();
+                    responses.remove(0).callback(response);
+                }
                 assertEquals(queuedReplacement ? 0 : 1, plugin.reloadCalls);
                 assertEquals(queuedReplacement ? "bundleA001" : replacementId, updater.getCurrentBundle().getId());
             } else if (newer) {
@@ -9401,7 +9559,13 @@ public class CapacitorUpdaterUnitTest {
                     ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
                 );
                 if (pendingFollowUp) {
-                    responses.remove(0).callback(failedCheck);
+                    if (rejectedReplacement) {
+                        doReturn(context).when(updater).context();
+                        pendingReplacement.get().run();
+                        doReturn(null).when(updater).context();
+                        assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
+                        while (!plugin.workers.isEmpty()) plugin.workers.remove(0).run();
+                    } else responses.remove(0).callback(failedCheck);
                     assertEquals(expectedNext, updater.getNextBundle().getId());
                 }
                 assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
