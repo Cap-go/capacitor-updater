@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -89,8 +90,23 @@ public class CapgoUpdater {
     static final String MANIFEST_DEST_SUFFIX = "_manifest_dest";
     private static final String LEGACY_MANIFEST_STAGING_FOLDER_PATTERN = "^[0-9A-Za-z]{10}$";
     private static final long DELETE_PACE_MS = 75L;
-    private final Object deleteLock = new Object();
-    private final Set<String> activeBundleDeletes = ConcurrentHashMap.newKeySet();
+    private static final Object deleteLock = new Object();
+    private static final Set<File> activeBundleDeletes = ConcurrentHashMap.newKeySet();
+    // Plugin and headless observers share storage, including work queued before handover.
+    private static final Map<File, Set<DownloadFinalization>> downloadFinalizations = new HashMap<>();
+
+    private static final class DownloadFinalization {
+
+        final File bundle;
+        final CountDownLatch finished = new CountDownLatch(1);
+        volatile boolean cancelled;
+        Thread running;
+
+        DownloadFinalization(final File bundle) {
+            this.bundle = bundle;
+        }
+    }
+
     private static final String BACKGROUND_RUNNER_CONFIG_KEY = "BackgroundRunner";
     private static final String BACKGROUND_RUNNER_WORKER_CLASS = "io.ionic.backgroundrunner.plugin.RunnerWorker";
 
@@ -1309,13 +1325,103 @@ public class CapgoUpdater {
         return handler;
     }
 
-    @SuppressWarnings("unchecked")
-    private void observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
-        this.observeWorkProgress(context, id, observedVersion, setNext, null);
+    private DownloadFinalization registerDownloadFinalization(final String id) {
+        final File bundle;
+        try {
+            bundle = this.getBundleDirectory(id);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Invalid download bundle id", e);
+        }
+        synchronized (deleteLock) {
+            final DownloadFinalization finalization = new DownloadFinalization(bundle);
+            final BundleInfo info = this.getBundleInfo(id);
+            finalization.cancelled =
+                activeBundleDeletes.contains(bundle) || !this.hasStoredBundleInfo(id) || info.isDeleting() || info.isDeleted();
+            if (!finalization.cancelled) {
+                downloadFinalizations.computeIfAbsent(bundle, (unused) -> new HashSet<>()).add(finalization);
+            }
+            return finalization;
+        }
+    }
+
+    private static void retireDownloadFinalization(final DownloadFinalization finalization) {
+        synchronized (deleteLock) {
+            final Set<DownloadFinalization> pending = downloadFinalizations.get(finalization.bundle);
+            if (pending != null) {
+                pending.remove(finalization);
+                if (pending.isEmpty()) {
+                    downloadFinalizations.remove(finalization.bundle);
+                }
+            }
+            finalization.running = null;
+            finalization.finished.countDown();
+        }
+    }
+
+    private void dispatchDownloadFinalization(
+        final DownloadFinalization finalization,
+        final Runnable completion,
+        final Runnable cancelled
+    ) {
+        io.execute(() -> {
+            final boolean admitted;
+            synchronized (deleteLock) {
+                admitted = !finalization.cancelled;
+                if (admitted) {
+                    finalization.running = Thread.currentThread();
+                }
+            }
+            try {
+                if (admitted) {
+                    completion.run();
+                }
+            } finally {
+                retireDownloadFinalization(finalization);
+                if (finalization.cancelled) {
+                    cancelled.run();
+                }
+            }
+        });
+    }
+
+    private void settleCancelledDownload(
+        final String id,
+        final String version,
+        final BackgroundDownloadContext downloadContext,
+        final boolean launchReleased
+    ) {
+        final CompletableFuture<BundleInfo> future = this.downloadFutures.remove(id);
+        if (future != null) {
+            future.cancel(true);
+        }
+        this.completeBackgroundDownload(version, downloadContext, () -> {
+            if (!launchReleased) {
+                this.notifyLaunchDownloadReady(future != null, false, false, false, false, null, downloadContext);
+            }
+        });
+    }
+
+    private void cleanupCancelledDownload(final String id, final String dest, final boolean manifest) {
+        this.cleanupManifestStagingAfterDownloadFailed(id, dest, manifest);
+        if (!manifest && dest != null) {
+            try {
+                final File archive = resolvePathInsideDirectory(this.documentsDir, dest);
+                if (archive.isFile()) {
+                    safeDelete(archive);
+                }
+            } catch (IOException e) {
+                logger.warn("Ignoring invalid cancelled download destination");
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
-    private void observeWorkProgress(
+    private DownloadFinalization observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
+        return this.observeWorkProgress(context, id, observedVersion, setNext, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private DownloadFinalization observeWorkProgress(
         Context context,
         String id,
         String observedVersion,
@@ -1327,12 +1433,19 @@ public class CapgoUpdater {
         final LiveData<List<WorkInfo>> workInfosLiveData = WorkManager.getInstance(
             context.getApplicationContext()
         ).getWorkInfosByTagLiveData(id);
+        final DownloadFinalization finalization = this.registerDownloadFinalization(id);
+        final AtomicBoolean completionReported = new AtomicBoolean(false);
+        final Runnable cancelled = () -> {
+            if (completionReported.compareAndSet(false, true)) {
+                this.settleCancelledDownload(id, observedVersion, downloadContext, launchReleasedWhileRetrying.get());
+            }
+        };
         // observeForever, not observe(activity): a stopped Activity pauses LiveData, so a download
         // that completes while the app is in the background would only be finished once the user
         // opens the app again. The observer removes itself on a terminal state.
         final Observer<List<WorkInfo>>[] observerRef = new Observer[1];
         final Runnable removeObserver = () -> mainHandler().post(() -> workInfosLiveData.removeObserver(observerRef[0]));
-        mainHandler().post(() -> {
+        final Runnable attachObserver = () -> {
             observerRef[0] = (workInfos) -> {
                 if (workInfos == null || workInfos.isEmpty()) return;
 
@@ -1384,53 +1497,80 @@ public class CapgoUpdater {
                         String checksum = outputData.getString(DownloadService.CHECKSUM);
                         boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
-                        io.execute(() -> {
-                            // Context-backed completions report readiness from their owning plugin attempt.
-                            final boolean directInstall =
-                                setNext &&
-                                (downloadContext != null || Boolean.TRUE.equals(CapgoUpdater.this.directUpdate)) &&
-                                !CapgoUpdater.this.previewSession;
-                            final boolean previewSession = CapgoUpdater.this.previewSession;
-                            boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest, downloadContext);
-                            BundleInfo resultBundle;
-                            if (!success) {
-                                logger.error("Finish download failed");
-                                logger.debug("Version: " + version);
-                                resultBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
-                                saveBundleInfo(id, resultBundle);
-                                // Cleanup download tracking
-                                DownloadWorkerManager.cancelBundleDownload(context, id, version);
-                                sendStats("finish_download_fail", version);
-                                // finishDownload already emitted downloadFailed for this failure.
-                            } else {
-                                // Successful download - cleanup tracking
-                                DownloadWorkerManager.cancelBundleDownload(context, id, version);
-                                resultBundle = getBundleInfo(id);
-                            }
-
-                            CapgoUpdater.this.clearManifestStagingDest(id);
-
-                            // Complete the future if it exists. download() waits on it.
-                            // downloadBackground does not, so the launch check must emit appReady here.
-                            CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
-                            if (future != null) {
-                                future.complete(resultBundle);
-                            }
-                            final BundleInfo readyBundle = success && setNext ? resultBundle : null;
-                            completeBackgroundDownload(observedVersion, downloadContext, () -> {
-                                if (!launchReleasedWhileRetrying.get()) {
-                                    notifyLaunchDownloadReady(
-                                        future != null,
-                                        success,
-                                        directInstall,
-                                        previewSession,
-                                        setNext,
-                                        readyBundle,
-                                        downloadContext
-                                    );
+                        dispatchDownloadFinalization(
+                            finalization,
+                            () -> {
+                                // Context-backed completions report readiness from their owning plugin attempt.
+                                final boolean directInstall =
+                                    setNext &&
+                                    (downloadContext != null || Boolean.TRUE.equals(CapgoUpdater.this.directUpdate)) &&
+                                    !CapgoUpdater.this.previewSession;
+                                final boolean previewSession = CapgoUpdater.this.previewSession;
+                                boolean success = finishDownload(
+                                    id,
+                                    dest,
+                                    version,
+                                    sessionKey,
+                                    checksum,
+                                    setNext,
+                                    isManifest,
+                                    downloadContext,
+                                    finalization
+                                );
+                                if (finalization.cancelled) {
+                                    return;
                                 }
-                            });
-                        });
+                                BundleInfo resultBundle;
+                                if (!success) {
+                                    logger.error("Finish download failed");
+                                    logger.debug("Version: " + version);
+                                    resultBundle = new BundleInfo(
+                                        id,
+                                        version,
+                                        BundleStatus.ERROR,
+                                        new Date(System.currentTimeMillis()),
+                                        ""
+                                    );
+                                    saveBundleInfo(id, resultBundle);
+                                    // Cleanup download tracking
+                                    DownloadWorkerManager.cancelBundleDownload(context, id, version);
+                                    sendStats("finish_download_fail", version);
+                                    // finishDownload already emitted downloadFailed for this failure.
+                                } else {
+                                    // Successful download - cleanup tracking
+                                    DownloadWorkerManager.cancelBundleDownload(context, id, version);
+                                    resultBundle = getBundleInfo(id);
+                                }
+
+                                CapgoUpdater.this.clearManifestStagingDest(id);
+
+                                // Complete the future if it exists. download() waits on it.
+                                // downloadBackground does not, so the launch check must emit appReady here.
+                                CompletableFuture<BundleInfo> future = downloadFutures.remove(id);
+                                if (future != null) {
+                                    future.complete(resultBundle);
+                                }
+                                final BundleInfo readyBundle = success && setNext ? resultBundle : null;
+                                completionReported.set(true);
+                                completeBackgroundDownload(observedVersion, downloadContext, () -> {
+                                    if (!launchReleasedWhileRetrying.get()) {
+                                        notifyLaunchDownloadReady(
+                                            future != null,
+                                            success,
+                                            directInstall,
+                                            previewSession,
+                                            setNext,
+                                            readyBundle,
+                                            downloadContext
+                                        );
+                                    }
+                                });
+                            },
+                            () -> {
+                                cleanupCancelledDownload(id, dest, isManifest);
+                                cancelled.run();
+                            }
+                        );
                         break;
                     case FAILED:
                         if (!terminalHandled.compareAndSet(false, true)) break;
@@ -1444,62 +1584,73 @@ public class CapgoUpdater {
                         final String failedDest = failedData.getString(DownloadService.FILEDEST);
                         final boolean failedManifest = failedData.getBoolean(DownloadService.IS_MANIFEST, false);
 
-                        io.execute(() -> {
-                            CapgoUpdater.this.cleanupManifestStagingAfterDownloadFailed(id, failedDest, failedManifest);
-                            BundleInfo failedBundle = new BundleInfo(
-                                id,
-                                failedVersion,
-                                BundleStatus.ERROR,
-                                new Date(System.currentTimeMillis()),
-                                ""
-                            );
-                            saveBundleInfo(id, failedBundle);
-                            // Cleanup download tracking for failed downloads
-                            DownloadWorkerManager.cancelBundleDownload(context, id, failedVersion);
-                            Map<String, Object> ret = new HashMap<>();
-                            ret.put("version", failedVersion);
-                            if ("low_mem_fail".equals(error)) {
-                                sendStats("low_mem_fail", failedVersion);
-                            }
-                            if ("insufficient_disk_space".equals(error)) {
-                                sendStats("insufficient_disk_space", failedVersion);
-                            }
-                            ret.put("error", error != null ? error : "download_fail");
-                            sendStats("download_fail", failedVersion);
-                            notifyListeners("downloadFailed", ret);
-
-                            // Complete the future with error status
-                            CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
-                            if (failedFuture != null) {
-                                failedFuture.complete(failedBundle);
-                            }
-                            completeBackgroundDownload(observedVersion, downloadContext, () -> {
-                                if (!launchReleasedWhileRetrying.get()) {
-                                    notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
+                        dispatchDownloadFinalization(
+                            finalization,
+                            () -> {
+                                CapgoUpdater.this.cleanupManifestStagingAfterDownloadFailed(id, failedDest, failedManifest);
+                                BundleInfo failedBundle = new BundleInfo(
+                                    id,
+                                    failedVersion,
+                                    BundleStatus.ERROR,
+                                    new Date(System.currentTimeMillis()),
+                                    ""
+                                );
+                                saveBundleInfo(id, failedBundle);
+                                // Cleanup download tracking for failed downloads
+                                DownloadWorkerManager.cancelBundleDownload(context, id, failedVersion);
+                                Map<String, Object> ret = new HashMap<>();
+                                ret.put("version", failedVersion);
+                                if ("low_mem_fail".equals(error)) {
+                                    sendStats("low_mem_fail", failedVersion);
                                 }
-                            });
-                        });
+                                if ("insufficient_disk_space".equals(error)) {
+                                    sendStats("insufficient_disk_space", failedVersion);
+                                }
+                                ret.put("error", error != null ? error : "download_fail");
+                                sendStats("download_fail", failedVersion);
+                                notifyListeners("downloadFailed", ret);
+
+                                // Complete the future with error status
+                                CompletableFuture<BundleInfo> failedFuture = downloadFutures.remove(id);
+                                if (failedFuture != null) {
+                                    failedFuture.complete(failedBundle);
+                                }
+                                completionReported.set(true);
+                                completeBackgroundDownload(observedVersion, downloadContext, () -> {
+                                    if (!launchReleasedWhileRetrying.get()) {
+                                        notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
+                                    }
+                                });
+                            },
+                            () -> {
+                                cleanupCancelledDownload(id, failedDest, failedManifest);
+                                cancelled.run();
+                            }
+                        );
                         break;
                     case CANCELLED:
                         if (!terminalHandled.compareAndSet(false, true)) break;
                         removeObserver.run();
                         observedDownloadVersions.remove(observedVersion);
                         DataManager.getInstance().clearManifest(id);
-                        io.execute(() -> CapgoUpdater.this.cleanupManifestStagingAfterDownloadCancelled(id));
-                        CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
-                        if (cancelledFuture != null) {
-                            cancelledFuture.cancel(true);
-                        }
-                        completeBackgroundDownload(observedVersion, downloadContext, () -> {
-                            if (!launchReleasedWhileRetrying.get()) {
-                                notifyLaunchDownloadReady(cancelledFuture != null, false, false, false, false, null, downloadContext);
-                            }
-                        });
+                        retireDownloadFinalization(finalization);
+                        io.execute(() -> this.cleanupManifestStagingAfterDownloadCancelled(id));
+                        cancelled.run();
                         break;
                 }
             };
             workInfosLiveData.observeForever(observerRef[0]);
-        });
+        };
+        try {
+            if (!mainHandler().post(attachObserver)) {
+                throw new IllegalStateException("Could not register download observer");
+            }
+        } catch (RuntimeException e) {
+            finalization.cancelled = true;
+            retireDownloadFinalization(finalization);
+            throw e;
+        }
+        return finalization;
     }
 
     private void download(
@@ -1535,8 +1686,9 @@ public class CapgoUpdater {
         if (downloadContext != null) {
             this.backgroundDownloadContexts.put(version, downloadContext);
         }
+        DownloadFinalization finalization = null;
         try {
-            observeWorkProgress(context, id, version, setNext, downloadContext);
+            finalization = observeWorkProgress(context, id, version, setNext, downloadContext);
 
             if (manifest != null) {
                 DataManager.getInstance().setManifest(id, manifest);
@@ -1568,6 +1720,14 @@ public class CapgoUpdater {
                 this.defaultChannel
             );
         } catch (final RuntimeException e) {
+            if (finalization != null) {
+                synchronized (deleteLock) {
+                    finalization.cancelled = true;
+                    if (finalization.running == null) {
+                        retireDownloadFinalization(finalization);
+                    }
+                }
+            }
             observedDownloadVersions.remove(version);
             completeBackgroundDownload(version, downloadContext, () -> {});
             throw e;
@@ -1583,7 +1743,7 @@ public class CapgoUpdater {
         Boolean setNext,
         Boolean isManifest
     ) {
-        return this.finishDownload(id, dest, version, sessionKey, checksumRes, setNext, isManifest, null);
+        return this.finishDownload(id, dest, version, sessionKey, checksumRes, setNext, isManifest, null, null);
     }
 
     private Boolean finishDownload(
@@ -1594,7 +1754,8 @@ public class CapgoUpdater {
         String checksumRes,
         Boolean setNext,
         Boolean isManifest,
-        BackgroundDownloadContext downloadContext
+        BackgroundDownloadContext downloadContext,
+        DownloadFinalization finalization
     ) {
         File downloaded = null;
         File extractedDir = null;
@@ -1641,6 +1802,9 @@ public class CapgoUpdater {
         }
 
         try {
+            if (finalization != null && finalization.cancelled) {
+                return false;
+            }
             if (!isManifest) {
                 extractedDir = this.unzip(id, downloaded, TEMP_UNZIP_PREFIX + this.randomString());
                 this.notifyDownload(id, 91);
@@ -1650,6 +1814,9 @@ public class CapgoUpdater {
                 this.notifyDownload(id, 91);
                 this.flattenAssets(downloaded, this.getBundleDirectory(id));
                 downloaded.delete();
+            }
+            if (finalization != null && finalization.cancelled) {
+                return false;
             }
             // Remove old bundle info and set new one
             this.saveBundleInfo(id, null);
@@ -1663,6 +1830,9 @@ public class CapgoUpdater {
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
             if (setNext) {
+                if (finalization != null && finalization.cancelled) {
+                    return false;
+                }
                 if (downloadContext != null) {
                     this.completeBackgroundDownload(version, downloadContext, () -> this.directUpdateFinish(next, downloadContext));
                 } else if (this.previewSession) {
@@ -2306,8 +2476,7 @@ public class CapgoUpdater {
             downloadFutures.remove(id);
             logger.error("Error waiting for download");
             logger.debug("Error: " + e.getMessage());
-            BundleInfo errorBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
-            saveBundleInfo(id, errorBundle);
+            this.markDownloadErrorUnlessDeleted(id, version);
             if (e instanceof IOException) {
                 throw (IOException) e;
             }
@@ -2364,12 +2533,20 @@ public class CapgoUpdater {
             downloadFutures.remove(id);
             logger.error("Error waiting for download");
             logger.debug("Error: " + e.getMessage());
-            BundleInfo errorBundle = new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), "");
-            saveBundleInfo(id, errorBundle);
+            this.markDownloadErrorUnlessDeleted(id, version);
             if (e instanceof IOException) {
                 throw (IOException) e;
             }
             throw new IOException("Error waiting for download: " + e.getMessage(), e);
+        }
+    }
+
+    private void markDownloadErrorUnlessDeleted(final String id, final String version) {
+        synchronized (deleteLock) {
+            final BundleInfo info = this.getBundleInfo(id);
+            if (this.hasStoredBundleInfo(id) && !this.isBundleBeingDeleted(id) && !info.isDeleting() && !info.isDeleted()) {
+                this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
+            }
         }
     }
 
@@ -2422,7 +2599,8 @@ public class CapgoUpdater {
         final File bundle;
         final BundleInfo deleted;
         final boolean shouldCancelDownload;
-        synchronized (this.deleteLock) {
+        final List<DownloadFinalization> runningFinalizations = new ArrayList<>();
+        synchronized (deleteLock) {
             try {
                 bundle = this.getBundleDirectory(id);
             } catch (IOException e) {
@@ -2431,7 +2609,7 @@ public class CapgoUpdater {
                 return false;
             }
             deleted = this.getBundleInfo(id);
-            if (this.activeBundleDeletes.contains(id) || (requireDeleted && !deleted.isDeleted())) {
+            if (this.isBundleBeingDeleted(id) || (requireDeleted && !deleted.isDeleted())) {
                 return false;
             }
             if (deleted.isBuiltin() || this.getCurrentBundleId().equals(id)) {
@@ -2488,7 +2666,23 @@ public class CapgoUpdater {
                     }
                 }
 
-                this.activeBundleDeletes.add(id);
+                activeBundleDeletes.add(bundle);
+                final Set<DownloadFinalization> pending = downloadFinalizations.get(bundle);
+                if (pending != null) {
+                    final Iterator<DownloadFinalization> iterator = pending.iterator();
+                    while (iterator.hasNext()) {
+                        final DownloadFinalization finalization = iterator.next();
+                        finalization.cancelled = true;
+                        if (finalization.running == null) {
+                            iterator.remove();
+                        } else if (finalization.running != Thread.currentThread()) {
+                            runningFinalizations.add(finalization);
+                        }
+                    }
+                    if (pending.isEmpty()) {
+                        downloadFinalizations.remove(bundle);
+                    }
+                }
             }
         }
 
@@ -2498,6 +2692,21 @@ public class CapgoUpdater {
             if (shouldCancelDownload && this.context() != null) {
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), deleted.getVersionName())) {
                     logger.error("Failed to cancel active download before delete");
+                    return false;
+                }
+            }
+
+            // WorkManager reaching a terminal state does not settle observers' queued disk work.
+            // Wait outside the admission lock so unrelated activation and lifecycle calls can proceed.
+            final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            for (final DownloadFinalization finalization : runningFinalizations) {
+                try {
+                    if (!finalization.finished.await(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
+                        logger.warn("Download finalization is still running; retaining pending deletion");
+                        return false;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     return false;
                 }
             }
@@ -2519,7 +2728,7 @@ public class CapgoUpdater {
                 return false;
             }
 
-            synchronized (this.deleteLock) {
+            synchronized (deleteLock) {
                 final boolean finalized;
                 if (Boolean.FALSE.equals(removeInfo)) {
                     finalized = this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETED));
@@ -2543,14 +2752,14 @@ public class CapgoUpdater {
             logger.debug("Bundle ID: " + id);
             return true;
         } finally {
-            synchronized (this.deleteLock) {
+            synchronized (deleteLock) {
                 try {
                     if (!completed && !this.getBundleInfo(id).isDeleting()) {
                         // A download callback may have updated its registry while cancellation waited.
                         this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING));
                     }
                 } finally {
-                    this.activeBundleDeletes.remove(id);
+                    activeBundleDeletes.remove(bundle);
                 }
             }
         }
@@ -2669,8 +2878,16 @@ public class CapgoUpdater {
         return resolveBundleDirectory(this.documentsDir, id);
     }
 
+    private boolean isBundleBeingDeleted(final String id) {
+        try {
+            return activeBundleDeletes.contains(this.getBundleDirectory(id));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private boolean bundleExists(final String id) {
-        if (id != null && this.activeBundleDeletes.contains(id)) {
+        if (id != null && this.isBundleBeingDeleted(id)) {
             return false;
         }
         final File bundle;
@@ -2791,9 +3008,9 @@ public class CapgoUpdater {
     }
 
     public Boolean set(final String id) {
-        synchronized (this.deleteLock) {
+        synchronized (deleteLock) {
             final BundleInfo newBundle = this.getBundleInfo(id);
-            if ((id != null && this.activeBundleDeletes.contains(id)) || newBundle.isDeleting()) {
+            if ((id != null && this.isBundleBeingDeleted(id)) || newBundle.isDeleting()) {
                 return false;
             }
             if (newBundle.isBuiltin()) {
@@ -2825,7 +3042,7 @@ public class CapgoUpdater {
     }
 
     boolean stagePendingReload(final BundleInfo bundle) {
-        synchronized (this.deleteLock) {
+        synchronized (deleteLock) {
             if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
                 return false;
             }
@@ -2839,7 +3056,7 @@ public class CapgoUpdater {
     }
 
     boolean stagePreviewFallbackReload(final BundleInfo bundle) {
-        synchronized (this.deleteLock) {
+        synchronized (deleteLock) {
             if (bundle == null || bundle.isErrorStatus()) {
                 return false;
             }
