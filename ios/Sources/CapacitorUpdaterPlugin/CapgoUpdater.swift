@@ -278,6 +278,7 @@ import UIKit
 
     // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
     private var cachedUrlSession: URLSession?
+    private var cachedDownloadUrlSession: URLSession?
     private let urlSessionLock = NSLock()
     private var urlSession: URLSession {
         urlSessionLock.lock()
@@ -301,8 +302,27 @@ import UIKit
         return session
     }
 
+    private var downloadUrlSession: URLSession {
+        urlSessionLock.lock()
+        defer { urlSessionLock.unlock() }
+        if let session = cachedDownloadUrlSession {
+            return session
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
+        let session = URLSession(configuration: configuration, delegate: downloadStreamDelegate, delegateQueue: nil)
+        cachedDownloadUrlSession = session
+        return session
+    }
+
     /// Owned separately from `CapgoUpdater` because URLSession retains its delegate strongly.
     private let redirectPolicy = RedirectPolicyDelegate()
+    private lazy var downloadStreamDelegate = DownloadStreamDelegate(redirectPolicy: redirectPolicy)
 
     /// Follow redirects from HTTPS to plain HTTP. Off by default so a redirect can never downgrade updater traffic.
     public var allowHttpsToHttpRedirect: Bool {
@@ -506,9 +526,9 @@ import UIKit
         // produced by a streamed data task, and a kept partial file plus Range
         // is the reliable retry path.
         _ = resumeData
-        let downloadTask = self.urlSession.dataTask(with: request)
+        let downloadTask = self.downloadUrlSession.dataTask(with: request)
         do {
-            try redirectPolicy.registerStream(
+            try downloadStreamDelegate.registerStream(
                 for: downloadTask,
                 fileURL: temporaryDownloadURL,
                 resumedBytes: resumedBytes,
