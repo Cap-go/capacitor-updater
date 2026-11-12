@@ -249,6 +249,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
     // Between appMovedToBackground and appMovedToForeground. Android freezes backgrounded apps, so the
     // page cannot call notifyAppReady until the next foreground, which arms a fresh rollback check.
     private volatile boolean appInBackground = false;
+    private final Object nextBundleInstallLock = new Object();
+    private boolean nextBundleInstallInProgress = false;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
     // Armed only after a reload. The next document stamps this generation into notifyAppReady.
@@ -5841,32 +5843,68 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.installNext();
     }
 
-    private void installNext() {
-        try {
-            if (this.shouldBlockAutoUpdateForPreviewSession()) {
-                return;
+    private BundleInfo claimNextBundleInstall() {
+        synchronized (this.nextBundleInstallLock) {
+            if (this.nextBundleInstallInProgress || this.shouldBlockAutoUpdateForPreviewSession()) {
+                return null;
             }
-            String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
-            ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
-            if (!delayConditionList.isEmpty()) {
+            final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+            final ArrayList<DelayCondition> delayConditions = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
+            if (!delayConditions.isEmpty()) {
                 logger.info("Update delayed until delay conditions met");
-                return;
+                return null;
             }
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextBundle();
+            if (next == null || next.isErrorStatus() || next.getId().equals(current.getId())) {
+                return null;
+            }
+            this.nextBundleInstallInProgress = true;
+            return next;
+        }
+    }
 
-            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
-                // There is a next bundle waiting for activation
+    private void releaseNextBundleInstall() {
+        synchronized (this.nextBundleInstallLock) {
+            this.nextBundleInstallInProgress = false;
+        }
+    }
+
+    private void installNext() {
+        try {
+            final BundleInfo next = this.claimNextBundleInstall();
+            if (next == null) {
+                return;
+            }
+            boolean dispatched = false;
+            try {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 startNewThread(() -> {
-                    if (this.implementation.set(next) && this._reload()) {
-                        logger.info("Updated to bundle: " + next.getVersionName());
-                        this.notifyBundleSet(next);
-                        this.implementation.setNextBundle(null);
-                    } else {
-                        logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
+                    boolean installed = false;
+                    try {
+                        if (this.implementation.set(next) && this._reload()) {
+                            logger.info("Updated to bundle: " + next.getVersionName());
+                            this.notifyBundleSet(next);
+                            this.implementation.clearNextBundleIfMatches(next.getId());
+                            installed = true;
+                        } else {
+                            logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
+                        }
+                    } catch (final Exception e) {
+                        logger.error("Error during installNext " + e);
+                    } finally {
+                        this.releaseNextBundleInstall();
+                        // A newer download may have completed while this installation owned admission.
+                        if (installed) {
+                            this.installNextIfInBackground();
+                        }
                     }
                 });
+                dispatched = true;
+            } finally {
+                if (!dispatched) {
+                    this.releaseNextBundleInstall();
+                }
             }
         } catch (final Exception e) {
             logger.error("Error during installNext " + e);

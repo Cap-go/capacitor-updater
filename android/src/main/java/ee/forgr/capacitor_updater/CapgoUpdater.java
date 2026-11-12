@@ -78,6 +78,7 @@ public class CapgoUpdater {
 
     private static final String FALLBACK_VERSION = "pastVersion";
     private static final String NEXT_VERSION = "nextVersion";
+    private static final Object nextBundleLock = new Object();
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
     private static final String bundleDirectory = "versions";
@@ -2434,13 +2435,15 @@ public class CapgoUpdater {
         final String fallbackBundleId =
             state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
 
-        this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
-        if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
-            this.editor.remove(NEXT_VERSION);
-        } else {
-            this.editor.putString(NEXT_VERSION, state.nextBundleId);
+        synchronized (nextBundleLock) {
+            this.editor.putString(FALLBACK_VERSION, fallbackBundleId);
+            if (state.nextBundleId == null || state.nextBundleId.isEmpty()) {
+                this.editor.remove(NEXT_VERSION);
+            } else {
+                this.editor.putString(NEXT_VERSION, state.nextBundleId);
+            }
+            this.editor.commit();
         }
-        this.editor.commit();
     }
 
     void preserveFallbackForWatchdog(final ResetState state) {
@@ -4362,13 +4365,17 @@ public class CapgoUpdater {
     }
 
     public boolean clearNextBundleIfCurrent() {
-        final BundleInfo next = this.getNextBundle();
-        if (next == null || !next.getId().equals(this.getCurrentBundle().getId())) {
-            return false;
+        return this.clearNextBundleIfMatches(this.getCurrentBundle().getId());
+    }
+
+    boolean clearNextBundleIfMatches(final String installedBundleId) {
+        synchronized (nextBundleLock) {
+            final BundleInfo next = this.getNextBundle();
+            if (next == null || !next.getId().equals(installedBundleId)) {
+                return false;
+            }
+            return this.setNextBundle(null);
         }
-        logger.info("Next bundle " + next.getId() + " is already the current bundle. Clearing next.");
-        this.setNextBundle(null);
-        return true;
     }
 
     public BundleInfo getPreviewFallbackBundle() {
@@ -4398,22 +4405,24 @@ public class CapgoUpdater {
 
     public boolean setNextBundle(final String next) {
         BundleInfo bundleToNotify = null;
-        if (next == null) {
-            this.editor.remove(NEXT_VERSION);
-        } else {
-            final BundleInfo newBundle = this.getBundleInfo(next);
-            if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
-                return false;
+        synchronized (nextBundleLock) {
+            if (next == null) {
+                this.editor.remove(NEXT_VERSION);
+            } else {
+                final BundleInfo newBundle = this.getBundleInfo(next);
+                if (!newBundle.isBuiltin() && !this.bundleExists(next)) {
+                    return false;
+                }
+                if (next.equals(this.getCurrentBundleId()) && BundleStatus.SUCCESS == newBundle.getStatus()) {
+                    logger.info("Bundle " + next + " is already the current successful bundle. Skip next().");
+                    return true;
+                }
+                this.editor.putString(NEXT_VERSION, next);
+                this.setBundleStatus(next, BundleStatus.PENDING);
+                bundleToNotify = newBundle;
             }
-            if (next.equals(this.getCurrentBundleId()) && BundleStatus.SUCCESS == newBundle.getStatus()) {
-                logger.info("Bundle " + next + " is already the current successful bundle. Skip next().");
-                return true;
-            }
-            this.editor.putString(NEXT_VERSION, next);
-            this.setBundleStatus(next, BundleStatus.PENDING);
-            bundleToNotify = newBundle;
+            this.editor.commit();
         }
-        this.editor.commit();
         if (bundleToNotify != null) {
             this.sendStats("set_next", bundleToNotify.getVersionName(), this.getCurrentBundle().getVersionName());
             final Map<String, Object> payload = new HashMap<>();

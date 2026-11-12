@@ -176,6 +176,48 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static final class QueuedInstallPlugin extends TestableCapacitorUpdaterPlugin {
+
+        private final AppCompatActivity activity = mock(AppCompatActivity.class);
+        private final List<Runnable> workers = new ArrayList<>();
+        private Runnable onReady;
+        private Runnable beforeReload;
+        private int reloadCalls;
+        private boolean reloadResult = true;
+        private boolean failDispatch;
+
+        @Override
+        public AppCompatActivity getActivity() {
+            return this.activity;
+        }
+
+        @Override
+        public Thread startNewThread(final Runnable function) {
+            if (this.failDispatch) {
+                throw new IllegalStateException("Test dispatch failure");
+            }
+            this.workers.add(function);
+            return new Thread();
+        }
+
+        @Override
+        public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {
+            super.notifyListeners(eventName, data, retainUntilConsumed);
+            if ("appReady".equals(eventName) && this.onReady != null) {
+                this.onReady.run();
+            }
+        }
+
+        @Override
+        protected boolean _reload() {
+            this.reloadCalls++;
+            if (this.beforeReload != null) {
+                this.beforeReload.run();
+            }
+            return this.reloadResult;
+        }
+    }
+
     private static final class ReloadDispatchPlugin extends TestableCapacitorUpdaterPlugin {
 
         private boolean startNewThreadCalled = false;
@@ -2288,6 +2330,108 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testClearingInstalledBundleCannotEraseConcurrentQueueWrite() throws Exception {
+        assertClearingInstalledBundleCannotEraseConcurrentQueueWrite(false);
+    }
+
+    @Test
+    public void testClearingInstalledBundleCannotEraseAnotherUpdatersQueueWrite() throws Exception {
+        assertClearingInstalledBundleCannotEraseConcurrentQueueWrite(true);
+    }
+
+    private void assertClearingInstalledBundleCannotEraseConcurrentQueueWrite(final boolean separateUpdater) throws Exception {
+        final String firstId = "bundleB001";
+        final String newerId = "bundleC002";
+        final Path tempDir = createExistingBundleDirectory("capgo-next-clear", firstId);
+        final Path newerDir = tempDir.resolve("versions").resolve(newerId);
+        Files.createDirectories(newerDir);
+        final Path newerIndex = Files.write(newerDir.resolve("index.html"), "<html></html>".getBytes(StandardCharsets.UTF_8));
+        newerDir.toFile().deleteOnExit();
+        newerIndex.toFile().deleteOnExit();
+        final Map<String, String> store = new java.util.concurrent.ConcurrentHashMap<>();
+        for (String id : new String[] { firstId, newerId }) {
+            store.put(id + "_info", new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "checksum").toString());
+        }
+        final CountDownLatch clearReached = new CountDownLatch(1);
+        final CountDownLatch finishClear = new CountDownLatch(1);
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class)) {
+            @Override
+            public BundleInfo getNextBundle() {
+                final BundleInfo next = super.getNextBundle();
+                if (next != null && firstId.equals(next.getId())) {
+                    clearReached.countDown();
+                    try {
+                        assertTrue(finishClear.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(error);
+                    }
+                }
+                return next;
+            }
+        };
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        final CapgoUpdater writerUpdater = separateUpdater ? new CapgoUpdater(mock(Logger.class)) : updater;
+        writerUpdater.documentsDir = tempDir.toFile();
+        writerUpdater.CAP_SERVER_PATH = "server-path";
+        writerUpdater.prefs = prefs;
+        writerUpdater.editor = editor;
+        when(prefs.getString(anyString(), any())).thenAnswer((inv) -> store.getOrDefault(inv.getArgument(0), inv.getArgument(1)));
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+        final CountDownLatch writerStarted = new CountDownLatch(1);
+        final CountDownLatch writerFinished = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        when(editor.remove("nextVersion")).thenAnswer((inv) -> {
+            store.remove("nextVersion");
+            return editor;
+        });
+        assertTrue(updater.setNextBundle(firstId));
+        final Thread clearing = new Thread(() -> {
+            try {
+                assertTrue(updater.clearNextBundleIfMatches(firstId));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final Thread writer = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                assertTrue(writerUpdater.setNextBundle(newerId));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            } finally {
+                writerFinished.countDown();
+            }
+        });
+        try {
+            clearing.start();
+            assertTrue(clearReached.await(5, TimeUnit.SECONDS));
+            writer.start();
+            assertTrue(writerStarted.await(5, TimeUnit.SECONDS));
+            assertFalse("Queue writes must not interleave with conditional clearing", writerFinished.await(100, TimeUnit.MILLISECONDS));
+        } finally {
+            finishClear.countDown();
+            clearing.join(5000);
+            writer.join(5000);
+        }
+        assertFalse(clearing.isAlive());
+        assertFalse(writer.isAlive());
+        assertNull(failure.get());
+        assertEquals(newerId, updater.getNextBundle().getId());
+        assertFalse(updater.clearNextBundleIfMatches(firstId));
+        assertEquals(newerId, updater.getNextBundle().getId());
+    }
+
+    @Test
     public void testTriggerUpdateCheckSkipsDuringPreviewSession() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
@@ -3534,6 +3678,158 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.setCalls);
             assertNull(updater.lastSetNextBundleId);
         }
+    }
+
+    @Test
+    public void testTimedOutCompletionAndBackgroundTransitionInstallOnlyOnce() throws Exception {
+        assertDeferredCompletionAndBackgroundTransitionInstallOnlyOnce(false);
+    }
+
+    @Test
+    public void testDelayedCompletionAndBackgroundTransitionInstallOnlyOnce() throws Exception {
+        assertDeferredCompletionAndBackgroundTransitionInstallOnlyOnce(true);
+    }
+
+    private void assertDeferredCompletionAndBackgroundTransitionInstallOnlyOnce(final boolean delayed) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
+            final ArrayList<DelayCondition> conditions = new ArrayList<>();
+            if (delayed) {
+                conditions.add(new DelayCondition(DelayUntilNext.kill, ""));
+            }
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, conditions);
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            setPrivateField(plugin, "autoSplashscreenTimedOut", true);
+            plugin.onReady = () -> {
+                conditions.clear();
+                // The transition sees the queued bundle before direct completion asks to install it.
+                plugin.appMovedToBackground();
+            };
+            plugin.scheduleDirectUpdateFinish(new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum"));
+            plugin.workers.remove(0).run();
+            final int admittedWorkers = plugin.workers.size();
+            while (!plugin.workers.isEmpty()) {
+                plugin.workers.remove(0).run();
+            }
+
+            assertEquals("Only one installation may be admitted before dispatch", 1, admittedWorkers);
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals("download-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("set"::equals).count());
+        }
+    }
+
+    @Test
+    public void testBackgroundInstallPreservesBundleQueuedDuringReload() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
+            updater.setNextBundle("first-id");
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.beforeReload = () -> {
+                assertFalse("Reload must not hold the plugin monitor", Thread.holdsLock(plugin));
+                updater.setNextBundle("newer-id");
+                plugin.installNextIfInBackground();
+            };
+            plugin.appMovedToBackground();
+            plugin.workers.remove(0).run();
+
+            assertEquals("first-id", updater.getCurrentBundle().getId());
+            assertNotNull("Completing the first install must preserve a newer queued bundle", updater.getNextBundle());
+            assertEquals("newer-id", updater.getNextBundle().getId());
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, plugin.reloadCalls);
+
+            plugin.beforeReload = null;
+            // Completion must also service the download whose request arrived during the reload.
+            assertEquals(1, plugin.workers.size());
+            plugin.installNextIfInBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals("newer-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(2, updater.setCalls);
+            assertEquals(2, plugin.reloadCalls);
+        }
+    }
+
+    @Test
+    public void testBackgroundInstallReleasesAdmissionAfterSetFailure() throws Exception {
+        assertBackgroundInstallReleasesAdmissionAfterFailure("set");
+    }
+
+    @Test
+    public void testBackgroundInstallReleasesAdmissionAfterReloadFailure() throws Exception {
+        assertBackgroundInstallReleasesAdmissionAfterFailure("reload");
+    }
+
+    @Test
+    public void testBackgroundInstallReleasesAdmissionAfterWorkerException() throws Exception {
+        assertBackgroundInstallReleasesAdmissionAfterFailure("exception");
+    }
+
+    @Test
+    public void testBackgroundInstallReleasesAdmissionAfterDispatchFailure() throws Exception {
+        assertBackgroundInstallReleasesAdmissionAfterFailure("dispatch");
+    }
+
+    private void assertBackgroundInstallReleasesAdmissionAfterFailure(final String failure) throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.setNextBundle("first-id");
+            updater.setResult = !"set".equals(failure);
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.reloadResult = !"reload".equals(failure);
+            plugin.failDispatch = "dispatch".equals(failure);
+            if ("exception".equals(failure)) {
+                plugin.beforeReload = () -> {
+                    throw new IllegalStateException("Test reload failure");
+                };
+            }
+            plugin.appMovedToBackground();
+            if (!plugin.failDispatch) {
+                plugin.workers.remove(0).run();
+            }
+            assertEquals("first-id", updater.getNextBundle().getId());
+            assertFalse(plugin.hasNotifiedEvent("set"));
+            assertTrue("A failed install must not start an automatic retry loop", plugin.workers.isEmpty());
+
+            updater.setResult = true;
+            updater.simulatePendingActiveBundleOnSet = true;
+            plugin.reloadResult = true;
+            plugin.failDispatch = false;
+            plugin.beforeReload = null;
+            plugin.installNextIfInBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals("first-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertTrue(plugin.hasNotifiedEvent("set"));
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    private QueuedInstallPlugin queuedInstallPlugin(final ResetTrackingCapgoUpdater updater, final ArrayList<DelayCondition> conditions)
+        throws Exception {
+        final QueuedInstallPlugin plugin = new QueuedInstallPlugin();
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final DelayUpdateUtils delayUtils = mock(DelayUpdateUtils.class);
+        when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+        when(delayUtils.parseDelayConditions("[]")).thenReturn(conditions);
+        plugin.implementation = updater;
+        plugin.setLoggerForTesting(mock(Logger.class));
+        setPrivateField(plugin, "prefs", prefs);
+        setPrivateField(plugin, "delayUpdateUtils", delayUtils);
+        return plugin;
     }
 
     @Test
