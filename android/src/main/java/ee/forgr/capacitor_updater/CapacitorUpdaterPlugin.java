@@ -267,9 +267,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean appInBackground = false;
     private final Object automaticInstallLock = new Object();
     private boolean automaticInstallInProgress = false;
+    private int automaticInstallPageGeneration = -1;
+    private boolean watchdogRollbackInProgress = false;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
-    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    // Armed before staging or reload. The next document stamps this generation into notifyAppReady.
     private final Object readyGuardLock = new Object();
     private volatile int readyGeneration = 0;
     private volatile boolean readyGuardArmed = false;
@@ -1803,11 +1805,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         synchronized (this.automaticInstallLock) {
             if (
                 this.automaticInstallInProgress ||
+                this.watchdogRollbackInProgress ||
                 !this.implementation.clearNextBundleForDirectInstall(() -> this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration))
             ) {
                 return false;
             }
             this.automaticInstallInProgress = true;
+            this.automaticInstallPageGeneration = -1;
             return true;
         }
     }
@@ -2992,13 +2996,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
         CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
-        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
-        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
-
-        if (!this.implementation.stagePendingReload(latest)) {
-            this.implementation.restoreResetStatePreservingNextBundle(previousState);
-            logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
-            return false;
+        final CapgoUpdater.ResetState previousState;
+        final String previousBundleName;
+        synchronized (this) {
+            previousState = this.implementation.captureResetState();
+            previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+            if (!this.stageBundleForReload(() -> this.implementation.stagePendingReload(latest))) {
+                this.implementation.restoreResetStatePreservingNextBundle(previousState);
+                logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
+                return false;
+            }
         }
 
         if (this._reload()) {
@@ -3596,7 +3603,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return false;
         }
         // Reject the previous document while the main-thread reload is still queued.
-        final int generation = this.armReadyGuard();
+        final int generation = this.armReloadReadyGuard();
         final Object dispatchLock = new Object();
         final FutureTask<Void> dispatch = new FutureTask<>(() -> {
             this.stampReadyGenerationBeforeReload(generation);
@@ -5253,6 +5260,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    private synchronized boolean stageBundleForReload(final java.util.function.BooleanSupplier stage) {
+        final int previousGeneration = this.readyGeneration;
+        final boolean previousGuardArmed = this.readyGuardArmed;
+        this.armReadyGuard();
+        boolean staged = false;
+        try {
+            staged = stage.getAsBoolean();
+            return staged;
+        } finally {
+            if (!staged) {
+                // No document was dispatched. The existing page must remain able to report ready.
+                synchronized (this.readyGuardLock) {
+                    this.readyGeneration = previousGeneration;
+                    this.readyGuardArmed = previousGuardArmed;
+                }
+            }
+        }
+    }
+
+    private synchronized int armReloadReadyGuard() {
+        final int generation = this.armReadyGuard();
+        synchronized (this.automaticInstallLock) {
+            if (this.automaticInstallInProgress && !this.watchdogRollbackInProgress) {
+                this.automaticInstallPageGeneration = generation;
+            }
+        }
+        return generation;
+    }
+
     private int armReadyGuard() {
         synchronized (this.readyGuardLock) {
             this.readyGeneration = this.readyGeneration + 1;
@@ -5321,7 +5357,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void notifyAppReady(final PluginCall call) {
+    public synchronized void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
         try {
             if (!this.acceptsReadyCall(call)) {
@@ -5762,12 +5798,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 previousBundleName = this.implementation.getCurrentBundle().getVersionName();
                 this.consumeOnLaunchDirectUpdateAttempt(true);
                 this.clearBackgroundDownloadState();
-                if (bundle.isBuiltin()) {
-                    this.implementation.prepareBuiltinTransition();
-                    staged = true;
-                } else {
-                    staged = this.implementation.set(bundle);
-                }
+                staged = this.stageBundleForReload(() -> {
+                    if (bundle.isBuiltin()) {
+                        this.implementation.prepareBuiltinTransition();
+                        return true;
+                    }
+                    return this.implementation.set(bundle);
+                });
             }
             // Reload can wait for the bridge; it must not hold the ownership monitor.
             installed = staged && this.reloadAutomaticBundle(bundle, previousState);
@@ -6421,7 +6458,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private BundleInfo claimNextBundleInstall(final String excludedBundleId) {
         synchronized (this.automaticInstallLock) {
-            if (this.automaticInstallInProgress || this.shouldBlockAutoUpdateForPreviewSession()) {
+            if (this.automaticInstallInProgress || this.watchdogRollbackInProgress || this.shouldBlockAutoUpdateForPreviewSession()) {
                 return null;
             }
             final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
@@ -6436,6 +6473,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return null;
             }
             this.automaticInstallInProgress = true;
+            this.automaticInstallPageGeneration = -1;
             return next;
         }
     }
@@ -6443,6 +6481,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private void releaseAutomaticInstall() {
         synchronized (this.automaticInstallLock) {
             this.automaticInstallInProgress = false;
+            this.automaticInstallPageGeneration = -1;
         }
     }
 
@@ -6468,8 +6507,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             logger.info("App returned to foreground before deferred install, keeping bundle queued");
                             return;
                         }
-                        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
-                        if (this.implementation.setQueuedBundle(next) && this.reloadAutomaticBundle(next, previousState)) {
+                        final CapgoUpdater.ResetState previousState;
+                        final boolean staged;
+                        synchronized (this) {
+                            previousState = this.implementation.captureResetState();
+                            staged = this.stageBundleForReload(() -> this.implementation.setQueuedBundle(next));
+                        }
+                        if (staged && this.reloadAutomaticBundle(next, previousState)) {
                             logger.info("Updated to bundle: " + next.getVersionName());
                             this.notifyBundleSet(next);
                             this.implementation.clearNextBundleIfMatches(next.getId());
@@ -6498,19 +6542,39 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void checkRevert(final BundleInfo current) {
-        // Automatically roll back to fallback version if notifyAppReady has not been called yet.
+        this.checkRevert(current.getId(), this.readyGeneration);
+    }
 
-        if (current.isBuiltin()) {
-            logger.info("Built-in bundle is active. We skip the check for notifyAppReady.");
-            return;
+    private void checkRevert(final String expectedBundleId, final int expectedGeneration) {
+        final BundleInfo current;
+        synchronized (this) {
+            if (this.appInBackground) {
+                logger.info("App is in background, notifyAppReady check deferred to the next foreground");
+                return;
+            }
+            current = this.implementation.getCurrentBundle();
+            if (current == null || !current.getId().equals(expectedBundleId) || this.readyGeneration != expectedGeneration) {
+                logger.info("Skipping notifyAppReady check for a bundle or page that is no longer current");
+                return;
+            }
+            if (current.isBuiltin() || current.getStatus() == BundleStatus.SUCCESS || this.isPreviewSessionStateActive()) {
+                return;
+            }
+            synchronized (this.automaticInstallLock) {
+                if (
+                    this.watchdogRollbackInProgress ||
+                    (this.automaticInstallInProgress && this.automaticInstallPageGeneration != expectedGeneration)
+                ) {
+                    // An admitted replacement has not dispatched its page yet. Its own watchdog
+                    // will check readiness; the previous page must not reset that installation.
+                    return;
+                }
+                this.watchdogRollbackInProgress = true;
+            }
+            // Reject readiness from the failed page throughout rollback staging and dispatch.
+            this.armReadyGuard();
         }
-        if (this.isPreviewSessionStateActive()) {
-            logger.info("Preview session is active. We skip the check for notifyAppReady.");
-            return;
-        }
-        logger.debug("Current bundle is: " + current);
-
-        if (BundleStatus.SUCCESS != current.getStatus()) {
+        try {
             logger.error("notifyAppReady was not called, roll back current bundle: " + current.getId());
             logger.info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
             final JSObject ret = new JSObject();
@@ -6546,24 +6610,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     });
                 }
             }
-        } else {
-            logger.info("notifyAppReady was called. This is fine: " + current.getId());
+        } finally {
+            synchronized (this.automaticInstallLock) {
+                this.watchdogRollbackInProgress = false;
+            }
+            this.installNextIfInBackground();
         }
     }
 
     private void runDeferredAppReadyCheck(final String expectedBundleId, final int expectedGeneration) {
-        // A frozen app wakes up with its sleep already expired, before appMovedToForeground re-arms
-        // the check: its page could not run yet, so wait for the fresh check of the next foreground.
+        // A frozen page gets a fresh deadline on foreground.
         if (this.appInBackground) {
             logger.info("App is in background, notifyAppReady check deferred to the next foreground");
             return;
         }
-        final BundleInfo current = this.implementation.getCurrentBundle();
-        if (current == null || !current.getId().equals(expectedBundleId) || this.readyGeneration != expectedGeneration) {
-            logger.info("Skipping notifyAppReady check for a bundle or page that is no longer current");
-            return;
-        }
-        this.checkRevert(current);
+        this.checkRevert(expectedBundleId, expectedGeneration);
     }
 
     private class DeferredNotifyAppReadyCheck implements Runnable {

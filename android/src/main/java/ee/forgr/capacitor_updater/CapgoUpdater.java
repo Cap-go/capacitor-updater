@@ -2699,62 +2699,68 @@ public class CapgoUpdater {
     }
 
     public Boolean set(final String id) {
-        final BundleInfo newBundle = this.getBundleInfo(id);
-        if (newBundle.isBuiltin()) {
-            this.reset();
-            return true;
-        }
-        final File bundle;
-        try {
-            bundle = this.getBundleDirectory(id);
-        } catch (IOException e) {
-            logger.error("Invalid bundle id");
-            logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+        synchronized (this.deleteLock) {
+            final BundleInfo newBundle = this.getBundleInfo(id);
+            if (newBundle.isBuiltin()) {
+                this.reset();
+                return true;
+            }
+            final File bundle;
+            try {
+                bundle = this.getBundleDirectory(id);
+            } catch (IOException e) {
+                logger.error("Invalid bundle id");
+                logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
+                this.setBundleStatus(id, BundleStatus.ERROR);
+                this.sendStats("set_fail", newBundle.getVersionName());
+                return false;
+            }
+            logger.info("Setting next active bundle: " + id);
+            if (this.bundleExists(id)) {
+                var currentBundleName = this.getCurrentBundle().getVersionName();
+                this.setCurrentBundle(bundle);
+                this.setBundleStatus(id, BundleStatus.PENDING);
+                this.sendStats("set", newBundle.getVersionName(), currentBundleName);
+                return true;
+            }
             this.setBundleStatus(id, BundleStatus.ERROR);
             this.sendStats("set_fail", newBundle.getVersionName());
             return false;
         }
-        logger.info("Setting next active bundle: " + id);
-        if (this.bundleExists(id)) {
-            var currentBundleName = this.getCurrentBundle().getVersionName();
-            this.setCurrentBundle(bundle);
-            this.setBundleStatus(id, BundleStatus.PENDING);
-            this.sendStats("set", newBundle.getVersionName(), currentBundleName);
-            return true;
-        }
-        this.setBundleStatus(id, BundleStatus.ERROR);
-        this.sendStats("set_fail", newBundle.getVersionName());
-        return false;
     }
 
     boolean stagePendingReload(final BundleInfo bundle) {
-        if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
-            return false;
-        }
-        try {
-            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-            return true;
-        } catch (IOException e) {
-            return false;
+        synchronized (this.deleteLock) {
+            if (bundle == null || bundle.isBuiltin() || !this.bundleExists(bundle.getId())) {
+                return false;
+            }
+            try {
+                this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+                return true;
+            } catch (IOException e) {
+                return false;
+            }
         }
     }
 
     boolean stagePreviewFallbackReload(final BundleInfo bundle) {
-        if (bundle == null || bundle.isErrorStatus()) {
-            return false;
-        }
-        if (bundle.isBuiltin()) {
-            this.setCurrentBundle(new File("public"));
-            return true;
-        }
-        if (!this.bundleExists(bundle.getId())) {
-            return false;
-        }
-        try {
-            this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
-            return true;
-        } catch (IOException e) {
-            return false;
+        synchronized (this.deleteLock) {
+            if (bundle == null || bundle.isErrorStatus()) {
+                return false;
+            }
+            if (bundle.isBuiltin()) {
+                this.setCurrentBundle(new File("public"));
+                return true;
+            }
+            if (!this.bundleExists(bundle.getId())) {
+                return false;
+            }
+            try {
+                this.setCurrentBundle(this.getBundleDirectory(bundle.getId()));
+                return true;
+            } catch (IOException e) {
+                return false;
+            }
         }
     }
 
