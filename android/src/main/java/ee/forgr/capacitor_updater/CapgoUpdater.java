@@ -2614,8 +2614,13 @@ public class CapgoUpdater {
             DownloadWorkerManager.cancelAllDownloads(this.context());
         }
         if (!internal) {
-            this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
+            this.finalizeBuiltinUpdate(previousBundleName);
         }
+    }
+
+    void finalizeBuiltinUpdate(final String previousBundleName) {
+        // Automatic builtin updates may overlap newer downloads; only an explicit reset cancels all work.
+        this.sendStats("reset", this.getCurrentBundle().getVersionName(), previousBundleName);
     }
 
     boolean canSet(final BundleInfo bundle) {
@@ -2633,7 +2638,7 @@ public class CapgoUpdater {
         final String previousBundleName = this.getCurrentBundle().getVersionName();
         this.prepareBuiltinTransition();
         // The installing worker clears only its own queue entry after reload succeeds.
-        this.finalizeResetTransition(previousBundleName, false);
+        this.finalizeBuiltinUpdate(previousBundleName);
         return true;
     }
 

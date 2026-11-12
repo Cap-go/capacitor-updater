@@ -1358,6 +1358,33 @@ public class CapacitorUpdaterUnitTest {
         method.invoke(plugin, bundle, msg, false);
     }
 
+    private static void assertBlockedOnMonitor(final Thread contender, final Object monitor, final Thread owner) throws Exception {
+        // Host JVM unit tests have management APIs at runtime, but Android's compile stubs omit them.
+        final Object threads = Class.forName("java.lang.management.ManagementFactory").getMethod("getThreadMXBean").invoke(null);
+        final Method getThreadInfo = Class.forName("java.lang.management.ThreadMXBean").getMethod("getThreadInfo", long.class);
+        final Class<?> threadInfo = Class.forName("java.lang.management.ThreadInfo");
+        final Method getState = threadInfo.getMethod("getThreadState");
+        final Method getOwner = threadInfo.getMethod("getLockOwnerId");
+        final Method getLock = threadInfo.getMethod("getLockName");
+        final String expectedLock = monitor.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(monitor));
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            final Object info = getThreadInfo.invoke(threads, contender.threadId());
+            if (info == null) {
+                fail("Competing operation finished without blocking on the expected monitor");
+            }
+            if (
+                getState.invoke(info) == Thread.State.BLOCKED &&
+                (long) getOwner.invoke(info) == owner.threadId() &&
+                expectedLock.equals(getLock.invoke(info))
+            ) {
+                return;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
+        fail("Competing operation did not block on the expected monitor");
+    }
+
     private static void invokePrivateVoidMethod(final CapacitorUpdaterPlugin plugin, final String methodName) throws Exception {
         final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
@@ -2409,7 +2436,6 @@ public class CapacitorUpdaterUnitTest {
         });
         when(editor.commit()).thenReturn(true);
         final CountDownLatch writerStarted = new CountDownLatch(1);
-        final CountDownLatch writerFinished = new CountDownLatch(1);
         final AtomicReference<Throwable> failure = new AtomicReference<>();
         when(editor.remove("nextVersion")).thenAnswer((inv) -> {
             store.remove("nextVersion");
@@ -2429,8 +2455,6 @@ public class CapacitorUpdaterUnitTest {
                 assertTrue(writerUpdater.setNextBundle(newerId));
             } catch (Throwable error) {
                 failure.compareAndSet(null, error);
-            } finally {
-                writerFinished.countDown();
             }
         });
         try {
@@ -2438,7 +2462,7 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(clearReached.await(5, TimeUnit.SECONDS));
             writer.start();
             assertTrue(writerStarted.await(5, TimeUnit.SECONDS));
-            assertFalse("Queue writes must not interleave with conditional clearing", writerFinished.await(100, TimeUnit.MILLISECONDS));
+            assertBlockedOnMonitor(writer, getPrivateField(updater, "nextBundleLock"), clearing);
         } finally {
             finishClear.countDown();
             clearing.join(5000);
@@ -3546,6 +3570,193 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testLegacyCompletionRetainsContextOwnedReadinessWait() throws Exception {
+        assertSuccessorReadinessWait(true);
+    }
+
+    @Test
+    public void testLegacyCompletionRetainsLegacyReadinessWait() throws Exception {
+        assertSuccessorReadinessWait(false);
+    }
+
+    private void assertSuccessorReadinessWait(final boolean contextOwned) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            setPrivateField(plugin, "autoSplashscreen", true);
+            plugin.setAutoUpdateModeForTesting("always");
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Object deadline = getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            if (contextOwned) {
+                final CapgoUpdater.BackgroundDownloadContext owner = new CapgoUpdater.BackgroundDownloadContext(0, true);
+                setPrivateField(plugin, "backgroundDownloadContext", owner);
+                plugin.emitLaunchDownloadReady(updater.getCurrentBundle(), "download settled", owner);
+            } else {
+                invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "first legacy completion");
+            }
+            invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "later legacy completion");
+            assertFalse("The successor must not bypass the consumed readiness gate", plugin.hasNotifiedEvent("appReady"));
+            assertSame(deadline, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+            assertEquals(2, plugin.workers.size());
+            invokePrivateVoidMethod(plugin, "semaphoreDown");
+            while (!plugin.workers.isEmpty()) {
+                plugin.workers.remove(0).run();
+            }
+            assertEquals(2, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
+            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+        }
+    }
+
+    @Test
+    public void testBackgroundReloadReplacesConsumedReadinessGate() throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "old page");
+            final Phaser gate = (Phaser) getPrivateField(plugin, "semaphoreReady");
+            final int oldPhase = gate.getPhase();
+            // The actual background reload arms this gate before applying its new page.
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            assertEquals("Replacing the page must retire the consumed waiter party", 1, gate.getRegisteredParties());
+            assertNotEquals(oldPhase, gate.getPhase());
+            plugin.workers.remove(0).run();
+            assertFalse("An old page's waiter must not report readiness for the new page", plugin.hasNotifiedEvent("appReady"));
+            invokeSendReadyToJs(plugin, updater.getCurrentBundle(), "new page");
+            assertFalse(plugin.hasNotifiedEvent("appReady"));
+            invokePrivateVoidMethod(plugin, "semaphoreDown");
+            plugin.workers.remove(0).run();
+            assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count());
+            assertEquals("new page", plugin.getNotifiedEventPayload("appReady").getString("status"));
+        }
+    }
+
+    @Test
+    public void testBackgroundInstallDispatchDoesNotWaitForReadiness() throws Exception {
+        assertBackgroundInstallDispatchBeforeReadiness(false);
+    }
+
+    @Test
+    public void testDelayedBackgroundInstallDispatchDoesNotWaitForReadiness() throws Exception {
+        assertBackgroundInstallDispatchBeforeReadiness(true);
+    }
+
+    private void assertBackgroundInstallDispatchBeforeReadiness(final boolean delayClears) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("background");
+            setPrivateField(plugin, "appInBackground", true);
+            setPrivateField(plugin, "appReadyTimeout", 50);
+            if (delayClears) {
+                final DelayUpdateUtils delays = (DelayUpdateUtils) getPrivateField(plugin, "delayUpdateUtils");
+                when(delays.parseDelayConditions(anyString())).thenReturn(
+                    new ArrayList<>(List.of(new DelayCondition(DelayUntilNext.background, ""))),
+                    new ArrayList<>()
+                );
+            }
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            final CapgoUpdater.BackgroundDownloadContext owner = new CapgoUpdater.BackgroundDownloadContext(0, false);
+            setPrivateField(plugin, "backgroundDownloadContext", owner);
+            plugin.scheduleDirectUpdateFinish(updater.getBundleInfo("bundleB002"), owner);
+            plugin.workers.remove(0).run();
+            assertEquals(
+                "Dispatch must not consume the readiness timeout",
+                1,
+                ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties()
+            );
+            assertFalse(plugin.hasNotifiedEvent("appReady"));
+            assertEquals("Readiness and installation must both be dispatched", 2, plugin.workers.size());
+            plugin.workers.remove(1).run();
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals("bundleB002", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            invokePrivateVoidMethod(plugin, "semaphoreDown");
+            plugin.workers.remove(0).run();
+            assertTrue(plugin.hasNotifiedEvent("appReady"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testRetryReadinessDoesNotBlockContextCancellation() throws Exception {
+        try (
+            MockedStatic<Looper> mainLoopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            mainLoopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            final CapgoUpdater.BackgroundDownloadContext original = new CapgoUpdater.BackgroundDownloadContext(0, true);
+            final CapgoUpdater.BackgroundDownloadContext replacement = new CapgoUpdater.BackgroundDownloadContext(1, true);
+            original.deferredForRetry = true;
+            setPrivateField(plugin, "backgroundDownloadContext", replacement);
+            setPrivateField(plugin, "appReadyTimeout", 2000);
+            ((Map<String, CapgoUpdater.BackgroundDownloadContext>) getPrivateField(updater, "backgroundDownloadContexts")).put(
+                "retry",
+                original
+            );
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            final CountDownLatch entered = new CountDownLatch(1);
+            final CountDownLatch returned = new CountDownLatch(1);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            doAnswer((inv) -> {
+                entered.countDown();
+                plugin.reuseBackgroundDownload(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadReused(any(), any());
+            final Thread handoff = new Thread(() -> {
+                try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+                    loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+                    assertTrue(updater.reuseBackgroundDownload("retry", replacement));
+                    returned.countDown();
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            handoff.start();
+            try {
+                assertTrue(entered.await(1, TimeUnit.SECONDS));
+                assertTrue("Handoff must release the context monitor before readiness", returned.await(500, TimeUnit.MILLISECONDS));
+                final Method complete = CapgoUpdater.class.getDeclaredMethod(
+                    "completeBackgroundDownload",
+                    String.class,
+                    CapgoUpdater.BackgroundDownloadContext.class,
+                    Runnable.class
+                );
+                complete.setAccessible(true);
+                complete.invoke(updater, "retry", original, (Runnable) () -> {});
+                assertFalse(updater.reuseBackgroundDownload("retry", replacement));
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+            } finally {
+                invokePrivateVoidMethod(plugin, "semaphoreDown");
+                handoff.join(3000);
+            }
+            assertNull(failure.get());
+            assertFalse(handoff.isAlive());
+        }
+    }
+
+    @Test
     public void testSendReadyToJsWithPendingUnblocksAfterNotifyAppReady() throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             final Looper mainLooper = mock(Looper.class);
@@ -3639,6 +3850,38 @@ public class CapacitorUpdaterUnitTest {
             plugin._reload();
 
             assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            assertEquals(-1, (int) getPrivateField(plugin, "pendingNotifyAppReadyPhase"));
+        }
+    }
+
+    @Test
+    public void testForegroundReloadClearsConsumedLaunchWait() throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appReadyTimeout", 1);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.post(any(Runnable.class))).thenReturn(true);
+            invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            invokeSendReadyToJs(plugin, new BundleInfo("id", "old", BundleStatus.SUCCESS, new Date(), ""), "old page");
+            assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+            plugin._reload();
+            assertEquals(
+                "The consumed launch party must not leak into reload",
+                0,
+                ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties()
+            );
             assertEquals(-1, (int) getPrivateField(plugin, "pendingNotifyAppReadyPhase"));
         }
     }
@@ -4014,7 +4257,6 @@ public class CapacitorUpdaterUnitTest {
         final CountDownLatch queueRead = new CountDownLatch(1);
         final CountDownLatch finishOperation = new CountDownLatch(1);
         final CountDownLatch writerStarted = new CountDownLatch(1);
-        final CountDownLatch writerFinished = new CountDownLatch(1);
         final AtomicInteger reads = new AtomicInteger();
         final AtomicReference<Throwable> failure = new AtomicReference<>();
         doAnswer((inv) -> {
@@ -4044,8 +4286,6 @@ public class CapacitorUpdaterUnitTest {
                 assertTrue(writer.setNextBundle("bundleB002"));
             } catch (Throwable error) {
                 failure.compareAndSet(null, error);
-            } finally {
-                writerFinished.countDown();
             }
         });
         try {
@@ -4053,10 +4293,7 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(queueRead.await(5, TimeUnit.SECONDS));
             writing.start();
             assertTrue(writerStarted.await(5, TimeUnit.SECONDS));
-            assertFalse(
-                "Another updater must not write between the queue check and commit",
-                writerFinished.await(100, TimeUnit.MILLISECONDS)
-            );
+            assertBlockedOnMonitor(writing, getPrivateField(updater, "nextBundleLock"), completing);
         } finally {
             finishOperation.countDown();
             completing.join(5000);
@@ -4446,6 +4683,179 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDirectBuiltinFinalizationPreservesNewerWorkManagerDownload() throws Exception {
+        assertBuiltinFinalizationPreservesNewerDownload(false);
+    }
+
+    @Test
+    public void testQueuedBuiltinFinalizationPreservesNewerWorkManagerDownload() throws Exception {
+        assertBuiltinFinalizationPreservesNewerDownload(true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertBuiltinFinalizationPreservesNewerDownload(final boolean queued) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, unused) -> {
+                doAnswer((inv) -> {
+                    inv.<Runnable>getArgument(0).run();
+                    return true;
+                })
+                    .when(handler)
+                    .post(any(Runnable.class));
+            });
+            MockedStatic<CapConfig> configs = mockStatic(CapConfig.class);
+            MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            configs.when(() -> CapConfig.loadDefault(any())).thenReturn(mock(CapConfig.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final android.content.Context context = mock(android.content.Context.class);
+            when(context.getApplicationContext()).thenReturn(context);
+            final android.content.res.AssetManager assets = mock(android.content.res.AssetManager.class);
+            when(context.getAssets()).thenReturn(assets);
+            when(assets.open(anyString())).thenAnswer((inv) -> new java.io.ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)));
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting(queued ? "background" : "always");
+            final java.util.concurrent.ExecutorService io = mock(java.util.concurrent.ExecutorService.class);
+            doAnswer((inv) -> {
+                inv.<Runnable>getArgument(0).run();
+                return null;
+            })
+                .when(io)
+                .execute(any(Runnable.class));
+            setPrivateField(updater, "io", io);
+            doAnswer((inv) -> {
+                plugin.scheduleDirectUpdateFinish(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .directUpdateFinish(any(BundleInfo.class), any(CapgoUpdater.BackgroundDownloadContext.class));
+            doAnswer((inv) -> {
+                plugin.emitLaunchDownloadReady(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadSettled(any(), anyString(), any(CapgoUpdater.BackgroundDownloadContext.class));
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final androidx.work.WorkManager manager = mock(androidx.work.WorkManager.class);
+            workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
+            final androidx.lifecycle.LiveData<List<androidx.work.WorkInfo>> liveData = mock(androidx.lifecycle.LiveData.class);
+            final AtomicReference<String> id = new AtomicReference<>();
+            final AtomicReference<androidx.lifecycle.Observer<List<androidx.work.WorkInfo>>> observer = new AtomicReference<>();
+            when(manager.getWorkInfosByTagLiveData(anyString())).thenAnswer((inv) -> {
+                id.set(inv.getArgument(0));
+                return liveData;
+            });
+            doAnswer((inv) -> {
+                observer.set(inv.getArgument(0));
+                return null;
+            })
+                .when(liveData)
+                .observeForever(any());
+            final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+            downloads
+                .when(() -> DownloadWorkerManager.cancelAllDownloads(context))
+                .thenAnswer((inv) -> {
+                    cancelled.set(true);
+                    if (observer.get() != null) {
+                        final androidx.work.WorkInfo work = mock(androidx.work.WorkInfo.class);
+                        when(work.getState()).thenReturn(androidx.work.WorkInfo.State.CANCELLED);
+                        when(work.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+                        observer.get().onChanged(List.of(work));
+                    }
+                    return null;
+                });
+            final Runnable startNewerDownload = () -> {
+                try {
+                    plugin.setAutoUpdateModeForTesting("background");
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                    final Map<String, Object> fresh = new HashMap<>();
+                    fresh.put("version", "newer-download");
+                    fresh.put("url", "https://example.com/newer.zip");
+                    fresh.put("manifest", new JSONArray());
+                    response.get().callback(fresh);
+                    plugin.workers.remove(0).run();
+                    assertNotNull(observer.get());
+                } catch (Exception error) {
+                    throw new IllegalStateException(error);
+                }
+            };
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            if (!queued) {
+                plugin.beforeReload = () -> {
+                    plugin.beforeReload = null;
+                    startNewerDownload.run();
+                };
+            }
+            response.get().callback(new HashMap<>(Map.of("version", "builtin")));
+            if (queued) {
+                plugin.appMovedToBackground();
+                final Runnable installBuiltin = plugin.workers.remove(0);
+                startNewerDownload.run();
+                installBuiltin.run();
+            }
+            assertEquals(1, plugin.reloadCalls);
+            assertTrue(updater.getCurrentBundle().isBuiltin());
+            assertFalse("Automatic builtin finalization must not cancel the newer download", cancelled.get());
+            final long readyBefore = ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames
+                .stream()
+                .filter("appReady"::equals)
+                .count();
+            assertEquals(queued ? 1 : 0, readyBefore);
+            final Path staging = updater.documentsDir.toPath().resolve("newer-staging");
+            Files.createDirectories(staging);
+            staging.toFile().deleteOnExit();
+            Files.write(staging.resolve("index.html"), "newer update".getBytes(StandardCharsets.UTF_8)).toFile().deleteOnExit();
+            final androidx.work.WorkInfo completed = mock(androidx.work.WorkInfo.class);
+            when(completed.getState()).thenReturn(androidx.work.WorkInfo.State.SUCCEEDED);
+            when(completed.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+            when(completed.getOutputData()).thenReturn(
+                new androidx.work.Data.Builder()
+                    .putString(DownloadService.VERSION, "newer-download")
+                    .putString(DownloadService.FILEDEST, "newer-staging")
+                    .putBoolean(DownloadService.IS_MANIFEST, true)
+                    .putString(DownloadService.SESSIONKEY, "")
+                    .putString(DownloadService.CHECKSUM, "")
+                    .build()
+            );
+            observer.get().onChanged(List.of(completed));
+            while (!plugin.workers.isEmpty()) {
+                plugin.workers.remove(0).run();
+            }
+            assertEquals(
+                readyBefore + 1,
+                ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+            );
+            if (!queued) {
+                assertEquals(id.get(), updater.getNextBundle().getId());
+                plugin.appMovedToBackground();
+                plugin.workers.remove(0).run();
+            }
+            assertEquals(id.get(), updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(2, plugin.reloadCalls);
+            updater.reset(false);
+            assertTrue("Explicit reset must retain its cancellation behavior", cancelled.get());
+        }
+    }
+
+    @Test
     public void testSupersededBuiltinResponseCannotQueueAfterOwnershipCheck() throws Exception {
         assertResponseCompletionOwnership("builtin", false, false);
     }
@@ -4670,7 +5080,7 @@ public class CapacitorUpdaterUnitTest {
                 assertTrue(committing.await(5, TimeUnit.SECONDS));
                 replacing.start();
                 assertTrue(replacementStarted.await(5, TimeUnit.SECONDS));
-                assertFalse("Replacement must wait for the queue/staging commit", replacementFinished.await(100, TimeUnit.MILLISECONDS));
+                assertBlockedOnMonitor(replacing, plugin, completing);
             } finally {
                 finishCommit.countDown();
                 completing.join(5000);
@@ -6004,7 +6414,6 @@ public class CapacitorUpdaterUnitTest {
             if ("during-cleanup".equals(replacementTiming)) {
                 final AtomicReference<Throwable> failure = new AtomicReference<>();
                 final CountDownLatch replacementStarted = new CountDownLatch(1);
-                final CountDownLatch replacementFinished = new CountDownLatch(1);
                 final Thread failing = new Thread(() -> {
                     try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
                         // Mockito static mocks are thread-local; cleanup may notify before replacement wins.
@@ -6021,8 +6430,6 @@ public class CapacitorUpdaterUnitTest {
                         replaceCheck.run();
                     } catch (Throwable error) {
                         failure.compareAndSet(null, error);
-                    } finally {
-                        replacementFinished.countDown();
                     }
                 });
                 try {
@@ -6030,10 +6437,7 @@ public class CapacitorUpdaterUnitTest {
                     assertTrue(cleanupReached.await(5, TimeUnit.SECONDS));
                     replacing.start();
                     assertTrue(replacementStarted.await(5, TimeUnit.SECONDS));
-                    assertFalse(
-                        "Ownership replacement must wait for failure cleanup",
-                        replacementFinished.await(100, TimeUnit.MILLISECONDS)
-                    );
+                    assertBlockedOnMonitor(replacing, plugin, failing);
                 } finally {
                     finishCleanup.countDown();
                     failing.join(5000);

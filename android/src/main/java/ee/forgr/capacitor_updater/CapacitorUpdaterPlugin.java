@@ -1204,7 +1204,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         semaphoreReady.arriveAndDeregister();
     }
 
-    private void cleanupTimedOutSemaphoreWait(final int phase) {
+    private synchronized void cleanupTimedOutSemaphoreWait(final int phase) {
         if (semaphoreReady.getPhase() != phase || semaphoreReady.getRegisteredParties() == 0) {
             return;
         }
@@ -1212,20 +1212,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         semaphoreReady.arriveAndDeregister();
     }
 
-    private void armPendingNotifyAppReadyWait() {
+    private synchronized void armPendingNotifyAppReadyWait() {
         this.clearPendingNotifyAppReadyWait();
         this.pendingNotifyAppReadyPhase = this.semaphoreUp();
         this.pendingNotifyAppReadyWait = true;
     }
 
-    private void clearPendingNotifyAppReadyWait() {
-        if (!this.pendingNotifyAppReadyWait) {
-            return;
-        }
+    private synchronized void clearPendingNotifyAppReadyWait() {
         final int phase = this.pendingNotifyAppReadyPhase;
         this.pendingNotifyAppReadyWait = false;
         this.pendingNotifyAppReadyPhase = -1;
-        this.cleanupTimedOutSemaphoreWait(phase);
+        // Invalidate old page completions before releasing their waiters.
+        this.backgroundReadyState = new BackgroundReadyState(-1);
+        if (phase >= 0) {
+            this.cleanupTimedOutSemaphoreWait(phase);
+        }
     }
 
     private boolean consumePendingNotifyAppReadyWait(final int[] phaseOut) {
@@ -1234,7 +1235,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         phaseOut[0] = this.pendingNotifyAppReadyPhase;
         this.pendingNotifyAppReadyWait = false;
-        this.pendingNotifyAppReadyPhase = -1;
+        // Retain the phase until the page is replaced, even after a completion claims its wait.
         return true;
     }
 
@@ -1300,18 +1301,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 readyState.claimed = true;
             }
             shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
-            if (downloadContext != null) {
-                if (shouldWait) {
-                    readyState.waitPhase = pendingPhase[0];
-                } else if (
-                    readyState.waitPhase >= 0 &&
-                    this.semaphoreReady.getPhase() == readyState.waitPhase &&
-                    this.semaphoreReady.getRegisteredParties() > 0
-                ) {
-                    // A superseded check may already own the waiter for this page's readiness.
-                    pendingPhase[0] = readyState.waitPhase;
-                    shouldWait = true;
-                }
+            if (shouldWait) {
+                readyState.waitPhase = pendingPhase[0];
+            } else if (
+                readyState.waitPhase >= 0 &&
+                this.semaphoreReady.getPhase() == readyState.waitPhase &&
+                this.semaphoreReady.getRegisteredParties() > 0
+            ) {
+                // Consuming a waiter does not release the page's gate, including for contextless completions.
+                pendingPhase[0] = readyState.waitPhase;
+                shouldWait = true;
             }
         }
 
@@ -1350,17 +1349,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        // Never block the UI thread waiting for notifyAppReady (JS needs it).
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            startNewThread(() -> {
-                this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
-                emitReady.run();
-            });
-            return;
-        }
-
-        this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
-        emitReady.run();
+        // Completion callers may hold download ownership locks or still need to dispatch an install.
+        // Keep every readiness wait off their stack, not only waits originating on the UI thread.
+        startNewThread(() -> {
+            this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
+            emitReady.run();
+        });
     }
 
     private void hideSplashscreen() {
@@ -2742,7 +2736,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final CapgoUpdater.BackgroundDownloadContext downloadContext,
         final BackgroundReadyState readyState
     ) {
-        return downloadContext == null || (this.backgroundDownloadContext == downloadContext && this.backgroundReadyState == readyState);
+        return this.ownsBackgroundDownload(downloadContext) && this.backgroundReadyState == readyState;
     }
 
     void reuseBackgroundDownload(
@@ -5687,7 +5681,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             installed = staged && this._reload();
             if (installed) {
                 if (bundle.isBuiltin()) {
-                    this.implementation.finalizeResetTransition(previousBundleName, false);
+                    this.implementation.finalizeBuiltinUpdate(previousBundleName);
                 } else {
                     this.notifyBundleSet(bundle);
                 }
