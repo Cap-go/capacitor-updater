@@ -805,6 +805,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
 
                 @Override
+                public void backgroundDownloadReused(
+                    final CapgoUpdater.BackgroundDownloadContext original,
+                    final CapgoUpdater.BackgroundDownloadContext replacement
+                ) {
+                    CapacitorUpdaterPlugin.this.reuseBackgroundDownload(original, replacement);
+                }
+
+                @Override
                 public void nextBundleReady(final BundleInfo bundle) {
                     CapacitorUpdaterPlugin.this.installNextIfInBackground();
                 }
@@ -2669,6 +2677,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private synchronized boolean ownsBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
         return downloadContext == null || this.backgroundDownloadContext == downloadContext;
+    }
+
+    synchronized void reuseBackgroundDownload(
+        final CapgoUpdater.BackgroundDownloadContext original,
+        final CapgoUpdater.BackgroundDownloadContext replacement
+    ) {
+        if (!this.ownsBackgroundDownload(replacement)) {
+            return;
+        }
+        this.backgroundDownloadContext = original;
+        this.implementation.directUpdate =
+            !original.deferredForRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
     }
 
     void emitLaunchDownloadReady(
@@ -5712,6 +5732,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     true,
                                     plannedDirectUpdate
                                 );
+                                return;
+                            }
+                            // Reuse the observer and original deadline of work already admitted through the download gates.
+                            if (CapacitorUpdaterPlugin.this.implementation.reuseBackgroundDownload(latestVersionName, downloadContext)) {
+                                logger.info("Reusing automatic download for version: " + latestVersionName);
                                 return;
                             }
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);

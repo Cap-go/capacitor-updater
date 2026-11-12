@@ -198,6 +198,7 @@ public class CapgoUpdater {
     // Versions whose WorkManager download is observed by this process. WorkManager persists work across a
     // process kill, but the observer that finishes the download does not survive it.
     private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
+    private final Map<String, BackgroundDownloadContext> backgroundDownloadContexts = new ConcurrentHashMap<>();
     private final ExecutorService io = createIoExecutor();
 
     private static ExecutorService createIoExecutor() {
@@ -344,6 +345,38 @@ public class CapgoUpdater {
 
     void backgroundDownloadSettled(final BundleInfo bundle, final String status, final BackgroundDownloadContext downloadContext) {
         this.backgroundDownloadSettled(bundle, status);
+    }
+
+    void backgroundDownloadReused(final BackgroundDownloadContext original, final BackgroundDownloadContext replacement) {}
+
+    boolean reuseBackgroundDownload(final String version, final BackgroundDownloadContext replacement) {
+        final BackgroundDownloadContext original = this.backgroundDownloadContexts.get(version);
+        if (original == null) {
+            return false;
+        }
+        // Serialize the ownership handoff with terminal dispatch, without holding the plugin monitor while waiting.
+        synchronized (original) {
+            if (this.backgroundDownloadContexts.get(version) != original) {
+                return false;
+            }
+            this.backgroundDownloadReused(original, replacement);
+            return true;
+        }
+    }
+
+    private void completeBackgroundDownload(
+        final String version,
+        final BackgroundDownloadContext downloadContext,
+        final Runnable completion
+    ) {
+        if (downloadContext == null) {
+            completion.run();
+            return;
+        }
+        synchronized (downloadContext) {
+            this.backgroundDownloadContexts.remove(version, downloadContext);
+            completion.run();
+        }
     }
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
@@ -1348,17 +1381,19 @@ public class CapgoUpdater {
                                 future.complete(resultBundle);
                             }
                             final BundleInfo readyBundle = success && setNext ? resultBundle : null;
-                            if (!launchReleasedWhileRetrying.get()) {
-                                notifyLaunchDownloadReady(
-                                    future != null,
-                                    success,
-                                    directInstall,
-                                    previewSession,
-                                    setNext,
-                                    readyBundle,
-                                    downloadContext
-                                );
-                            }
+                            completeBackgroundDownload(observedVersion, downloadContext, () -> {
+                                if (!launchReleasedWhileRetrying.get()) {
+                                    notifyLaunchDownloadReady(
+                                        future != null,
+                                        success,
+                                        directInstall,
+                                        previewSession,
+                                        setNext,
+                                        readyBundle,
+                                        downloadContext
+                                    );
+                                }
+                            });
                         });
                         break;
                     case FAILED:
@@ -1402,15 +1437,18 @@ public class CapgoUpdater {
                             if (failedFuture != null) {
                                 failedFuture.complete(failedBundle);
                             }
-                            if (!launchReleasedWhileRetrying.get()) {
-                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
-                            }
+                            completeBackgroundDownload(observedVersion, downloadContext, () -> {
+                                if (!launchReleasedWhileRetrying.get()) {
+                                    notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
+                                }
+                            });
                         });
                         break;
                     case CANCELLED:
                         if (!terminalHandled.compareAndSet(false, true)) break;
                         removeObserver.run();
                         observedDownloadVersions.remove(observedVersion);
+                        completeBackgroundDownload(observedVersion, downloadContext, () -> {});
                         DataManager.getInstance().clearManifest(id);
                         io.execute(() -> CapgoUpdater.this.cleanupManifestStagingAfterDownloadCancelled(id));
                         CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
@@ -1454,37 +1492,46 @@ public class CapgoUpdater {
             return;
         }
         observedDownloadVersions.add(version);
-        observeWorkProgress(context, id, version, setNext, downloadContext);
-
-        if (manifest != null) {
-            DataManager.getInstance().setManifest(id, manifest);
-            this.saveManifestStagingDest(id, dest);
+        if (downloadContext != null) {
+            this.backgroundDownloadContexts.put(version, downloadContext);
         }
+        try {
+            observeWorkProgress(context, id, version, setNext, downloadContext);
 
-        DownloadWorkerManager.enqueueDownload(
-            context,
-            url,
-            id,
-            this.documentsDir.getAbsolutePath(),
-            dest,
-            version,
-            sessionKey,
-            checksum,
-            this.publicKey,
-            manifest != null,
-            this.isEmulator(),
-            this.appId,
-            this.pluginVersion,
-            this.isProd(),
-            this.getInstallSource(),
-            this.statsUrl,
-            this.deviceID,
-            this.versionBuild,
-            this.versionCode,
-            this.versionOs,
-            this.customId,
-            this.defaultChannel
-        );
+            if (manifest != null) {
+                DataManager.getInstance().setManifest(id, manifest);
+                this.saveManifestStagingDest(id, dest);
+            }
+
+            DownloadWorkerManager.enqueueDownload(
+                context,
+                url,
+                id,
+                this.documentsDir.getAbsolutePath(),
+                dest,
+                version,
+                sessionKey,
+                checksum,
+                this.publicKey,
+                manifest != null,
+                this.isEmulator(),
+                this.appId,
+                this.pluginVersion,
+                this.isProd(),
+                this.getInstallSource(),
+                this.statsUrl,
+                this.deviceID,
+                this.versionBuild,
+                this.versionCode,
+                this.versionOs,
+                this.customId,
+                this.defaultChannel
+            );
+        } catch (final RuntimeException e) {
+            observedDownloadVersions.remove(version);
+            completeBackgroundDownload(version, downloadContext, () -> {});
+            throw e;
+        }
     }
 
     public Boolean finishDownload(
@@ -1577,7 +1624,7 @@ public class CapgoUpdater {
             logger.info("setNext: " + setNext);
             if (setNext) {
                 if (downloadContext != null) {
-                    this.directUpdateFinish(next, downloadContext);
+                    this.completeBackgroundDownload(version, downloadContext, () -> this.directUpdateFinish(next, downloadContext));
                 } else if (this.previewSession) {
                     logger.info("Preview session is active, skipping automatic install of downloaded bundle");
                     this.directUpdate = false;

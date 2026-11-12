@@ -4892,8 +4892,84 @@ public class CapacitorUpdaterUnitTest {
         assertOriginatingDownloadOwnership("deferred-success", true, true);
     }
 
+    @Test
+    public void testReusedDownloadStillInstallsBeforeOriginalDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-success", false, true);
+    }
+
+    @Test
+    public void testReusedDownloadStaysQueuedAfterOriginalDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-success", true, true);
+    }
+
+    @Test
+    public void testReusedRetryingDownloadDoesNotRegainDirectInstall() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-after-retry", false, true);
+    }
+
+    @Test
+    public void testReusedDownloadFailureReleasesTheCurrentLaunch() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-failure", false, true);
+    }
+
+    @Test
+    public void testCancelledDownloadCannotBeReused() throws Exception {
+        assertOriginatingDownloadOwnership("cancelled", false, false);
+    }
+
+    @Test
+    public void testDownloadReuseCannotDisplaceAnotherCheck() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            plugin.implementation = new CapgoUpdater(null);
+            final CapgoUpdater.BackgroundDownloadContext original = new CapgoUpdater.BackgroundDownloadContext(0, true);
+            final CapgoUpdater.BackgroundDownloadContext replacement = new CapgoUpdater.BackgroundDownloadContext(1, true);
+            final CapgoUpdater.BackgroundDownloadContext newer = new CapgoUpdater.BackgroundDownloadContext(2, true);
+            setPrivateField(plugin, "backgroundDownloadContext", newer);
+            plugin.implementation.directUpdate = true;
+            plugin.reuseBackgroundDownload(original, replacement);
+            assertSame(newer, getPrivateField(plugin, "backgroundDownloadContext"));
+            assertTrue(plugin.implementation.directUpdate);
+        }
+    }
+
+    @Test
+    public void testFailedDownloadRegistrationCannotBeReused() throws Exception {
+        try (
+            MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+        ) {
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final android.content.Context context = mock(android.content.Context.class);
+            when(context.getApplicationContext()).thenReturn(context);
+            doReturn(context).when(updater).context();
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            final androidx.work.WorkManager manager = mock(androidx.work.WorkManager.class);
+            workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
+            when(manager.getWorkInfosByTagLiveData(anyString())).thenThrow(new IllegalStateException("Observer registration failed"));
+            assertThrows(IllegalStateException.class, () ->
+                updater.downloadBackground(
+                    "https://example.com/update.zip",
+                    "failed-start",
+                    "",
+                    "",
+                    new JSONArray(),
+                    true,
+                    new CapgoUpdater.BackgroundDownloadContext(0, true)
+                )
+            );
+            assertFalse(updater.reuseBackgroundDownload("failed-start", new CapgoUpdater.BackgroundDownloadContext(1, true)));
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void assertOriginatingDownloadOwnership(final String outcome, final boolean expire, final boolean newer) throws Exception {
+        final boolean reuse = outcome.startsWith("reuse-");
+        final boolean reuseAfterRetry = "reuse-after-retry".equals(outcome);
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, context) -> {
@@ -4945,6 +5021,12 @@ public class CapacitorUpdaterUnitTest {
             })
                 .when(updater)
                 .backgroundDownloadSettled(any(), anyString(), any(CapgoUpdater.BackgroundDownloadContext.class));
+            doAnswer((inv) -> {
+                plugin.reuseBackgroundDownload(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadReused(any(), any());
             final List<Callback> responses = new ArrayList<>();
             doAnswer((inv) -> {
                 responses.add(inv.getArgument(2));
@@ -4979,6 +5061,15 @@ public class CapacitorUpdaterUnitTest {
             responses.remove(0).callback(response);
             plugin.workers.remove(0).run();
             assertEquals(1, observers.size());
+            if (reuseAfterRetry) {
+                final androidx.work.WorkInfo retry = mock(androidx.work.WorkInfo.class);
+                when(retry.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+                when(retry.getState()).thenReturn(androidx.work.WorkInfo.State.ENQUEUED);
+                when(retry.getRunAttemptCount()).thenReturn(1);
+                observers.get(0).onChanged(List.of(retry));
+                assertTrue(plugin.hasNotifiedEvent("appReady"));
+                assertFalse(updater.directUpdate);
+            }
             if (expire) {
                 originalTimeout.run();
                 plugin.appMovedToBackground();
@@ -4988,12 +5079,21 @@ public class CapacitorUpdaterUnitTest {
                 plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
                 invokeBackgroundDownload(plugin);
                 plugin.workers.remove(0).run();
-                response.put("version", "new-download");
+                response.put("version", reuse ? "old-download" : "new-download");
+                if (reuse) {
+                    downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "old-download")).thenReturn(true);
+                }
                 responses.remove(0).callback(response);
-                plugin.workers.remove(0).run();
-                assertEquals(2, observers.size());
-                updater.setNextBundle("bundleB002");
-                assertTrue(updater.directUpdate);
+                if (!plugin.workers.isEmpty()) {
+                    plugin.workers.remove(0).run();
+                }
+                assertEquals(reuse ? 1 : 2, observers.size());
+                if (!reuse) {
+                    updater.setNextBundle("bundleB002");
+                    assertTrue(updater.directUpdate);
+                } else if (expire || reuseAfterRetry) {
+                    assertFalse("Reusing work must not refresh its expired or retry-deferred install plan", updater.directUpdate);
+                }
             }
             final Object owningTask = getPrivateField(plugin, "backgroundDownloadTask");
             if ("deferred-success".equals(outcome)) {
@@ -5012,9 +5112,11 @@ public class CapacitorUpdaterUnitTest {
             when(work.getState()).thenReturn(
                 "retry".equals(outcome)
                     ? androidx.work.WorkInfo.State.ENQUEUED
-                    : "failure".equals(outcome)
+                    : outcome.endsWith("failure")
                       ? androidx.work.WorkInfo.State.FAILED
-                      : androidx.work.WorkInfo.State.SUCCEEDED
+                      : "cancelled".equals(outcome)
+                        ? androidx.work.WorkInfo.State.CANCELLED
+                        : androidx.work.WorkInfo.State.SUCCEEDED
             );
             when(work.getOutputData()).thenReturn(
                 new androidx.work.Data.Builder()
@@ -5033,7 +5135,7 @@ public class CapacitorUpdaterUnitTest {
             while (!plugin.workers.isEmpty()) {
                 plugin.workers.remove(0).run();
             }
-            if (newer) {
+            if (newer && !reuse) {
                 assertEquals("An old download must not reload the active bundle", 0, plugin.reloadCalls);
                 assertEquals("bundleA001", updater.getCurrentBundle().getId());
                 assertEquals("bundleB002", updater.getNextBundle().getId());
@@ -5065,7 +5167,16 @@ public class CapacitorUpdaterUnitTest {
                 assertEquals(1, plugin.reloadCalls);
                 assertEquals(ids.get(1), updater.getCurrentBundle().getId());
                 assertNull(updater.getNextBundle());
-            } else if (expire || "retry".equals(outcome)) {
+            } else if (outcome.endsWith("failure") || "cancelled".equals(outcome)) {
+                assertEquals(0, plugin.reloadCalls);
+                assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+                if (outcome.endsWith("failure")) {
+                    assertTrue(plugin.hasNotifiedEvent("appReady"));
+                    assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
+                    assertFalse(updater.directUpdate);
+                }
+            } else if (expire || "retry".equals(outcome) || reuseAfterRetry) {
                 if ("retry".equals(outcome)) {
                     assertTrue(plugin.hasNotifiedEvent("appReady"));
                     assertFalse(updater.directUpdate);
@@ -5084,6 +5195,12 @@ public class CapacitorUpdaterUnitTest {
                 assertEquals(1, plugin.reloadCalls);
                 assertEquals(ids.get(0), updater.getCurrentBundle().getId());
                 assertNull(updater.getNextBundle());
+            }
+            if (!newer || !"retry".equals(outcome)) {
+                assertFalse(
+                    "Terminal work must not remain reusable",
+                    updater.reuseBackgroundDownload("old-download", new CapgoUpdater.BackgroundDownloadContext(100, true))
+                );
             }
         }
     }
