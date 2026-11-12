@@ -388,11 +388,11 @@ public class CapacitorUpdaterUnitTest {
             final JSONArray manifest,
             final boolean setNext
         ) {
-            return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null);
+            return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null).bundleId;
         }
 
         @Override
-        String downloadBackground(
+        BackgroundDownloadResult downloadBackground(
             final String url,
             final String version,
             final String sessionKey,
@@ -406,7 +406,7 @@ public class CapacitorUpdaterUnitTest {
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
             this.directUpdateWhenDownloadStarted = this.directUpdateStateSupplier.getAsBoolean();
             this.updateAvailableNotifier.accept(version);
-            return "test-download-id";
+            return BackgroundDownloadResult.started("test-download-id");
         }
 
         @Override
@@ -7393,6 +7393,168 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testRejectedZipSecurityStartReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("https", false, false);
+    }
+
+    @Test
+    public void testRejectedManifestSecurityStartReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("session-key", false, false);
+    }
+
+    @Test
+    public void testRejectedCleanupStartReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("cleanup", false, false);
+    }
+
+    @Test
+    public void testRejectedManualDownloadStartReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("manual", false, false);
+    }
+
+    @Test
+    public void testRejectedOrphanCancellationReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("orphan", false, false);
+    }
+
+    @Test
+    public void testRejectedRetryCancellationReleasesReadiness() throws Exception {
+        assertRejectedDownloadStart("retry", false, false);
+    }
+
+    @Test
+    public void testRejectedDownloadStartStillWaitsForPageReadiness() throws Exception {
+        assertRejectedDownloadStart("cleanup", true, false);
+    }
+
+    @Test
+    public void testRejectedDownloadStartPreservesNewerCheck() throws Exception {
+        assertRejectedDownloadStart("cleanup", false, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertRejectedDownloadStart(final String reason, final boolean waitForReady, final boolean replaceCheck) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class);
+            MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final android.content.Context context = mock(android.content.Context.class);
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            updater.httpsOnly = false;
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 0);
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final String version = "rejected-start";
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("version", version);
+            payload.put("url", "http://example.com/update.zip");
+            payload.put("checksum", "checksum");
+            if ("session-key".equals(reason) || "cleanup".equals(reason) || "retry".equals(reason)) {
+                payload.put("manifest", new JSONArray());
+            }
+            response.get().callback(payload);
+            assertEquals("The response admitted a download worker", 1, plugin.workers.size());
+            final Runnable download = plugin.workers.remove(0);
+            final Object originalContext = getPrivateField(plugin, "backgroundDownloadContext");
+            final int splashToken = (int) getPrivateField(plugin, "splashscreenInvocationToken");
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            final AtomicReference<Object> newerTask = new AtomicReference<>();
+            if (waitForReady) {
+                invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            }
+            // Change the gate after response preflight, before the real core starts the download.
+            if ("https".equals(reason)) {
+                updater.httpsOnly = true;
+            } else if ("session-key".equals(reason)) {
+                updater.publicKey = "configured-public-key";
+            } else if ("cleanup".equals(reason)) {
+                updater.downloadGate = () -> {
+                    if (replaceCheck) {
+                        try {
+                            invokeBackgroundDownload(plugin);
+                            plugin.workers.remove(0).run();
+                            newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                            newerTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                            setPrivateField(plugin, "downloadStartTimeMs", 123L);
+                            updater.directUpdate = true;
+                            assertTrue(updater.setNextBundle("bundleB002"));
+                        } catch (Exception e) {
+                            throw new AssertionError(e);
+                        }
+                    }
+                    throw new IllegalStateException("Cleanup has not finished");
+                };
+            } else {
+                downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, version)).thenReturn(true);
+                if ("manual".equals(reason)) {
+                    ((Set<String>) getPrivateField(updater, "observedDownloadVersions")).add(version);
+                } else if ("retry".equals(reason)) {
+                    doReturn(updater.getBundleInfo("bundleA001").setStatus(BundleStatus.ERROR)).when(updater).getBundleInfoByName(version);
+                }
+                downloads.when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, version)).thenReturn(false);
+            }
+            download.run();
+            verify(updater, never()).notifyDownload(anyString(), anyInt());
+            assertTrue(((Map<?, ?>) getPrivateField(updater, "backgroundDownloadContexts")).isEmpty());
+            if ("orphan".equals(reason) || "retry".equals(reason)) {
+                downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, version));
+            } else if ("manual".equals(reason)) {
+                downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, version), never());
+            }
+            if (replaceCheck) {
+                assertNotSame(originalContext, newerContext.get());
+                assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+                assertSame(newerTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+                assertEquals(123L, getPrivateField(plugin, "downloadStartTimeMs"));
+                assertTrue(updater.directUpdate);
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+                assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+                assertFalse(plugin.hasNotifiedEvent("noNeedUpdate"));
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+                assertEquals(splashToken, getPrivateField(plugin, "splashscreenInvocationToken"));
+                return;
+            }
+            assertNull("A rejected start must release the automatic check", getPrivateField(plugin, "backgroundDownloadTask"));
+            assertEquals(0L, getPrivateField(plugin, "downloadStartTimeMs"));
+            assertFalse(updater.directUpdate);
+            if (waitForReady) {
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+                assertEquals(splashToken, getPrivateField(plugin, "splashscreenInvocationToken"));
+                assertEquals(1, plugin.workers.size());
+                invokePrivateVoidMethod(plugin, "semaphoreDown");
+                plugin.workers.remove(0).run();
+            }
+            final TestableCapacitorUpdaterPlugin events = plugin;
+            for (String event : List.of("downloadFailed", "noNeedUpdate", "appReady")) {
+                assertEquals("Exactly one " + event, 1, events.notifiedEventNames.stream().filter(event::equals).count());
+            }
+            assertEquals(version, plugin.getNotifiedEventPayload("downloadFailed").getString("version"));
+            assertEquals("Error downloading file", plugin.getNotifiedEventPayload("appReady").getString("status"));
+            assertEquals(splashToken + 1, getPrivateField(plugin, "splashscreenInvocationToken"));
+            assertNull(updater.getNextBundle());
+            assertEquals(0, plugin.reloadCalls);
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
     public void testStaleDownloadStartFailurePreservesNewerCheck() throws Exception {
         assertDownloadStartFailureOwnership("before-failure");
     }
@@ -7860,6 +8022,8 @@ public class CapacitorUpdaterUnitTest {
         final CapgoUpdater.BackgroundDownloadContext original = new CapgoUpdater.BackgroundDownloadContext(0, true);
         final CapgoUpdater.BackgroundDownloadContext replacement = new CapgoUpdater.BackgroundDownloadContext(1, true);
         final AtomicReference<Throwable> error = new AtomicReference<>();
+        final AtomicReference<CapgoUpdater.BackgroundDownloadResult> startedResult = new AtomicReference<>();
+        final AtomicReference<CapgoUpdater.BackgroundDownloadResult> reusedResult = new AtomicReference<>();
         final java.util.function.Consumer<CapgoUpdater.BackgroundDownloadContext> start = (downloadContext) -> {
             try (
                 MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
@@ -7868,7 +8032,7 @@ public class CapacitorUpdaterUnitTest {
                 workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
                 // WorkManager has not reported an active version: registration itself must deduplicate.
                 downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "concurrent-start")).thenReturn(false);
-                updater.downloadBackground(
+                final CapgoUpdater.BackgroundDownloadResult result = updater.downloadBackground(
                     "https://example.com/update.zip",
                     "concurrent-start",
                     "",
@@ -7877,6 +8041,7 @@ public class CapacitorUpdaterUnitTest {
                     true,
                     downloadContext
                 );
+                (downloadContext == original ? startedResult : reusedResult).set(result);
             } catch (Throwable failure) {
                 error.compareAndSet(null, failure);
             }
@@ -7898,6 +8063,9 @@ public class CapacitorUpdaterUnitTest {
         if (error.get() != null) {
             throw new AssertionError(error.get());
         }
+        assertEquals(CapgoUpdater.BackgroundDownloadResult.Status.STARTED, startedResult.get().status);
+        assertNotNull(startedResult.get().bundleId);
+        assertEquals(CapgoUpdater.BackgroundDownloadResult.Status.REUSED, reusedResult.get().status);
         verify(liveData, times(1)).observeForever(any());
         verify(updater, times(1)).backgroundDownloadReused(original, replacement);
         verify(updater, times(1)).notifyDownload(anyString(), eq(5));

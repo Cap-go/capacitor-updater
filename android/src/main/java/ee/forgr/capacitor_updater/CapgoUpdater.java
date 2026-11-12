@@ -337,6 +337,30 @@ public class CapgoUpdater {
         }
     }
 
+    static final class BackgroundDownloadResult {
+
+        enum Status {
+            STARTED,
+            REUSED,
+            NOT_STARTED
+        }
+
+        static final BackgroundDownloadResult REUSED = new BackgroundDownloadResult(Status.REUSED, null);
+        static final BackgroundDownloadResult NOT_STARTED = new BackgroundDownloadResult(Status.NOT_STARTED, null);
+
+        final Status status;
+        final String bundleId;
+
+        private BackgroundDownloadResult(final Status status, final String bundleId) {
+            this.status = status;
+            this.bundleId = bundleId;
+        }
+
+        static BackgroundDownloadResult started(final String bundleId) {
+            return new BackgroundDownloadResult(Status.STARTED, bundleId);
+        }
+    }
+
     void directUpdateFinish(final BundleInfo latest, final BackgroundDownloadContext downloadContext) {
         this.directUpdateFinish(latest);
     }
@@ -2128,10 +2152,10 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
-        return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null);
+        return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null).bundleId;
     }
 
-    String downloadBackground(
+    BackgroundDownloadResult downloadBackground(
         final String url,
         final String version,
         final String sessionKey,
@@ -2148,10 +2172,10 @@ public class CapgoUpdater {
             this.runPreDownloadSecurityGates(url, version, manifest);
         } catch (final IOException e) {
             logger.error("Download blocked: " + e.getMessage());
-            return null;
+            return BackgroundDownloadResult.NOT_STARTED;
         }
         if (!this.runDownloadGateQuiet()) {
-            return null;
+            return BackgroundDownloadResult.NOT_STARTED;
         }
         // A later check can miss reuse before the earlier worker registers. Recheck and register
         // together so simultaneous starts cannot overwrite the context attached to the observer.
@@ -2160,7 +2184,7 @@ public class CapgoUpdater {
         }
     }
 
-    private String startBackgroundDownload(
+    private BackgroundDownloadResult startBackgroundDownload(
         final String url,
         final String version,
         final String sessionKey,
@@ -2171,7 +2195,7 @@ public class CapgoUpdater {
     ) {
         if (downloadContext != null && this.reuseBackgroundDownload(version, downloadContext)) {
             logger.info("Reusing automatic download at registration for version: " + version);
-            return null;
+            return BackgroundDownloadResult.REUSED;
         }
         final String id = this.randomString();
 
@@ -2183,14 +2207,14 @@ public class CapgoUpdater {
                 // Cancel the failed download and allow retry
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel previous download before retry");
-                    return null;
+                    return BackgroundDownloadResult.NOT_STARTED;
                 }
                 logger.info("Retrying failed download for version: " + version);
             } else if (shouldRestartOrphanedDownload(observedDownloadVersions.contains(version))) {
                 // Left over from a killed process: nothing would finish it or release the launch, so start over.
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version)) {
                     logger.error("Failed to cancel orphaned download before restarting it");
-                    return null;
+                    return BackgroundDownloadResult.NOT_STARTED;
                 }
                 BundleInfo orphanedBundle = null;
                 for (final BundleInfo info : this.list(true)) {
@@ -2206,7 +2230,7 @@ public class CapgoUpdater {
                 logger.info("Restarting download orphaned by a previous process for version: " + version);
             } else {
                 logger.info("Version already downloading: " + version);
-                return null;
+                return BackgroundDownloadResult.NOT_STARTED;
             }
         }
 
@@ -2216,7 +2240,7 @@ public class CapgoUpdater {
 
         final String dest = manifest != null ? this.manifestStagingDest() : this.randomString();
         this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, downloadContext);
-        return id;
+        return BackgroundDownloadResult.started(id);
     }
 
     public BundleInfo download(final String url, final String version, final String sessionKey, final String checksum) throws IOException {

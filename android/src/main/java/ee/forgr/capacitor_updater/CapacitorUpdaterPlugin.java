@@ -6334,9 +6334,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
-                                    if (jsRes.has("manifest")) {
-                                        // Handle manifest-based download
-                                        JSONArray manifest = jsRes.getJSONArray("manifest");
+                                    final JSONArray manifest = jsRes.has("manifest") ? jsRes.getJSONArray("manifest") : null;
+                                    final CapgoUpdater.BackgroundDownloadResult result =
                                         CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                                             url,
                                             latestVersionName,
@@ -6346,15 +6345,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
                                             downloadContext
                                         );
-                                    } else {
-                                        // Handle single file download (existing code)
-                                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                                            url,
+                                    if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.NOT_STARTED) {
+                                        CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                             latestVersionName,
-                                            sessionKey,
-                                            checksum,
-                                            null,
-                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
+                                            plannedDirectUpdate,
                                             downloadContext
                                         );
                                     }
