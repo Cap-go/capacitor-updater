@@ -339,12 +339,16 @@ public class UpdateLifecycleTest {
 
     /** Runs a rollback check whose sleep already expired (what a frozen app sees at thaw). */
     private void runExpiredRollbackCheck() throws Exception {
+        this.createExpiredRollbackCheck().run();
+    }
+
+    private Runnable createExpiredRollbackCheck() throws Exception {
         final Constructor<?> constructor = Class.forName(DEFERRED_CHECK_CLASS).getDeclaredConstructor(
             CapacitorUpdaterPlugin.class,
             long.class
         );
         constructor.setAccessible(true);
-        ((Runnable) constructor.newInstance(this.plugin, 0L)).run();
+        return (Runnable) constructor.newInstance(this.plugin, 0L);
     }
 
     private void invokeBackgroundDownload() throws Exception {
@@ -387,6 +391,19 @@ public class UpdateLifecycleTest {
 
         assertTrue(this.plugin.events.contains("updateFailed"));
         assertEquals(1, this.updater.setErrorCalls);
+    }
+
+    @Test
+    public void rollbackCheckDoesNotEvaluateANewlyStagedBundle() throws Exception {
+        final Runnable oldCheck = this.createExpiredRollbackCheck();
+        // Staging changes the current bundle before _reload advances the document generation.
+        this.updater.current = new BundleInfo("bundle-2", "2.0.0", BundleStatus.PENDING, new Date(), "abc");
+
+        oldCheck.run();
+
+        assertEquals(BundleStatus.PENDING, this.updater.current.getStatus());
+        assertEquals(0, this.updater.setErrorCalls);
+        assertFalse(this.plugin.events.contains("updateFailed"));
     }
 
     // Bug: the install at background waited appReadyTimeout (30 s for a pending bundle) for a page that

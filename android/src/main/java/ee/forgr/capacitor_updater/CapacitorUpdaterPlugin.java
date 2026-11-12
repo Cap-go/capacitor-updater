@@ -3558,9 +3558,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("Cannot reload without a WebView");
             return false;
         }
+        // Reject the previous document while the main-thread reload is still queued.
+        final int generation = this.armReadyGuard();
         final Object dispatchLock = new Object();
         final FutureTask<Void> dispatch = new FutureTask<>(() -> {
-            this.stampReadyGenerationBeforeReload();
+            this.stampReadyGenerationBeforeReload(generation);
             String targetUrl = this.bridge.getAppUrl();
             if (this.keepUrlPathAfterReload) {
                 this.syncKeepUrlPathFlag(true);
@@ -5232,8 +5234,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void stampReadyGenerationBeforeReload() {
-        final int generation = this.armReadyGuard();
+    private void stampReadyGenerationBeforeReload(final int generation) {
         final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
         if (webView == null) {
             this.disarmReadyGuard(generation);
@@ -6455,9 +6456,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void checkRevert() {
-        // Automatically roll back to fallback version if notifyAppReady has not been called yet
-        final BundleInfo current = this.implementation.getCurrentBundle();
+    private void checkRevert(final BundleInfo current) {
+        // Automatically roll back to fallback version if notifyAppReady has not been called yet.
 
         if (current.isBuiltin()) {
             logger.info("Built-in bundle is active. We skip the check for notifyAppReady.");
@@ -6510,22 +6510,32 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    void runDeferredAppReadyCheck() {
+    private void runDeferredAppReadyCheck(final String expectedBundleId, final int expectedGeneration) {
         // A frozen app wakes up with its sleep already expired, before appMovedToForeground re-arms
         // the check: its page could not run yet, so wait for the fresh check of the next foreground.
         if (this.appInBackground) {
             logger.info("App is in background, notifyAppReady check deferred to the next foreground");
             return;
         }
-        this.checkRevert();
+        final BundleInfo current = this.implementation.getCurrentBundle();
+        if (current == null || !current.getId().equals(expectedBundleId) || this.readyGeneration != expectedGeneration) {
+            logger.info("Skipping notifyAppReady check for a bundle or page that is no longer current");
+            return;
+        }
+        this.checkRevert(current);
     }
 
     private class DeferredNotifyAppReadyCheck implements Runnable {
 
         private final long waitTimeMs;
+        private final String bundleId;
+        private final int generation;
 
         DeferredNotifyAppReadyCheck(final long waitTimeMs) {
             this.waitTimeMs = waitTimeMs;
+            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+            this.bundleId = current == null ? null : current.getId();
+            this.generation = CapacitorUpdaterPlugin.this.readyGeneration;
         }
 
         @Override
@@ -6534,7 +6544,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             try {
                 logger.info("Wait for " + this.waitTimeMs + "ms, then check for notifyAppReady");
                 Thread.sleep(this.waitTimeMs);
-                CapacitorUpdaterPlugin.this.runDeferredAppReadyCheck();
+                CapacitorUpdaterPlugin.this.runDeferredAppReadyCheck(this.bundleId, this.generation);
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
             } catch (final InterruptedException e) {
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);

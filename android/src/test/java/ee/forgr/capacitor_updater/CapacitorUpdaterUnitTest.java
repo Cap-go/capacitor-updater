@@ -2256,7 +2256,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.previewSessionEnabled = true;
             plugin.setLoggerForTesting(mock(Logger.class));
 
-            invokePrivateVoidMethod(plugin, "checkRevert");
+            invokeCheckRevert(plugin);
 
             assertFalse(updater.resetCalled);
             assertFalse(plugin.hasNotifiedEvent("updateFailed"));
@@ -2279,7 +2279,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
 
-            invokePrivateVoidMethod(plugin, "checkRevert");
+            invokeCheckRevert(plugin);
 
             assertFalse(updater.resetCalled);
             assertFalse(plugin.hasNotifiedEvent("updateFailed"));
@@ -2296,8 +2296,14 @@ public class CapacitorUpdaterUnitTest {
             final SuccessOnReloadPlugin plugin = new SuccessOnReloadPlugin();
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
-            invokePrivateVoidMethod(plugin, "checkRevert");
+            invokeCheckRevert(plugin);
         }
+    }
+
+    private static void invokeCheckRevert(final CapacitorUpdaterPlugin plugin) throws Exception {
+        final Method method = CapacitorUpdaterPlugin.class.getDeclaredMethod("checkRevert", BundleInfo.class);
+        method.setAccessible(true);
+        method.invoke(plugin, plugin.implementation.getCurrentBundle());
     }
 
     @Test
@@ -4047,6 +4053,120 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testBackgroundInstallWaitsForWebViewLoad() throws Exception {
         assertBackgroundInstallWaitsForWebViewLoad(false, false);
+    }
+
+    @Test
+    public void testQueuedReloadRejectsPreviousPageReady() throws Exception {
+        assertQueuedReloadRejectsPreviousReadiness(false, false, true);
+    }
+
+    @Test
+    public void testQueuedReloadRejectsUnstampedLaunchPageReady() throws Exception {
+        assertQueuedReloadRejectsPreviousReadiness(false, false, false);
+    }
+
+    @Test
+    public void testQueuedReloadIgnoresPreviousBundleWatchdog() throws Exception {
+        assertQueuedReloadRejectsPreviousReadiness(true, false, true);
+    }
+
+    @Test
+    public void testQueuedReloadIgnoresPreviousLoadWatchdogForSameBundle() throws Exception {
+        assertQueuedReloadRejectsPreviousReadiness(true, true, true);
+    }
+
+    private void assertQueuedReloadRejectsPreviousReadiness(final boolean watchdog, final boolean sameBundle, final boolean stampedPage)
+        throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.useRealReload = true;
+            setPrivateField(plugin, "readyGeneration", 7);
+            setPrivateField(plugin, "readyGuardArmed", stampedPage);
+            setPrivateField(plugin, "autoDeletePrevious", false);
+            final SharedPreferences prefs = (SharedPreferences) getPrivateField(plugin, "prefs");
+            when(prefs.edit()).thenReturn(mock(SharedPreferences.Editor.class, RETURNS_SELF));
+            final java.lang.reflect.Constructor<?> constructor = Class.forName(
+                "ee.forgr.capacitor_updater.CapacitorUpdaterPlugin$DeferredNotifyAppReadyCheck"
+            ).getDeclaredConstructor(CapacitorUpdaterPlugin.class, long.class);
+            constructor.setAccessible(true);
+            final Runnable expiredWatchdog = (Runnable) constructor.newInstance(plugin, 0L);
+            final String incomingId = sameBundle ? "bundleA001" : "bundleB002";
+            assertTrue(updater.set(incomingId));
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final PluginHandle handle = mock(PluginHandle.class);
+            plugin.setPluginHandle(handle);
+            when(handle.getId()).thenReturn("CapacitorUpdater");
+            final CapConfig config = mock(CapConfig.class);
+            when(bridge.getConfig()).thenReturn(config);
+            when(config.getPluginConfiguration("CapacitorUpdater")).thenReturn(mock(PluginConfig.class));
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getLocalServer()).thenReturn(mock(com.getcapacitor.WebViewLocalServer.class));
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            final java.util.concurrent.BlockingQueue<Runnable> mainQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+            when(webView.post(any())).thenAnswer((inv) -> mainQueue.offer(inv.getArgument(0)));
+            plugin.setBridge(bridge);
+            final AtomicReference<Boolean> result = new AtomicReference<>();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread worker = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    result.set(plugin._reload());
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            worker.start();
+            try {
+                final Runnable dispatch = mainQueue.poll(2, TimeUnit.SECONDS);
+                assertNotNull(dispatch);
+                awaitReloadDispatchWaitOrCompletion(worker);
+                if (watchdog) {
+                    // Let the old check finish without dispatching a rollback reload on the broken implementation.
+                    plugin.useRealReload = false;
+                    expiredWatchdog.run();
+                    plugin.useRealReload = true;
+                } else {
+                    final PluginCall oldReady = mock(PluginCall.class);
+                    final JSObject data = new JSObject();
+                    if (stampedPage) {
+                        data.put("loadGeneration", 7);
+                    }
+                    when(oldReady.getData()).thenReturn(data);
+                    plugin.notifyAppReady(oldReady);
+                    verify(oldReady).resolve(any(JSObject.class));
+                }
+                assertEquals("The incoming bundle has not loaded yet", BundleStatus.PENDING, updater.getBundleInfo(incomingId).getStatus());
+                assertEquals(incomingId, updater.getCurrentBundle().getId());
+                assertFalse(plugin.hasNotifiedEvent("updateFailed"));
+                assertEquals(1, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+                verify(webView, never()).loadUrl(anyString());
+
+                dispatch.run();
+                verify(webView).loadUrl("https://local-app-domain.com");
+                final PluginCall newReady = mock(PluginCall.class);
+                final JSObject data = new JSObject();
+                data.put("loadGeneration", getPrivateField(plugin, "readyGeneration"));
+                when(newReady.getData()).thenReturn(data);
+                plugin.notifyAppReady(newReady);
+                worker.join(2000);
+                assertFalse(worker.isAlive());
+                assertNull(failure.get());
+                assertEquals(Boolean.TRUE, result.get());
+                assertEquals(BundleStatus.SUCCESS, updater.getBundleInfo(incomingId).getStatus());
+            } finally {
+                worker.interrupt();
+                worker.join(2000);
+            }
+        }
     }
 
     @Test
