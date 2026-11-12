@@ -537,7 +537,7 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class ResetTrackingCapgoUpdater extends CapgoUpdater {
+    private static class ResetTrackingCapgoUpdater extends CapgoUpdater {
 
         private BundleInfo currentBundle = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
         private final List<BundleInfo> listedBundles = new ArrayList<>();
@@ -677,6 +677,7 @@ public class CapacitorUpdaterUnitTest {
         public boolean setNextBundle(final String next) {
             this.setNextBundleCalls++;
             this.lastSetNextBundleId = next;
+            this.nextBundle = next == null ? null : getBundleInfo(next);
             return true;
         }
 
@@ -3089,13 +3090,15 @@ public class CapacitorUpdaterUnitTest {
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
 
+            final BundleInfo pending = updater.nextBundle;
             plugin.reload(call);
 
             assertEquals(0, updater.setCalls);
             assertEquals(1, updater.stagePendingReloadCalls);
             assertEquals(1, updater.finalizePendingReloadCalls);
             assertEquals("1.0.0", updater.finalizePendingReloadPreviousBundleName);
-            assertSame(updater.nextBundle, updater.finalizedPendingReloadBundle);
+            assertSame(pending, updater.finalizedPendingReloadBundle);
+            assertNull(updater.getNextBundle());
             verify(call).resolve();
         }
     }
@@ -4165,15 +4168,20 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testDirectUpdateDefersWhenTimeoutWinsBeforeWorkerRuns() throws Exception {
-        assertDirectUpdateTimeoutOrdering(true);
+        assertDirectUpdateTimeoutOrdering(true, false);
     }
 
     @Test
-    public void testDirectUpdateCancelsTimeoutBeforeReloadStarts() throws Exception {
-        assertDirectUpdateTimeoutOrdering(false);
+    public void testDirectUpdateKeepsHideDeadlineDuringReload() throws Exception {
+        assertDirectUpdateTimeoutOrdering(false, false);
     }
 
-    private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst) throws Exception {
+    @Test
+    public void testTimedOutDirectUpdateStaysDeferredAfterBackgroundReset() throws Exception {
+        assertDirectUpdateTimeoutOrdering(true, true);
+    }
+
+    private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout) throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4204,20 +4212,134 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(plugin.reloadCalled);
             if (timeoutFirst) {
                 timeout.run();
+                if (resetAfterTimeout) {
+                    // The background handler resets this flag before the queued worker resumes.
+                    setPrivateField(plugin, "autoSplashscreenTimedOut", false);
+                }
             } else {
-                // Simulate a callback already dequeued by the main thread when install wins.
-                plugin.beforeReload = timeout;
+                plugin.beforeReload = () -> {
+                    timeout.run();
+                    try {
+                        assertEquals(1, getPrivateField(plugin, "splashscreenInvocationToken"));
+                    } catch (Exception e) {
+                        throw new AssertionError(e);
+                    }
+                };
             }
             plugin.dispatchedWork.run();
             assertEquals(!timeoutFirst, plugin.reloadCalled);
             assertEquals(timeoutFirst ? 0 : 1, updater.stagePendingReloadCalls);
             assertEquals(timeoutFirst ? 0 : 1, updater.finalizePendingReloadCalls);
-            assertEquals(timeoutFirst, getPrivateField(plugin, "autoSplashscreenTimedOut"));
+            assertEquals(!resetAfterTimeout, getPrivateField(plugin, "autoSplashscreenTimedOut"));
             assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
             if (timeoutFirst) {
                 assertEquals("download-id", updater.lastSetNextBundleId);
+                assertEquals("download-id", updater.getNextBundle().getId());
             } else {
+                assertEquals(1, updater.setNextBundleCalls);
+                assertNull(updater.lastSetNextBundleId);
                 assertNull(updater.getNextBundle());
+            }
+        }
+    }
+
+    @Test
+    public void testCachedDirectUpdateDefersWhenTimeoutWinsDuringDelayCheck() throws Exception {
+        assertExistingDirectUpdateTimeout(false, true, false);
+    }
+
+    @Test
+    public void testCachedDirectUpdateKeepsHideDeadlineDuringReload() throws Exception {
+        assertExistingDirectUpdateTimeout(false, false, false);
+    }
+
+    @Test
+    public void testBuiltinDirectUpdateKeepsHideDeadlineDuringReload() throws Exception {
+        assertExistingDirectUpdateTimeout(true, false, false);
+    }
+
+    @Test
+    public void testBuiltinResponseStaysDeferredAfterTimeoutAndBackgroundReset() throws Exception {
+        assertExistingDirectUpdateTimeout(true, true, true);
+    }
+
+    @Test
+    public void testCachedResponseStaysDeferredAfterTimeoutAndBackgroundReset() throws Exception {
+        assertExistingDirectUpdateTimeout(false, true, true);
+    }
+
+    private void assertExistingDirectUpdateTimeout(final boolean builtin, final boolean timeoutFirst, final boolean resetAfterTimeout)
+        throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final BundleInfo latest = new BundleInfo("cached-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            final Runnable[] deadlineCallback = new Runnable[1];
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater() {
+                @Override
+                public void getLatest(final String updateUrl, final String channel, final Callback callback) {
+                    if (resetAfterTimeout) {
+                        deadlineCallback[0].run();
+                        try {
+                            setPrivateField(plugin, "autoSplashscreenTimedOut", false);
+                        } catch (Exception e) {
+                            throw new AssertionError(e);
+                        }
+                    }
+                    final Map<String, Object> response = new HashMap<>();
+                    response.put("version", builtin ? "builtin" : "2.0.0");
+                    response.put("url", "https://example.com/update.zip");
+                    response.put("checksum", "checksum");
+                    callback.callback(response);
+                }
+
+                @Override
+                public BundleInfo getBundleInfoByName(final String version) {
+                    return latest;
+                }
+            };
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenAnswer((invocation) -> {
+                if (timeoutFirst && !resetAfterTimeout) {
+                    deadlineCallback[0].run();
+                }
+                return new ArrayList<>();
+            });
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setAutoUpdateModeForTesting("onLaunch");
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            deadlineCallback[0] = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            assertNotNull(deadlineCallback[0]);
+            if (!timeoutFirst) {
+                plugin.beforeReload = () -> {
+                    deadlineCallback[0].run();
+                    // A claimed install must not be converted to a deferred download.
+                    assertTrue(plugin.implementation.directUpdate);
+                };
+            }
+            updater.directUpdate = true;
+            invokeBackgroundDownload(plugin);
+            assertEquals(!timeoutFirst, plugin.reloadCalled);
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            if (timeoutFirst) {
+                assertEquals(0, updater.setCalls);
+                assertFalse(updater.prepareResetStateForTransitionCalled);
+                assertEquals(builtin ? BundleInfo.ID_BUILTIN : latest.getId(), updater.lastSetNextBundleId);
+            } else {
+                assertEquals(builtin ? 0 : 1, updater.setCalls);
+                assertEquals(builtin, updater.prepareResetStateForTransitionCalled);
             }
         }
     }

@@ -289,7 +289,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private final Object launchReportLock = new Object();
     private FrameLayout splashscreenLoaderOverlay;
     private final Object splashscreenTimeoutLock = new Object();
-    private Runnable splashscreenTimeoutRunnable;
+    private SplashscreenTimeout splashscreenTimeoutRunnable;
+    // Unlike the foreground flag, this keeps expired work invalid after a background reset.
+    private long splashscreenTimeoutGeneration = 0;
     private FrameLayout previewTransitionLoaderOverlay;
     private Runnable previewTransitionLoaderTimeoutRunnable;
     private boolean previewTransitionLoaderRequested = false;
@@ -1581,22 +1583,36 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
         synchronized (this.splashscreenTimeoutLock) {
             cancelSplashscreenTimeout();
-            this.splashscreenTimeoutRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    synchronized (splashscreenTimeoutLock) {
-                        if (splashscreenTimeoutRunnable != this) {
-                            return;
-                        }
-                        splashscreenTimeoutRunnable = null;
-                        autoSplashscreenTimedOut = true;
-                        implementation.directUpdate = false;
-                    }
-                    logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-                    hideSplashscreen();
-                }
-            };
+            this.splashscreenTimeoutRunnable = new SplashscreenTimeout();
             this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+        }
+    }
+
+    private final class SplashscreenTimeout implements Runnable {
+
+        private boolean installStarted;
+
+        @Override
+        public void run() {
+            synchronized (splashscreenTimeoutLock) {
+                if (splashscreenTimeoutRunnable != this) {
+                    return;
+                }
+                splashscreenTimeoutRunnable = null;
+                splashscreenTimeoutGeneration++;
+                autoSplashscreenTimedOut = true;
+                if (!this.installStarted) {
+                    implementation.directUpdate = false;
+                }
+            }
+            logger.info("autoSplashscreen timeout reached, hiding splashscreen");
+            hideSplashscreen();
+        }
+    }
+
+    private long getSplashscreenTimeoutGeneration() {
+        synchronized (this.splashscreenTimeoutLock) {
+            return this.splashscreenTimeoutGeneration;
         }
     }
 
@@ -1609,13 +1625,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private boolean beginDirectUpdateInstallBeforeTimeout() {
+    private boolean beginDirectUpdateInstallBeforeTimeout(final long timeoutGeneration) {
         synchronized (this.splashscreenTimeoutLock) {
-            if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+            if (!this.isDirectUpdateCurrentlyAllowed(true, timeoutGeneration)) {
                 return false;
             }
-            // Claim the install before staging. Never hold this lock while waiting for JS readiness.
-            cancelSplashscreenTimeout();
+            // Keep the hide deadline while an admitted install waits for JS readiness.
+            if (this.splashscreenTimeoutRunnable != null) {
+                this.splashscreenTimeoutRunnable.installStarted = true;
+            }
             return true;
         }
     }
@@ -2487,8 +2505,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return shouldAutoUpdateModeSetNextBundle(this.autoUpdateMode);
     }
 
-    private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+    private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate, final long timeoutGeneration) {
+        synchronized (this.splashscreenTimeoutLock) {
+            return plannedDirectUpdate && timeoutGeneration == this.splashscreenTimeoutGeneration && !this.autoSplashscreenTimedOut;
+        }
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
@@ -2604,6 +2624,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
+        final long timeoutGeneration = this.getSplashscreenTimeoutGeneration();
         startNewThread(() -> {
             try {
                 if (this.shouldBlockAutoUpdateForPreviewSession()) {
@@ -2618,14 +2639,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } else {
                     logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 }
-                this.directUpdateFinish(latest);
+                this.directUpdateFinish(latest, timeoutGeneration);
             } catch (final Exception e) {
                 logger.error("directUpdateFinish failed: " + e.getMessage());
             }
         });
     }
 
-    private void directUpdateFinish(final BundleInfo latest) {
+    private void directUpdateFinish(final BundleInfo latest, final long timeoutGeneration) {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             logger.info("Skipping direct update finish while preview session state is active");
             this.implementation.directUpdate = false;
@@ -2645,7 +2666,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true);
             return;
         }
-        if (!this.beginDirectUpdateInstallBeforeTimeout()) {
+        if (!this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)) {
             this.implementation.directUpdate = false;
             this.clearBackgroundDownloadState();
             this.implementation.setNextBundle(latest.getId());
@@ -5387,8 +5408,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Download already in progress, skipping duplicate download request");
             return this.backgroundDownloadTask;
         }
+        final long timeoutGeneration = this.getSplashscreenTimeoutGeneration();
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
-        final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+        final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate, timeoutGeneration);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
@@ -5470,9 +5492,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
                         if ("builtin".equals(latestVersionName)) {
                             logger.info("Latest version is builtin");
-                            final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
-                                plannedDirectUpdate
-                            );
+                            final boolean directUpdateAllowedNow =
+                                plannedDirectUpdate && CapacitorUpdaterPlugin.this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration);
                             if (directUpdateAllowedNow) {
                                 logger.info("Direct update to builtin version");
                                 this._reset(false, false);
@@ -5576,8 +5597,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         CryptoCipher.isValidSessionKey(latestSessionKey))
                                 ) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
-                                    final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
-                                        plannedDirectUpdate
+                                    boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                        plannedDirectUpdate,
+                                        timeoutGeneration
                                     );
                                     if (directUpdateAllowedNow) {
                                         String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
@@ -5595,6 +5617,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             );
                                             return;
                                         }
+                                        directUpdateAllowedNow = CapacitorUpdaterPlugin.this.beginDirectUpdateInstallBeforeTimeout(
+                                            timeoutGeneration
+                                        );
+                                    }
+                                    if (directUpdateAllowedNow) {
                                         if (
                                             CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()
                                         ) {
@@ -5680,8 +5707,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 BundleStatus.DOWNLOADING == latest.getStatus() &&
                                 CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
                             CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
-                            final boolean directUpdateStillAllowed =
-                                initialDirectUpdateAllowed && !Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.autoSplashscreenTimedOut);
+                            final boolean directUpdateStillAllowed = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                initialDirectUpdateAllowed,
+                                timeoutGeneration
+                            );
                             CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
                                 ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || directUpdateStillAllowed
                                 : directUpdateStillAllowed;
