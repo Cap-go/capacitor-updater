@@ -849,12 +849,10 @@ jobs:
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
           tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -927,12 +925,10 @@ jobs:
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
           tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          setup-node: 'false'
-          install-dependencies: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -1073,13 +1069,10 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          # This job runs prebuilt apps and bundles, so no Capacitor CLI is needed.
-          setup-node: 'false'
-          install-dependencies: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
