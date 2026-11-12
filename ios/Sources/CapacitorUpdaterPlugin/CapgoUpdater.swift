@@ -690,6 +690,7 @@ import UIKit
         shutdown()
         // Alamofire's Session invalidated its URLSession on deinit; keep releasing the session the same way.
         cachedUrlSession?.invalidateAndCancel()
+        cachedDownloadUrlSession?.invalidateAndCancel()
     }
 
     public func shutdown() {
