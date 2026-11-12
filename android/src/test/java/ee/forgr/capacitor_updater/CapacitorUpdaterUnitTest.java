@@ -4193,6 +4193,115 @@ public class CapacitorUpdaterUnitTest {
         assertDirectUpdateTimeoutOrdering(true, true, true, true);
     }
 
+    @Test
+    public void testDeferredWorkerInstallsWhenAlreadyBackgrounded() throws Exception {
+        assertDeferredWorkerBackgroundCompletion(true, false, false, false);
+    }
+
+    @Test
+    public void testDeferredWorkerKeepsForegroundBundleQueued() throws Exception {
+        assertDeferredWorkerBackgroundCompletion(false, false, false, false);
+    }
+
+    @Test
+    public void testDeferredWorkerHonoursRemainingDelayInBackground() throws Exception {
+        assertDeferredWorkerBackgroundCompletion(true, true, false, false);
+    }
+
+    @Test
+    public void testDeferredWorkerInstallsWhenDelayClearsDuringQueueing() throws Exception {
+        assertDeferredWorkerBackgroundCompletion(true, true, true, false);
+    }
+
+    @Test
+    public void testStaleDeferredWorkerDoesNotInstallNewerBackgroundBundle() throws Exception {
+        assertDeferredWorkerBackgroundCompletion(true, false, false, true);
+    }
+
+    private void assertDeferredWorkerBackgroundCompletion(
+        final boolean background,
+        final boolean delayed,
+        final boolean clearDelayOnQueue,
+        final boolean stale
+    ) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final ArrayList<DelayCondition> conditions = new ArrayList<>();
+            if (delayed) {
+                conditions.add(new DelayCondition(DelayUntilNext.kill, ""));
+            }
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater() {
+                @Override
+                public boolean setNextBundle(final String next) {
+                    final boolean result = super.setNextBundle(next);
+                    if (clearDelayOnQueue) {
+                        conditions.clear();
+                    }
+                    return result;
+                }
+            };
+            updater.simulatePendingActiveBundleOnSet = true;
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUtils = mock(DelayUpdateUtils.class);
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUtils.parseDelayConditions("[]")).thenReturn(conditions);
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.configureDirectUpdateModeForTesting("onLaunch", true);
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUtils);
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            invokePrivateVoidMethod(plugin, "scheduleSplashscreenTimeout");
+            final Runnable timeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            final Thread owner = new Thread();
+            setPrivateField(plugin, "backgroundDownloadTask", owner);
+            plugin.deferDispatch = true;
+            plugin.scheduleDirectUpdateFinish(new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum"));
+            final Runnable worker = plugin.dispatchedWork;
+            timeout.run();
+            // The background transition resets the flag and checks an empty queue before completion.
+            setPrivateField(plugin, "appInBackground", background);
+            if (background) {
+                setPrivateField(plugin, "autoSplashscreenTimedOut", false);
+                invokePrivateVoidMethod(plugin, "installNext");
+            }
+            assertEquals(0, updater.setCalls);
+            final Thread newerTask = new Thread();
+            if (stale) {
+                setPrivateField(plugin, "backgroundDownloadTask", newerTask);
+                updater.nextBundle = new BundleInfo("newer-id", "3.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            }
+            plugin.deferDispatch = false;
+            plugin.beforeReload = () -> assertFalse("Reload must run outside the download-state monitor", Thread.holdsLock(plugin));
+            worker.run();
+            final boolean installed = background && (!delayed || clearDelayOnQueue) && !stale;
+            assertEquals(installed ? 1 : 0, updater.setCalls);
+            assertEquals(installed, plugin.reloadCalled);
+            assertEquals(0, updater.stagePendingReloadCalls);
+            assertFalse(plugin.shouldUseDirectUpdateForTesting());
+            if (installed) {
+                assertEquals("download-id", updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+                assertTrue(plugin.hasNotifiedEvent("set"));
+            } else {
+                assertEquals(stale ? "newer-id" : "download-id", updater.getNextBundle().getId());
+                assertEquals("current-id", updater.getCurrentBundle().getId());
+                assertFalse(plugin.hasNotifiedEvent("set"));
+            }
+            if (stale) {
+                assertSame(newerTask, getPrivateField(plugin, "backgroundDownloadTask"));
+                assertEquals(0, updater.setNextBundleCalls);
+            }
+        }
+    }
+
     private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout) throws Exception {
         assertDirectUpdateTimeoutOrdering(timeoutFirst, resetAfterTimeout, false, false);
     }

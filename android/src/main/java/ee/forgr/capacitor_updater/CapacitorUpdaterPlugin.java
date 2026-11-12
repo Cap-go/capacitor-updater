@@ -2667,6 +2667,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.onLaunchDirectUpdateUsed = true;
             }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true);
+            this.installNextIfInBackground();
             return;
         }
         if (!this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)) {
@@ -2674,6 +2675,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return;
             }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "update downloaded, will install next background", true);
+            this.installNextIfInBackground();
             return;
         }
         if ("onLaunch".equals(this.directUpdateMode)) {
