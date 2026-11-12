@@ -182,6 +182,7 @@ public class CapacitorUpdaterUnitTest {
         private final List<Runnable> workers = new ArrayList<>();
         private Runnable onReady;
         private Runnable onDownloadFailed;
+        private java.util.function.Consumer<String> beforeNotification;
         private Runnable beforeDispatch;
         private Runnable beforeReload;
         private int reloadCalls;
@@ -207,6 +208,9 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         public void notifyListeners(String eventName, JSObject data, boolean retainUntilConsumed) {
+            if (this.beforeNotification != null) {
+                this.beforeNotification.accept(eventName);
+            }
             super.notifyListeners(eventName, data, retainUntilConsumed);
             if ("appReady".equals(eventName) && this.onReady != null) {
                 this.onReady.run();
@@ -6482,6 +6486,122 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testDownloadStartFailureCleanupBlocksConcurrentCheck() throws Exception {
         assertDownloadStartFailureOwnership("during-cleanup");
+    }
+
+    @Test
+    public void testDownloadStartFailureNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(true, "downloadFailed");
+    }
+
+    @Test
+    public void testDownloadStartNoUpdateNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(true, "noNeedUpdate");
+    }
+
+    @Test
+    public void testResponseFailureNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(false, "downloadFailed");
+    }
+
+    @Test
+    public void testResponseNoUpdateNotificationBlocksOwnershipReplacement() throws Exception {
+        assertNotificationAdmissionBlocksReplacement(false, "noNeedUpdate");
+    }
+
+    private void assertNotificationAdmissionBlocksReplacement(final boolean startFailure, final String event) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            doThrow(new IllegalStateException("Test enqueue failure"))
+                .when(updater)
+                .downloadBackground(anyString(), anyString(), anyString(), anyString(), any(), anyBoolean(), any());
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final Runnable completion;
+            if (startFailure) {
+                response
+                    .get()
+                    .callback(
+                        new HashMap<>(
+                            Map.of("version", "test-update", "url", "https://example.com/update.zip", "manifest", new JSONArray())
+                        )
+                    );
+                completion = plugin.workers.remove(0);
+            } else {
+                final Callback original = response.get();
+                completion = () -> original.callback(new HashMap<>(Map.of("error", "response_error", "statusCode", 503)));
+            }
+            final CountDownLatch beforeEvent = new CountDownLatch(1);
+            final CountDownLatch finishEvent = new CountDownLatch(1);
+            final List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
+            final java.util.concurrent.atomic.AtomicBoolean paused = new java.util.concurrent.atomic.AtomicBoolean();
+            plugin.beforeNotification = (name) -> {
+                if (event.equals(name) && paused.compareAndSet(false, true)) {
+                    beforeEvent.countDown();
+                    try {
+                        assertTrue(finishEvent.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException error) {
+                        throw new AssertionError(error);
+                    }
+                    order.add("event");
+                }
+            };
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final AtomicReference<Object> replacementContext = new AtomicReference<>();
+            final AtomicReference<Object> replacementTask = new AtomicReference<>();
+            final Thread completing = new Thread(() -> {
+                try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
+                    workerLooper.when(Looper::getMainLooper).thenReturn(main);
+                    workerLooper.when(Looper::myLooper).thenReturn(main);
+                    completion.run();
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread replacing = new Thread(() -> {
+                try {
+                    invokeBackgroundDownload(plugin);
+                    replacementContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                    replacementTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                    order.add("replacement");
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            try {
+                completing.start();
+                assertTrue(beforeEvent.await(5, TimeUnit.SECONDS));
+                replacing.start();
+                assertBlockedOnMonitor(replacing, plugin, completing);
+            } finally {
+                finishEvent.countDown();
+                completing.join(5000);
+                replacing.join(5000);
+            }
+            assertFalse(completing.isAlive());
+            assertFalse(replacing.isAlive());
+            assertNull(failure.get());
+            assertEquals(List.of("event", "replacement"), order);
+            assertSame(replacementContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+            assertSame(replacementTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+            assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter(event::equals).count());
+        }
     }
 
     private void assertDownloadStartFailureOwnership(final String replacementTiming) throws Exception {

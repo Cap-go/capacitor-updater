@@ -5611,23 +5611,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (shouldSendStats) {
                 this.implementation.sendStats(failureAction, current.getVersionName());
             }
-            if (!this.ownsBackgroundDownload(downloadContext)) {
-                return;
-            }
             final JSObject ret = new JSObject();
             ret.put("version", latestVersionName);
-            this.notifyListeners(failureEvent, ret, false);
-        }
-        if (!this.ownsBackgroundDownload(downloadContext)) {
-            return;
+            if (!this.notifyBackgroundDownloadListeners(failureEvent, ret, downloadContext)) {
+                return;
+            }
         }
         if (shouldNotifyNoNeedUpdate) {
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-            this.notifyListeners("noNeedUpdate", ret, false);
+            if (!this.notifyBackgroundDownloadListeners("noNeedUpdate", ret, downloadContext)) {
+                return;
+            }
         }
         this.sendReadyToJs(current, msg, plannedDirectUpdate, downloadContext);
         logger.info("endBackGroundTaskWithNotif " + msg);
+    }
+
+    private synchronized boolean notifyBackgroundDownloadListeners(
+        final String event,
+        final JSObject data,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            return false;
+        }
+        // Admit delivery before another thread can replace this check's ownership.
+        this.notifyListeners(event, data, false);
+        return true;
     }
 
     private synchronized boolean queueBackgroundUpdateResponse(
@@ -5734,18 +5745,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.clearBackgroundDownloadState();
         }
         this.implementation.sendStats("download_fail", current.getVersionName());
-        if (!this.ownsBackgroundDownload(downloadContext)) {
-            return;
-        }
         final JSObject failure = new JSObject();
         failure.put("version", latestVersionName);
-        this.notifyListeners("downloadFailed", failure, false);
-        if (!this.ownsBackgroundDownload(downloadContext)) {
+        if (!this.notifyBackgroundDownloadListeners("downloadFailed", failure, downloadContext)) {
             return;
         }
         final JSObject noUpdate = new JSObject();
         noUpdate.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-        this.notifyListeners("noNeedUpdate", noUpdate, false);
+        if (!this.notifyBackgroundDownloadListeners("noNeedUpdate", noUpdate, downloadContext)) {
+            return;
+        }
         this.sendReadyToJs(current, "Error downloading file", plannedDirectUpdate, downloadContext);
     }
 
