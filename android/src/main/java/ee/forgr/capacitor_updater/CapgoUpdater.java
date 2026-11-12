@@ -322,8 +322,29 @@ public class CapgoUpdater {
 
     void directUpdateFinish(final BundleInfo latest) {}
 
+    /** One automatic check's install plan; its identity must survive download retries and later checks. */
+    static final class BackgroundDownloadContext {
+
+        final long timeoutGeneration;
+        final boolean directUpdate;
+        volatile boolean deferredForRetry;
+
+        BackgroundDownloadContext(final long timeoutGeneration, final boolean directUpdate) {
+            this.timeoutGeneration = timeoutGeneration;
+            this.directUpdate = directUpdate;
+        }
+    }
+
+    void directUpdateFinish(final BundleInfo latest, final BackgroundDownloadContext downloadContext) {
+        this.directUpdateFinish(latest);
+    }
+
     /** Launch downloads have no waiter. The plugin emits appReady from here when WorkManager settles. */
     void backgroundDownloadSettled(final BundleInfo bundle, final String status) {}
+
+    void backgroundDownloadSettled(final BundleInfo bundle, final String status, final BackgroundDownloadContext downloadContext) {
+        this.backgroundDownloadSettled(bundle, status);
+    }
 
     void notifyListeners(final String id, final Map<String, Object> res) {}
 
@@ -1199,13 +1220,14 @@ public class CapgoUpdater {
         final boolean directInstall,
         final boolean previewSession,
         final boolean setNext,
-        final BundleInfo bundle
+        final BundleInfo bundle,
+        final BackgroundDownloadContext downloadContext
     ) {
         if (!shouldNotifyLaunchDownloadReady(awaitedByCaller, success, directInstall, previewSession)) {
             return;
         }
         final BundleInfo readyBundle = bundle != null ? bundle : this.getCurrentBundle();
-        this.backgroundDownloadSettled(readyBundle, launchDownloadReadyStatus(success, setNext));
+        this.backgroundDownloadSettled(readyBundle, launchDownloadReadyStatus(success, setNext), downloadContext);
     }
 
     // Created on first use: plain JVM unit tests construct CapgoUpdater without a main Looper.
@@ -1220,6 +1242,17 @@ public class CapgoUpdater {
 
     @SuppressWarnings("unchecked")
     private void observeWorkProgress(Context context, String id, String observedVersion, boolean setNext) {
+        this.observeWorkProgress(context, id, observedVersion, setNext, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void observeWorkProgress(
+        Context context,
+        String id,
+        String observedVersion,
+        boolean setNext,
+        BackgroundDownloadContext downloadContext
+    ) {
         final AtomicBoolean terminalHandled = new AtomicBoolean(false);
         final AtomicBoolean launchReleasedWhileRetrying = new AtomicBoolean(false);
         final LiveData<List<WorkInfo>> workInfosLiveData = WorkManager.getInstance(
@@ -1247,15 +1280,23 @@ public class CapgoUpdater {
                             shouldReleaseLaunchWhileRetrying(
                                 downloadFutures.containsKey(id),
                                 setNext,
-                                Boolean.TRUE.equals(CapgoUpdater.this.directUpdate),
+                                downloadContext != null
+                                    ? downloadContext.directUpdate
+                                    : Boolean.TRUE.equals(CapgoUpdater.this.directUpdate),
                                 CapgoUpdater.this.previewSession
                             ) &&
                             launchReleasedWhileRetrying.compareAndSet(false, true)
                         ) {
                             logger.warn("Direct update download is retrying, continuing launch on the current bundle");
                             // Same fallback as the autoSplashscreen timeout: a later success installs on next background.
-                            CapgoUpdater.this.directUpdate = false;
-                            io.execute(() -> backgroundDownloadSettled(getCurrentBundle(), launchDownloadReadyStatus(false, false)));
+                            if (downloadContext != null) {
+                                downloadContext.deferredForRetry = true;
+                            } else {
+                                CapgoUpdater.this.directUpdate = false;
+                            }
+                            io.execute(() ->
+                                backgroundDownloadSettled(getCurrentBundle(), launchDownloadReadyStatus(false, false), downloadContext)
+                            );
                         }
                         break;
                     case RUNNING:
@@ -1275,11 +1316,13 @@ public class CapgoUpdater {
                         boolean isManifest = outputData.getBoolean(DownloadService.IS_MANIFEST, false);
 
                         io.execute(() -> {
-                            // finishDownload clears directUpdate, so read the install plan first.
+                            // Context-backed completions report readiness from their owning plugin attempt.
                             final boolean directInstall =
-                                setNext && Boolean.TRUE.equals(CapgoUpdater.this.directUpdate) && !CapgoUpdater.this.previewSession;
+                                setNext &&
+                                (downloadContext != null || Boolean.TRUE.equals(CapgoUpdater.this.directUpdate)) &&
+                                !CapgoUpdater.this.previewSession;
                             final boolean previewSession = CapgoUpdater.this.previewSession;
-                            boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest);
+                            boolean success = finishDownload(id, dest, version, sessionKey, checksum, setNext, isManifest, downloadContext);
                             BundleInfo resultBundle;
                             if (!success) {
                                 logger.error("Finish download failed");
@@ -1306,7 +1349,15 @@ public class CapgoUpdater {
                             }
                             final BundleInfo readyBundle = success && setNext ? resultBundle : null;
                             if (!launchReleasedWhileRetrying.get()) {
-                                notifyLaunchDownloadReady(future != null, success, directInstall, previewSession, setNext, readyBundle);
+                                notifyLaunchDownloadReady(
+                                    future != null,
+                                    success,
+                                    directInstall,
+                                    previewSession,
+                                    setNext,
+                                    readyBundle,
+                                    downloadContext
+                                );
                             }
                         });
                         break;
@@ -1352,7 +1403,7 @@ public class CapgoUpdater {
                                 failedFuture.complete(failedBundle);
                             }
                             if (!launchReleasedWhileRetrying.get()) {
-                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null);
+                                notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
                             }
                         });
                         break;
@@ -1383,13 +1434,27 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, null);
+    }
+
+    private void download(
+        final String id,
+        final String url,
+        final String dest,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final boolean setNext,
+        final BackgroundDownloadContext downloadContext
+    ) {
         final Context context = this.context();
         if (context == null) {
             logger.error("No context, cannot observe work progress");
             return;
         }
         observedDownloadVersions.add(version);
-        observeWorkProgress(context, id, version, setNext);
+        observeWorkProgress(context, id, version, setNext, downloadContext);
 
         if (manifest != null) {
             DataManager.getInstance().setManifest(id, manifest);
@@ -1430,6 +1495,19 @@ public class CapgoUpdater {
         String checksumRes,
         Boolean setNext,
         Boolean isManifest
+    ) {
+        return this.finishDownload(id, dest, version, sessionKey, checksumRes, setNext, isManifest, null);
+    }
+
+    private Boolean finishDownload(
+        String id,
+        String dest,
+        String version,
+        String sessionKey,
+        String checksumRes,
+        Boolean setNext,
+        Boolean isManifest,
+        BackgroundDownloadContext downloadContext
     ) {
         File downloaded = null;
         File extractedDir = null;
@@ -1498,7 +1576,9 @@ public class CapgoUpdater {
             CapgoUpdater.this.notifyListeners("updateAvailable", ret);
             logger.info("setNext: " + setNext);
             if (setNext) {
-                if (this.previewSession) {
+                if (downloadContext != null) {
+                    this.directUpdateFinish(next, downloadContext);
+                } else if (this.previewSession) {
                     logger.info("Preview session is active, skipping automatic install of downloaded bundle");
                     this.directUpdate = false;
                 } else if (this.directUpdate) {
@@ -2000,6 +2080,18 @@ public class CapgoUpdater {
         final JSONArray manifest,
         final boolean setNext
     ) {
+        return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null);
+    }
+
+    String downloadBackground(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final boolean setNext,
+        final BackgroundDownloadContext downloadContext
+    ) {
         try {
             this.requireSessionKeyForEncryptedUpdate(sessionKey);
             if (manifest == null) {
@@ -2055,7 +2147,7 @@ public class CapgoUpdater {
         this.notifyDownload(id, 5);
 
         final String dest = manifest != null ? this.manifestStagingDest() : this.randomString();
-        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext);
+        this.download(id, url, dest, version, sessionKey, checksum, manifest, setNext, downloadContext);
         return id;
     }
 

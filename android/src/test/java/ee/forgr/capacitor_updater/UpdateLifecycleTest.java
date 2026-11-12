@@ -177,7 +177,8 @@ public class UpdateLifecycleTest {
             final String sessionKey,
             final String checksum,
             final JSONArray manifest,
-            final boolean setNext
+            final boolean setNext,
+            final BackgroundDownloadContext downloadContext
         ) {
             this.downloadBackgroundCalls++;
             return "test-download-id";

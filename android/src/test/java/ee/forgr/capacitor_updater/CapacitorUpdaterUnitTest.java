@@ -374,6 +374,19 @@ public class CapacitorUpdaterUnitTest {
             final JSONArray manifest,
             final boolean setNext
         ) {
+            return this.downloadBackground(url, version, sessionKey, checksum, manifest, setNext, null);
+        }
+
+        @Override
+        String downloadBackground(
+            final String url,
+            final String version,
+            final String sessionKey,
+            final String checksum,
+            final JSONArray manifest,
+            final boolean setNext,
+            final BackgroundDownloadContext downloadContext
+        ) {
             this.downloadBackgroundCalled = true;
             this.downloadBackgroundSetNext = setNext;
             this.consumedWhenDownloadStarted = this.consumedStateSupplier.getAsBoolean();
@@ -4842,6 +4855,237 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testDirectUpdateDefersWhenTimeoutWinsBeforeWorkerRuns() throws Exception {
         assertDirectUpdateTimeoutOrdering(true, false);
+    }
+
+    @Test
+    public void testOldDownloadCompletionCannotInheritNewerDirectUpdate() throws Exception {
+        assertOriginatingDownloadOwnership("success", true, true);
+    }
+
+    @Test
+    public void testOldDownloadFailureCannotReleaseNewerLaunch() throws Exception {
+        assertOriginatingDownloadOwnership("failure", true, true);
+    }
+
+    @Test
+    public void testOldDownloadRetryCannotReleaseNewerLaunch() throws Exception {
+        assertOriginatingDownloadOwnership("retry", true, true);
+    }
+
+    @Test
+    public void testOriginatingDownloadStillInstallsBeforeDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("success", false, false);
+    }
+
+    @Test
+    public void testOriginatingDownloadStaysQueuedAfterDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("success", true, false);
+    }
+
+    @Test
+    public void testOriginatingDownloadRetryStaysQueuedBeforeDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("retry", false, false);
+    }
+
+    @Test
+    public void testOldDownloadCannotReplaceNewerQueueAfterBothDeadlines() throws Exception {
+        assertOriginatingDownloadOwnership("deferred-success", true, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertOriginatingDownloadOwnership(final String outcome, final boolean expire, final boolean newer) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, context) -> {
+                doAnswer((inv) -> {
+                    inv.<Runnable>getArgument(0).run();
+                    return true;
+                })
+                    .when(handler)
+                    .post(any(Runnable.class));
+            });
+            MockedStatic<CapConfig> configMock = mockStatic(CapConfig.class);
+            MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            configMock.when(() -> CapConfig.loadDefault(any())).thenReturn(mock(CapConfig.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            final android.content.Context context = mock(android.content.Context.class);
+            when(context.getApplicationContext()).thenReturn(context);
+            doReturn(context).when(updater).context();
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            final java.util.concurrent.ExecutorService io = mock(java.util.concurrent.ExecutorService.class);
+            doAnswer((inv) -> {
+                inv.<Runnable>getArgument(0).run();
+                return null;
+            })
+                .when(io)
+                .execute(any(Runnable.class));
+            final Field ioField = CapgoUpdater.class.getDeclaredField("io");
+            ioField.setAccessible(true);
+            ioField.set(updater, io);
+            doAnswer((inv) -> {
+                plugin.scheduleDirectUpdateFinish(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .directUpdateFinish(any(BundleInfo.class), any(CapgoUpdater.BackgroundDownloadContext.class));
+            doAnswer((inv) -> {
+                plugin.emitLaunchDownloadReady(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadSettled(any(), anyString(), any(CapgoUpdater.BackgroundDownloadContext.class));
+            final List<Callback> responses = new ArrayList<>();
+            doAnswer((inv) -> {
+                responses.add(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final androidx.work.WorkManager manager = mock(androidx.work.WorkManager.class);
+            workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
+            final List<androidx.lifecycle.Observer<List<androidx.work.WorkInfo>>> observers = new ArrayList<>();
+            final List<String> ids = new ArrayList<>();
+            when(manager.getWorkInfosByTagLiveData(anyString())).thenAnswer((inv) -> {
+                ids.add(inv.getArgument(0));
+                final androidx.lifecycle.LiveData<List<androidx.work.WorkInfo>> liveData = mock(androidx.lifecycle.LiveData.class);
+                doAnswer((observe) -> {
+                    observers.add(observe.getArgument(0));
+                    return null;
+                })
+                    .when(liveData)
+                    .observeForever(any());
+                return liveData;
+            });
+
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Runnable originalTimeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "old-download");
+            response.put("url", "https://example.com/update.zip");
+            response.put("manifest", new JSONArray());
+            responses.remove(0).callback(response);
+            plugin.workers.remove(0).run();
+            assertEquals(1, observers.size());
+            if (expire) {
+                originalTimeout.run();
+                plugin.appMovedToBackground();
+                setPrivateField(plugin, "appInBackground", false);
+            }
+            if (newer) {
+                plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(0).run();
+                response.put("version", "new-download");
+                responses.remove(0).callback(response);
+                plugin.workers.remove(0).run();
+                assertEquals(2, observers.size());
+                updater.setNextBundle("bundleB002");
+                assertTrue(updater.directUpdate);
+            }
+            final Object owningTask = getPrivateField(plugin, "backgroundDownloadTask");
+            if ("deferred-success".equals(outcome)) {
+                ((Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable")).run();
+            }
+            final Object owningDeadline = getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            final boolean owningDirectUpdate = updater.directUpdate;
+            doReturn(null).when(updater).context();
+            final Path staging = updater.documentsDir.toPath().resolve("old-staging");
+            Files.createDirectories(staging);
+            staging.toFile().deleteOnExit();
+            Files.write(staging.resolve("index.html"), "old update".getBytes(StandardCharsets.UTF_8)).toFile().deleteOnExit();
+            final androidx.work.WorkInfo work = mock(androidx.work.WorkInfo.class);
+            when(work.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+            when(work.getRunAttemptCount()).thenReturn(1);
+            when(work.getState()).thenReturn(
+                "retry".equals(outcome)
+                    ? androidx.work.WorkInfo.State.ENQUEUED
+                    : "failure".equals(outcome)
+                      ? androidx.work.WorkInfo.State.FAILED
+                      : androidx.work.WorkInfo.State.SUCCEEDED
+            );
+            when(work.getOutputData()).thenReturn(
+                new androidx.work.Data.Builder()
+                    .putString(DownloadService.FILEDEST, "old-staging")
+                    .putString(DownloadService.VERSION, "old-download")
+                    .putBoolean(DownloadService.IS_MANIFEST, true)
+                    .putString(DownloadService.SESSIONKEY, "")
+                    .putString(DownloadService.CHECKSUM, "")
+                    .build()
+            );
+            observers.get(0).onChanged(List.of(work));
+            if (outcome.endsWith("success")) {
+                assertTrue(new File(updater.documentsDir, "versions/" + ids.get(0) + "/index.html").exists());
+                assertEquals(BundleStatus.PENDING, updater.getBundleInfo(ids.get(0)).getStatus());
+            }
+            while (!plugin.workers.isEmpty()) {
+                plugin.workers.remove(0).run();
+            }
+            if (newer) {
+                assertEquals("An old download must not reload the active bundle", 0, plugin.reloadCalls);
+                assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+                assertSame(owningTask, getPrivateField(plugin, "backgroundDownloadTask"));
+                assertSame(owningDeadline, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+                assertEquals(owningDirectUpdate, updater.directUpdate);
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+                final Path newerStaging = updater.documentsDir.toPath().resolve("new-staging");
+                Files.createDirectories(newerStaging);
+                newerStaging.toFile().deleteOnExit();
+                Files.write(newerStaging.resolve("index.html"), "new update".getBytes(StandardCharsets.UTF_8)).toFile().deleteOnExit();
+                when(work.getState()).thenReturn(androidx.work.WorkInfo.State.SUCCEEDED);
+                when(work.getOutputData()).thenReturn(
+                    new androidx.work.Data.Builder()
+                        .putString(DownloadService.FILEDEST, "new-staging")
+                        .putString(DownloadService.VERSION, "new-download")
+                        .putBoolean(DownloadService.IS_MANIFEST, true)
+                        .putString(DownloadService.SESSIONKEY, "")
+                        .putString(DownloadService.CHECKSUM, "")
+                        .build()
+                );
+                observers.get(1).onChanged(List.of(work));
+                plugin.workers.remove(0).run();
+                if ("deferred-success".equals(outcome)) {
+                    assertEquals(ids.get(1), updater.getNextBundle().getId());
+                    plugin.appMovedToBackground();
+                    plugin.workers.remove(0).run();
+                }
+                assertEquals(1, plugin.reloadCalls);
+                assertEquals(ids.get(1), updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+            } else if (expire || "retry".equals(outcome)) {
+                if ("retry".equals(outcome)) {
+                    assertTrue(plugin.hasNotifiedEvent("appReady"));
+                    assertFalse(updater.directUpdate);
+                    when(work.getState()).thenReturn(androidx.work.WorkInfo.State.SUCCEEDED);
+                    observers.get(0).onChanged(List.of(work));
+                    plugin.workers.remove(0).run();
+                }
+                assertEquals(0, plugin.reloadCalls);
+                assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                assertEquals(ids.get(0), updater.getNextBundle().getId());
+                plugin.appMovedToBackground();
+                plugin.workers.remove(0).run();
+                assertEquals(ids.get(0), updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+            } else {
+                assertEquals(1, plugin.reloadCalls);
+                assertEquals(ids.get(0), updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+            }
+        }
     }
 
     @Test
