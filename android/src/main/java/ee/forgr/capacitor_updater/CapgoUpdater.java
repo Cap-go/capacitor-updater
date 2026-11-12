@@ -1482,13 +1482,17 @@ public class CapgoUpdater {
                         if (!terminalHandled.compareAndSet(false, true)) break;
                         removeObserver.run();
                         observedDownloadVersions.remove(observedVersion);
-                        completeBackgroundDownload(observedVersion, downloadContext, () -> {});
                         DataManager.getInstance().clearManifest(id);
                         io.execute(() -> CapgoUpdater.this.cleanupManifestStagingAfterDownloadCancelled(id));
                         CompletableFuture<BundleInfo> cancelledFuture = downloadFutures.remove(id);
                         if (cancelledFuture != null) {
                             cancelledFuture.cancel(true);
                         }
+                        completeBackgroundDownload(observedVersion, downloadContext, () -> {
+                            if (!launchReleasedWhileRetrying.get()) {
+                                notifyLaunchDownloadReady(cancelledFuture != null, false, false, false, false, null, downloadContext);
+                            }
+                        });
                         break;
                 }
             };
@@ -2468,6 +2472,11 @@ public class CapgoUpdater {
                 }
             }
 
+            // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
+            if (!this.enqueuePendingDelete(id)) {
+                logger.error("Failed to persist pending deletion, aborting disk delete");
+                return false;
+            }
             this.activeBundleDeletes.add(id);
         }
 
@@ -2589,16 +2598,14 @@ public class CapgoUpdater {
         return ids;
     }
 
-    private void enqueuePendingDelete(final String id) {
+    private boolean enqueuePendingDelete(final String id) {
         if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
-            return;
+            return false;
         }
         final Set<String> ids = this.getPendingDeleteIds();
-        if (!ids.add(id)) {
-            return;
-        }
+        ids.add(id);
         this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
-        this.editor.commit();
+        return this.editor.commit();
     }
 
     private void dequeuePendingDelete(final String id) {

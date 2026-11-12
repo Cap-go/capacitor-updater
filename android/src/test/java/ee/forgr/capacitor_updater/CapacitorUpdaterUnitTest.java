@@ -4828,6 +4828,57 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDeleteRestartResumesAfterDownloadOverwritesMarker() throws Exception {
+        for (BundleStatus status : new BundleStatus[] { BundleStatus.PENDING, BundleStatus.ERROR }) {
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final AtomicReference<String> registryAtTermination = new AtomicReference<>();
+            final AtomicReference<String> pendingAtTermination = new AtomicReference<>();
+            doAnswer((inv) -> {
+                // Capture persisted state while disk deletion is in progress, before finally can repair it.
+                assertTrue(updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(status)));
+                registryAtTermination.set(updater.prefs.getString("bundleB002_info", ""));
+                pendingAtTermination.set(updater.prefs.getString("pendingDeleteIds", ""));
+                throw new IOException("Interrupted disk removal");
+            })
+                .when(updater)
+                .deleteDirectory(any(File.class));
+            assertFalse(updater.delete("bundleB002", true, false));
+
+            final CapgoUpdater restarted = persistentQueuedInstallUpdater();
+            restarted.editor.putString("bundleB002_info", registryAtTermination.get());
+            restarted.editor.putString("pendingDeleteIds", pendingAtTermination.get());
+            assertTrue(restarted.editor.commit());
+            when(restarted.prefs.getAll()).thenAnswer((inv) ->
+                restarted.prefs.contains("bundleB002_info")
+                    ? Map.of("bundleB002_info", restarted.prefs.getString("bundleB002_info", ""))
+                    : Map.of()
+            );
+            assertEquals(status, restarted.getBundleInfo("bundleB002").getStatus());
+            restarted.drainPendingDeletes();
+            assertFalse(
+                "Restart must resume deletion despite the overwritten registry",
+                new File(restarted.documentsDir, "versions/bundleB002").exists()
+            );
+            assertFalse(restarted.prefs.contains("bundleB002_info"));
+            assertEquals("", restarted.prefs.getString("pendingDeleteIds", ""));
+            assertTrue(new File(restarted.documentsDir, "versions/bundleA001/index.html").exists());
+        }
+    }
+
+    @Test
+    public void testDeleteDoesNotRemoveFilesWhenPendingIntentCommitFails() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        // The DELETING marker succeeds, but the independent restart record cannot be committed.
+        when(updater.editor.commit()).thenReturn(true, false);
+        assertFalse(updater.delete("bundleB002", true, false));
+        verify(updater, never()).deleteDirectory(any(File.class));
+        assertTrue(new File(updater.documentsDir, "versions/bundleB002/index.html").exists());
+        when(updater.editor.commit()).thenReturn(true);
+        assertTrue("A failed admission must not retain the active deletion claim", updater.delete("bundleB002", true, false));
+        assertEquals("", updater.prefs.getString("pendingDeleteIds", ""));
+    }
+
+    @Test
     public void testDeleteFailureRetainsMarkerAndReleasesClaimForRetry() throws Exception {
         for (String mode : new String[] { "cancel", "cancel-throw", "disk" }) {
             final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
@@ -8425,6 +8476,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testReusedDownloadCancellationReleasesLaunchWithoutTimeout() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-cancelled", false, true);
+    }
+
+    @Test
+    public void testReusedRetryCancellationDoesNotRepeatReadiness() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-after-retry-cancelled", false, true);
+    }
+
+    @Test
+    public void testStaleDownloadCancellationPreservesNewerLaunch() throws Exception {
+        assertOriginatingDownloadOwnership("cancelled", false, true);
+    }
+
+    @Test
     public void testReusedDownloadReleasesRetryDuringCheckBeforeFailure() throws Exception {
         assertOriginatingDownloadOwnership("reuse-retry-during-check-failure", false, true);
     }
@@ -9294,6 +9360,7 @@ public class CapacitorUpdaterUnitTest {
 
     @SuppressWarnings("unchecked")
     private void assertOriginatingDownloadOwnership(final String outcome, final boolean expire, final boolean newer) throws Exception {
+        final boolean cancelled = outcome.endsWith("cancelled");
         final boolean lateRegistration = outcome.startsWith("registration-");
         final boolean reuse = outcome.startsWith("reuse-") || lateRegistration;
         final boolean reuseAfterRetry = outcome.startsWith("reuse-after-retry");
@@ -9336,7 +9403,13 @@ public class CapacitorUpdaterUnitTest {
             final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
             plugin.setAutoUpdateModeForTesting("always");
             setPrivateField(plugin, "autoSplashscreen", true);
-            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            setPrivateField(plugin, "autoSplashscreenTimeout", cancelled ? 0 : 10_000);
+            final PluginHandle splash = mock(PluginHandle.class);
+            if (cancelled) {
+                final Bridge bridge = mock(Bridge.class);
+                when(bridge.getPlugin("SplashScreen")).thenReturn(splash);
+                plugin.setBridge(bridge);
+            }
             final android.content.Context context = mock(android.content.Context.class);
             when(context.getApplicationContext()).thenReturn(context);
             final android.content.res.AssetManager assets = mock(android.content.res.AssetManager.class);
@@ -9585,7 +9658,7 @@ public class CapacitorUpdaterUnitTest {
                     ? androidx.work.WorkInfo.State.ENQUEUED
                     : outcome.endsWith("failure")
                       ? androidx.work.WorkInfo.State.FAILED
-                      : "cancelled".equals(outcome)
+                      : cancelled
                         ? androidx.work.WorkInfo.State.CANCELLED
                         : androidx.work.WorkInfo.State.SUCCEEDED
             );
@@ -9673,6 +9746,7 @@ public class CapacitorUpdaterUnitTest {
                 assertSame(owningDeadline, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
                 assertEquals(owningDirectUpdate, updater.directUpdate);
                 assertFalse(plugin.hasNotifiedEvent("appReady"));
+                if (cancelled) verify(splash, never()).invoke(eq("hide"), any(PluginCall.class));
                 final Path newerStaging = updater.documentsDir.toPath().resolve("new-staging");
                 Files.createDirectories(newerStaging);
                 newerStaging.toFile().deleteOnExit();
@@ -9697,17 +9771,21 @@ public class CapacitorUpdaterUnitTest {
                 assertEquals(1, plugin.reloadCalls);
                 assertEquals(ids.get(1), updater.getCurrentBundle().getId());
                 assertNull(updater.getNextBundle());
-            } else if (outcome.endsWith("failure") || "cancelled".equals(outcome)) {
+            } else if (outcome.endsWith("failure") || cancelled) {
                 assertEquals(0, plugin.reloadCalls);
                 assertEquals("bundleA001", updater.getCurrentBundle().getId());
                 assertNull(updater.getNextBundle());
-                if (outcome.endsWith("failure")) {
+                if (outcome.endsWith("failure") || cancelled) {
                     assertTrue(plugin.hasNotifiedEvent("appReady"));
                     assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
                     assertFalse(updater.directUpdate);
+                    if (cancelled) {
+                        assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+                        verify(splash, times(reuseAfterRetry ? 2 : 1)).invoke(eq("hide"), any(PluginCall.class));
+                    }
                     if (reuseAfterRetry || retryDuringCheck) {
                         assertEquals(
-                            "Terminal failure must not repeat the retry release",
+                            "Terminal completion must not repeat the retry release",
                             reuseAfterRetry ? 2 : 1,
                             ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
                         );
