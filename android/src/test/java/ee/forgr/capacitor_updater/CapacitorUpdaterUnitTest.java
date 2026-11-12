@@ -4828,6 +4828,267 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testConcurrentPendingDeleteWritersRetainBothRecordsAcrossRestart() throws Exception {
+        assertConcurrentPendingDeleteWriters(false);
+    }
+
+    @Test
+    public void testConcurrentPendingDeleteInstancesRetainBothRecordsAcrossRestart() throws Exception {
+        assertConcurrentPendingDeleteWriters(true);
+    }
+
+    private void assertConcurrentPendingDeleteWriters(final boolean separateInstance) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        updater.editor.putString("pastVersion", "bundleA001").commit();
+        final CapgoUpdater successUpdater = separateInstance ? spy(persistentQueuedInstallUpdater()) : updater;
+        if (separateInstance) {
+            successUpdater.documentsDir = updater.documentsDir;
+            successUpdater.prefs = updater.prefs;
+            successUpdater.editor = updater.editor;
+        }
+        setPrivateField(successUpdater, "io", mock(java.util.concurrent.ExecutorService.class));
+        doReturn(false).when(successUpdater).saveBundleInfo(eq("bundleA001"), any(BundleInfo.class));
+        doThrow(new IOException("Interrupted deletion")).when(updater).deleteDirectory(any(File.class));
+        final CountDownLatch readPending = new CountDownLatch(1);
+        final CountDownLatch releaseWriter = new CountDownLatch(1);
+        final CountDownLatch deletionStarted = new CountDownLatch(1);
+        final CountDownLatch deletionFinished = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final Thread success = new Thread(() -> {
+            try {
+                successUpdater.setSuccess(successUpdater.getCurrentBundle(), true);
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final org.mockito.stubbing.Stubbing read = mockingDetails(updater.prefs)
+            .getStubbings()
+            .stream()
+            .filter((stub) -> stub.getInvocation().getMethod().getName().equals("getString"))
+            .findFirst()
+            .orElseThrow();
+        doAnswer((inv) -> {
+            final Object snapshot = read.answer(inv);
+            if (Thread.currentThread() == success) {
+                readPending.countDown();
+                assertTrue(releaseWriter.await(5, TimeUnit.SECONDS));
+            }
+            return snapshot;
+        })
+            .when(updater.prefs)
+            .getString(eq("pendingDeleteIds"), anyString());
+        final Thread deletion = new Thread(() -> {
+            try {
+                deletionStarted.countDown();
+                assertFalse(updater.delete("bundleB002", true, false));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            } finally {
+                deletionFinished.countDown();
+            }
+        });
+        try {
+            success.start();
+            assertTrue(readPending.await(2, TimeUnit.SECONDS));
+            deletion.start();
+            assertTrue(deletionStarted.await(2, TimeUnit.SECONDS));
+            // Before the fix, B commits while A holds an older list snapshot.
+            deletionFinished.await(1, TimeUnit.SECONDS);
+        } finally {
+            releaseWriter.countDown();
+            success.join(3000);
+            deletion.join(3000);
+        }
+        assertFalse(success.isAlive());
+        assertFalse(deletion.isAlive());
+        assertNull(failure.get());
+        // A late callback removes the registry marker; only durable pending intent can recover B.
+        assertTrue(updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.PENDING)));
+        final CapgoUpdater restarted = restartedDeletionUpdater(deletionSnapshot(updater));
+        restarted.drainPendingDeletes();
+        for (String id : new String[] { "bundleA001", "bundleB002" }) {
+            assertFalse(
+                "Restart must recover both concurrent deletion records: " + id,
+                new File(restarted.documentsDir, "versions/" + id).exists()
+            );
+            assertFalse(restarted.prefs.contains(id + "_info"));
+        }
+        assertEquals("", restarted.prefs.getString("pendingDeleteIds", ""));
+    }
+
+    @Test
+    public void testTombstoneDeletionRestartPreservesNewerSameVersionDownload() throws Exception {
+        assertDeletionRestartCancellationPolicy(true, false);
+    }
+
+    @Test
+    public void testPendingDeleteCompletionPreservesConcurrentEnqueueAcrossRestart() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        updater.editor.putString("pastVersion", "bundleA001").commit();
+        setPrivateField(updater, "io", mock(java.util.concurrent.ExecutorService.class));
+        doReturn(false).when(updater).saveBundleInfo(eq("bundleA001"), any(BundleInfo.class));
+        final CountDownLatch readCompletion = new CountDownLatch(1);
+        final CountDownLatch releaseCompletion = new CountDownLatch(1);
+        final CountDownLatch successStarted = new CountDownLatch(1);
+        final CountDownLatch successFinished = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final Thread deletion = new Thread(() -> {
+            try {
+                assertTrue(updater.delete("bundleB002", true, false));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final org.mockito.stubbing.Stubbing read = mockingDetails(updater.prefs)
+            .getStubbings()
+            .stream()
+            .filter((stub) -> stub.getInvocation().getMethod().getName().equals("getString"))
+            .findFirst()
+            .orElseThrow();
+        final AtomicInteger pendingReads = new AtomicInteger();
+        doAnswer((inv) -> {
+            final Object snapshot = read.answer(inv);
+            if (Thread.currentThread() == deletion && pendingReads.incrementAndGet() == 2) {
+                readCompletion.countDown();
+                assertTrue(releaseCompletion.await(5, TimeUnit.SECONDS));
+            }
+            return snapshot;
+        })
+            .when(updater.prefs)
+            .getString(eq("pendingDeleteIds"), anyString());
+        final Thread success = new Thread(() -> {
+            try {
+                successStarted.countDown();
+                updater.setSuccess(updater.getCurrentBundle(), true);
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            } finally {
+                successFinished.countDown();
+            }
+        });
+        try {
+            deletion.start();
+            assertTrue(readCompletion.await(2, TimeUnit.SECONDS));
+            success.start();
+            assertTrue(successStarted.await(2, TimeUnit.SECONDS));
+            successFinished.await(1, TimeUnit.SECONDS);
+        } finally {
+            releaseCompletion.countDown();
+            deletion.join(3000);
+            success.join(3000);
+        }
+        assertFalse(success.isAlive());
+        assertFalse(deletion.isAlive());
+        assertNull(failure.get());
+        final CapgoUpdater restarted = restartedDeletionUpdater(deletionSnapshot(updater));
+        restarted.drainPendingDeletes();
+        assertFalse("Completing B must not erase A's pending deletion", new File(restarted.documentsDir, "versions/bundleA001").exists());
+        assertFalse(restarted.prefs.contains("bundleA001_info"));
+        assertEquals("", restarted.prefs.getString("pendingDeleteIds", ""));
+        assertEquals("", restarted.prefs.getString("pendingDeleteNoCancelIds", ""));
+    }
+
+    @Test
+    public void testNonCancellingDeletionRestartPreservesNewerSameVersionDownload() throws Exception {
+        assertDeletionRestartCancellationPolicy(false, false);
+    }
+
+    @Test
+    public void testCancellingDeletionRestartStillCancelsItsVersion() throws Exception {
+        assertDeletionRestartCancellationPolicy(false, true);
+    }
+
+    @Test
+    public void testTombstoneDeletionPolicySurvivesStopBeforeRegistryMarker() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        final BundleInfo tombstone = updater.getBundleInfo("bundleB002").setStatus(BundleStatus.DELETED);
+        assertTrue(updater.saveBundleInfo(tombstone.getId(), tombstone));
+        doThrow(new IllegalStateException("Process stopped before the registry marker"))
+            .when(updater)
+            .saveBundleInfo(eq(tombstone.getId()), any(BundleInfo.class));
+        assertThrows(IllegalStateException.class, () -> updater.deleteDeletedBundle(tombstone.getId()));
+        final CapgoUpdater restarted = spy(restartedDeletionUpdater(deletionSnapshot(updater)));
+        final android.content.Context context = mock(android.content.Context.class);
+        doReturn(context).when(restarted).context();
+        doReturn(null).when(restarted).getPreviewFallbackBundle();
+        doReturn(null).when(restarted).getNextBundle();
+        try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+            restarted.drainPendingDeletes();
+            downloads.verifyNoInteractions();
+        }
+        assertFalse(
+            "The pre-marker restart must retain the deletion intent",
+            new File(restarted.documentsDir, "versions/bundleB002").exists()
+        );
+        assertFalse(restarted.prefs.contains("bundleB002_info"));
+        assertEquals("", restarted.prefs.getString("pendingDeleteNoCancelIds", ""));
+    }
+
+    private void assertDeletionRestartCancellationPolicy(final boolean tombstone, final boolean cancel) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        if (tombstone) assertTrue(
+            updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.DELETED))
+        );
+        final AtomicReference<Map<String, String>> snapshot = new AtomicReference<>();
+        doAnswer((inv) -> {
+            assertTrue(updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.PENDING)));
+            snapshot.set(deletionSnapshot(updater));
+            throw new IOException("Process stopped during deletion");
+        })
+            .when(updater)
+            .deleteDirectory(any(File.class));
+        assertFalse(tombstone ? updater.deleteDeletedBundle("bundleB002") : updater.delete("bundleB002", true, cancel));
+        final CapgoUpdater restarted = spy(restartedDeletionUpdater(snapshot.get()));
+        final android.content.Context context = mock(android.content.Context.class);
+        doReturn(context).when(restarted).context();
+        doReturn(null).when(restarted).getPreviewFallbackBundle();
+        doReturn(null).when(restarted).getNextBundle();
+        // A different bundle now downloads the same version as the old tombstone.
+        final BundleInfo newer = new BundleInfo("bundleA001", "bundleB002", BundleStatus.DOWNLOADING, new Date(), "new-checksum");
+        assertTrue(restarted.saveBundleInfo(newer.getId(), newer));
+        final java.util.concurrent.atomic.AtomicBoolean newerDownloadActive = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+            downloads
+                .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"))
+                .thenAnswer((inv) -> {
+                    newerDownloadActive.set(false);
+                    return true;
+                });
+            restarted.drainPendingDeletes();
+            downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"), times(cancel ? 1 : 0));
+        }
+        assertEquals(!cancel, newerDownloadActive.get());
+        assertFalse(new File(restarted.documentsDir, "versions/bundleB002").exists());
+        assertFalse(restarted.prefs.contains("bundleB002_info"));
+        assertTrue(new File(restarted.documentsDir, "versions/bundleA001/index.html").exists());
+        assertEquals(BundleStatus.DOWNLOADING, restarted.getBundleInfo("bundleA001").getStatus());
+        assertEquals("", restarted.prefs.getString("pendingDeleteIds", ""));
+        assertEquals("", restarted.prefs.getString("pendingDeleteNoCancelIds", ""));
+    }
+
+    private Map<String, String> deletionSnapshot(final CapgoUpdater updater) {
+        final Map<String, String> snapshot = new HashMap<>();
+        for (String key : new String[] { "bundleA001_info", "bundleB002_info", "pendingDeleteIds", "pendingDeleteNoCancelIds" }) {
+            snapshot.put(key, updater.prefs.getString(key, ""));
+        }
+        return snapshot;
+    }
+
+    private CapgoUpdater restartedDeletionUpdater(final Map<String, String> snapshot) throws Exception {
+        final CapgoUpdater restarted = persistentQueuedInstallUpdater();
+        snapshot.forEach((key, value) -> restarted.editor.putString(key, value));
+        assertTrue(restarted.editor.commit());
+        when(restarted.prefs.getAll()).thenAnswer((inv) -> {
+            final Map<String, String> registry = new HashMap<>();
+            for (String id : new String[] { "bundleA001", "bundleB002" }) {
+                if (restarted.prefs.contains(id + "_info")) registry.put(id + "_info", restarted.prefs.getString(id + "_info", ""));
+            }
+            return registry;
+        });
+        return restarted;
+    }
+
+    @Test
     public void testDeleteRestartResumesAfterDownloadOverwritesMarker() throws Exception {
         for (BundleStatus status : new BundleStatus[] { BundleStatus.PENDING, BundleStatus.ERROR }) {
             final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
@@ -4868,8 +5129,8 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testDeleteDoesNotRemoveFilesWhenPendingIntentCommitFails() throws Exception {
         final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
-        // The DELETING marker succeeds, but the independent restart record cannot be committed.
-        when(updater.editor.commit()).thenReturn(true, false);
+        // The independent restart record must succeed before a registry marker or disk removal.
+        when(updater.editor.commit()).thenReturn(false);
         assertFalse(updater.delete("bundleB002", true, false));
         verify(updater, never()).deleteDirectory(any(File.class));
         assertTrue(new File(updater.documentsDir, "versions/bundleB002/index.html").exists());
@@ -7461,6 +7722,7 @@ public class CapacitorUpdaterUnitTest {
         updater.CAP_SERVER_PATH = "server-path";
         updater.prefs = prefs;
         updater.editor = editor;
+        when(prefs.edit()).thenReturn(editor);
         updater.statsUrl = "";
         when(prefs.contains(anyString())).thenAnswer((inv) -> store.containsKey(inv.getArgument(0)));
         when(prefs.getString(anyString(), any())).thenAnswer((inv) -> store.getOrDefault(inv.getArgument(0), inv.getArgument(1)));
@@ -11093,6 +11355,7 @@ public class CapacitorUpdaterUnitTest {
         updater.CAP_SERVER_PATH = "server-path";
         updater.prefs = prefs;
         updater.editor = editor;
+        when(prefs.edit()).thenReturn(editor);
         updater.statsUrl = "";
 
         when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");
@@ -11137,6 +11400,7 @@ public class CapacitorUpdaterUnitTest {
         updater.CAP_SERVER_PATH = "server-path";
         updater.prefs = prefs;
         updater.editor = editor;
+        when(prefs.edit()).thenReturn(editor);
         updater.statsUrl = "";
 
         when(prefs.getString(eq("server-path"), anyString())).thenReturn("public");

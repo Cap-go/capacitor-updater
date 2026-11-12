@@ -81,6 +81,8 @@ public class CapgoUpdater {
     private static final Object nextBundleLock = new Object();
     private static final String PREVIEW_FALLBACK_VERSION = "previewFallbackVersion";
     private static final String PENDING_DELETE_IDS = "pendingDeleteIds";
+    private static final String PENDING_DELETE_NO_CANCEL_IDS = "pendingDeleteNoCancelIds";
+    private static final Object pendingDeleteLock = new Object();
     private static final String bundleDirectory = "versions";
     private static final String TEMP_UNZIP_PREFIX = "capgo_unzip_";
     static final String MANIFEST_STAGING_PREFIX = "capgo_manifest_";
@@ -2419,6 +2421,7 @@ public class CapgoUpdater {
     ) throws IOException {
         final File bundle;
         final BundleInfo deleted;
+        final boolean shouldCancelDownload;
         synchronized (this.deleteLock) {
             try {
                 bundle = this.getBundleDirectory(id);
@@ -2463,7 +2466,13 @@ public class CapgoUpdater {
                 return false;
             }
 
-            // Persist DELETING before touching disk so kill/OOM can resume on next launch.
+            // Persist the ID and cancellation policy before a marker can make this deletion recoverable.
+            // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
+            if (!this.enqueuePendingDelete(id, cancelActiveDownload)) {
+                logger.error("Failed to persist pending deletion, aborting disk delete");
+                return false;
+            }
+            shouldCancelDownload = cancelActiveDownload && !this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS).contains(id);
             if (!deleted.isDeleting()) {
                 if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
                     logger.error("Failed to persist DELETING marker, aborting disk delete");
@@ -2472,18 +2481,13 @@ public class CapgoUpdater {
                 }
             }
 
-            // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
-            if (!this.enqueuePendingDelete(id)) {
-                logger.error("Failed to persist pending deletion, aborting disk delete");
-                return false;
-            }
             this.activeBundleDeletes.add(id);
         }
 
         boolean completed = false;
         try {
             // Cancel download for this version if active
-            if (cancelActiveDownload && this.context() != null) {
+            if (shouldCancelDownload && this.context() != null) {
                 if (!DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), deleted.getVersionName())) {
                     logger.error("Failed to cancel active download before delete");
                     return false;
@@ -2565,9 +2569,7 @@ public class CapgoUpdater {
         for (final String id : pendingIds) {
             try {
                 logger.info("Resuming pending delete for bundle: " + id);
-                if (Boolean.TRUE.equals(this.delete(id, true))) {
-                    this.dequeuePendingDelete(id);
-                }
+                this.delete(id, true);
             } catch (final Exception e) {
                 logger.error("Pending delete failed, will retry next launch");
                 logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
@@ -2582,46 +2584,73 @@ public class CapgoUpdater {
     }
 
     private Set<String> getPendingDeleteIds() {
-        final Set<String> ids = new LinkedHashSet<>();
-        if (this.prefs == null) {
-            return ids;
-        }
-        final String raw = this.prefs.getString(PENDING_DELETE_IDS, "");
-        if (raw == null || raw.isEmpty()) {
-            return ids;
-        }
-        for (final String part : raw.split(",")) {
-            if (part != null && !part.isEmpty()) {
-                ids.add(part);
+        return this.getPendingDeleteIds(PENDING_DELETE_IDS);
+    }
+
+    private Set<String> getPendingDeleteIds(final String key) {
+        synchronized (pendingDeleteLock) {
+            final Set<String> ids = new LinkedHashSet<>();
+            if (this.prefs == null) {
+                return ids;
             }
+            final String raw = this.prefs.getString(key, "");
+            if (raw == null || raw.isEmpty()) {
+                return ids;
+            }
+            for (final String part : raw.split(",")) {
+                if (!part.isEmpty()) {
+                    ids.add(part);
+                }
+            }
+            return ids;
         }
-        return ids;
     }
 
     private boolean enqueuePendingDelete(final String id) {
+        return this.enqueuePendingDelete(id, true);
+    }
+
+    private boolean enqueuePendingDelete(final String id, final boolean cancelActiveDownload) {
         if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
             return false;
         }
-        final Set<String> ids = this.getPendingDeleteIds();
-        ids.add(id);
-        this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
-        return this.editor.commit();
+        synchronized (pendingDeleteLock) {
+            final Set<String> ids = this.getPendingDeleteIds();
+            final Set<String> noCancelIds = this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS);
+            ids.add(id);
+            if (!cancelActiveDownload) {
+                noCancelIds.add(id);
+            }
+            // A recovered tombstone must never escalate to version-wide cancellation.
+            final SharedPreferences.Editor pendingEditor = this.prefs.edit();
+            this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_IDS, ids);
+            this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_NO_CANCEL_IDS, noCancelIds);
+            return pendingEditor.commit();
+        }
     }
 
     private void dequeuePendingDelete(final String id) {
         if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
             return;
         }
-        final Set<String> ids = this.getPendingDeleteIds();
-        if (!ids.remove(id)) {
-            return;
+        synchronized (pendingDeleteLock) {
+            final Set<String> ids = this.getPendingDeleteIds();
+            final Set<String> noCancelIds = this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS);
+            ids.remove(id);
+            noCancelIds.remove(id);
+            final SharedPreferences.Editor pendingEditor = this.prefs.edit();
+            this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_IDS, ids);
+            this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_NO_CANCEL_IDS, noCancelIds);
+            pendingEditor.commit();
         }
+    }
+
+    private void writePendingDeleteIds(final SharedPreferences.Editor pendingEditor, final String key, final Set<String> ids) {
         if (ids.isEmpty()) {
-            this.editor.remove(PENDING_DELETE_IDS);
+            pendingEditor.remove(key);
         } else {
-            this.editor.putString(PENDING_DELETE_IDS, String.join(",", ids));
+            pendingEditor.putString(key, String.join(",", ids));
         }
-        this.editor.commit();
     }
 
     private File getBundleDirectory(final String id) throws IOException {
