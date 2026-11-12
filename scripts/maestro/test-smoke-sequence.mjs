@@ -89,3 +89,98 @@ assert.equal(queued.sequenceInProgress, false);
 console.log(
   'Smoke sequence checks passed (refresh failure cleanup, stale marker reset, action serialization, duplicate suppression).',
 );
+
+const bootstrapStart = source.indexOf('async function bootstrap()');
+const bootstrapEnd = source.indexOf('\nbindActionButton(', bootstrapStart);
+const verifyStart = source.indexOf('async function verifyPersistedRuntimeConfig(');
+const verifyEnd = source.indexOf('\nasync function runGetLatestCheck()', verifyStart);
+const bootSource = `${source.slice(verifyStart, verifyEnd)}\n${source.slice(bootstrapStart, bootstrapEnd)}`;
+
+function bootHarness(overrides = {}) {
+  const noop = () => {};
+  const context = vm.createContext({
+    platform: 'android',
+    isMaestroE2E: true,
+    scenarioId: 'manual-zip',
+    buildLabel: 'manual-zip-builtin',
+    bootActionFromStorage: 'verify-persisted-config-boot',
+    serverUrl: 'http://127.0.0.1:3192',
+    skipNotifyAppReady: false,
+    persistCustomId: false,
+    defaultSmokeAppId: 'app.test',
+    state: { bootCount: 1, harnessReady: false },
+    window: { history: {} },
+    document: { body: { classList: { add: noop } }, documentElement: { classList: { add: noop } } },
+    SplashScreen: { hide: noop },
+    ...Object.fromEntries(
+      [
+        'resetScrollPosition',
+        'configureQaToolsPanel',
+        'renderQuickActions',
+        'pinMaestroQuickActions',
+        'renderActions',
+        'bindDemoActions',
+        'renderState',
+        'attachListeners',
+        'performNotifyAppReady',
+        'refreshState',
+        'startStateRefreshWatchers',
+        'ensureManualManifestRuntimeUrls',
+      ].map((name) => [name, noop]),
+    ),
+    plugin: { listChannels: async () => ({ channels: [{ name: 'production' }] }) },
+    expectListChannelsResult: (result) => result,
+    refreshServerState: async () => {
+      context.state.serverDebug = { debug: null, error: 'WebView fetch unavailable' };
+    },
+    waitForCondition: async (check) => {
+      if (!(await check())) throw new Error('server debug timed out');
+    },
+    getActionById: (id) => {
+      assert.equal(id, 'verify-persisted-config-boot');
+      return {
+        run: () => context.verifyPersistedRuntimeConfig({ includePluginAppId: false, probeLatest: false }),
+      };
+    },
+    runAction: async (action) => {
+      context.bootResult = await action.run();
+    },
+    attachMaestroDeepLinks: async () => {
+      context.deepLinksAttached = true;
+    },
+    console: {
+      error: (_, error) => {
+        context.bootError = error;
+      },
+    },
+    ...overrides,
+  });
+  // Only the two fixed functions read from the checked-in example app are executed.
+  vm.runInContext(bootSource, context); // NOSONAR trusted repository code executed in this isolated test harness
+  return context;
+}
+
+const androidBoot = bootHarness();
+await androidBoot.bootstrap();
+assert.equal(androidBoot.bootResult.channels[0].name, 'production');
+assert.equal(androidBoot.bootResult.note, 'server debug unavailable in Android WebView');
+assert.equal(androidBoot.state.harnessReady, true);
+assert.equal(androidBoot.deepLinksAttached, true);
+
+const nativeFailure = new Error('native channels failed');
+const failedBoot = bootHarness({
+  plugin: {
+    listChannels: async () => {
+      throw nativeFailure;
+    },
+  },
+});
+await failedBoot.bootstrap();
+assert.equal(failedBoot.bootError, nativeFailure);
+assert.equal(failedBoot.bootResult, undefined);
+
+const iosBoot = bootHarness({ platform: 'ios' });
+await assert.rejects(iosBoot.bootstrap(), /server debug timed out/);
+assert.equal(iosBoot.bootResult, undefined);
+assert.equal(iosBoot.state.harnessReady, false);
+console.log('Boot checks passed (Android native fallback, native failure, iOS debug gate).');

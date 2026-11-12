@@ -3558,7 +3558,9 @@ async function bootstrap() {
   if (bootActionIds.length) {
     if (serverUrl.startsWith('http')) {
       await refreshServerState().catch(() => {});
-      if (!state.serverDebug?.debug) {
+      // Android native requests can work even when the WebView cannot fetch server debug.
+      // Let the queued action validate them using its native-only fallback.
+      if (platform !== 'android' && !state.serverDebug?.debug) {
         await waitForCondition(
           async () => {
             try {
