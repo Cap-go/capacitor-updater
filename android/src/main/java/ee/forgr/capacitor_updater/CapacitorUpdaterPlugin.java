@@ -3770,6 +3770,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.applyCurrentBundleToBridge();
         } catch (final Exception e) {
             logger.warn("Failed to restore live bundle after rejected reload: " + e.getMessage());
+        } finally {
+            // The prior watchdog may have expired or belong to an older page generation.
+            // A rejected recovery dispatch still leaves the restored bundle needing validation.
+            this.checkAppReady();
         }
     }
 

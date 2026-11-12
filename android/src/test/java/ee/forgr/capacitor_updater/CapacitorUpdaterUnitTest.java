@@ -180,6 +180,7 @@ public class CapacitorUpdaterUnitTest {
 
         private final AppCompatActivity activity = mock(AppCompatActivity.class);
         private final List<Runnable> workers = new ArrayList<>();
+        private final List<Runnable> readinessWatchdogs = new ArrayList<>();
         private Runnable onReady;
         private Runnable onDownloadFailed;
         private java.util.function.Consumer<String> beforeNotification;
@@ -203,7 +204,11 @@ public class CapacitorUpdaterUnitTest {
             if (this.failDispatch) {
                 throw new IllegalStateException("Test dispatch failure");
             }
-            this.workers.add(function);
+            if (function.getClass().getSimpleName().equals("DeferredNotifyAppReadyCheck")) {
+                this.readinessWatchdogs.add(function);
+            } else {
+                this.workers.add(function);
+            }
             return new Thread();
         }
 
@@ -5666,7 +5671,7 @@ public class CapacitorUpdaterUnitTest {
                 }
                 assertEquals("bundleB002", updater.getNextBundle().getId());
 
-                // The final worker is the follow-up install; the preceding one is the app-ready watchdog.
+                // Watchdogs are captured separately from follow-up installation workers.
                 plugin.workers.remove(plugin.workers.size() - 1).run();
                 assertEquals(Arrays.asList(firstId, "bundleB002"), loadedBundles);
                 assertNull(updater.getNextBundle());
@@ -7146,6 +7151,108 @@ public class CapacitorUpdaterUnitTest {
     @Test
     public void testQueuedReloadRecoveryPreservesWatchdogRollback() throws Exception {
         assertFailedAutomaticDispatchRestoresState(true, "watchdog");
+    }
+
+    @Test
+    public void testRejectedReloadRecoveryRearmsPendingBundleWatchdog() throws Exception {
+        assertRecoveryRearmsPendingBundleWatchdog(false, false, false);
+    }
+
+    @Test
+    public void testInterruptedReloadRecoveryRearmsPendingBundleWatchdog() throws Exception {
+        assertRecoveryRearmsPendingBundleWatchdog(true, false, false);
+    }
+
+    @Test
+    public void testRejectedRecoveryDispatchRearmsPendingBundleWatchdog() throws Exception {
+        assertRecoveryRearmsPendingBundleWatchdog(false, true, false);
+    }
+
+    @Test
+    public void testRecoveredBundleReadinessPreventsWatchdogRollback() throws Exception {
+        assertRecoveryRearmsPendingBundleWatchdog(false, false, true);
+    }
+
+    private void assertRecoveryRearmsPendingBundleWatchdog(
+        final boolean interrupted,
+        final boolean rejectRecovery,
+        final boolean reportReady
+    ) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final BundleInfo incoming = updater.getBundleInfo("bundleB002");
+            doReturn(incoming).when(updater).getBundleInfoByName(incoming.getVersionName());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = spy(queuedInstallPlugin(updater, new ArrayList<>()));
+            plugin.setAutoUpdateModeForTesting("always");
+            plugin.useRealReload = true;
+            setPrivateField(plugin, "appReadyTimeout", 0);
+            doReturn(0L).when(plugin).getMinimumPendingBundleAppReadyTimeoutMs();
+            setPrivateField(plugin, "autoDeleteFailed", false);
+            setPrivateField(plugin, "autoDeletePrevious", false);
+            final SharedPreferences prefs = (SharedPreferences) getPrivateField(plugin, "prefs");
+            when(prefs.edit()).thenReturn(mock(SharedPreferences.Editor.class, RETURNS_SELF));
+            final java.lang.reflect.Constructor<?> constructor = Class.forName(
+                "ee.forgr.capacitor_updater.CapacitorUpdaterPlugin$DeferredNotifyAppReadyCheck"
+            ).getDeclaredConstructor(CapacitorUpdaterPlugin.class, long.class);
+            constructor.setAccessible(true);
+            final Runnable launchWatchdog = (Runnable) constructor.newInstance(plugin, 0L);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getLocalServer()).thenReturn(mock(com.getcapacitor.WebViewLocalServer.class));
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            configureReadinessBridge(plugin, bridge);
+            when(webView.post(any())).thenAnswer((inv) -> {
+                if (incoming.getId().equals(updater.getCurrentBundle().getId())) {
+                    // The launch check can expire while replacement admission owns a different page.
+                    launchWatchdog.run();
+                    if (interrupted) Thread.currentThread().interrupt();
+                    return interrupted;
+                }
+                if (rejectRecovery) return false;
+                ((Runnable) inv.getArgument(0)).run();
+                return true;
+            });
+            try {
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(0).run();
+                response
+                    .get()
+                    .callback(new HashMap<>(Map.of("version", incoming.getVersionName(), "url", "https://example.com/cached.zip")));
+            } finally {
+                Thread.interrupted();
+            }
+            assertEquals("bundleA001", updater.getCurrentBundle().getId());
+            assertEquals(BundleStatus.PENDING, updater.getCurrentBundle().getStatus());
+            assertFalse(plugin.hasNotifiedEvent("updateFailed"));
+            if (rejectRecovery) verify(webView, never()).loadUrl(anyString());
+            else verify(webView).loadUrl("https://local-app-domain.com");
+            if (reportReady) {
+                final PluginCall ready = mock(PluginCall.class);
+                when(ready.getData()).thenReturn(new JSObject().put("loadGeneration", getPrivateField(plugin, "readyGeneration")));
+                plugin.notifyAppReady(ready);
+            }
+            // Exercise the scheduled watchdog without a wall-clock deadline; reset dispatch is unrelated.
+            plugin.useRealReload = false;
+            for (Runnable watchdog : new ArrayList<>(plugin.readinessWatchdogs)) {
+                watchdog.run();
+            }
+            assertEquals(!reportReady, plugin.hasNotifiedEvent("updateFailed"));
+            assertEquals(reportReady ? "bundleA001" : BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+            assertEquals(reportReady ? BundleStatus.SUCCESS : BundleStatus.ERROR, updater.getBundleInfo("bundleA001").getStatus());
+        }
     }
 
     private void assertFailedAutomaticDispatchRestoresState(final boolean queued, final String failure) throws Exception {
