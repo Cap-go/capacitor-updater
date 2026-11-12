@@ -381,6 +381,221 @@ public class BundleDeletionCoordinationTest {
         assertRunningFinalizationSettles(true);
     }
 
+    @Test
+    public void finalizationCannotOverwriteInterruptedDeletionMarker() throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final Map<String, String> store = new ConcurrentHashMap<>();
+        final CapgoUpdater plugin = updater(root, store);
+        final CapgoUpdater downloader = updater(root, store);
+        assertTrue(plugin.saveBundleInfo(ID, new BundleInfo(ID, VERSION, BundleStatus.DOWNLOADING, new Date(), "")));
+        final Path staging = root.resolve("capgo_manifest_registry001");
+        Files.createDirectories(staging);
+        Files.write(staging.resolve("index.html"), "downloaded".getBytes(StandardCharsets.UTF_8));
+        final CountDownLatch beforeWrite = new CountDownLatch(1);
+        final CountDownLatch releaseWrite = new CountDownLatch(1);
+        final CountDownLatch deletionFinished = new CountDownLatch(1);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final AtomicReference<Boolean> deleted = new AtomicReference<>();
+        doAnswer((inv) -> {
+            beforeWrite.countDown();
+            assertTrue(releaseWrite.await(5, TimeUnit.SECONDS));
+            return inv.callRealMethod();
+        })
+            .when(downloader)
+            .saveBundleInfo(eq(ID), isNull());
+        doAnswer((inv) -> {
+            assertTrue(deletionFinished.await(5, TimeUnit.SECONDS));
+            return null;
+        })
+            .when(downloader)
+            .notifyDownload(ID, 100);
+        final Thread deletion = new Thread(() -> {
+            try {
+                // Interrupt the wait to exercise the same marker restoration as its timeout.
+                Thread.currentThread().interrupt();
+                deleted.set(plugin.delete(ID, true, false));
+            } catch (Throwable error) {
+                failure.set(error);
+            } finally {
+                deletionFinished.countDown();
+            }
+        });
+        try (ObserverHarness harness = new ObserverHarness(downloader)) {
+            harness.succeed(staging.getFileName().toString());
+            final Runnable task = harness.tasks.remove(0);
+            final Thread finalization = new Thread(() -> {
+                try {
+                    task.run();
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            try {
+                finalization.start();
+                assertTrue(beforeWrite.await(2, TimeUnit.SECONDS));
+                deletion.start();
+                awaitBlockedOrFinished(deletion, finalization, deletionFinished);
+            } finally {
+                releaseWrite.countDown();
+                finalization.join(5000);
+                deletion.join(5000);
+            }
+            assertFalse(finalization.isAlive());
+            assertFalse(deletion.isAlive());
+            assertNull(failure.get());
+            assertEquals(Boolean.FALSE, deleted.get());
+            assertEquals(BundleStatus.DELETING, plugin.getBundleInfo(ID).getStatus());
+            assertFalse(plugin.set(ID));
+            assertFalse(plugin.setNextBundle(ID));
+            assertTrue("A later retry can finish the deletion", plugin.delete(ID, true, false));
+            assertFalse(Files.exists(root.resolve("versions").resolve(ID)));
+            verify(downloader, never()).directUpdateFinish(any(BundleInfo.class), any(CapgoUpdater.BackgroundDownloadContext.class));
+        }
+    }
+
+    @Test
+    public void builtinRollbackSkipsDeletedTarget() throws Exception {
+        assertBuiltinRollbackTarget("deleted");
+    }
+
+    @Test
+    public void builtinRollbackSkipsMissingTarget() throws Exception {
+        assertBuiltinRollbackTarget("missing");
+    }
+
+    @Test
+    public void builtinRollbackSkipsDeletingTarget() throws Exception {
+        assertBuiltinRollbackTarget("deleting");
+    }
+
+    @Test
+    public void builtinRollbackSkipsActiveDeletionWithRewrittenMetadata() throws Exception {
+        assertBuiltinRollbackTarget("active");
+    }
+
+    @Test
+    public void builtinRollbackRestoresAvailableTarget() throws Exception {
+        assertBuiltinRollbackTarget("available");
+    }
+
+    private void assertBuiltinRollbackTarget(final String state) throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final Map<String, String> store = new ConcurrentHashMap<>();
+        final CapgoUpdater plugin = updater(root, store);
+        final CapgoUpdater deleting = updater(root, store);
+        bundle(plugin, ID);
+        bundle(plugin, "bundleA001");
+        assertTrue(plugin.set(ID));
+        plugin.setSuccess(plugin.getCurrentBundle(), false);
+        final CapgoUpdater.ResetState previous = plugin.captureResetState();
+        plugin.prepareBuiltinTransition();
+        assertTrue(plugin.setNextBundle("bundleA001"));
+        if ("deleted".equals(state)) {
+            assertTrue(deleting.delete(ID, true, false));
+        } else if ("missing".equals(state)) {
+            Files.delete(root.resolve("versions").resolve(ID).resolve("index.html"));
+            Files.delete(root.resolve("versions").resolve(ID));
+        } else if ("deleting".equals(state)) {
+            assertTrue(deleting.saveBundleInfo(ID, deleting.getBundleInfo(ID).setStatus(BundleStatus.DELETING)));
+        }
+        if ("active".equals(state)) {
+            doAnswer((inv) -> {
+                assertTrue(deleting.saveBundleInfo(ID, deleting.getBundleInfo(ID).setStatus(BundleStatus.PENDING)));
+                plugin.restoreResetStatePreservingNextBundle(previous);
+                return inv.callRealMethod();
+            })
+                .when(deleting)
+                .deleteDirectory(any(File.class));
+            assertTrue(deleting.delete(ID, true, false));
+        } else {
+            plugin.restoreResetStatePreservingNextBundle(previous);
+        }
+        final boolean available = "available".equals(state);
+        assertEquals(available ? previous.currentBundlePath : "public", plugin.getCurrentBundlePath());
+        assertEquals(available ? ID : BundleInfo.ID_BUILTIN, plugin.getCurrentBundle().getId());
+        assertEquals(available ? previous.fallbackBundleId : BundleInfo.ID_BUILTIN, plugin.getFallbackBundle().getId());
+        assertEquals("Rollback must preserve the newer queue", "bundleA001", plugin.getNextBundle().getId());
+    }
+
+    @Test
+    public void rollbackRestorationExcludesConcurrentDeletion() throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final Map<String, String> store = new ConcurrentHashMap<>();
+        final CapgoUpdater plugin = updater(root, store);
+        final CapgoUpdater deleting = updater(root, store);
+        bundle(plugin, ID);
+        bundle(plugin, "bundleA001");
+        assertTrue(plugin.set(ID));
+        final CapgoUpdater.ResetState previous = plugin.captureResetState();
+        plugin.prepareBuiltinTransition();
+        assertTrue(plugin.setNextBundle("bundleA001"));
+        final CountDownLatch restoring = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch deletionFinished = new CountDownLatch(1);
+        final AtomicReference<Boolean> deleted = new AtomicReference<>();
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        doAnswer((inv) -> {
+            final Object next = inv.callRealMethod();
+            restoring.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return next;
+        })
+            .when(plugin)
+            .getNextBundle();
+        final Thread restoration = new Thread(() -> {
+            try {
+                plugin.restoreResetStatePreservingNextBundle(previous);
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        });
+        final Thread deletion = new Thread(() -> {
+            try {
+                deleted.set(deleting.delete(ID, true, false));
+            } catch (Throwable error) {
+                failure.set(error);
+            } finally {
+                deletionFinished.countDown();
+            }
+        });
+        try {
+            restoration.start();
+            assertTrue(restoring.await(2, TimeUnit.SECONDS));
+            deletion.start();
+            awaitBlockedOrFinished(deletion, restoration, deletionFinished);
+        } finally {
+            release.countDown();
+            restoration.join(5000);
+            deletion.join(5000);
+        }
+        assertFalse(restoration.isAlive());
+        assertFalse(deletion.isAlive());
+        assertNull(failure.get());
+        assertEquals(Boolean.FALSE, deleted.get());
+        assertTrue(Files.exists(root.resolve("versions").resolve(ID).resolve("index.html")));
+        assertEquals(ID, plugin.getCurrentBundle().getId());
+        assertEquals("bundleA001", plugin.getNextBundle().getId());
+    }
+
+    private static void awaitBlockedOrFinished(final Thread contender, final Thread owner, final CountDownLatch finished) throws Exception {
+        // Management APIs are available on the test JVM, but absent from Android's compile stubs.
+        final Object threads = Class.forName("java.lang.management.ManagementFactory").getMethod("getThreadMXBean").invoke(null);
+        final Method getInfo = Class.forName("java.lang.management.ThreadMXBean").getMethod("getThreadInfo", long.class);
+        final Class<?> infoClass = Class.forName("java.lang.management.ThreadInfo");
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (finished.getCount() == 0) return;
+            final Object info = getInfo.invoke(threads, contender.threadId());
+            if (
+                info != null &&
+                infoClass.getMethod("getThreadState").invoke(info) == Thread.State.BLOCKED &&
+                (long) infoClass.getMethod("getLockOwnerId").invoke(info) == owner.threadId()
+            ) return;
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
+        fail("Competing operation neither completed nor reached the paused operation's monitor");
+    }
+
     private void assertRunningFinalizationSettles(final boolean interrupt) throws Exception {
         final Path root = temporary.newFolder().toPath();
         final Map<String, String> store = new ConcurrentHashMap<>();

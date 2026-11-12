@@ -1828,13 +1828,15 @@ public class CapgoUpdater {
                 this.flattenAssets(downloaded, this.getBundleDirectory(id));
                 downloaded.delete();
             }
-            if (finalization != null && finalization.cancelled) {
-                return false;
-            }
-            // Remove old bundle info and set new one
-            this.saveBundleInfo(id, null);
             BundleInfo next = new BundleInfo(id, version, BundleStatus.PENDING, new Date(System.currentTimeMillis()), checksum);
-            this.saveBundleInfo(id, next);
+            synchronized (deleteLock) {
+                if (finalization != null && finalization.cancelled) {
+                    return false;
+                }
+                // Remove old bundle info and set new one without overwriting a restored deletion marker.
+                this.saveBundleInfo(id, null);
+                this.saveBundleInfo(id, next);
+            }
             this.notifyDownload(id, 100);
 
             final Map<String, Object> ret = new HashMap<>();
@@ -2957,9 +2959,17 @@ public class CapgoUpdater {
     }
 
     void restoreResetStatePreservingNextBundle(final ResetState state) {
-        synchronized (nextBundleLock) {
-            final BundleInfo next = this.getNextBundle();
-            this.restoreResetState(new ResetState(state.currentBundlePath, state.fallbackBundleId, next == null ? null : next.getId()));
+        synchronized (deleteLock) {
+            final String previousPath = state.currentBundlePath;
+            final boolean builtin = previousPath == null || previousPath.trim().isEmpty() || previousPath.equals("public");
+            final boolean targetAvailable = builtin || this.bundleExists(previousPath.substring(previousPath.lastIndexOf('/') + 1));
+            final ResetState target = targetAvailable ? state : new ResetState("public", BundleInfo.ID_BUILTIN, state.nextBundleId);
+            synchronized (nextBundleLock) {
+                final BundleInfo next = this.getNextBundle();
+                this.restoreResetState(
+                    new ResetState(target.currentBundlePath, target.fallbackBundleId, next == null ? null : next.getId())
+                );
+            }
         }
     }
 
