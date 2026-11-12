@@ -195,9 +195,31 @@ private class FreshDownloadCapgoUpdater: CapgoUpdater {
 
 private final class SplashTimeoutCapgoUpdater: FreshDownloadCapgoUpdater {
     var stagePendingReloadCalls = 0
+    private var queuedBundle: BundleInfo?
 
     override func getNextBundle() -> BundleInfo? {
-        nil
+        queuedBundle
+    }
+
+    override func setNextBundle(next: String?) -> Bool {
+        guard super.setNextBundle(next: next) else {
+            return false
+        }
+        guard let next else {
+            queuedBundle = nil
+            return true
+        }
+        let bundles = [existingBundleValue, downloadedBundleValue, builtinBundleValue].compactMap { $0 }
+        guard let bundle = bundles.first(where: { $0.getId() == next }) else {
+            return false
+        }
+        queuedBundle = bundle
+        return true
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        currentBundleValue = bundle
+        return true
     }
 
     override func stagePendingReload(bundle: BundleInfo) -> Bool {
@@ -3049,6 +3071,24 @@ class CapacitorUpdaterTests: XCTestCase {
         testPlugin.appMovedToForeground()
     }
 
+    private func assertDeferredBundleInstallsOnNextBackground(
+        plugin testPlugin: SplashTimeoutCapacitorUpdaterPlugin,
+        implementation: SplashTimeoutCapgoUpdater,
+        expectedBundleId: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(implementation.getNextBundle()?.getId(), expectedBundleId, file: file, line: line)
+        let previousReloadCalls = testPlugin.reloadCalls
+
+        testPlugin.appMovedToBackground()
+
+        XCTAssertEqual(testPlugin.reloadCalls, previousReloadCalls + 1, file: file, line: line)
+        XCTAssertEqual(implementation.getCurrentBundle().getId(), expectedBundleId, file: file, line: line)
+        XCTAssertNil(implementation.getNextBundle(), file: file, line: line)
+        XCTAssertNil(implementation.lastSetNextBundleId, file: file, line: line)
+    }
+
     func testExpiredLaunchDownloadStaysDeferredAfterBackgroundAndForeground() throws {
         let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
         defer { implementation.onDownloadStart = nil; clearDelayStorage() }
@@ -3065,6 +3105,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(testPlugin.reloadCalls, 0)
         XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "1.0.0")
         XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: "downloaded-id")
     }
 
     func testExpiredLaunchCachedBundleStaysDeferredAfterBackgroundAndForeground() throws {
@@ -3079,6 +3120,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(implementation.stagePendingReloadCalls, 0)
         XCTAssertEqual(testPlugin.reloadCalls, 0)
         XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: "downloaded-id")
     }
 
     func testExpiredLaunchBuiltinStaysDeferredAfterBackgroundAndForeground() throws {
@@ -3092,6 +3134,7 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(testPlugin.resetCalls, 0)
         XCTAssertEqual(testPlugin.reloadCalls, 0)
         XCTAssertEqual(implementation.lastSetNextBundleId, BundleInfo.ID_BUILTIN)
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: BundleInfo.ID_BUILTIN)
     }
 
     func testUnexpiredLaunchDownloadCanInstallAfterBackgroundAndForeground() throws {
