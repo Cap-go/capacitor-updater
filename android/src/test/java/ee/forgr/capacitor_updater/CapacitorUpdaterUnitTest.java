@@ -6242,6 +6242,26 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testLateRegisteredDownloadStillInstallsForTheReusingCheck() throws Exception {
+        assertOriginatingDownloadOwnership("registration-success", false, true);
+    }
+
+    @Test
+    public void testLateRegisteredDownloadKeepsItsExpiredDeadline() throws Exception {
+        assertOriginatingDownloadOwnership("registration-success", true, true);
+    }
+
+    @Test
+    public void testLateRegisteredDownloadFailureReleasesTheReusingCheck() throws Exception {
+        assertOriginatingDownloadOwnership("registration-failure", false, true);
+    }
+
+    @Test
+    public void testLateRegisteredRetryKeepsItsDeferralAndReleasesReadiness() throws Exception {
+        assertOriginatingDownloadOwnership("registration-retry-during-check-success", false, true);
+    }
+
+    @Test
     public void testReusedDownloadStaysQueuedAfterOriginalDeadline() throws Exception {
         assertOriginatingDownloadOwnership("reuse-success", true, true);
     }
@@ -6631,11 +6651,89 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    @Test
+    public void testConcurrentBackgroundStartsShareOneObserverBeforeWorkManagerTracksTheVersion() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        final android.content.Context context = mock(android.content.Context.class);
+        when(context.getApplicationContext()).thenReturn(context);
+        doReturn(context).when(updater).context();
+        doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+        final Handler handler = mock(Handler.class);
+        doAnswer((inv) -> {
+            inv.<Runnable>getArgument(0).run();
+            return true;
+        })
+            .when(handler)
+            .post(any(Runnable.class));
+        setPrivateField(updater, "mainHandler", handler);
+        final androidx.work.WorkManager manager = mock(androidx.work.WorkManager.class);
+        final androidx.lifecycle.LiveData<List<androidx.work.WorkInfo>> liveData = mock(androidx.lifecycle.LiveData.class);
+        when(manager.getWorkInfosByTagLiveData(anyString())).thenReturn(liveData);
+        final CountDownLatch firstReachedRegistration = new CountDownLatch(1);
+        final CountDownLatch finishRegistration = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicBoolean first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        doAnswer((inv) -> {
+            if (inv.<Integer>getArgument(1) == 5 && first.getAndSet(false)) {
+                firstReachedRegistration.countDown();
+                assertTrue(finishRegistration.await(5, TimeUnit.SECONDS));
+            }
+            return null;
+        })
+            .when(updater)
+            .notifyDownload(anyString(), anyInt());
+        final CapgoUpdater.BackgroundDownloadContext original = new CapgoUpdater.BackgroundDownloadContext(0, true);
+        final CapgoUpdater.BackgroundDownloadContext replacement = new CapgoUpdater.BackgroundDownloadContext(1, true);
+        final AtomicReference<Throwable> error = new AtomicReference<>();
+        final java.util.function.Consumer<CapgoUpdater.BackgroundDownloadContext> start = (downloadContext) -> {
+            try (
+                MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
+                MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+            ) {
+                workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
+                // WorkManager has not reported an active version: registration itself must deduplicate.
+                downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "concurrent-start")).thenReturn(false);
+                updater.downloadBackground(
+                    "https://example.com/update.zip",
+                    "concurrent-start",
+                    "",
+                    "",
+                    new JSONArray(),
+                    true,
+                    downloadContext
+                );
+            } catch (Throwable failure) {
+                error.compareAndSet(null, failure);
+            }
+        };
+        final Thread registering = new Thread(() -> start.accept(original));
+        final Thread reusing = new Thread(() -> start.accept(replacement));
+        try {
+            registering.start();
+            assertTrue(firstReachedRegistration.await(5, TimeUnit.SECONDS));
+            reusing.start();
+            assertBlockedOnMonitor(reusing, getPrivateField(updater, "backgroundDownloadRegistrationLock"), registering);
+        } finally {
+            finishRegistration.countDown();
+            registering.join(5000);
+            reusing.join(5000);
+        }
+        assertFalse(registering.isAlive());
+        assertFalse(reusing.isAlive());
+        if (error.get() != null) {
+            throw new AssertionError(error.get());
+        }
+        verify(liveData, times(1)).observeForever(any());
+        verify(updater, times(1)).backgroundDownloadReused(original, replacement);
+        verify(updater, times(1)).notifyDownload(anyString(), eq(5));
+        assertTrue(updater.reuseBackgroundDownload("concurrent-start", new CapgoUpdater.BackgroundDownloadContext(2, true)));
+    }
+
     @SuppressWarnings("unchecked")
     private void assertOriginatingDownloadOwnership(final String outcome, final boolean expire, final boolean newer) throws Exception {
-        final boolean reuse = outcome.startsWith("reuse-");
+        final boolean lateRegistration = outcome.startsWith("registration-");
+        final boolean reuse = outcome.startsWith("reuse-") || lateRegistration;
         final boolean reuseAfterRetry = outcome.startsWith("reuse-after-retry");
-        final boolean retryDuringCheck = outcome.startsWith("reuse-retry-during-check");
+        final boolean retryDuringCheck = outcome.contains("retry-during-check");
         final boolean failedFollowUp = outcome.startsWith("followup-");
         final boolean pendingFollowUp = failedFollowUp && outcome.contains("pending");
         final boolean existingQueue = failedFollowUp && outcome.contains("queued");
@@ -6737,6 +6835,22 @@ public class CapacitorUpdaterUnitTest {
             response.put("url", "https://example.com/update.zip");
             response.put("manifest", new JSONArray());
             responses.remove(0).callback(response);
+            if (lateRegistration) {
+                final java.util.concurrent.atomic.AtomicBoolean firstStart = new java.util.concurrent.atomic.AtomicBoolean(true);
+                doAnswer((inv) -> {
+                    if (firstStart.getAndSet(false)) {
+                        // A passed its worker ownership check, but has not registered its observer yet.
+                        invokeBackgroundDownload(plugin);
+                        plugin.workers.remove(0).run();
+                        responses.remove(0).callback(response);
+                        assertEquals("B missed reuse and queued its own download worker", 1, plugin.workers.size());
+                        assertTrue(observers.isEmpty());
+                    }
+                    return null;
+                })
+                    .when(updater)
+                    .runPreDownloadSecurityGates(anyString(), anyString(), any());
+            }
             plugin.workers.remove(0).run();
             assertEquals(1, observers.size());
             if (reuseAfterRetry) {
@@ -6785,8 +6899,10 @@ public class CapacitorUpdaterUnitTest {
                 assertEquals(queuedReplacement ? "bundleA001" : replacementId, updater.getCurrentBundle().getId());
             } else if (newer) {
                 plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
-                invokeBackgroundDownload(plugin);
-                plugin.workers.remove(0).run();
+                if (!lateRegistration) {
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                }
                 if (retryDuringCheck) {
                     final androidx.work.WorkInfo retry = mock(androidx.work.WorkInfo.class);
                     when(retry.getProgress()).thenReturn(androidx.work.Data.EMPTY);
@@ -6800,7 +6916,9 @@ public class CapacitorUpdaterUnitTest {
                 if (reuse) {
                     downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "old-download")).thenReturn(true);
                 }
-                responses.remove(0).callback(response);
+                if (!lateRegistration) {
+                    responses.remove(0).callback(response);
+                }
                 if (!plugin.workers.isEmpty()) {
                     plugin.workers.remove(0).run();
                 }
@@ -6977,6 +7095,7 @@ public class CapacitorUpdaterUnitTest {
                 }
                 assertEquals(0, plugin.reloadCalls);
                 assertEquals("bundleA001", updater.getCurrentBundle().getId());
+                assertNotNull("The retained download must remain queued for background installation", updater.getNextBundle());
                 assertEquals(ids.get(0), updater.getNextBundle().getId());
                 plugin.appMovedToBackground();
                 plugin.workers.remove(0).run();
@@ -6986,6 +7105,13 @@ public class CapacitorUpdaterUnitTest {
                 assertEquals(1, plugin.reloadCalls);
                 assertEquals(ids.get(0), updater.getCurrentBundle().getId());
                 assertNull(updater.getNextBundle());
+            }
+            if (lateRegistration) {
+                assertEquals(
+                    "Registration reuse must release the accepted check exactly once",
+                    1,
+                    ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+                );
             }
             if (!newer || !"retry".equals(outcome)) {
                 assertFalse(

@@ -199,6 +199,7 @@ public class CapgoUpdater {
     // process kill, but the observer that finishes the download does not survive it.
     private final Set<String> observedDownloadVersions = ConcurrentHashMap.newKeySet();
     private final Map<String, BackgroundDownloadContext> backgroundDownloadContexts = new ConcurrentHashMap<>();
+    private final Object backgroundDownloadRegistrationLock = new Object();
     private final ExecutorService io = createIoExecutor();
 
     private static ExecutorService createIoExecutor() {
@@ -2150,6 +2151,26 @@ public class CapgoUpdater {
             return null;
         }
         if (!this.runDownloadGateQuiet()) {
+            return null;
+        }
+        // A later check can miss reuse before the earlier worker registers. Recheck and register
+        // together so simultaneous starts cannot overwrite the context attached to the observer.
+        synchronized (this.backgroundDownloadRegistrationLock) {
+            return this.startBackgroundDownload(url, version, sessionKey, checksum, manifest, setNext, downloadContext);
+        }
+    }
+
+    private String startBackgroundDownload(
+        final String url,
+        final String version,
+        final String sessionKey,
+        final String checksum,
+        final JSONArray manifest,
+        final boolean setNext,
+        final BackgroundDownloadContext downloadContext
+    ) {
+        if (downloadContext != null && this.reuseBackgroundDownload(version, downloadContext)) {
+            logger.info("Reusing automatic download at registration for version: " + version);
             return null;
         }
         final String id = this.randomString();
