@@ -2682,16 +2682,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return downloadContext == null || this.backgroundDownloadContext == downloadContext;
     }
 
-    synchronized void reuseBackgroundDownload(
+    void reuseBackgroundDownload(
         final CapgoUpdater.BackgroundDownloadContext original,
         final CapgoUpdater.BackgroundDownloadContext replacement
     ) {
-        if (!this.ownsBackgroundDownload(replacement)) {
-            return;
+        final boolean releaseRetry;
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(replacement)) {
+                return;
+            }
+            this.backgroundDownloadContext = original;
+            releaseRetry = original.deferredForRetry;
+            this.implementation.directUpdate =
+                !releaseRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
         }
-        this.backgroundDownloadContext = original;
-        this.implementation.directUpdate =
-            !original.deferredForRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
+        if (releaseRetry) {
+            // The retry notification may have been discarded while this check owned a different context.
+            this.emitLaunchDownloadReady(null, CapgoUpdater.launchDownloadReadyStatus(false, false), original);
+        }
     }
 
     void emitLaunchDownloadReady(

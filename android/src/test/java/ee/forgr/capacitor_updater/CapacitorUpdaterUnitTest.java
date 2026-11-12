@@ -5035,6 +5035,21 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testReusedDownloadReleasesRetryDuringCheckBeforeFailure() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-retry-during-check-failure", false, true);
+    }
+
+    @Test
+    public void testReusedDownloadReleasesRetryDuringCheckBeforeSuccess() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-retry-during-check-success", false, true);
+    }
+
+    @Test
+    public void testReusedDownloadReleasesEarlierRetryBeforeFailure() throws Exception {
+        assertOriginatingDownloadOwnership("reuse-after-retry-failure", false, true);
+    }
+
+    @Test
     public void testCancelledDownloadCannotBeReused() throws Exception {
         assertOriginatingDownloadOwnership("cancelled", false, false);
     }
@@ -5049,6 +5064,7 @@ public class CapacitorUpdaterUnitTest {
             final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
             plugin.implementation = new CapgoUpdater(null);
             final CapgoUpdater.BackgroundDownloadContext original = new CapgoUpdater.BackgroundDownloadContext(0, true);
+            original.deferredForRetry = true;
             final CapgoUpdater.BackgroundDownloadContext replacement = new CapgoUpdater.BackgroundDownloadContext(1, true);
             final CapgoUpdater.BackgroundDownloadContext newer = new CapgoUpdater.BackgroundDownloadContext(2, true);
             setPrivateField(plugin, "backgroundDownloadContext", newer);
@@ -5056,6 +5072,7 @@ public class CapacitorUpdaterUnitTest {
             plugin.reuseBackgroundDownload(original, replacement);
             assertSame(newer, getPrivateField(plugin, "backgroundDownloadContext"));
             assertTrue(plugin.implementation.directUpdate);
+            assertFalse(plugin.hasNotifiedEvent("appReady"));
         }
     }
 
@@ -5091,7 +5108,8 @@ public class CapacitorUpdaterUnitTest {
     @SuppressWarnings("unchecked")
     private void assertOriginatingDownloadOwnership(final String outcome, final boolean expire, final boolean newer) throws Exception {
         final boolean reuse = outcome.startsWith("reuse-");
-        final boolean reuseAfterRetry = "reuse-after-retry".equals(outcome);
+        final boolean reuseAfterRetry = outcome.startsWith("reuse-after-retry");
+        final boolean retryDuringCheck = outcome.startsWith("reuse-retry-during-check");
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, context) -> {
@@ -5201,6 +5219,15 @@ public class CapacitorUpdaterUnitTest {
                 plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
                 invokeBackgroundDownload(plugin);
                 plugin.workers.remove(0).run();
+                if (retryDuringCheck) {
+                    final androidx.work.WorkInfo retry = mock(androidx.work.WorkInfo.class);
+                    when(retry.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+                    when(retry.getState()).thenReturn(androidx.work.WorkInfo.State.ENQUEUED);
+                    when(retry.getRunAttemptCount()).thenReturn(1);
+                    observers.get(0).onChanged(List.of(retry));
+                    assertFalse("An unrelated attempt still owns the check", plugin.hasNotifiedEvent("appReady"));
+                    assertTrue(updater.directUpdate);
+                }
                 response.put("version", reuse ? "old-download" : "new-download");
                 if (reuse) {
                     downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "old-download")).thenReturn(true);
@@ -5213,8 +5240,17 @@ public class CapacitorUpdaterUnitTest {
                 if (!reuse) {
                     updater.setNextBundle("bundleB002");
                     assertTrue(updater.directUpdate);
-                } else if (expire || reuseAfterRetry) {
+                } else if (expire || reuseAfterRetry || retryDuringCheck) {
                     assertFalse("Reusing work must not refresh its expired or retry-deferred install plan", updater.directUpdate);
+                }
+                if (reuseAfterRetry || retryDuringCheck) {
+                    assertEquals(
+                        "Each check must be released before the retry settles",
+                        reuseAfterRetry ? 2 : 1,
+                        ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+                    );
+                    assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
+                    assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
                 }
             }
             final Object owningTask = getPrivateField(plugin, "backgroundDownloadTask");
@@ -5297,8 +5333,15 @@ public class CapacitorUpdaterUnitTest {
                     assertTrue(plugin.hasNotifiedEvent("appReady"));
                     assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
                     assertFalse(updater.directUpdate);
+                    if (reuseAfterRetry || retryDuringCheck) {
+                        assertEquals(
+                            "Terminal failure must not repeat the retry release",
+                            reuseAfterRetry ? 2 : 1,
+                            ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("appReady"::equals).count()
+                        );
+                    }
                 }
-            } else if (expire || "retry".equals(outcome) || reuseAfterRetry) {
+            } else if (expire || "retry".equals(outcome) || reuseAfterRetry || retryDuringCheck) {
                 if ("retry".equals(outcome)) {
                     assertTrue(plugin.hasNotifiedEvent("appReady"));
                     assertFalse(updater.directUpdate);
