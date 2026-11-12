@@ -336,6 +336,66 @@ wait_for_ui_state_with_timeout() {
   return 1
 }
 
+hierarchy_contains_all_fragments() {
+  local hierarchy="$1"
+  shift
+  local fragment
+  for fragment in "$@"; do
+    if [[ "$hierarchy" != *"$fragment"* ]]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Returns 0 when activated fragments match, 2 when queued fragments match, 1 on timeout.
+wait_for_activated_or_queued_ui_state() {
+  local description="$1"
+  local timeout_seconds="$2"
+  local -n activated_fragments_ref="$3"
+  local -n queued_fragments_ref="$4"
+  local deadline=$((SECONDS + timeout_seconds))
+  local hierarchy=""
+  local swipe_count=0
+
+  echo "Waiting for activated or queued UI state: ${description}"
+
+  while ((SECONDS < deadline)); do
+    scroll_page_to_top
+
+    for swipe_count in 0 1 2 3 4 5; do
+      hierarchy="$(dump_ui_hierarchy)"
+      tap_android_anr_wait_button_if_present "$hierarchy" || true
+
+      if hierarchy_contains_all_fragments "$hierarchy" "${activated_fragments_ref[@]}"; then
+        echo "Verified activated UI state: ${description}"
+        return 0
+      fi
+      if hierarchy_contains_all_fragments "$hierarchy" "${queued_fragments_ref[@]}"; then
+        echo "Verified queued UI state: ${description}"
+        return 2
+      fi
+
+      scroll_page_down
+    done
+
+    sleep 2
+  done
+
+  echo "Timed out waiting for activated or queued UI state: ${description}" >&2
+  return 1
+}
+
+resume_and_wait_for_activated_fragments() {
+  local label="$1"
+  local wait_seconds="$2"
+  shift 2
+  local -a activated_fragments=("$@")
+
+  background_and_resume_app
+  wait_for_ui_state_with_timeout "$label" "$wait_seconds" "${activated_fragments[@]}"
+}
+
 wait_for_ui_state() {
   local description="$1"
   shift
@@ -589,6 +649,97 @@ wait_for_edge_recovery_with_wait_seconds() {
   wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "$@"
 }
 
+# Deferred edge-network-drop can finish the download while the UI still shows the builtin bundle as
+# current with the release queued as next. The generic recovery loop only looks for "current:
+# downloaded", so it backgrounds without seeing the queued state and the final wait times out.
+# Treat "download complete + queued next" like early success: resume once, then wait for activation.
+wait_for_edge_network_drop_recovery() {
+  local recovery_wait_seconds="$1"
+  local description="$2"
+  local cycle_mode="$3"
+  local builtin_label="$4"
+  local builtin_version="$5"
+  local first_release="$6"
+  local app_scenario="$7"
+  local direct_update_line="$8"
+  shift 8
+  local -a activated_fragments=("$@")
+  local -a queued_fragments=(
+    "Build label: $builtin_label"
+    "Scenario: $app_scenario"
+    "$direct_update_line"
+    'Current bundle source: builtin'
+    "Current bundle version: $builtin_version"
+    "Next bundle version: $first_release"
+    "Last completed download: $first_release"
+  )
+  local cycle=1
+  local recovery_deadline=$((SECONDS + recovery_wait_seconds * (EDGE_CASE_RECOVERY_CYCLES + 2)))
+  local wait_budget=0
+  local poll_result=0
+
+  recovery_wait_budget_seconds() {
+    local requested="$1"
+    local budget=$((recovery_deadline - SECONDS))
+    if ((budget <= 0)); then
+      return 1
+    fi
+    if ((requested > budget)); then
+      echo "$budget"
+    else
+      echo "$requested"
+    fi
+  }
+
+  try_finish_queued_or_activated() {
+    local label="$1"
+    local requested_wait="$2"
+
+    wait_budget="$(recovery_wait_budget_seconds "$requested_wait")" || return 1
+    poll_result=0
+    wait_for_activated_or_queued_ui_state "$label" "$wait_budget" activated_fragments queued_fragments || poll_result=$?
+    if [[ $poll_result -eq 0 ]]; then
+      return 0
+    fi
+    if [[ $poll_result -eq 2 ]]; then
+      wait_budget="$(recovery_wait_budget_seconds "$requested_wait")" || return 1
+      resume_and_wait_for_activated_fragments \
+        "${label}: deferred release applies after resume from queued" \
+        "$wait_budget" \
+        "${activated_fragments[@]}"
+      return $?
+    fi
+    return 1
+  }
+
+  while [[ $cycle -le $EDGE_CASE_RECOVERY_CYCLES ]]; do
+    if try_finish_queued_or_activated \
+      "${description} (cycle ${cycle}/${EDGE_CASE_RECOVERY_CYCLES})" \
+      "$recovery_wait_seconds"; then
+      return 0
+    fi
+
+    if [[ "$cycle_mode" == "cold-launch" ]]; then
+      cold_launch_app
+    else
+      background_and_resume_app
+    fi
+
+    cycle=$((cycle + 1))
+  done
+
+  if try_finish_queued_or_activated "${description} (final)" "$recovery_wait_seconds"; then
+    return 0
+  fi
+
+  # WorkManager can finish a retry after the last cycle: one more background and resume before giving up.
+  if try_finish_queued_or_activated "${description} (late retry)" "$recovery_wait_seconds"; then
+    return 0
+  fi
+
+  return 1
+}
+
 # run_edge_case_once runs inside an if, where set -e is off, so every step must fail explicitly.
 run_edge_case_once() {
   local edge_case_id="$1"
@@ -673,7 +824,7 @@ run_edge_case_once() {
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_KILL_RECOVERY_WAIT_SECONDS:-90}"
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-90}"
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-20}"
   elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
     # Worst case is (cycles + 1) * wait = 240s, well inside the 9 minute step timeout
     # so the success marker is always written before the step deadline.
@@ -693,9 +844,21 @@ run_edge_case_once() {
   fi
 
   if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-6}"
-  fi
-  if ! wait_for_edge_recovery_with_wait_seconds \
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
+    if ! wait_for_edge_network_drop_recovery \
+      "$recovery_wait_seconds" \
+      "${edge_case_id}: the release applies once the network is back" \
+      "$recovery_cycle_mode" \
+      "$builtin_label" \
+      "$builtin_version" \
+      "$first_release" \
+      "$app_scenario" \
+      "$direct_update_line" \
+      "${recovery_fragments[@]}"; then
+      EDGE_CASE_RECOVERY_CYCLES="$previous_recovery_cycles"
+      return 1
+    fi
+  elif ! wait_for_edge_recovery_with_wait_seconds \
     "$recovery_wait_seconds" \
     "${edge_case_id}: the release applies once the network is back" \
     "$recovery_cycle_mode" \
