@@ -332,6 +332,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Bun
+        # Only the core shard selector invokes Node; other shards run prebuilt Swift tests directly.
+        if: matrix.select_cmd != ''
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
