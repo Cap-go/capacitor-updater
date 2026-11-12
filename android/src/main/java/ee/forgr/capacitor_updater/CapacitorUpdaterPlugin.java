@@ -5481,6 +5481,37 @@ public class CapacitorUpdaterPlugin extends Plugin {
         logger.info("endBackGroundTaskWithNotif " + msg);
     }
 
+    private void endFailedBackgroundDownload(
+        final String latestVersionName,
+        final boolean plannedDirectUpdate,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        final BundleInfo current;
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(downloadContext)) {
+                return;
+            }
+            current = this.implementation.getCurrentBundle();
+            this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+        }
+        this.implementation.sendStats("download_fail", current.getVersionName());
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            return;
+        }
+        final JSObject failure = new JSObject();
+        failure.put("version", latestVersionName);
+        this.notifyListeners("downloadFailed", failure, false);
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            return;
+        }
+        final JSObject noUpdate = new JSObject();
+        noUpdate.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+        this.notifyListeners("noNeedUpdate", noUpdate, false);
+        this.sendReadyToJs(current, "Error downloading file", plannedDirectUpdate, downloadContext);
+    }
+
     private synchronized boolean queueDeferredDirectUpdate(
         final BundleInfo latest,
         final Thread downloadTask,
@@ -5946,12 +5977,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 } catch (final Exception e) {
                                     logger.error("error downloading file " + e.getMessage());
-                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Error downloading file",
+                                    CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                         latestVersionName,
-                                        CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                        true,
-                                        plannedDirectUpdate
+                                        plannedDirectUpdate,
+                                        downloadContext
                                     );
                                 }
                             });

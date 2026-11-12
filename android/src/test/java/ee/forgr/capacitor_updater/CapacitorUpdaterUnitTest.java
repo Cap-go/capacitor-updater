@@ -181,6 +181,7 @@ public class CapacitorUpdaterUnitTest {
         private final AppCompatActivity activity = mock(AppCompatActivity.class);
         private final List<Runnable> workers = new ArrayList<>();
         private Runnable onReady;
+        private Runnable onDownloadFailed;
         private Runnable beforeDispatch;
         private Runnable beforeReload;
         private int reloadCalls;
@@ -209,6 +210,9 @@ public class CapacitorUpdaterUnitTest {
             super.notifyListeners(eventName, data, retainUntilConsumed);
             if ("appReady".equals(eventName) && this.onReady != null) {
                 this.onReady.run();
+            }
+            if ("downloadFailed".equals(eventName) && this.onDownloadFailed != null) {
+                this.onDownloadFailed.run();
             }
         }
 
@@ -5232,6 +5236,167 @@ public class CapacitorUpdaterUnitTest {
             assertSame(newer, getPrivateField(plugin, "backgroundDownloadContext"));
             assertTrue(plugin.implementation.directUpdate);
             assertFalse(plugin.hasNotifiedEvent("appReady"));
+        }
+    }
+
+    @Test
+    public void testStaleDownloadStartFailurePreservesNewerCheck() throws Exception {
+        assertDownloadStartFailureOwnership("before-failure");
+    }
+
+    @Test
+    public void testCurrentDownloadStartFailureReleasesCheck() throws Exception {
+        assertDownloadStartFailureOwnership("current");
+    }
+
+    @Test
+    public void testDownloadStartFailureNotificationCannotClearNewerCheck() throws Exception {
+        assertDownloadStartFailureOwnership("during-notification");
+    }
+
+    @Test
+    public void testDownloadStartFailureCleanupBlocksConcurrentCheck() throws Exception {
+        assertDownloadStartFailureOwnership("during-cleanup");
+    }
+
+    private void assertDownloadStartFailureOwnership(final String replacementTiming) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Object timeout = getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            final List<Callback> responses = new ArrayList<>();
+            doAnswer((inv) -> {
+                responses.add(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final AtomicReference<Object> newerTask = new AtomicReference<>();
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            final CountDownLatch cleanupReached = new CountDownLatch(1);
+            final CountDownLatch finishCleanup = new CountDownLatch(1);
+            final java.util.concurrent.atomic.AtomicBoolean pauseFailureRead = new java.util.concurrent.atomic.AtomicBoolean();
+            doAnswer((inv) -> {
+                if (pauseFailureRead.getAndSet(false)) {
+                    cleanupReached.countDown();
+                    assertTrue(finishCleanup.await(5, TimeUnit.SECONDS));
+                }
+                return inv.callRealMethod();
+            })
+                .when(updater)
+                .getCurrentBundle();
+            final Runnable replaceCheck = () -> {
+                try {
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                    newerTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                    newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                    setPrivateField(plugin, "downloadStartTimeMs", 123L);
+                    updater.directUpdate = true;
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            };
+            doAnswer((inv) -> {
+                if ("before-failure".equals(replacementTiming)) {
+                    replaceCheck.run();
+                }
+                pauseFailureRead.set("during-cleanup".equals(replacementTiming));
+                throw new IllegalStateException("Test download enqueue failure");
+            })
+                .when(updater)
+                .downloadBackground(anyString(), anyString(), anyString(), anyString(), any(), anyBoolean(), any());
+            if ("during-notification".equals(replacementTiming)) {
+                plugin.onDownloadFailed = replaceCheck;
+            }
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", "new-download");
+            response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "checksum");
+            responses.get(0).callback(response);
+            final Runnable download = plugin.workers.remove(0);
+            if ("during-cleanup".equals(replacementTiming)) {
+                final AtomicReference<Throwable> failure = new AtomicReference<>();
+                final CountDownLatch replacementStarted = new CountDownLatch(1);
+                final CountDownLatch replacementFinished = new CountDownLatch(1);
+                final Thread failing = new Thread(() -> {
+                    try {
+                        download.run();
+                    } catch (Throwable error) {
+                        failure.compareAndSet(null, error);
+                    }
+                });
+                final Thread replacing = new Thread(() -> {
+                    replacementStarted.countDown();
+                    try {
+                        replaceCheck.run();
+                    } catch (Throwable error) {
+                        failure.compareAndSet(null, error);
+                    } finally {
+                        replacementFinished.countDown();
+                    }
+                });
+                try {
+                    failing.start();
+                    assertTrue(cleanupReached.await(5, TimeUnit.SECONDS));
+                    replacing.start();
+                    assertTrue(replacementStarted.await(5, TimeUnit.SECONDS));
+                    assertFalse(
+                        "Ownership replacement must wait for failure cleanup",
+                        replacementFinished.await(100, TimeUnit.MILLISECONDS)
+                    );
+                } finally {
+                    finishCleanup.countDown();
+                    failing.join(5000);
+                    replacing.join(5000);
+                }
+                assertFalse(failing.isAlive());
+                assertFalse(replacing.isAlive());
+                assertNull(failure.get());
+            } else {
+                download.run();
+            }
+
+            assertTrue(plugin.workers.isEmpty());
+            if ("current".equals(replacementTiming)) {
+                assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
+                assertEquals(0L, getPrivateField(plugin, "downloadStartTimeMs"));
+                assertFalse(updater.directUpdate);
+                assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+                assertTrue(plugin.hasNotifiedEvent("downloadFailed"));
+                assertTrue(plugin.hasNotifiedEvent("noNeedUpdate"));
+                assertTrue(plugin.hasNotifiedEvent("appReady"));
+                assertNull(updater.getNextBundle());
+            } else {
+                assertNotNull(newerTask.get());
+                assertSame(newerTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+                assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+                assertEquals(123L, getPrivateField(plugin, "downloadStartTimeMs"));
+                assertTrue(updater.directUpdate);
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+                if (!"during-cleanup".equals(replacementTiming)) {
+                    assertSame(timeout, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+                    assertEquals("during-notification".equals(replacementTiming), plugin.hasNotifiedEvent("downloadFailed"));
+                    assertFalse(plugin.hasNotifiedEvent("noNeedUpdate"));
+                    assertFalse(plugin.hasNotifiedEvent("appReady"));
+                }
+            }
         }
     }
 
