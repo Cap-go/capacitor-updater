@@ -798,6 +798,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -868,6 +869,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
           install-dependencies: 'false'
+          setup-node: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
