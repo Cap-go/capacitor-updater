@@ -2660,8 +2660,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
         if (!delayConditionList.isEmpty()) {
             logger.info("Update delayed until delay conditions met");
-            this.implementation.setNextBundle(latest.getId());
-            if (!this.clearDirectUpdateDownloadState(downloadTask)) {
+            if (!this.queueDeferredDirectUpdate(latest, downloadTask)) {
                 return;
             }
             if ("onLaunch".equals(this.directUpdateMode)) {
@@ -2671,8 +2670,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         if (!this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)) {
-            this.implementation.setNextBundle(latest.getId());
-            if (!this.clearDirectUpdateDownloadState(downloadTask)) {
+            if (!this.queueDeferredDirectUpdate(latest, downloadTask)) {
                 return;
             }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "update downloaded, will install next background", true);
@@ -5344,6 +5342,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         logger.info("endBackGroundTaskWithNotif " + msg);
+    }
+
+    private synchronized boolean queueDeferredDirectUpdate(final BundleInfo latest, final Thread downloadTask) {
+        if (!this.clearDirectUpdateDownloadState(downloadTask)) {
+            return false;
+        }
+        this.implementation.setNextBundle(latest.getId());
+        return true;
     }
 
     private synchronized boolean clearDirectUpdateDownloadState(final Thread downloadTask) {

@@ -4183,15 +4183,24 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testTimedOutWorkerPreservesNewerDownloadState() throws Exception {
-        assertDirectUpdateTimeoutOrdering(true, true, true);
+        assertDirectUpdateTimeoutOrdering(true, true, true, false);
+    }
+
+    @Test
+    public void testDelayedWorkerPreservesNewerQueuedBundle() throws Exception {
+        assertDirectUpdateTimeoutOrdering(true, true, true, true);
     }
 
     private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout) throws Exception {
-        assertDirectUpdateTimeoutOrdering(timeoutFirst, resetAfterTimeout, false);
+        assertDirectUpdateTimeoutOrdering(timeoutFirst, resetAfterTimeout, false, false);
     }
 
-    private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout, final boolean newerDownload)
-        throws Exception {
+    private void assertDirectUpdateTimeoutOrdering(
+        final boolean timeoutFirst,
+        final boolean resetAfterTimeout,
+        final boolean newerDownload,
+        final boolean delayed
+    ) throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4205,7 +4214,11 @@ public class CapacitorUpdaterUnitTest {
             final SharedPreferences prefs = mock(SharedPreferences.class);
             final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
             when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
-            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
+            final ArrayList<DelayCondition> delayConditions = new ArrayList<>();
+            if (delayed) {
+                delayConditions.add(new DelayCondition(DelayUntilNext.background, ""));
+            }
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(delayConditions);
             plugin.implementation = updater;
             plugin.setLoggerForTesting(mock(Logger.class));
             plugin.configureDirectUpdateModeForTesting("onLaunch", false);
@@ -4233,6 +4246,7 @@ public class CapacitorUpdaterUnitTest {
                         setPrivateField(plugin, "backgroundDownloadTask", newerTask);
                         setPrivateField(plugin, "downloadStartTimeMs", 200L);
                         updater.directUpdate = true;
+                        updater.nextBundle = new BundleInfo("newer-id", "3.0.0", BundleStatus.PENDING, new Date(), "newer-checksum");
                         plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
                     }
                 }
@@ -4264,7 +4278,10 @@ public class CapacitorUpdaterUnitTest {
                     assertEquals(0L, getPrivateField(plugin, "downloadStartTimeMs"));
                 }
             }
-            if (timeoutFirst) {
+            if (newerDownload) {
+                assertEquals("newer-id", updater.getNextBundle().getId());
+                assertEquals(0, updater.setNextBundleCalls);
+            } else if (timeoutFirst) {
                 assertEquals("download-id", updater.lastSetNextBundleId);
                 assertEquals("download-id", updater.getNextBundle().getId());
             } else {
