@@ -95,6 +95,12 @@ public class CapgoUpdater {
     // Plugin and headless observers share storage, including work queued before handover.
     private static final Map<File, Set<DownloadFinalization>> downloadFinalizations = new HashMap<>();
 
+    private enum DeletionDownloadPolicy {
+        CANCEL,
+        KEEP,
+        RESUME
+    }
+
     private static final class DownloadFinalization {
 
         final File bundle;
@@ -2583,17 +2589,17 @@ public class CapgoUpdater {
 
     boolean deleteDeletedBundle(final String id) throws IOException {
         // Admit only this tombstone; version-wide cancellation could stop a newer download.
-        return this.deleteBundle(id, true, false, true);
+        return this.deleteBundle(id, true, DeletionDownloadPolicy.KEEP, true);
     }
 
     public Boolean delete(final String id, final Boolean removeInfo, final boolean cancelActiveDownload) throws IOException {
-        return this.deleteBundle(id, removeInfo, cancelActiveDownload, false);
+        return this.deleteBundle(id, removeInfo, cancelActiveDownload ? DeletionDownloadPolicy.CANCEL : DeletionDownloadPolicy.KEEP, false);
     }
 
     private boolean deleteBundle(
         final String id,
         final Boolean removeInfo,
-        final boolean cancelActiveDownload,
+        final DeletionDownloadPolicy downloadPolicy,
         final boolean requireDeleted
     ) throws IOException {
         final File bundle;
@@ -2653,11 +2659,11 @@ public class CapgoUpdater {
 
                 // Persist the ID and cancellation policy before a marker can make this deletion recoverable.
                 // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
-                if (!this.enqueuePendingDelete(id, cancelActiveDownload)) {
+                if (!this.enqueuePendingDelete(id, downloadPolicy)) {
                     logger.error("Failed to persist pending deletion, aborting disk delete");
                     return false;
                 }
-                shouldCancelDownload = cancelActiveDownload && !this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS).contains(id);
+                shouldCancelDownload = !this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS).contains(id);
                 if (!deleted.isDeleting()) {
                     if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
                         logger.error("Failed to persist DELETING marker, aborting disk delete");
@@ -2790,7 +2796,7 @@ public class CapgoUpdater {
         for (final String id : pendingIds) {
             try {
                 logger.info("Resuming pending delete for bundle: " + id);
-                this.delete(id, true);
+                this.deleteBundle(id, true, DeletionDownloadPolicy.RESUME, false);
             } catch (final Exception e) {
                 logger.error("Pending delete failed, will retry next launch");
                 logger.debug("Bundle ID: " + id + ", Error: " + e.getMessage());
@@ -2828,10 +2834,10 @@ public class CapgoUpdater {
     }
 
     private boolean enqueuePendingDelete(final String id) {
-        return this.enqueuePendingDelete(id, true);
+        return this.enqueuePendingDelete(id, DeletionDownloadPolicy.RESUME);
     }
 
-    private boolean enqueuePendingDelete(final String id, final boolean cancelActiveDownload) {
+    private boolean enqueuePendingDelete(final String id, final DeletionDownloadPolicy downloadPolicy) {
         if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
             return false;
         }
@@ -2839,10 +2845,12 @@ public class CapgoUpdater {
             final Set<String> ids = this.getPendingDeleteIds();
             final Set<String> noCancelIds = this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS);
             ids.add(id);
-            if (!cancelActiveDownload) {
+            if (downloadPolicy == DeletionDownloadPolicy.CANCEL) {
+                noCancelIds.remove(id);
+            } else if (downloadPolicy == DeletionDownloadPolicy.KEEP) {
                 noCancelIds.add(id);
             }
-            // A recovered tombstone must never escalate to version-wide cancellation.
+            // Recovery retains the recorded policy; a new request replaces it before disk work.
             final SharedPreferences.Editor pendingEditor = this.prefs.edit();
             this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_IDS, ids);
             this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_NO_CANCEL_IDS, noCancelIds);

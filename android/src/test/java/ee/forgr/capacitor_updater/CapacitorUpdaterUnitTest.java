@@ -5139,6 +5139,78 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testExplicitDeleteCancelsAfterFailedNonCancellingDeletion() throws Exception {
+        for (boolean tombstone : new boolean[] { true, false }) {
+            final CapgoUpdater updater = failedNonCancellingDeletion(tombstone);
+            final android.content.Context context = mock(android.content.Context.class);
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getPreviewFallbackBundle();
+            doReturn(null).when(updater).getNextBundle();
+            final File bundle = new File(updater.documentsDir, "versions/bundleB002");
+            try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+                downloads
+                    .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"))
+                    .thenAnswer((inv) -> {
+                        assertTrue("Explicit deletion must await cancellation before removing files", bundle.exists());
+                        assertEquals(
+                            "The explicit cancellation policy must already be persisted",
+                            "",
+                            updater.prefs.getString("pendingDeleteNoCancelIds", "")
+                        );
+                        return true;
+                    });
+                assertTrue(updater.delete("bundleB002"));
+                downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"));
+            }
+            assertFalse(bundle.exists());
+            assertFalse(updater.prefs.contains("bundleB002_info"));
+            assertEquals("", updater.prefs.getString("pendingDeleteIds", ""));
+        }
+    }
+
+    @Test
+    public void testFailedExplicitCancellationRetainsFilesAndCancellationPolicyAcrossRestart() throws Exception {
+        for (boolean tombstone : new boolean[] { true, false }) {
+            final CapgoUpdater updater = failedNonCancellingDeletion(tombstone);
+            final android.content.Context context = mock(android.content.Context.class);
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getPreviewFallbackBundle();
+            doReturn(null).when(updater).getNextBundle();
+            try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+                downloads.when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002")).thenReturn(false);
+                assertFalse("Unsettled cancellation must prevent disk removal", updater.delete("bundleB002"));
+                downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"));
+            }
+            assertTrue(new File(updater.documentsDir, "versions/bundleB002/index.html").exists());
+            assertEquals(BundleStatus.DELETING, updater.getBundleInfo("bundleB002").getStatus());
+            final CapgoUpdater restarted = spy(restartedDeletionUpdater(deletionSnapshot(updater)));
+            doReturn(context).when(restarted).context();
+            doReturn(null).when(restarted).getPreviewFallbackBundle();
+            doReturn(null).when(restarted).getNextBundle();
+            try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+                downloads.when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002")).thenReturn(true);
+                restarted.drainPendingDeletes();
+                downloads.verify(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(context, "bundleB002"));
+            }
+            assertFalse(new File(restarted.documentsDir, "versions/bundleB002").exists());
+            assertFalse(restarted.prefs.contains("bundleB002_info"));
+            assertEquals("", restarted.prefs.getString("pendingDeleteIds", ""));
+        }
+    }
+
+    private CapgoUpdater failedNonCancellingDeletion(final boolean tombstone) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        if (tombstone) assertTrue(
+            updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.DELETED))
+        );
+        doThrow(new IOException("Interrupted non-cancelling deletion")).when(updater).deleteDirectory(any(File.class));
+        assertFalse(tombstone ? updater.deleteDeletedBundle("bundleB002") : updater.delete("bundleB002", true, false));
+        assertEquals("bundleB002", updater.prefs.getString("pendingDeleteNoCancelIds", ""));
+        doCallRealMethod().when(updater).deleteDirectory(any(File.class));
+        return updater;
+    }
+
+    @Test
     public void testTombstoneDeletionPolicySurvivesStopBeforeRegistryMarker() throws Exception {
         final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
         final BundleInfo tombstone = updater.getBundleInfo("bundleB002").setStatus(BundleStatus.DELETED);
