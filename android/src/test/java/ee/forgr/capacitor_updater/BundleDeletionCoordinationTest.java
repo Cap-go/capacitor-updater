@@ -12,6 +12,7 @@ import androidx.work.Data;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.json.JSONArray;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -244,6 +246,113 @@ public class BundleDeletionCoordinationTest {
     }
 
     @Test
+    public void interruptedZipWaiterDoesNotReleaseLaunchOnCancellation() throws Exception {
+        assertInterruptedWaiterKeepsManualOrigin(false, WorkInfo.State.CANCELLED, false);
+    }
+
+    @Test
+    public void interruptedManifestWaiterDoesNotReleaseLaunchOnCancellation() throws Exception {
+        assertInterruptedWaiterKeepsManualOrigin(true, WorkInfo.State.CANCELLED, false);
+    }
+
+    @Test
+    public void interruptedManualWaiterDoesNotReleaseLaunchOnFailure() throws Exception {
+        assertInterruptedWaiterKeepsManualOrigin(false, WorkInfo.State.FAILED, false);
+    }
+
+    @Test
+    public void interruptedManualWaiterDoesNotReleaseLaunchOnSuccess() throws Exception {
+        assertInterruptedWaiterKeepsManualOrigin(true, WorkInfo.State.SUCCEEDED, false);
+    }
+
+    @Test
+    public void invalidatedCompletionRetainsInterruptedManualOrigin() throws Exception {
+        assertInterruptedWaiterKeepsManualOrigin(true, WorkInfo.State.SUCCEEDED, true);
+    }
+
+    private void assertInterruptedWaiterKeepsManualOrigin(final boolean manifest, final WorkInfo.State state, final boolean deleted)
+        throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final CapgoUpdater updater = updater(root, new ConcurrentHashMap<>());
+        try (ObserverHarness harness = new ObserverHarness(updater, false)) {
+            doReturn(harness.context).when(updater).context();
+            doReturn(ID, "download.zip").when(updater).randomString();
+            harness.onEnqueue = () -> Thread.currentThread().interrupt();
+            final IOException error;
+            try {
+                error = assertThrows(IOException.class, () -> {
+                    if (manifest) {
+                        updater.downloadManifest("https://example.com/update", VERSION, "", "", new JSONArray());
+                    } else {
+                        updater.download("https://example.com/update.zip", VERSION, "", "0".repeat(64));
+                    }
+                });
+            } finally {
+                Thread.interrupted();
+            }
+            assertTrue(error.toString(), error.getCause() instanceof InterruptedException);
+            if (state == WorkInfo.State.SUCCEEDED) {
+                final Path staging = root.resolve(harness.enqueuedDest);
+                Files.createDirectories(staging);
+                Files.write(staging.resolve("index.html"), "downloaded".getBytes(StandardCharsets.UTF_8));
+            }
+            if (deleted) assertTrue(updater.delete(ID, true, false));
+            harness.complete(state, harness.enqueuedDest, manifest, "", "");
+            while (!harness.tasks.isEmpty()) harness.tasks.remove(0).run();
+            verify(updater, never()).backgroundDownloadSettled(any(), anyString(), any());
+            if (state == WorkInfo.State.SUCCEEDED && !deleted) {
+                assertTrue(Files.exists(root.resolve("versions").resolve(ID).resolve("index.html")));
+            }
+        }
+    }
+
+    @Test
+    public void deletionDuringEnqueueCancelsNewTaggedWork() throws Exception {
+        assertEnqueueCancellation(true);
+    }
+
+    @Test
+    public void normalEnqueueDoesNotCancelTaggedWork() throws Exception {
+        assertEnqueueCancellation(false);
+    }
+
+    private void assertEnqueueCancellation(final boolean deleted) throws Exception {
+        final CapgoUpdater updater = updater(temporary.newFolder().toPath(), new ConcurrentHashMap<>());
+        bundle(updater, ID);
+        final List<String> events = new ArrayList<>();
+        try (ObserverHarness harness = new ObserverHarness(updater, false)) {
+            doReturn(harness.context).when(updater).context();
+            harness.downloads
+                .when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(harness.context, VERSION))
+                .thenAnswer((inv) -> {
+                    events.add("cancel-existing");
+                    return true;
+                });
+            harness.onEnqueue = () -> {
+                if (deleted) {
+                    try {
+                        assertTrue(updater.delete(ID, true, true));
+                    } catch (IOException error) {
+                        throw new AssertionError(error);
+                    }
+                }
+                events.add("enqueued");
+            };
+            doAnswer((inv) -> {
+                events.add("cancel-new");
+                return null;
+            })
+                .when(harness.manager)
+                .cancelAllWorkByTag(ID);
+            harness.start(updater);
+            assertEquals(deleted ? List.of("cancel-existing", "enqueued", "cancel-new") : List.of("enqueued"), events);
+            harness.complete(WorkInfo.State.CANCELLED, harness.enqueuedDest, false, "", "");
+            while (!harness.tasks.isEmpty()) harness.tasks.remove(0).run();
+            verify(updater, times(1)).backgroundDownloadSettled(any(), anyString(), any());
+        }
+    }
+
+    @Test
     public void observerRegisteredAfterDeletionCannotReviveBundle() throws Exception {
         final Path root = temporary.newFolder().toPath();
         final Map<String, String> store = new ConcurrentHashMap<>();
@@ -386,12 +495,17 @@ public class BundleDeletionCoordinationTest {
     private static final class ObserverHarness implements AutoCloseable {
 
         final Context context = mock(Context.class);
+        final WorkManager manager = mock(WorkManager.class);
         final List<Runnable> tasks = new ArrayList<>();
         final AtomicReference<Observer<List<WorkInfo>>> observer = new AtomicReference<>();
         final MockedStatic<WorkManager> managers = mockStatic(WorkManager.class);
         Runnable onEnqueue;
+        String enqueuedDest;
         final MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class, (inv) -> {
-            if (inv.getMethod().getName().equals("enqueueDownload") && onEnqueue != null) onEnqueue.run();
+            if (inv.getMethod().getName().equals("enqueueDownload")) {
+                enqueuedDest = inv.getArgument(4);
+                if (onEnqueue != null) onEnqueue.run();
+            }
             return RETURNS_DEFAULTS.answer(inv);
         });
 
@@ -402,7 +516,6 @@ public class BundleDeletionCoordinationTest {
         @SuppressWarnings("unchecked")
         ObserverHarness(final CapgoUpdater updater, final boolean observeImmediately) throws Exception {
             when(context.getApplicationContext()).thenReturn(context);
-            final WorkManager manager = mock(WorkManager.class);
             managers.when(() -> WorkManager.getInstance(context)).thenReturn(manager);
             final LiveData<List<WorkInfo>> live = mock(LiveData.class);
             when(manager.getWorkInfosByTagLiveData(ID)).thenReturn(live);
@@ -442,6 +555,34 @@ public class BundleDeletionCoordinationTest {
                 context,
                 ID,
                 VERSION,
+                true,
+                new CapgoUpdater.BackgroundDownloadContext(0, true)
+            );
+        }
+
+        void start(final CapgoUpdater updater) throws Exception {
+            final Method download = CapgoUpdater.class.getDeclaredMethod(
+                "download",
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                JSONArray.class,
+                boolean.class,
+                CapgoUpdater.BackgroundDownloadContext.class
+            );
+            download.setAccessible(true);
+            download.invoke(
+                updater,
+                ID,
+                "https://example.com/update.zip",
+                "download.zip",
+                VERSION,
+                "",
+                "",
+                null,
                 true,
                 new CapgoUpdater.BackgroundDownloadContext(0, true)
             );

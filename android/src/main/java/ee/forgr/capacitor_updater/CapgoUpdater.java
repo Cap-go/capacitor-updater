@@ -1394,6 +1394,7 @@ public class CapgoUpdater {
         final String id,
         final String version,
         final BackgroundDownloadContext downloadContext,
+        final boolean awaitedByCaller,
         final boolean launchReleased
     ) {
         final CompletableFuture<BundleInfo> future = this.downloadFutures.remove(id);
@@ -1402,7 +1403,7 @@ public class CapgoUpdater {
         }
         this.completeBackgroundDownload(version, downloadContext, () -> {
             if (!launchReleased) {
-                this.notifyLaunchDownloadReady(future != null, false, false, false, false, null, downloadContext);
+                this.notifyLaunchDownloadReady(awaitedByCaller, false, false, false, false, null, downloadContext);
             }
         });
     }
@@ -1434,6 +1435,8 @@ public class CapgoUpdater {
         boolean setNext,
         BackgroundDownloadContext downloadContext
     ) {
+        // A manual waiter can exit before WorkManager settles; its origin must survive the future entry.
+        final boolean awaitedByCaller = downloadFutures.containsKey(id);
         final AtomicBoolean terminalHandled = new AtomicBoolean(false);
         final AtomicBoolean launchReleasedWhileRetrying = new AtomicBoolean(false);
         final LiveData<List<WorkInfo>> workInfosLiveData = WorkManager.getInstance(
@@ -1443,7 +1446,7 @@ public class CapgoUpdater {
         final AtomicBoolean completionReported = new AtomicBoolean(false);
         final Runnable cancelled = () -> {
             if (completionReported.compareAndSet(false, true)) {
-                this.settleCancelledDownload(id, observedVersion, downloadContext, launchReleasedWhileRetrying.get());
+                this.settleCancelledDownload(id, observedVersion, downloadContext, awaitedByCaller, launchReleasedWhileRetrying.get());
             }
         };
         // observeForever, not observe(activity): a stopped Activity pauses LiveData, so a download
@@ -1466,7 +1469,7 @@ public class CapgoUpdater {
                         if (
                             workInfo.getRunAttemptCount() > 0 &&
                             shouldReleaseLaunchWhileRetrying(
-                                downloadFutures.containsKey(id),
+                                awaitedByCaller,
                                 setNext,
                                 downloadContext != null
                                     ? downloadContext.directUpdate
@@ -1562,7 +1565,7 @@ public class CapgoUpdater {
                                 completeBackgroundDownload(observedVersion, downloadContext, () -> {
                                     if (!launchReleasedWhileRetrying.get()) {
                                         notifyLaunchDownloadReady(
-                                            future != null,
+                                            awaitedByCaller,
                                             success,
                                             directInstall,
                                             previewSession,
@@ -1625,7 +1628,7 @@ public class CapgoUpdater {
                                 completionReported.set(true);
                                 completeBackgroundDownload(observedVersion, downloadContext, () -> {
                                     if (!launchReleasedWhileRetrying.get()) {
-                                        notifyLaunchDownloadReady(failedFuture != null, false, false, false, false, null, downloadContext);
+                                        notifyLaunchDownloadReady(awaitedByCaller, false, false, false, false, null, downloadContext);
                                     }
                                 });
                             },
@@ -1726,6 +1729,9 @@ public class CapgoUpdater {
                 this.customId,
                 this.defaultChannel
             );
+            if (finalization.cancelled) {
+                WorkManager.getInstance(context).cancelAllWorkByTag(id);
+            }
         } catch (final RuntimeException e) {
             if (finalization != null) {
                 synchronized (deleteLock) {
@@ -3594,7 +3600,17 @@ public class CapgoUpdater {
                         }
                         callback.callback(ret);
                     } catch (IOException e) {
-                        onFailure(call, e);
+                        if (response.isSuccessful()) {
+                            onFailure(call, e);
+                            return;
+                        }
+                        final RemoteBlockResult rateLimit = checkAndHandleRateLimitResponse(response, "");
+                        Map<String, Object> retError = new HashMap<>();
+                        retError.put("message", rateLimit.blocked ? rateLimit.message : "Server error: " + response.code());
+                        retError.put("error", rateLimit.blocked ? rateLimit.error : "response_error");
+                        retError.put("kind", "failed");
+                        retError.put("statusCode", response.code());
+                        callback.callback(retError);
                     } catch (JSONException e) {
                         Map<String, Object> retError = new HashMap<>();
                         retError.put("message", "JSON parse error: " + e.getMessage());

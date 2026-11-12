@@ -11319,6 +11319,88 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void getLatestPreservesRateLimitAfterInterruptedErrorBody() throws Exception {
+        assertInterruptedErrorBodyPreservesStatus(429);
+    }
+
+    @Test
+    public void getLatestPreservesHttpStatusAfterInterruptedErrorBody() throws Exception {
+        assertInterruptedErrorBodyPreservesStatus(503);
+    }
+
+    private void assertInterruptedErrorBodyPreservesStatus(final int status) throws Exception {
+        final Map<Field, Object> previousRateLimitState = new HashMap<>();
+        for (final String name : List.of("rateLimitBlockedUntilMs", "rateLimitBlockedError", "rateLimitBlockedMessage")) {
+            final Field field = CapgoUpdater.class.getDeclaredField(name);
+            field.setAccessible(true);
+            previousRateLimitState.put(field, field.get(null));
+        }
+        final Field blockedUntil = CapgoUpdater.class.getDeclaredField("rateLimitBlockedUntilMs");
+        blockedUntil.setAccessible(true);
+        blockedUntil.setLong(null, 0L);
+        DownloadService.setHttpsOnly(false);
+        final MockWebServer server = new MockWebServer();
+        try {
+            server.enqueue(
+                new MockResponse()
+                    .setResponseCode(status)
+                    .addHeader("Retry-After", "120")
+                    .setBody("x".repeat(4096))
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            );
+            server.enqueue(new MockResponse().setBody("{\"version\":\"recovered-v1\"}"));
+            server.start();
+            final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+            updater.CAP_SERVER_PATH = "server-path";
+            updater.prefs = mock(SharedPreferences.class);
+            when(updater.prefs.getString(eq("server-path"), anyString())).thenReturn("public");
+            when(updater.prefs.getString(eq("pastVersion"), anyString())).thenReturn(BundleInfo.ID_BUILTIN);
+            final AtomicInteger callbacks = new AtomicInteger();
+            final AtomicReference<Map<String, Object>> failure = new AtomicReference<>();
+            final CountDownLatch failed = new CountDownLatch(1);
+            updater.getLatest(server.url("/updates").toString(), null, (ret) -> {
+                callbacks.incrementAndGet();
+                failure.set(ret);
+                failed.countDown();
+            });
+            assertTrue(failed.await(5, TimeUnit.SECONDS));
+            assertEquals(status, failure.get().get("statusCode"));
+            assertEquals(status == 429 ? "too_many_requests" : "response_error", failure.get().get("error"));
+            assertEquals("failed", failure.get().get("kind"));
+            if (status == 429) {
+                assertTrue(
+                    "Retry-After must survive the unreadable body",
+                    blockedUntil.getLong(null) > System.currentTimeMillis() + 100_000L
+                );
+                final AtomicReference<Map<String, Object>> blocked = new AtomicReference<>();
+                final CountDownLatch blockedCallback = new CountDownLatch(1);
+                updater.getLatest(server.url("/updates").toString(), null, (ret) -> {
+                    blocked.set(ret);
+                    blockedCallback.countDown();
+                });
+                assertTrue(blockedCallback.await(5, TimeUnit.SECONDS));
+                assertEquals("too_many_requests", blocked.get().get("error"));
+                assertEquals("A blocked check must not reach the server", 1, server.getRequestCount());
+                blockedUntil.setLong(null, 0L);
+            }
+            final CountDownLatch recovered = new CountDownLatch(1);
+            final AtomicReference<Map<String, Object>> response = new AtomicReference<>();
+            updater.getLatest(server.url("/updates").toString(), null, (ret) -> {
+                response.set(ret);
+                recovered.countDown();
+            });
+            assertTrue(recovered.await(5, TimeUnit.SECONDS));
+            assertEquals("recovered-v1", response.get().get("version"));
+            assertEquals(1, callbacks.get());
+            assertEquals(2, server.getRequestCount());
+        } finally {
+            server.shutdown();
+            DownloadService.setHttpsOnly(true);
+            for (final Map.Entry<Field, Object> entry : previousRateLimitState.entrySet()) entry.getKey().set(null, entry.getValue());
+        }
+    }
+
+    @Test
     public void getChannelDoesNotPersistDefaultStatusChannel() throws Exception {
         DownloadService.setHttpsOnly(false);
         final MockWebServer server = new MockWebServer();
