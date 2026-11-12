@@ -5674,6 +5674,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.implementation.prepareResetStateForTransition();
                     staged = true;
                 } else {
+                    // Supersede the older queue at admission; later entries belong to newer requests.
+                    this.implementation.setNextBundle(null);
                     staged = this.implementation.set(bundle);
                 }
             }
@@ -5683,6 +5685,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (bundle.isBuiltin()) {
                     this.implementation.finalizeBuiltinUpdate(previousBundleName);
                 } else {
+                    this.implementation.clearNextBundleIfMatches(bundle.getId());
                     this.notifyBundleSet(bundle);
                 }
             } else if (
@@ -5960,6 +5963,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             logger.info("Latest version is builtin");
                             if (
                                 plannedDirectUpdate &&
+                                CapacitorUpdaterPlugin.this.delayUpdateUtils
+                                    .parseDelayConditions(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]"))
+                                    .isEmpty() &&
                                 CapacitorUpdaterPlugin.this.tryInstallBackgroundUpdateResponse(
                                     CapacitorUpdaterPlugin.this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN),
                                     downloadContext

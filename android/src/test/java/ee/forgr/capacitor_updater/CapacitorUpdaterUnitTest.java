@@ -4683,6 +4683,131 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testCachedDirectInstallSupersedesOlderQueue() throws Exception {
+        assertCachedDirectInstallQueue("none");
+    }
+
+    @Test
+    public void testCachedDirectInstallClearsItsOwnQueueEntryAfterReload() throws Exception {
+        assertCachedDirectInstallQueue("self");
+    }
+
+    @Test
+    public void testCachedDirectInstallPreservesNewerQueueAfterReload() throws Exception {
+        assertCachedDirectInstallQueue("newer");
+    }
+
+    @Test
+    public void testFailedCachedDirectReloadPreservesNewerQueue() throws Exception {
+        assertCachedDirectInstallQueue("failed-newer");
+    }
+
+    private void assertCachedDirectInstallQueue(final String duringReload) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo cached = updater.getBundleInfo("bundleA001");
+            doReturn(cached).when(updater).getBundleInfoByName(cached.getVersionName());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            assertTrue(updater.setNextBundle("bundleB002"));
+            plugin.reloadResult = !duringReload.startsWith("failed");
+            plugin.beforeReload = () -> {
+                assertNull("Cached admission must supersede the older queue before reload", updater.getNextBundle());
+                if ("self".equals(duringReload)) {
+                    assertTrue(updater.setNextBundle(cached.getId()));
+                } else if (duringReload.endsWith("newer")) {
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                }
+            };
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            response.get().callback(new HashMap<>(Map.of("version", cached.getVersionName(), "url", "https://example.com/cached.zip")));
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals(cached.getId(), updater.getCurrentBundle().getId());
+            plugin.beforeReload = null;
+            plugin.reloadResult = true;
+            if (duringReload.endsWith("newer")) {
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+                plugin.appMovedToBackground();
+                assertEquals(1, plugin.workers.size());
+                plugin.workers.remove(0).run();
+                assertEquals("bundleB002", updater.getCurrentBundle().getId());
+                assertEquals(2, plugin.reloadCalls);
+            } else {
+                assertNull(updater.getNextBundle());
+                plugin.appMovedToBackground();
+                assertTrue("An older queue must not replace the newly installed cached bundle", plugin.workers.isEmpty());
+                assertEquals(cached.getId(), updater.getCurrentBundle().getId());
+                assertEquals(1, plugin.reloadCalls);
+            }
+            assertNull(updater.getNextBundle());
+        }
+    }
+
+    @Test
+    public void testDirectBuiltinResponseHonorsDelayInForeground() throws Exception {
+        assertDirectBuiltinDelay(false);
+    }
+
+    @Test
+    public void testDirectBuiltinResponseHonorsDelayInBackground() throws Exception {
+        assertDirectBuiltinDelay(true);
+    }
+
+    private void assertDirectBuiltinDelay(final boolean inBackground) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final ArrayList<DelayCondition> conditions = new ArrayList<>(List.of(new DelayCondition(DelayUntilNext.kill, "")));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, conditions);
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "appInBackground", inBackground);
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            response.get().callback(new HashMap<>(Map.of("version", "builtin")));
+            assertEquals("The builtin response must not bypass an active delay", 0, plugin.reloadCalls);
+            assertEquals("bundleA001", updater.getCurrentBundle().getId());
+            assertNotNull(updater.getNextBundle());
+            assertTrue(updater.getNextBundle().isBuiltin());
+            plugin.appMovedToBackground();
+            assertTrue("Background installation must still respect the delay", plugin.workers.isEmpty());
+            conditions.clear();
+            plugin.installNextIfInBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertTrue(updater.getCurrentBundle().isBuiltin());
+            assertNull(updater.getNextBundle());
+            assertEquals(1, plugin.reloadCalls);
+        }
+    }
+
+    @Test
     public void testDirectBuiltinFinalizationPreservesNewerWorkManagerDownload() throws Exception {
         assertBuiltinFinalizationPreservesNewerDownload(false);
     }
