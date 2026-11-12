@@ -2793,6 +2793,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             installAdmitted = directUpdateAllowed && this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration);
             if (installAdmitted) {
                 this.implementation.directUpdate = false;
+                // This install supersedes the old queue; entries written during reload belong to later requests.
+                this.implementation.setNextBundle(null);
             }
         }
         if (!installAdmitted) {
@@ -2813,17 +2815,19 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation.directUpdate = false;
         }
         if (this.applyDownloadedBundleForDirectUpdate(latest)) {
-            this.implementation.setNextBundle(null);
+            this.implementation.clearNextBundleIfMatches(latest.getId());
             this.notifyBundleSet(latest);
             sendReadyToJs(latest, "update installed", true, downloadContext);
         } else {
-            this.implementation.setNextBundle(latest.getId());
-            final JSObject ret = new JSObject();
-            ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-            this.notifyListeners("updateAvailable", ret, false);
+            final boolean queued = this.implementation.setNextBundleIfEmpty(latest.getId());
+            if (queued) {
+                final JSObject ret = new JSObject();
+                ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
+                this.notifyListeners("updateAvailable", ret, false);
+            }
             sendReadyToJs(
                 this.implementation.getCurrentBundle(),
-                "Direct update reload failed, update will install next background",
+                queued ? "Direct update reload failed, update will install next background" : "Direct update reload failed",
                 false,
                 downloadContext
             );
@@ -2835,7 +2839,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
 
         if (!this.implementation.stagePendingReload(latest)) {
-            this.implementation.restoreResetState(previousState);
+            this.implementation.restoreResetStatePreservingNextBundle(previousState);
             logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
             return false;
         }
@@ -2854,7 +2858,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 false
             )
         ) {
-            this.implementation.restoreResetState(previousState);
+            this.implementation.restoreResetStatePreservingNextBundle(previousState);
             this.restoreLiveBundleStateAfterFailedReload();
         }
         logger.error("Direct update reload failed after staging bundle: " + latest.toString());

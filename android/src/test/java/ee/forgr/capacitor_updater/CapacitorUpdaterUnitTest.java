@@ -3986,6 +3986,165 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testFailedDirectInstallRequeueCannotOverwriteConcurrentWriter() throws Exception {
+        assertDirectInstallQueueOperationPreservesConcurrentWriter(false);
+    }
+
+    @Test
+    public void testDirectInstallRollbackCannotOverwriteConcurrentWriter() throws Exception {
+        assertDirectInstallQueueOperationPreservesConcurrentWriter(true);
+    }
+
+    private void assertDirectInstallQueueOperationPreservesConcurrentWriter(final boolean rollback) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        if (rollback) {
+            assertTrue(updater.setNextBundle("bundleA001"));
+        }
+        final CapgoUpdater writer = new CapgoUpdater(mock(Logger.class));
+        writer.documentsDir = updater.documentsDir;
+        writer.CAP_SERVER_PATH = updater.CAP_SERVER_PATH;
+        writer.prefs = updater.prefs;
+        writer.editor = updater.editor;
+        writer.statsUrl = "";
+        final CapgoUpdater.ResetState previous = updater.captureResetState();
+        final CountDownLatch queueRead = new CountDownLatch(1);
+        final CountDownLatch finishOperation = new CountDownLatch(1);
+        final CountDownLatch writerStarted = new CountDownLatch(1);
+        final CountDownLatch writerFinished = new CountDownLatch(1);
+        final AtomicInteger reads = new AtomicInteger();
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        doAnswer((inv) -> {
+            final BundleInfo next = (BundleInfo) inv.callRealMethod();
+            if (reads.getAndIncrement() == 0) {
+                queueRead.countDown();
+                assertTrue(finishOperation.await(5, TimeUnit.SECONDS));
+            }
+            return next;
+        })
+            .when(updater)
+            .getNextBundle();
+        final Thread completing = new Thread(() -> {
+            try {
+                if (rollback) {
+                    updater.restoreResetStatePreservingNextBundle(previous);
+                } else {
+                    assertTrue(updater.setNextBundleIfEmpty("bundleA001"));
+                }
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final Thread writing = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                assertTrue(writer.setNextBundle("bundleB002"));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            } finally {
+                writerFinished.countDown();
+            }
+        });
+        try {
+            completing.start();
+            assertTrue(queueRead.await(5, TimeUnit.SECONDS));
+            writing.start();
+            assertTrue(writerStarted.await(5, TimeUnit.SECONDS));
+            assertFalse(
+                "Another updater must not write between the queue check and commit",
+                writerFinished.await(100, TimeUnit.MILLISECONDS)
+            );
+        } finally {
+            finishOperation.countDown();
+            completing.join(5000);
+            writing.join(5000);
+        }
+        assertFalse(completing.isAlive());
+        assertFalse(writing.isAlive());
+        assertNull(failure.get());
+        assertEquals("bundleB002", updater.getNextBundle().getId());
+    }
+
+    @Test
+    public void testDirectInstallPreservesBundleQueuedDuringSuccessfulReload() throws Exception {
+        assertDirectInstallQueueCompletion("success", true);
+    }
+
+    @Test
+    public void testDirectInstallPreservesBundleQueuedDuringFailedReload() throws Exception {
+        assertDirectInstallQueueCompletion("reload-failure", true);
+    }
+
+    @Test
+    public void testDirectInstallPreservesBundleQueuedDuringFailedStaging() throws Exception {
+        assertDirectInstallQueueCompletion("stage-failure", true);
+    }
+
+    @Test
+    public void testDirectInstallSupersedesPreviouslyQueuedBundle() throws Exception {
+        assertDirectInstallQueueCompletion("success", false);
+    }
+
+    @Test
+    public void testFailedDirectInstallQueuesItselfWhenNoNewerBundleExists() throws Exception {
+        assertDirectInstallQueueCompletion("reload-failure", false);
+    }
+
+    private void assertDirectInstallQueueCompletion(final String outcome, final boolean queueDuringInstall) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo latest = updater.getBundleInfo("bundleA001");
+            assertTrue(updater.setNextBundle(BundleInfo.ID_BUILTIN));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            plugin.reloadResult = "success".equals(outcome);
+            final Runnable queueNewer = () -> {
+                if (queueDuringInstall) {
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                }
+            };
+            if ("stage-failure".equals(outcome)) {
+                doAnswer((inv) -> {
+                    queueNewer.run();
+                    return false;
+                })
+                    .when(updater)
+                    .stagePendingReload(latest);
+            } else {
+                plugin.beforeReload = queueNewer;
+            }
+            plugin.scheduleDirectUpdateFinish(latest);
+            plugin.workers.remove(0).run();
+
+            assertEquals("stage-failure".equals(outcome) ? 0 : 1, plugin.reloadCalls);
+            assertEquals("success".equals(outcome) ? latest.getId() : BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+            if (queueDuringInstall) {
+                assertNotNull("Direct completion must preserve the newer queue entry", updater.getNextBundle());
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+                assertFalse("A was not queued after failure", plugin.hasNotifiedEvent("updateAvailable"));
+            } else if ("success".equals(outcome)) {
+                assertNull("An older queued builtin must not undo the successful direct install", updater.getNextBundle());
+            } else {
+                assertEquals(latest.getId(), updater.getNextBundle().getId());
+                assertTrue(plugin.hasNotifiedEvent("updateAvailable"));
+            }
+            if (queueDuringInstall) {
+                plugin.beforeReload = null;
+                plugin.reloadResult = true;
+                plugin.appMovedToBackground();
+                assertEquals(1, plugin.workers.size());
+                plugin.workers.remove(0).run();
+                assertEquals("bundleB002", updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+                assertTrue(plugin.workers.isEmpty());
+            }
+        }
+    }
+
+    @Test
     public void testBuiltinBackgroundInstallPreservesBundleQueuedBeforeDispatch() throws Exception {
         assertBuiltinBackgroundInstallPreservesNewerBundle(false);
     }

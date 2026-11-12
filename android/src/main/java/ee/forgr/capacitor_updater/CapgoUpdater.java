@@ -2570,6 +2570,13 @@ public class CapgoUpdater {
         this.restoreResetStateRollbackTargets(state);
     }
 
+    void restoreResetStatePreservingNextBundle(final ResetState state) {
+        synchronized (nextBundleLock) {
+            final BundleInfo next = this.getNextBundle();
+            this.restoreResetState(new ResetState(state.currentBundlePath, state.fallbackBundleId, next == null ? null : next.getId()));
+        }
+    }
+
     void restoreResetStateRollbackTargets(final ResetState state) {
         final String fallbackBundleId =
             state.fallbackBundleId == null || state.fallbackBundleId.isEmpty() ? BundleInfo.ID_BUILTIN : state.fallbackBundleId;
@@ -4558,8 +4565,19 @@ public class CapgoUpdater {
     }
 
     public boolean setNextBundle(final String next) {
+        return this.setNextBundle(next, false);
+    }
+
+    boolean setNextBundleIfEmpty(final String next) {
+        return this.setNextBundle(next, true);
+    }
+
+    private boolean setNextBundle(final String next, final boolean onlyIfEmpty) {
         BundleInfo bundleToNotify = null;
         synchronized (nextBundleLock) {
+            if (onlyIfEmpty && this.getNextBundle() != null) {
+                return false;
+            }
             if (next == null) {
                 this.editor.remove(NEXT_VERSION);
             } else {
