@@ -6525,6 +6525,97 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testNextBundleGetterPreservesRejectedQueuedReload() throws Exception {
+        assertNextBundleGetterPreservesFailedQueuedReload(false);
+    }
+
+    @Test
+    public void testNextBundleGetterPreservesInterruptedQueuedReload() throws Exception {
+        assertNextBundleGetterPreservesFailedQueuedReload(true);
+    }
+
+    private void assertNextBundleGetterPreservesFailedQueuedReload(final boolean interrupted) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            updater.setSuccess(updater.getCurrentBundle(), false);
+            assertTrue(updater.setNextBundle("bundleB002"));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.useRealReload = true;
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            configureReadinessBridge(plugin, bridge);
+            final PluginCall getter = mock(PluginCall.class);
+            final List<Runnable> cancelledDispatches = new ArrayList<>();
+            when(webView.post(any())).thenAnswer((inv) -> {
+                cancelledDispatches.add(inv.getArgument(0));
+                if ("bundleB002".equals(updater.getCurrentBundle().getId())) {
+                    setPrivateField(plugin, "appInBackground", false);
+                    plugin.getNextBundle(getter);
+                    if (interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return interrupted;
+            });
+            setPrivateField(plugin, "appInBackground", true);
+            plugin.installNextIfInBackground();
+            try {
+                plugin.workers.remove(0).run();
+            } finally {
+                Thread.interrupted();
+            }
+
+            assertEquals("bundleA001", updater.getCurrentBundle().getId());
+            assertEquals("bundleA001", updater.getFallbackBundle().getId());
+            assertNotNull("Reading the staged update must not remove it after a failed reload", updater.getNextBundle());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            final ArgumentCaptor<JSObject> result = ArgumentCaptor.forClass(JSObject.class);
+            verify(getter).resolve(result.capture());
+            assertEquals("bundleB002", result.getValue().getString("id"));
+            assertFalse(plugin.hasNotifiedEvent("set"));
+            assertFalse(plugin.hasNotifiedEvent("appReloaded"));
+            assertEquals(false, getPrivateField(plugin, "automaticInstallInProgress"));
+            assertTrue(plugin.workers.isEmpty());
+            for (Runnable dispatch : cancelledDispatches) {
+                dispatch.run();
+            }
+            verify(webView, never()).loadUrl(anyString());
+
+            // The retained update remains installable on the next background transition.
+            plugin.useRealReload = false;
+            setPrivateField(plugin, "appInBackground", true);
+            plugin.installNextIfInBackground();
+            plugin.workers.remove(0).run();
+            assertEquals("bundleB002", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertTrue(plugin.hasNotifiedEvent("set"));
+            assertEquals(false, getPrivateField(plugin, "automaticInstallInProgress"));
+        }
+    }
+
+    @Test
+    public void testNextBundleGetterClearsAlreadyInstalledBundleWhenIdle() throws Exception {
+        try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.setNextBundle("bundleA001"));
+            assertTrue(updater.set("bundleA001"));
+            assertNotNull(updater.getNextBundle());
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            final PluginCall getter = mock(PluginCall.class);
+            plugin.getNextBundle(getter);
+            assertNull(updater.getNextBundle());
+            verify(getter).resolve((JSObject) null);
+        }
+    }
+
+    @Test
     public void testCachedReloadRecoveryPreservesWatchdogRollback() throws Exception {
         assertFailedAutomaticDispatchRestoresState(false, "watchdog");
     }

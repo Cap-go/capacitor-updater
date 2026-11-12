@@ -5254,7 +5254,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void getNextBundle(final PluginCall call) {
         try {
             // Heals a next bundle left stored after it was activated (set() did not clear it before).
-            this.implementation.clearNextBundleIfCurrent();
+            synchronized (this.automaticInstallLock) {
+                if (!this.automaticInstallInProgress) {
+                    this.implementation.clearNextBundleIfCurrent();
+                }
+            }
             final BundleInfo bundle = this.implementation.getNextBundle();
             if (bundle == null) {
                 call.resolve(null);
