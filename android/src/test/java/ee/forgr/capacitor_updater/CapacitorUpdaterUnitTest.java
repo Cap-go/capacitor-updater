@@ -3793,6 +3793,61 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testBackgroundTransitionBeforeForegroundAbortReleaseIsNotLost() throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.simulatePendingActiveBundleOnSet = true;
+            updater.setNextBundle("first-id");
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            final Logger logger = mock(Logger.class);
+            plugin.setLoggerForTesting(logger);
+            final CountDownLatch foregroundObserved = new CountDownLatch(1);
+            final CountDownLatch releaseWorker = new CountDownLatch(1);
+            final AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+            doAnswer((inv) -> {
+                foregroundObserved.countDown();
+                assertTrue(releaseWorker.await(5, TimeUnit.SECONDS));
+                return null;
+            })
+                .when(logger)
+                .info("App returned to foreground before deferred install, keeping bundle queued");
+            plugin.appMovedToBackground();
+            setPrivateField(plugin, "appInBackground", false);
+            final Runnable admittedWorker = plugin.workers.remove(0);
+            final Thread worker = new Thread(() -> {
+                try {
+                    admittedWorker.run();
+                } catch (Throwable error) {
+                    workerFailure.set(error);
+                }
+            });
+            try {
+                worker.start();
+                assertTrue(foregroundObserved.await(5, TimeUnit.SECONDS));
+                // This background request arrives while the foreground-aborted worker still owns admission.
+                plugin.appMovedToBackground();
+                assertTrue(plugin.workers.isEmpty());
+                assertEquals(0, updater.setCalls);
+            } finally {
+                releaseWorker.countDown();
+                worker.join(5000);
+            }
+            assertFalse(worker.isAlive());
+            assertNull(workerFailure.get());
+            assertEquals("The background request must be serviced after admission is released", 1, plugin.workers.size());
+            assertEquals("first-id", updater.getNextBundle().getId());
+            plugin.workers.remove(0).run();
+            assertEquals(1, updater.setCalls);
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals("first-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertTrue(plugin.hasNotifiedEvent("set"));
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
     public void testBackgroundInstallReleasesAdmissionAfterSetFailure() throws Exception {
         assertBackgroundInstallReleasesAdmissionAfterFailure("set");
     }

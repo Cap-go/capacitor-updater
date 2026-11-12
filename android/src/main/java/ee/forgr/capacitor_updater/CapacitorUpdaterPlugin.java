@@ -5881,8 +5881,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 startNewThread(() -> {
                     boolean installed = false;
+                    boolean deferredForForeground = false;
                     try {
                         if (!this.appInBackground) {
+                            deferredForForeground = true;
                             logger.info("App returned to foreground before deferred install, keeping bundle queued");
                             return;
                         }
@@ -5898,8 +5900,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         logger.error("Error during installNext " + e);
                     } finally {
                         this.releaseNextBundleInstall();
-                        // A newer download may have completed while this installation owned admission.
-                        if (installed) {
+                        // A download or background transition may have arrived while admission was held.
+                        if (installed || deferredForForeground) {
                             this.installNextIfInBackground();
                         }
                     }
