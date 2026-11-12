@@ -17,16 +17,20 @@ CLEAR_SWIFTPM_CAPACITOR_ARTIFACT_CACHE="${CAPGO_MAESTRO_CLEAR_SWIFTPM_CAPACITOR_
 ASSUME_CLEAN_INSTALL="${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
+# Per wait step in edge-case-wait-summary.yaml; defaults match the old 180s cap.
+export CAPGO_MAESTRO_SUMMARY_WAIT_MS="${CAPGO_MAESTRO_SUMMARY_WAIT_MS:-180000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
-FLOW_RETRY_PATTERN="iOS driver not ready in time|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
+FLOW_RETRY_PATTERN="iOS driver not ready in time|IOSDriverTimeoutException|Failed to connect to /127\\.0\\.0\\.1:[0-9]+|Connection refused|Broken pipe|No visible element found|Request for viewHierarchy failed, because of unknown reason|XCTestDriver request failed\\. Status code: 500, path: viewHierarchy|Application .* is not running|Detected app crash|App crashed or stopped|failed to terminate dev\\.mobile\\.maestro-driver-iosUITests\\.xctrunner|found nothing to terminate|Assertion is false: \"@capgo/capacitor-updater\" is visible|Assertion is false: \".*Harness: ready.*\" is visible|Marker: download:success|Marker: download-store:success"
 DEBUG_LOG_FAILURE_PATTERN="fail|Fail|failure|Failure|error|Error|Exception|CommandFailed|Assertion is false|crash|Crash"
 SCENARIO_SEQUENCE=(deferred always legacy-true at-install on-launch manual-zip manual-zip-config-guards manual-manifest)
 EDGE_CASE_RETRIES="${CAPGO_MAESTRO_EDGE_CASE_RETRIES:-2}"
 
 # shellcheck source=scripts/maestro/edge-cases.sh
 source "$ROOT_DIR/scripts/maestro/edge-cases.sh"
+# shellcheck source=scripts/maestro/maestro-cli-pass.sh
+source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 SCENARIO_SEQUENCE+=("${EDGE_CASE_IDS[@]}")
 APP_MARKETING_VERSION=""
 readonly ASSERT_AUTO_UPDATE_ENABLED='Auto update enabled: true'
@@ -485,6 +489,13 @@ run_flow() {
       return 0
     fi
 
+    if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
+      echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
+      reset_ios_maestro_driver
+      rm -f "$output_file"
+      return 0
+    fi
+
     if [[ $status -eq 124 ]]; then
       echo "Maestro flow timed out after ${MAESTRO_TIMEOUT_SECONDS} seconds: ${flow_path}" >&2
     fi
@@ -694,6 +705,19 @@ run_edge_case_once() {
   wait_for_edge_case_fault_hit "$edge_case_id" "$app_scenario" || return 1
   assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
 
+  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+    # Restore the bundle endpoint before the recovery flow so the deferred download can finish
+    # inside the Maestro flow timeout (same timing as the Android edge-network-drop path).
+    set_server_fault "$app_scenario" bundle none || return 1
+  elif [[ "$edge_case_id" == "edge-offline-check" ]]; then
+    # Match Android: bring the update endpoint back before recovery, while the Maestro flow still
+    # proves the builtin state from the failed check.
+    set_server_fault "$app_scenario" update none || return 1
+  elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
+    set_server_fault "$app_scenario" bundle none || return 1
+    set_server_fault "$app_scenario" update none || return 1
+  fi
+
   local builtin_pattern=""
   builtin_pattern="$(edge_summary_pattern \
     "Build label: $builtin_label" \
@@ -723,14 +747,21 @@ run_edge_case_once() {
     "$ASSERT_SOURCE_DOWNLOADED" \
     "Current bundle version: $first_release")"
 
+  # kill-download just relaunched the app; resetting the XCTest driver here can crash it mid-recovery.
+  if [[ "$edge_case_id" != "edge-kill-download" ]]; then
+    reset_ios_maestro_driver
+  fi
+
   if [[ "$app_scenario" == "edge-direct" ]]; then
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
+      "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   else
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-deferred.yaml" \
+      "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
@@ -800,6 +831,9 @@ run_scenario() {
     fi
     run_edge_case "$scenario_id"
     echo "=== Completed iOS Maestro edge case: $scenario_id ==="
+    if [[ -n "${CI:-}" ]]; then
+      reset_ios_maestro_driver
+    fi
     return 0
   fi
 
@@ -902,6 +936,9 @@ if (failures.length) {
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
+  if [[ -n "${CI:-}" ]]; then
+    reset_ios_maestro_driver
+  fi
   return 0
 }
 
@@ -1020,7 +1057,11 @@ RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 
-boot_simulator
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" == "1" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+else
+  boot_simulator
+fi
 
 cd "$ROOT_DIR"
 
