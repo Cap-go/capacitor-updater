@@ -562,6 +562,42 @@ run_core_assert() {
     "SUMMARY_PATTERN=$summary_pattern"
 }
 
+run_on_launch_assert() {
+  local builtin_label="$1"
+  local builtin_version="$2"
+  local first_release="$3"
+  local applied_pattern=""
+  local queued_pattern=""
+
+  applied_pattern="$(edge_summary_pattern \
+    "Build label: $first_release" \
+    'Scenario: on-launch' \
+    'Direct update mode: onLaunch' \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($first_release)" \
+    "$ASSERT_SOURCE_DOWNLOADED" \
+    "Current bundle version: $first_release" \
+    'Next bundle version: none')"
+  queued_pattern="$(edge_summary_pattern \
+    "Build label: $builtin_label" \
+    'Scenario: on-launch' \
+    'Direct update mode: onLaunch' \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($builtin_version)" \
+    "$ASSERT_SOURCE_BUILTIN" \
+    "Current bundle version: $builtin_version" \
+    "Next bundle version: $first_release" \
+    "Last completed download: $first_release")"
+
+  run_flow \
+    'on-launch-first-release' \
+    "$ROOT_DIR/.maestro/ios/live-update-on-launch.yaml" \
+    "APPLIED_PATTERN=$applied_pattern" \
+    "QUEUED_PATTERN=$queued_pattern"
+}
+
 run_download_assert() {
   local label="$1"
   local build_label="$2"
@@ -893,16 +929,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       ;;
     on-launch)
-      run_core_assert \
-        "${scenario_id}-first-release" \
-        "Build label: $first_release" \
-        'Scenario: on-launch' \
-        'Direct update mode: onLaunch' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
+      run_on_launch_assert "$builtin_label" "$builtin_version" "$first_release"
       ;;
     manual-zip)
       run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-flow.yaml"
