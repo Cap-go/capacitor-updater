@@ -2451,37 +2451,45 @@ public class CapgoUpdater {
                 logger.debug("Bundle ID: " + id);
                 return false;
             }
-            final BundleInfo next = this.getNextBundle();
-            if (next != null && !next.isDeleted() && !next.isErrorStatus() && !next.isDeleting() && next.getId().equals(id)) {
-                logger.error("Cannot delete the next bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-
-            final boolean hadRegistry = this.hasStoredBundleInfo(id);
-            final boolean hadFolder = bundle.exists();
-            if (!hadRegistry && !hadFolder) {
-                logger.error("Cannot delete unknown bundle");
-                logger.debug("Bundle ID: " + id);
-                return false;
-            }
-
-            // Persist the ID and cancellation policy before a marker can make this deletion recoverable.
-            // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
-            if (!this.enqueuePendingDelete(id, cancelActiveDownload)) {
-                logger.error("Failed to persist pending deletion, aborting disk delete");
-                return false;
-            }
-            shouldCancelDownload = cancelActiveDownload && !this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS).contains(id);
-            if (!deleted.isDeleting()) {
-                if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
-                    logger.error("Failed to persist DELETING marker, aborting disk delete");
+            // Keep the existing activation-to-queue lock order. Queue validation and deletion
+            // admission must finish together; neither lock is held during cancellation or disk removal.
+            synchronized (nextBundleLock) {
+                final BundleInfo next = this.getNextBundle();
+                if (next != null && !next.isDeleted() && !next.isErrorStatus() && !next.isDeleting() && next.getId().equals(id)) {
+                    logger.error("Cannot delete the next bundle");
                     logger.debug("Bundle ID: " + id);
                     return false;
                 }
-            }
 
-            this.activeBundleDeletes.add(id);
+                final boolean hadRegistry = this.hasStoredBundleInfo(id);
+                final boolean hadFolder = bundle.exists();
+                if (!hadRegistry && !hadFolder) {
+                    if (this.getPendingDeleteIds().contains(id)) {
+                        // Disk and registry cleanup survived, but retiring its retry record did not.
+                        return this.dequeuePendingDelete(id);
+                    }
+                    logger.error("Cannot delete unknown bundle");
+                    logger.debug("Bundle ID: " + id);
+                    return false;
+                }
+
+                // Persist the ID and cancellation policy before a marker can make this deletion recoverable.
+                // Download callbacks can overwrite DELETING while cancellation or disk removal is in progress.
+                if (!this.enqueuePendingDelete(id, cancelActiveDownload)) {
+                    logger.error("Failed to persist pending deletion, aborting disk delete");
+                    return false;
+                }
+                shouldCancelDownload = cancelActiveDownload && !this.getPendingDeleteIds(PENDING_DELETE_NO_CANCEL_IDS).contains(id);
+                if (!deleted.isDeleting()) {
+                    if (!this.saveBundleInfo(id, deleted.setStatus(BundleStatus.DELETING))) {
+                        logger.error("Failed to persist DELETING marker, aborting disk delete");
+                        logger.debug("Bundle ID: " + id);
+                        return false;
+                    }
+                }
+
+                this.activeBundleDeletes.add(id);
+            }
         }
 
         boolean completed = false;
@@ -2523,8 +2531,12 @@ public class CapgoUpdater {
                     logger.debug("Bundle ID: " + id);
                     return false;
                 }
-                this.dequeuePendingDelete(id);
+                // Do not recreate registry metadata if only pending-record retirement needs retrying.
                 completed = true;
+                if (!this.dequeuePendingDelete(id)) {
+                    logger.error("Failed to retire pending deletion, will retry later");
+                    return false;
+                }
             }
             this.sendStats("delete", deleted.getVersionName());
             logger.info("Bundle deleted and confirmed gone");
@@ -2629,9 +2641,9 @@ public class CapgoUpdater {
         }
     }
 
-    private void dequeuePendingDelete(final String id) {
+    private boolean dequeuePendingDelete(final String id) {
         if (id == null || id.isEmpty() || this.editor == null || this.prefs == null) {
-            return;
+            return false;
         }
         synchronized (pendingDeleteLock) {
             final Set<String> ids = this.getPendingDeleteIds();
@@ -2641,7 +2653,7 @@ public class CapgoUpdater {
             final SharedPreferences.Editor pendingEditor = this.prefs.edit();
             this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_IDS, ids);
             this.writePendingDeleteIds(pendingEditor, PENDING_DELETE_NO_CANCEL_IDS, noCancelIds);
-            pendingEditor.commit();
+            return pendingEditor.commit();
         }
     }
 

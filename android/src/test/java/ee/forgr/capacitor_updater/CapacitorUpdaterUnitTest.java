@@ -64,8 +64,8 @@ public class CapacitorUpdaterUnitTest {
 
     private static class TestableCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
 
-        private final ArrayList<String> notifiedEventNames = new ArrayList<>();
-        private final Map<String, JSObject> notifiedEventPayloads = new HashMap<>();
+        private final List<String> notifiedEventNames = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final Map<String, JSObject> notifiedEventPayloads = new java.util.concurrent.ConcurrentHashMap<>();
 
         @Override
         public void notifyListeners(String eventName, JSObject data) {
@@ -4828,6 +4828,146 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDeleteReportsPendingRemovalCommitFailure() throws Exception {
+        for (boolean removeInfo : new boolean[] { true, false }) {
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            // Intent, marker and registry finalization succeed; removing retry intent fails.
+            when(updater.editor.commit()).thenReturn(true, true, true, false);
+            assertFalse("Deletion must not report a durable completion", updater.delete("bundleB002", removeInfo, false));
+            assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+            assertFalse("Completed disk cleanup must not recreate a DELETING registry", updater.getBundleInfo("bundleB002").isDeleting());
+        }
+    }
+
+    @Test
+    public void testRestartClearsPendingDeleteAfterFilesAndRegistryAreGone() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        final AtomicReference<Map<String, String>> beforeRemoval = new AtomicReference<>();
+        final org.mockito.stubbing.Stubbing remove = mockingDetails(updater.editor)
+            .getStubbings()
+            .stream()
+            .filter((stub) -> stub.getInvocation().getMethod().getName().equals("remove"))
+            .findFirst()
+            .orElseThrow();
+        doAnswer((inv) -> {
+            beforeRemoval.set(deletionSnapshot(updater));
+            return remove.answer(inv);
+        })
+            .when(updater.editor)
+            .remove("pendingDeleteIds");
+        when(updater.editor.commit()).thenReturn(true, true, true, false);
+        updater.delete("bundleB002", true, false);
+        assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+        final CapgoUpdater restarted = spy(restartedDeletionUpdater(beforeRemoval.get()));
+        // The durable registry removal and disk cleanup survived, but pending-ID removal did not.
+        restarted.editor.remove("bundleB002_info").commit();
+        Files.delete(new File(restarted.documentsDir, "versions/bundleB002/index.html").toPath());
+        Files.delete(new File(restarted.documentsDir, "versions/bundleB002").toPath());
+        final android.content.Context context = mock(android.content.Context.class);
+        doReturn(context).when(restarted).context();
+        doReturn(null).when(restarted).getPreviewFallbackBundle();
+        doReturn(null).when(restarted).getNextBundle();
+        try (MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)) {
+            restarted.drainPendingDeletes();
+            downloads.verifyNoInteractions();
+        }
+        assertEquals("Already-complete deletions must retire their pending record", "", restarted.prefs.getString("pendingDeleteIds", ""));
+        assertEquals("", restarted.prefs.getString("pendingDeleteNoCancelIds", ""));
+        assertFalse(restarted.prefs.contains("bundleB002_info"));
+        assertTrue(new File(restarted.documentsDir, "versions/bundleA001/index.html").exists());
+        assertFalse("Unknown IDs without pending intent must still be rejected", restarted.delete("unknown001", true, false));
+    }
+
+    @Test
+    public void testQueueAdmissionPreventsConcurrentDeletion() throws Exception {
+        assertQueueAdmissionPreventsConcurrentDeletion(false);
+    }
+
+    @Test
+    public void testEmptyQueueAdmissionPreventsConcurrentDeletion() throws Exception {
+        assertQueueAdmissionPreventsConcurrentDeletion(true);
+    }
+
+    private void assertQueueAdmissionPreventsConcurrentDeletion(final boolean onlyIfEmpty) throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        final CountDownLatch validated = new CountDownLatch(1);
+        final CountDownLatch releaseQueue = new CountDownLatch(1);
+        final CountDownLatch deleteStarted = new CountDownLatch(1);
+        final CountDownLatch deleteFinished = new CountDownLatch(1);
+        final AtomicReference<Boolean> queued = new AtomicReference<>();
+        final AtomicReference<Boolean> deleted = new AtomicReference<>();
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final org.mockito.stubbing.Stubbing write = mockingDetails(updater.editor)
+            .getStubbings()
+            .stream()
+            .filter((stub) -> stub.getInvocation().getMethod().getName().equals("putString"))
+            .findFirst()
+            .orElseThrow();
+        doAnswer((inv) -> {
+            validated.countDown();
+            assertTrue(releaseQueue.await(5, TimeUnit.SECONDS));
+            return write.answer(inv);
+        })
+            .when(updater.editor)
+            .putString("nextVersion", "bundleB002");
+        final Thread queue = new Thread(() -> {
+            try {
+                queued.set(onlyIfEmpty ? updater.setNextBundleIfEmpty("bundleB002") : updater.setNextBundle("bundleB002"));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+        final Thread deletion = new Thread(() -> {
+            try {
+                deleteStarted.countDown();
+                deleted.set(updater.delete("bundleB002", true, false));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            } finally {
+                deleteFinished.countDown();
+            }
+        });
+        try {
+            queue.start();
+            assertTrue(validated.await(2, TimeUnit.SECONDS));
+            deletion.start();
+            assertTrue(deleteStarted.await(2, TimeUnit.SECONDS));
+            deleteFinished.await(1, TimeUnit.SECONDS);
+        } finally {
+            releaseQueue.countDown();
+            queue.join(3000);
+            deletion.join(3000);
+        }
+        assertFalse(queue.isAlive());
+        assertFalse(deletion.isAlive());
+        assertNull(failure.get());
+        assertEquals(Boolean.TRUE, queued.get());
+        assertEquals("Queue admission must protect its bundle before releasing the queue lock", Boolean.FALSE, deleted.get());
+        assertEquals("bundleB002", updater.getNextBundle().getId());
+        assertEquals(BundleStatus.PENDING, updater.getNextBundle().getStatus());
+        assertTrue(new File(updater.documentsDir, "versions/bundleB002/index.html").exists());
+    }
+
+    @Test
+    public void testDeletionAdmissionRejectsQueueDespiteLateMetadata() throws Exception {
+        final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+        doAnswer((inv) -> {
+            assertTrue(updater.saveBundleInfo("bundleB002", updater.getBundleInfo("bundleB002").setStatus(BundleStatus.PENDING)));
+            assertFalse(updater.setNextBundle("bundleB002"));
+            assertFalse(updater.setNextBundleIfEmpty("bundleB002"));
+            assertNull(updater.getNextBundle());
+            assertTrue("Unrelated queue admission must remain available during disk cleanup", updater.setNextBundle("bundleA001"));
+            return inv.callRealMethod();
+        })
+            .when(updater)
+            .deleteDirectory(any(File.class));
+        assertTrue(updater.delete("bundleB002", true, false));
+        assertEquals("bundleA001", updater.getNextBundle().getId());
+        assertTrue(new File(updater.documentsDir, "versions/bundleA001/index.html").exists());
+        assertFalse(new File(updater.documentsDir, "versions/bundleB002").exists());
+    }
+
+    @Test
     public void testConcurrentPendingDeleteWritersRetainBothRecordsAcrossRestart() throws Exception {
         assertConcurrentPendingDeleteWriters(false);
     }
@@ -6461,13 +6601,12 @@ public class CapacitorUpdaterUnitTest {
             final CountDownLatch deleting = new CountDownLatch(1);
             final CountDownLatch finishDelete = new CountDownLatch(1);
             doAnswer((inv) -> {
-                final Object result = inv.callRealMethod();
                 deleting.countDown();
                 assertTrue(finishDelete.await(5, TimeUnit.SECONDS));
-                return result;
+                return inv.callRealMethod();
             })
                 .when(updater)
-                .saveBundleInfo(eq(deleted.getId()), argThat((BundleInfo info) -> info != null && info.isDeleting()));
+                .deleteDirectory(any(File.class));
             final Map<String, Object> response = new HashMap<>();
             response.put("version", deleted.getVersionName());
             response.put("url", "https://example.com/update.zip");
