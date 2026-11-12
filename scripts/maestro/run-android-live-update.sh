@@ -649,11 +649,10 @@ wait_for_edge_recovery_with_wait_seconds() {
   wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "$@"
 }
 
-# Deferred edge-network-drop can finish the download while the UI still shows the builtin bundle as
-# current with the release queued as next. The generic recovery loop only looks for "current:
-# downloaded", so it backgrounds without seeing the queued state and the final wait times out.
-# Treat "download complete + queued next" like early success: resume once, then wait for activation.
-wait_for_edge_network_drop_recovery() {
+# Deferred network-drop and offline-check recovery can finish downloading with the release queued
+# as next. Waiting only for activation wastes a full polling timeout before delivering the background
+# event that applies it. Detect the completed, queued release, then resume and verify activation.
+wait_for_deferred_edge_recovery() {
   local recovery_wait_seconds="$1"
   local description="$2"
   local cycle_mode="$3"
@@ -843,9 +842,11 @@ run_edge_case_once() {
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
-  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
-    if ! wait_for_edge_network_drop_recovery \
+  if [[ "$edge_case_id" == "edge-network-drop" || "$edge_case_id" == "edge-offline-check" ]]; then
+    if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+      EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
+    fi
+    if ! wait_for_deferred_edge_recovery \
       "$recovery_wait_seconds" \
       "${edge_case_id}: the release applies once the network is back" \
       "$recovery_cycle_mode" \
@@ -1412,7 +1413,9 @@ else
   bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
 fi
 stop_stale_fake_server
-bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
+# The workflow may rerun this script after a timeout; keep the first attempt's server evidence.
+printf '\n=== Android scenario %s started at %s ===\n' "$SCENARIO_SELECTION" "$(date -u +%FT%TZ)" >>"$ARTIFACT_DIR/fake-capgo-server.log"
+bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >>"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!
 wait_for_server
 run_selected_scenarios
