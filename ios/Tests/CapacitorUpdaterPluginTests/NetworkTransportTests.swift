@@ -249,13 +249,27 @@ private final class LoopbackHTTPServer {
 final class NetworkTransportTests: XCTestCase {
     private final class CountingDownloadUpdater: CapgoUpdater {
         private(set) var downloadAttempts = 0
+        private(set) var failedTransportAttempts = 0
+        var surfaceInitialConnectionLoss = false
 
         override func performDownloadRequest(
             _ request: URLRequest, label: String, resumeData: Data? = nil,
             onProgress: ((Int64, Int64) -> Void)? = nil
         ) -> DownloadRequestResult {
             downloadAttempts += 1
-            return super.performDownloadRequest(request, label: label, resumeData: resumeData, onProgress: onProgress)
+            let result: DownloadRequestResult
+            if surfaceInitialConnectionLoss && downloadAttempts == 1 {
+                result = DownloadRequestResult(
+                    fileURL: nil, response: nil,
+                    error: NetworkError.sessionTaskFailed(URLError(.networkConnectionLost)), timedOut: false
+                )
+            } else {
+                result = super.performDownloadRequest(request, label: label, resumeData: resumeData, onProgress: onProgress)
+            }
+            if result.error != nil || result.timedOut {
+                failedTransportAttempts += 1
+            }
+            return result
         }
 
         deinit {
@@ -513,9 +527,14 @@ final class NetworkTransportTests: XCTestCase {
         try assertManifestRetryBudget(dropFirstConnection: true)
     }
 
-    private func assertManifestRetryBudget(dropFirstConnection: Bool) throws {
+    func testManifestRetryBudgetIncludesSurfacedConnectionLoss() throws {
+        try assertManifestRetryBudget(dropFirstConnection: false, surfaceInitialConnectionLoss: true)
+    }
+
+    private func assertManifestRetryBudget(dropFirstConnection: Bool, surfaceInitialConnectionLoss: Bool = false) throws {
         for status in [404, 429, 503, 200] {
             let updater = CountingDownloadUpdater()
+            updater.surfaceInitialConnectionLoss = surfaceInitialConnectionLoss
             _ = makeUpdater(updater)
             defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
@@ -542,9 +561,15 @@ final class NetworkTransportTests: XCTestCase {
                 XCTAssertEqual(failure.domain, status == 200 ? "ChecksumError" : "StatusCodeError")
                 XCTAssertEqual(failure.code, status == 200 ? 1 : status)
             }
-            // URLSession may replay a GET internally. Count entries into the plugin's transport
-            // method so those replays do not consume the manifest retry budget.
-            XCTAssertEqual(updater.downloadAttempts, status == 503 ? 3 : 1, "HTTP status \(status)")
+            // Internal URLSession replays do not consume plugin attempts; surfaced transport
+            // errors do. A permanent response must never earn another attempt of its own.
+            let maxTransportFailures = dropFirstConnection || surfaceInitialConnectionLoss ? 1 : 0
+            XCTAssertLessThanOrEqual(updater.failedTransportAttempts, maxTransportFailures)
+            if surfaceInitialConnectionLoss {
+                XCTAssertEqual(updater.failedTransportAttempts, 1)
+            }
+            let expectedAttempts = status == 503 ? 3 : 1 + updater.failedTransportAttempts
+            XCTAssertEqual(updater.downloadAttempts, expectedAttempts, "HTTP status \(status)")
         }
     }
 
