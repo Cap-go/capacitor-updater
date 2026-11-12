@@ -1407,7 +1407,7 @@ public class CapgoUpdater {
         });
     }
 
-    private void cleanupCancelledDownload(final String id, final String dest, final boolean manifest) {
+    private void cleanupIncompleteDownload(final String id, final String dest, final boolean manifest) {
         this.cleanupManifestStagingAfterDownloadFailed(id, dest, manifest);
         if (!manifest && dest != null) {
             try {
@@ -1416,7 +1416,7 @@ public class CapgoUpdater {
                     safeDelete(archive);
                 }
             } catch (IOException e) {
-                logger.warn("Ignoring invalid cancelled download destination");
+                logger.warn("Ignoring invalid incomplete download destination");
             }
         }
     }
@@ -1528,6 +1528,7 @@ public class CapgoUpdater {
                                 }
                                 BundleInfo resultBundle;
                                 if (!success) {
+                                    cleanupIncompleteDownload(id, dest, isManifest);
                                     logger.error("Finish download failed");
                                     logger.debug("Version: " + version);
                                     resultBundle = new BundleInfo(
@@ -1537,7 +1538,7 @@ public class CapgoUpdater {
                                         new Date(System.currentTimeMillis()),
                                         ""
                                     );
-                                    saveBundleInfo(id, resultBundle);
+                                    markDownloadErrorUnlessDeleted(id, version);
                                     // Cleanup download tracking
                                     DownloadWorkerManager.cancelBundleDownload(context, id, version);
                                     sendStats("finish_download_fail", version);
@@ -1573,7 +1574,7 @@ public class CapgoUpdater {
                                 });
                             },
                             () -> {
-                                cleanupCancelledDownload(id, dest, isManifest);
+                                cleanupIncompleteDownload(id, dest, isManifest);
                                 cancelled.run();
                             }
                         );
@@ -1629,7 +1630,7 @@ public class CapgoUpdater {
                                 });
                             },
                             () -> {
-                                cleanupCancelledDownload(id, failedDest, failedManifest);
+                                cleanupIncompleteDownload(id, failedDest, failedManifest);
                                 cancelled.run();
                             }
                         );
@@ -2678,10 +2679,14 @@ public class CapgoUpdater {
                     final Iterator<DownloadFinalization> iterator = pending.iterator();
                     while (iterator.hasNext()) {
                         final DownloadFinalization finalization = iterator.next();
+                        if (finalization.running == Thread.currentThread()) {
+                            // Failed verification cleans up its own bundle before reporting the failure.
+                            continue;
+                        }
                         finalization.cancelled = true;
                         if (finalization.running == null) {
                             iterator.remove();
-                        } else if (finalization.running != Thread.currentThread()) {
+                        } else {
                             runningFinalizations.add(finalization);
                         }
                     }

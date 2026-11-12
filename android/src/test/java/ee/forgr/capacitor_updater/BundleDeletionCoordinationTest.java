@@ -165,6 +165,64 @@ public class BundleDeletionCoordinationTest {
     }
 
     @Test
+    public void checksumCleanupPreservesReportedManualDownloadFailure() throws Exception {
+        assertSelfCleanupReportsFailure(false, true);
+    }
+
+    @Test
+    public void sessionKeyCleanupPreservesReportedManualDownloadFailure() throws Exception {
+        assertSelfCleanupReportsFailure(true, true);
+    }
+
+    @Test
+    public void checksumCleanupCompletesAutomaticFailureReporting() throws Exception {
+        assertSelfCleanupReportsFailure(false, false);
+    }
+
+    private void assertSelfCleanupReportsFailure(final boolean invalidSessionKey, final boolean manual) throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final Map<String, String> store = new ConcurrentHashMap<>();
+        final CapgoUpdater updater = updater(root, store);
+        final String dest = "download.zip";
+        final String checksum = "0".repeat(64);
+        Files.write(root.resolve(dest), "invalid bundle".getBytes(StandardCharsets.UTF_8));
+        CryptoCipher.setLogger(mock(Logger.class));
+        if (invalidSessionKey) updater.publicKey = "configured-public-key";
+        if (!manual) assertTrue(updater.saveBundleInfo(ID, new BundleInfo(ID, VERSION, BundleStatus.DOWNLOADING, new Date(), "")));
+        try (ObserverHarness harness = new ObserverHarness(updater, !manual)) {
+            doReturn(harness.context).when(updater).context();
+            doReturn(null).when(updater).getPreviewFallbackBundle();
+            doReturn(null).when(updater).getNextBundle();
+            doReturn(ID, dest).when(updater).randomString();
+            harness.downloads.when(() -> DownloadWorkerManager.cancelVersionDownloadAndAwait(harness.context, VERSION)).thenReturn(true);
+            final Runnable completion = () -> {
+                harness.complete(WorkInfo.State.SUCCEEDED, dest, false, invalidSessionKey ? "invalid" : "", checksum);
+                harness.tasks.remove(0).run();
+            };
+            if (manual) {
+                harness.onEnqueue = completion;
+                final CapgoUpdater.ReportedDownloadFailureException error = assertThrows(
+                    CapgoUpdater.ReportedDownloadFailureException.class,
+                    () -> updater.download("https://example.com/update.zip", VERSION, invalidSessionKey ? "iv:session-key" : "", checksum)
+                );
+                assertEquals("Download failed with status: error", error.getMessage());
+                verify(updater, never()).backgroundDownloadSettled(any(), anyString(), any());
+            } else {
+                completion.run();
+                verify(updater, times(1)).backgroundDownloadSettled(any(), anyString(), any());
+            }
+            verify(updater, times(1)).notifyListeners(eq("downloadFailed"), anyMap());
+            verify(updater, times(1)).sendStats("download_fail");
+            verify(updater, times(1)).sendStats("finish_download_fail", VERSION);
+            verify(updater, times(1)).sendStats(invalidSessionKey ? "session_key_required" : "checksum_fail");
+            assertFalse("Failed verification must not restore deleted metadata", store.containsKey(ID + "_info"));
+            assertFalse(Files.exists(root.resolve("versions").resolve(ID)));
+            assertFalse("Failed verification must remove its temporary archive", Files.exists(root.resolve(dest)));
+            verify(updater, never()).directUpdateFinish(any(BundleInfo.class), any(CapgoUpdater.BackgroundDownloadContext.class));
+        }
+    }
+
+    @Test
     public void workManagerCancellationReleasesReadinessBeforeQueuedCleanup() throws Exception {
         final CapgoUpdater updater = updater(temporary.newFolder().toPath(), new ConcurrentHashMap<>());
         bundle(updater, ID);
@@ -327,14 +385,22 @@ public class BundleDeletionCoordinationTest {
 
     private static final class ObserverHarness implements AutoCloseable {
 
+        final Context context = mock(Context.class);
         final List<Runnable> tasks = new ArrayList<>();
         final AtomicReference<Observer<List<WorkInfo>>> observer = new AtomicReference<>();
         final MockedStatic<WorkManager> managers = mockStatic(WorkManager.class);
-        final MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class);
+        Runnable onEnqueue;
+        final MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class, (inv) -> {
+            if (inv.getMethod().getName().equals("enqueueDownload") && onEnqueue != null) onEnqueue.run();
+            return RETURNS_DEFAULTS.answer(inv);
+        });
+
+        ObserverHarness(final CapgoUpdater updater) throws Exception {
+            this(updater, true);
+        }
 
         @SuppressWarnings("unchecked")
-        ObserverHarness(final CapgoUpdater updater) throws Exception {
-            final Context context = mock(Context.class);
+        ObserverHarness(final CapgoUpdater updater, final boolean observeImmediately) throws Exception {
             when(context.getApplicationContext()).thenReturn(context);
             final WorkManager manager = mock(WorkManager.class);
             managers.when(() -> WorkManager.getInstance(context)).thenReturn(manager);
@@ -371,7 +437,14 @@ public class BundleDeletionCoordinationTest {
                 CapgoUpdater.BackgroundDownloadContext.class
             );
             observe.setAccessible(true);
-            observe.invoke(updater, context, ID, VERSION, true, new CapgoUpdater.BackgroundDownloadContext(0, true));
+            if (observeImmediately) observe.invoke(
+                updater,
+                context,
+                ID,
+                VERSION,
+                true,
+                new CapgoUpdater.BackgroundDownloadContext(0, true)
+            );
         }
 
         void succeed(final String dest) {
@@ -379,6 +452,16 @@ public class BundleDeletionCoordinationTest {
         }
 
         void complete(final WorkInfo.State state, final String dest) {
+            this.complete(state, dest, true, "", "");
+        }
+
+        void complete(
+            final WorkInfo.State state,
+            final String dest,
+            final boolean manifest,
+            final String sessionKey,
+            final String checksum
+        ) {
             final WorkInfo work = mock(WorkInfo.class);
             when(work.getState()).thenReturn(state);
             when(work.getProgress()).thenReturn(Data.EMPTY);
@@ -386,9 +469,9 @@ public class BundleDeletionCoordinationTest {
                 new Data.Builder()
                     .putString(DownloadService.VERSION, VERSION)
                     .putString(DownloadService.FILEDEST, dest)
-                    .putBoolean(DownloadService.IS_MANIFEST, true)
-                    .putString(DownloadService.SESSIONKEY, "")
-                    .putString(DownloadService.CHECKSUM, "")
+                    .putBoolean(DownloadService.IS_MANIFEST, manifest)
+                    .putString(DownloadService.SESSIONKEY, sessionKey)
+                    .putString(DownloadService.CHECKSUM, checksum)
                     .build()
             );
             observer.get().onChanged(List.of(work));
