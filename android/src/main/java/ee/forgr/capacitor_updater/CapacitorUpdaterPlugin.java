@@ -69,11 +69,11 @@ import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.Phaser;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -3503,103 +3503,85 @@ public class CapacitorUpdaterPlugin extends Plugin {
             : "(function(){try{localStorage.removeItem('" +
               KEEP_URL_FLAG_KEY +
               "');}catch(e){}delete window.__capgoKeepUrlPathAfterReload;var evt;try{evt=new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',{detail:{enabled:false}});}catch(err){evt=document.createEvent('CustomEvent');evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',false,false,{enabled:false});}window.dispatchEvent(evt);})();";
-        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
+        final Runnable syncFlag = () -> this.bridge.getWebView().evaluateJavascript(script, null);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            syncFlag.run();
+        } else {
+            this.bridge.getWebView().post(syncFlag);
+        }
     }
 
-    private void applyCurrentBundleToBridge() {
-        this.stampReadyGenerationBeforeReload();
+    private boolean applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
-        if (this.keepUrlPathAfterReload) {
-            this.syncKeepUrlPathFlag(true);
+        final android.webkit.WebView webView = this.bridge == null ? null : this.bridge.getWebView();
+        if (webView == null) {
+            logger.error("Cannot reload without a WebView");
+            return false;
         }
-        logger.info("Reloading: " + path);
-
-        AtomicReference<URL> url = new AtomicReference<>();
-        if (this.keepUrlPathAfterReload) {
-            try {
-                if (Looper.myLooper() != Looper.getMainLooper()) {
-                    Semaphore mainThreadSemaphore = new Semaphore(0);
-                    this.bridge.executeOnMainThread(() -> {
-                        try {
-                            if (this.bridge != null && this.bridge.getWebView() != null) {
-                                String currentUrl = this.bridge.getWebView().getUrl();
-                                if (currentUrl != null) {
-                                    url.set(new URL(currentUrl));
-                                }
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error executing on main thread " + e.getMessage());
-                        }
-                        mainThreadSemaphore.release();
-                    });
-
-                    // Add timeout to prevent indefinite blocking
-                    if (!mainThreadSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
-                        logger.error("Timeout waiting for main thread operation");
+        final Object dispatchLock = new Object();
+        final FutureTask<Void> dispatch = new FutureTask<>(() -> {
+            this.stampReadyGenerationBeforeReload();
+            String targetUrl = this.bridge.getAppUrl();
+            if (this.keepUrlPathAfterReload) {
+                this.syncKeepUrlPathFlag(true);
+                try {
+                    final String currentUrl = webView.getUrl();
+                    if (currentUrl != null) {
+                        final URL appUrl = new URL(targetUrl);
+                        targetUrl = new URL(
+                            appUrl.getProtocol(),
+                            appUrl.getHost(),
+                            appUrl.getPort(),
+                            new URL(currentUrl).getPath()
+                        ).toString();
                     }
-                } else {
-                    try {
-                        if (this.bridge != null && this.bridge.getWebView() != null) {
-                            String currentUrl = this.bridge.getWebView().getUrl();
-                            if (currentUrl != null) {
-                                url.set(new URL(currentUrl));
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.error("Error executing on main thread " + e.getMessage());
-                    }
+                } catch (final MalformedURLException e) {
+                    logger.warn("Cannot preserve the current URL path: " + e.getMessage());
                 }
-            } catch (InterruptedException e) {
-                logger.error("Error waiting for main thread or getting the current URL from webview " + e.getMessage());
-                Thread.currentThread().interrupt(); // Restore interrupted status
             }
-        }
-
-        if (url.get() != null) {
+            logger.info("Reloading: " + path);
+            // Bridge.setServer*Path posts another load. Keep hosting and loadUrl in this dispatch
+            // so automatic-install admission cannot be released between them.
             if (usingBuiltin) {
                 this.bridge.getLocalServer().hostAssets(path);
             } else {
                 this.bridge.getLocalServer().hostFiles(path);
             }
-
-            try {
-                URL finalUrl = null;
-                finalUrl = new URL(this.bridge.getAppUrl());
-                finalUrl = new URL(finalUrl.getProtocol(), finalUrl.getHost(), finalUrl.getPort(), url.get().getPath());
-                URL finalUrl1 = finalUrl;
-                this.bridge.getWebView().post(() -> {
-                    this.bridge.getWebView().loadUrl(finalUrl1.toString());
-                    if (!this.keepUrlPathAfterReload) {
-                        this.bridge.getWebView().clearHistory();
-                    }
-                });
-            } catch (MalformedURLException e) {
-                logger.error("Cannot get finalUrl from capacitor bridge " + e.getMessage());
-
-                if (usingBuiltin) {
-                    this.bridge.setServerAssetPath(path);
-                } else {
-                    this.bridge.setServerBasePath(path);
-                }
+            webView.loadUrl(targetUrl);
+            if (!this.keepUrlPathAfterReload) {
+                webView.clearHistory();
             }
-        } else {
-            if (usingBuiltin) {
-                this.bridge.setServerAssetPath(path);
-            } else {
-                this.bridge.setServerBasePath(path);
-            }
-            if (this.bridge != null && this.bridge.getWebView() != null) {
-                this.bridge.getWebView().post(() -> {
-                    if (this.bridge.getWebView() != null) {
-                        this.bridge.getWebView().loadUrl(this.bridge.getAppUrl());
-                        if (!this.keepUrlPathAfterReload) {
-                            this.bridge.getWebView().clearHistory();
-                        }
+            return null;
+        });
+        try {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                dispatch.run();
+            } else if (
+                !webView.post(() -> {
+                    synchronized (dispatchLock) {
+                        dispatch.run();
                     }
-                });
+                })
+            ) {
+                logger.error("WebView rejected reload dispatch");
+                return false;
+            }
+            dispatch.get(10, TimeUnit.SECONDS);
+            return true;
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Interrupted waiting for WebView reload dispatch");
+        } catch (final ExecutionException | TimeoutException | RuntimeException e) {
+            logger.error("WebView reload dispatch failed: " + e.getMessage());
+        } finally {
+            // Cancel a queued dispatch before releasing install admission. If it has started,
+            // let its short native loadUrl call finish before another bundle can be staged.
+            synchronized (dispatchLock) {
+                dispatch.cancel(false);
             }
         }
+        return false;
     }
 
     protected void restoreLiveBundleStateAfterFailedReload() {
@@ -3611,13 +3593,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     protected boolean _reload() {
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
         if (this.appInBackground) {
             return this.reloadInBackground();
         }
         // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
         this.clearPendingNotifyAppReadyWait();
         final int phase = this.semaphoreUp();
-        this.applyCurrentBundleToBridge();
+        if (!this.applyCurrentBundleToBridge()) {
+            this.cleanupTimedOutSemaphoreWait(phase);
+            return false;
+        }
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
@@ -3635,11 +3621,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean reloadInBackground() {
         logger.info("App is in background, reload does not wait for notifyAppReady");
         this.armPendingNotifyAppReadyWait();
-        return this.reloadWithoutWaitingForAppReady();
+        if (this.reloadWithoutWaitingForAppReady()) {
+            return true;
+        }
+        this.clearPendingNotifyAppReadyWait();
+        return false;
     }
 
     protected boolean reloadWithoutWaitingForAppReady() {
-        this.applyCurrentBundleToBridge();
+        if (!this.applyCurrentBundleToBridge()) {
+            return false;
+        }
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
@@ -5208,11 +5200,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.disarmReadyGuard(generation);
             return;
         }
-        webView.post(() -> {
-            if (!this.installReadyGenerationScript(webView, generation)) {
-                this.disarmReadyGuard(generation);
-            }
-        });
+        if (!this.installReadyGenerationScript(webView, generation)) {
+            this.disarmReadyGuard(generation);
+        }
     }
 
     private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {

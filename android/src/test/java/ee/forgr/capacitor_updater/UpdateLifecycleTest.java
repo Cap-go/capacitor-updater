@@ -397,7 +397,12 @@ public class UpdateLifecycleTest {
         final WebView webView = mock(WebView.class);
         when(bridge.getWebView()).thenReturn(webView);
         when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-        when(webView.post(any(Runnable.class))).thenReturn(true);
+        when(bridge.getLocalServer()).thenReturn(mock(com.getcapacitor.WebViewLocalServer.class));
+        // Native main-thread dispatch runs; the frozen page never calls notifyAppReady.
+        when(webView.post(any(Runnable.class))).thenAnswer((inv) -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return true;
+        });
         this.plugin.setBridge(bridge);
         this.plugin.stubReload = false;
         this.plugin.runRollbackChecks = false;
@@ -410,6 +415,7 @@ public class UpdateLifecycleTest {
         final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
         assertTrue("Background install waited " + elapsedMs + "ms for notifyAppReady", elapsedMs < 2000);
+        verify(webView).loadUrl("https://local-app-domain.com");
         assertTrue(this.plugin.events.contains("set"));
         assertEquals("bundle-2", this.updater.current.getId());
         assertNull(this.updater.next);

@@ -187,6 +187,7 @@ public class CapacitorUpdaterUnitTest {
         private Runnable beforeReload;
         private int reloadCalls;
         private boolean reloadResult = true;
+        private boolean useRealReload;
         private boolean failDispatch;
 
         @Override
@@ -226,7 +227,7 @@ public class CapacitorUpdaterUnitTest {
             if (this.beforeReload != null) {
                 this.beforeReload.run();
             }
-            return this.reloadResult;
+            return this.useRealReload ? super._reload() : this.reloadResult;
         }
     }
 
@@ -3339,6 +3340,14 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
+    private static void configureImmediateWebViewReload(final Bridge bridge, final WebView webView) {
+        when(bridge.getLocalServer()).thenReturn(mock(com.getcapacitor.WebViewLocalServer.class));
+        when(webView.post(any(Runnable.class))).thenAnswer((inv) -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return true;
+        });
+    }
+
     @Test
     public void testReloadTimeoutUsesMilliseconds() throws Exception {
         try (
@@ -3358,7 +3367,7 @@ public class CapacitorUpdaterUnitTest {
 
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
+            configureImmediateWebViewReload(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -3366,7 +3375,7 @@ public class CapacitorUpdaterUnitTest {
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
             assertTrue("Expected millisecond timeout but reload took " + elapsedMs + "ms", elapsedMs < 900);
-            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+            verify(bridge.getLocalServer()).hostFiles("/tmp/capgo-bundle");
         }
     }
 
@@ -3425,7 +3434,7 @@ public class CapacitorUpdaterUnitTest {
 
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
+            configureImmediateWebViewReload(bridge, webView);
 
             final long start = System.nanoTime();
             assertFalse(plugin._reload());
@@ -3433,7 +3442,7 @@ public class CapacitorUpdaterUnitTest {
 
             assertTrue("Expected pending bundle timeout extension but reload took only " + elapsedMs + "ms", elapsedMs >= 40);
             assertTrue("Expected bounded pending bundle timeout but reload took " + elapsedMs + "ms", elapsedMs < 1000);
-            verify(bridge).setServerBasePath("/tmp/capgo-bundle");
+            verify(bridge.getLocalServer()).hostFiles("/tmp/capgo-bundle");
         }
     }
 
@@ -3456,7 +3465,7 @@ public class CapacitorUpdaterUnitTest {
 
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
+            configureImmediateWebViewReload(bridge, webView);
 
             assertFalse(plugin._reload());
 
@@ -3851,7 +3860,7 @@ public class CapacitorUpdaterUnitTest {
 
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
+            configureImmediateWebViewReload(bridge, webView);
 
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             assertTrue((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
@@ -3881,7 +3890,7 @@ public class CapacitorUpdaterUnitTest {
             setPrivateField(plugin, "appReadyTimeout", 1);
             when(bridge.getWebView()).thenReturn(webView);
             when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-            when(webView.post(any(Runnable.class))).thenReturn(true);
+            configureImmediateWebViewReload(bridge, webView);
             invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
             invokeSendReadyToJs(plugin, new BundleInfo("id", "old", BundleStatus.SUCCESS, new Date(), ""), "old page");
             assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
@@ -4032,6 +4041,231 @@ public class CapacitorUpdaterUnitTest {
             assertNull(updater.getNextBundle());
             assertEquals(2, updater.setCalls);
             assertEquals(2, plugin.reloadCalls);
+        }
+    }
+
+    @Test
+    public void testBackgroundInstallWaitsForWebViewLoad() throws Exception {
+        assertBackgroundInstallWaitsForWebViewLoad(false, false);
+    }
+
+    @Test
+    public void testBuiltinBackgroundInstallWaitsForWebViewLoad() throws Exception {
+        assertBackgroundInstallWaitsForWebViewLoad(true, false);
+    }
+
+    @Test
+    public void testBackgroundInstallKeepsUrlWhileWaitingForWebViewLoad() throws Exception {
+        assertBackgroundInstallWaitsForWebViewLoad(false, true);
+    }
+
+    private void assertBackgroundInstallWaitsForWebViewLoad(final boolean builtin, final boolean keepUrl) throws Exception {
+        try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            if (builtin) {
+                assertTrue(updater.set("bundleA001"));
+            }
+            final String firstId = builtin ? BundleInfo.ID_BUILTIN : "bundleA001";
+            assertTrue(updater.setNextBundle(firstId));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.useRealReload = true;
+            setPrivateField(plugin, "keepUrlPathAfterReload", keepUrl);
+            setPrivateField(plugin, "appInBackground", true);
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final com.getcapacitor.WebViewLocalServer server = mock(com.getcapacitor.WebViewLocalServer.class);
+            final java.util.concurrent.BlockingQueue<Runnable> mainQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+            final List<String> loadedBundles = new ArrayList<>();
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getLocalServer()).thenReturn(server);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            when(webView.getUrl()).thenReturn("https://local-app-domain.com/settings");
+            when(webView.post(any())).thenAnswer((inv) -> mainQueue.offer(inv.getArgument(0)));
+            doAnswer((inv) -> {
+                ((Runnable) inv.getArgument(0)).run();
+                return null;
+            })
+                .when(bridge)
+                .executeOnMainThread(any());
+            doAnswer((inv) -> {
+                loadedBundles.add(updater.getCurrentBundle().getId());
+                return null;
+            })
+                .when(webView)
+                .loadUrl(anyString());
+            plugin.setBridge(bridge);
+            plugin.installNextIfInBackground();
+            final Runnable install = plugin.workers.remove(0);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread worker = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    install.run();
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            worker.start();
+            try {
+                final Runnable firstMainTask = mainQueue.poll(2, TimeUnit.SECONDS);
+                assertNotNull("Reload must dispatch to the main thread", firstMainTask);
+                awaitReloadDispatchWaitOrCompletion(worker);
+                assertTrue(updater.setNextBundle("bundleB002"));
+                plugin.installNextIfInBackground();
+                assertTrue(
+                    "The first install must retain admission until loadUrl runs",
+                    (Boolean) getPrivateField(plugin, "automaticInstallInProgress")
+                );
+                assertTrue("A competing install must remain queued before the first load", plugin.workers.isEmpty());
+                assertEquals(firstId, updater.getCurrentBundle().getId());
+                assertTrue(loadedBundles.isEmpty());
+
+                firstMainTask.run();
+                Runnable task;
+                while ((task = mainQueue.poll()) != null) {
+                    task.run();
+                }
+                worker.join(2000);
+                assertFalse(worker.isAlive());
+                assertNull(failure.get());
+                assertEquals(Arrays.asList(firstId), loadedBundles);
+                verify(webView).loadUrl(keepUrl ? "https://local-app-domain.com/settings" : "https://local-app-domain.com");
+                if (builtin) {
+                    verify(server).hostAssets("public");
+                } else {
+                    verify(server).hostFiles(updater.getCurrentBundlePath());
+                }
+                assertEquals("bundleB002", updater.getNextBundle().getId());
+
+                // The final worker is the follow-up install; the preceding one is the app-ready watchdog.
+                plugin.workers.remove(plugin.workers.size() - 1).run();
+                assertEquals(Arrays.asList(firstId, "bundleB002"), loadedBundles);
+                assertNull(updater.getNextBundle());
+                assertFalse((Boolean) getPrivateField(plugin, "automaticInstallInProgress"));
+            } finally {
+                worker.interrupt();
+                worker.join(2000);
+            }
+        }
+    }
+
+    private static void awaitReloadDispatchWaitOrCompletion(final Thread worker) {
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (worker.isAlive() && worker.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
+        assertTrue(
+            "Reload worker must reach its dispatch wait or finish",
+            !worker.isAlive() || worker.getState() == Thread.State.TIMED_WAITING
+        );
+    }
+
+    @Test
+    public void testRejectedWebViewReloadDoesNotReportSuccess() throws Exception {
+        assertWebViewReloadFailure("rejected", false);
+        assertWebViewReloadFailure("rejected", true);
+        assertWebViewReloadFailure("dispatch-throw", false);
+        assertWebViewReloadFailure("dispatch-throw", true);
+    }
+
+    @Test
+    public void testThrowingWebViewReloadDoesNotReportSuccess() throws Exception {
+        assertWebViewReloadFailure("throwing", false);
+        assertWebViewReloadFailure("throwing", true);
+    }
+
+    @Test
+    public void testInterruptedWebViewReloadCannotRunLater() throws Exception {
+        assertWebViewReloadFailure("interrupted", true);
+    }
+
+    @Test
+    public void testTimedOutWebViewReloadCannotRunLater() throws Exception {
+        assertWebViewReloadFailure("timeout", true);
+    }
+
+    private void assertWebViewReloadFailure(final String mode, final boolean background) throws Exception {
+        try (MockedStatic<Looper> loopers = mockStatic(Looper.class)) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
+            final Bridge bridge = mock(Bridge.class);
+            final WebView webView = mock(WebView.class);
+            final com.getcapacitor.WebViewLocalServer server = mock(com.getcapacitor.WebViewLocalServer.class);
+            when(bridge.getWebView()).thenReturn(webView);
+            when(bridge.getLocalServer()).thenReturn(server);
+            when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.setBridge(bridge);
+            setPrivateField(plugin, "appInBackground", background);
+            final java.util.concurrent.BlockingQueue<Runnable> mainQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+            when(webView.post(any())).thenAnswer((inv) -> {
+                if ("dispatch-throw".equals(mode)) {
+                    throw new IllegalStateException("Test dispatch failure");
+                }
+                if ("rejected".equals(mode)) {
+                    return false;
+                }
+                if ("throwing".equals(mode)) {
+                    ((Runnable) inv.getArgument(0)).run();
+                } else {
+                    mainQueue.add(inv.getArgument(0));
+                }
+                return true;
+            });
+            if ("throwing".equals(mode)) {
+                doThrow(new IllegalStateException("Test load failure")).when(webView).loadUrl(anyString());
+            }
+            final AtomicReference<Boolean> result = new AtomicReference<>();
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final java.util.concurrent.atomic.AtomicBoolean interrupted = new java.util.concurrent.atomic.AtomicBoolean();
+            final Thread worker = new Thread(() -> {
+                try (MockedStatic<Looper> workerLoopers = mockStatic(Looper.class)) {
+                    workerLoopers.when(Looper::getMainLooper).thenReturn(main);
+                    result.set(plugin._reload());
+                    interrupted.set(Thread.currentThread().isInterrupted());
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+            });
+            worker.start();
+            try {
+                Runnable delayed = null;
+                if ("interrupted".equals(mode) || "timeout".equals(mode)) {
+                    delayed = mainQueue.poll(2, TimeUnit.SECONDS);
+                    assertNotNull(delayed);
+                    awaitReloadDispatchWaitOrCompletion(worker);
+                    if ("interrupted".equals(mode)) {
+                        worker.interrupt();
+                    }
+                }
+                worker.join("timeout".equals(mode) ? 12000 : 2000);
+                assertFalse("Dispatch failure must not strand the reload worker", worker.isAlive());
+                assertNull(failure.get());
+                assertEquals(Boolean.FALSE, result.get());
+                assertFalse(plugin.hasNotifiedEvent("appReloaded"));
+                assertEquals(0, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+                assertFalse((Boolean) getPrivateField(plugin, "pendingNotifyAppReadyWait"));
+                if (delayed != null) {
+                    // A timed-out or interrupted callback must remain inert even after another bundle is active.
+                    plugin.implementation = new FixedPathCapgoUpdater("/tmp/newer-bundle", false);
+                    delayed.run();
+                    Runnable task;
+                    while ((task = mainQueue.poll()) != null) {
+                        task.run();
+                    }
+                    verifyNoInteractions(server);
+                    verify(webView, never()).loadUrl(anyString());
+                }
+                assertEquals("interrupted".equals(mode), interrupted.get());
+            } finally {
+                worker.interrupt();
+                worker.join(2000);
+            }
         }
     }
 
