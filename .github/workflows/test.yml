@@ -370,6 +370,16 @@ jobs:
           else
             CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
           fi
+      - name: Upload failed iOS native test results
+        if: failure() && steps.test_ios.outcome == 'failure'
+        timeout-minutes: 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-results-${{ matrix.shard }}
+          path: .ci-ios-test-dd/Logs/Test
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
 
   maestro_web_assets:
     permissions:

@@ -359,19 +359,6 @@ final class NetworkTransportTests: XCTestCase {
         activeUpdaters.removeAll { $0 === updater }
         server.drain(timeout: 0.25)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        waitForPendingStatsFileRemoval(in: updater.pendingStatsDirectoryOverride)
-    }
-
-    private func waitForPendingStatsFileRemoval(in root: URL?) {
-        guard let root else { return }
-        let fileURL = root.appendingPathComponent("capgo_pending_stats.json")
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
     }
 
     private func finishAllUpdaters() {
@@ -379,6 +366,24 @@ final class NetworkTransportTests: XCTestCase {
             updater.shutdown()
         }
         activeUpdaters.removeAll()
+    }
+
+    func testReleasedUpdaterDoesNotRecreatePendingStatsDirectory() throws {
+        var updater: CapgoUpdater? = makeUpdater()
+        weak var releasedUpdater = updater
+        let statsDir = try XCTUnwrap(updater?.pendingStatsDirectoryOverride)
+        updater?.statsUrl = server.baseURL.absoluteString
+        updater?.sendStats(action: "download_complete", versionName: "shutdown-test")
+
+        releaseUpdater(try XCTUnwrap(updater))
+        let persistedData = try Data(contentsOf: statsDir.appendingPathComponent("capgo_pending_stats.json"))
+        let events = try JSONDecoder().decode([StatsEvent].self, from: persistedData)
+        XCTAssertEqual(events.map(\.action), ["download_complete"], "shutdown must persist queued stats before returning")
+        try FileManager.default.removeItem(at: statsDir)
+        updater = nil
+
+        XCTAssertNil(releasedUpdater)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statsDir.path), "deinit must not persist stats again after shutdown")
     }
 
     func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
