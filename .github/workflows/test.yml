@@ -985,7 +985,7 @@ jobs:
       - name: Build iOS apps
         run: |
           set -euo pipefail
-          artifact_root="$RUNNER_TEMP/maestro-ios-edge-apps"
+          artifact_root="$RUNNER_TEMP/maestro-ios-edge-runtime"
           derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
           scenarios=(
             edge-deferred
@@ -996,7 +996,7 @@ jobs:
           mkdir -p "$artifact_root"
 
           for scenario in "${scenarios[@]}"; do
-            app_artifact_path="$artifact_root/$scenario"
+            app_artifact_path="$artifact_root/maestro-ios-edge-apps/$scenario"
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
             xcodebuild \
               -project example-app/ios/App/App.xcodeproj \
@@ -1008,11 +1008,14 @@ jobs:
             mkdir -p "$app_artifact_path"
             ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
           done
-      - name: Upload iOS apps
+          # Ship the matching server fixtures with the apps so edge jobs restore everything once.
+          cp -R dist .maestro-artifacts "$artifact_root/"
+      - name: Upload iOS edge apps and web assets
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-edge-apps
-          path: ${{ runner.temp }}/maestro-ios-edge-apps
+          path: ${{ runner.temp }}/maestro-ios-edge-runtime
+          include-hidden-files: true
           if-no-files-found: error
 
   maestro_ios_edge_cases:
@@ -1020,7 +1023,6 @@ jobs:
       contents: read
       actions: write
     needs:
-      - maestro_web_assets
       - maestro_ios_edge_apps
     timeout-minutes: 10
     runs-on: macOS-latest
@@ -1059,16 +1061,11 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-web-assets
-          path: .
-      - name: Download iOS app
+      - name: Download iOS edge apps and web assets
         uses: actions/download-artifact@v8
         with:
           name: maestro-ios-edge-apps
-          path: maestro-ios-edge-apps
+          path: .
       - name: Setup Bun runtime
         uses: ./.github/actions/setup-bun-runtime
         with:
