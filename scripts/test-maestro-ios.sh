@@ -559,6 +559,6 @@ else
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
 fi
 
-if [[ -n "${CI:-}" ]]; then
+if [[ -n "${CI:-}" && "$SKIP_BUILD" != "1" && "${CAPGO_MAESTRO_SKIP_POST_DRIVER_RESET:-0}" != "1" ]]; then
   reset_ios_maestro_driver
 fi
