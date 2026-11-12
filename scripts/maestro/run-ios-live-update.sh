@@ -1008,9 +1008,16 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "node is required to run Capacitor CLI commands." >&2
-  exit 1
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node is required to run Capacitor CLI commands." >&2
+    exit 1
+  fi
+
+  if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+    echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+    exit 1
+  fi
 fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -1035,11 +1042,6 @@ fi
 
 if ! command -v lsof >/dev/null 2>&1; then
   echo "lsof is required to detect stale fake Capgo server processes." >&2
-  exit 1
-fi
-
-if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
-  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
   exit 1
 fi
 

@@ -1005,6 +1005,8 @@ jobs:
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
+          # This job runs prebuilt apps and bundles, so no Capacitor CLI is needed.
+          setup-node: 'false'
           install-dependencies: 'false'
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
