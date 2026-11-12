@@ -26,10 +26,13 @@ runs:
         simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
         echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
         xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-    - name: Setup Node.js
-      uses: actions/setup-node@v7
+    - name: Cache Node.js runtime
+      uses: actions/cache@v6
       with:
-        node-version: 26.x
+        path: ${{ runner.tool_cache }}/node
+        key: ${{ runner.os }}-node-26.x-${{ inputs.bun-version }}
+        restore-keys: |
+          ${{ runner.os }}-node-26.x-
     - name: Cache Bun runtime
       uses: actions/cache@v6
       with:
@@ -50,3 +53,7 @@ runs:
         CAPGO_MAESTRO_IOS_ARTIFACT: ${{ inputs.ios-artifact-name }}
         CAPGO_MAESTRO_IOS_ARTIFACT_DIR: ${{ inputs.ios-artifact-dir }}
       run: bash ./.github/scripts/prepare-ios-maestro-ci.sh
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26.x
