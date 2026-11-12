@@ -29,6 +29,18 @@ runs:
         simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
         echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
         xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+    - name: Cache Maestro job runtimes
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.bun
+          ~/.maestro
+          ~/.capgo-node
+        key: ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-${{ inputs.maestro-version }}-${{ inputs.node-version }}
+        restore-keys: |
+          ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-${{ inputs.maestro-version }}-
+          ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-
+          ${{ runner.os }}-maestro-runtimes-
     - name: Download artifacts and install runtimes
       shell: bash
       env:

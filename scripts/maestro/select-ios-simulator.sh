@@ -17,7 +17,7 @@ preferred_names=(
 )
 
 available_devices="$(xcrun simctl list devices available)"
-available_device_types="$(xcrun simctl list devicetypes)"
+available_device_types=""
 device_line_regex='^[[:space:]]*(.*)[[:space:]]\(([0-9A-F-]{36})\)[[:space:]]\([^)]*\)[[:space:]]*$'
 
 find_existing_device() {
@@ -66,6 +66,10 @@ device_type_identifier_for_name() {
   local line=""
   local name=""
   local identifier=""
+
+  if [[ -z "$available_device_types" ]]; then
+    available_device_types="$(xcrun simctl list devicetypes)"
+  fi
 
   while IFS= read -r line; do
     line="${line#"${line%%[![:space:]]*}"}"
