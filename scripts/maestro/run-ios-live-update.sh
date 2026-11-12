@@ -831,7 +831,7 @@ run_scenario() {
     fi
     run_edge_case "$scenario_id"
     echo "=== Completed iOS Maestro edge case: $scenario_id ==="
-    if [[ -n "${CI:-}" ]]; then
+    if [[ -n "${CI:-}" && "${CAPGO_MAESTRO_IOS_SKIP_CI_DRIVER_RESET:-0}" != "1" ]]; then
       reset_ios_maestro_driver
     fi
     return 0
@@ -936,7 +936,7 @@ if (failures.length) {
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
-  if [[ -n "${CI:-}" ]]; then
+  if [[ -n "${CI:-}" && "${CAPGO_MAESTRO_IOS_SKIP_CI_DRIVER_RESET:-0}" != "1" ]]; then
     reset_ios_maestro_driver
   fi
   return 0
@@ -1057,9 +1057,7 @@ RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 
-if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" == "1" ]]; then
-  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
-else
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
   boot_simulator
 fi
 

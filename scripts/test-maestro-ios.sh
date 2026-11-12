@@ -414,7 +414,9 @@ fi
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 printf 'scenario=%s\n' "$SCENARIO_ID" >"$RESULTS_DIR/runner-metadata.txt"
 
-xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+fi
 
 cd "$ROOT_DIR"
 
@@ -452,7 +454,9 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+fi
 if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
   if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
     :

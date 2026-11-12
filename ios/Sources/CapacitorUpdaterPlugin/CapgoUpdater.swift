@@ -278,6 +278,7 @@ import UIKit
 
     // lazy var is not thread-safe; concurrent manifest downloads can race first access when statsUrl is empty.
     private var cachedUrlSession: URLSession?
+    private var cachedDownloadUrlSession: URLSession?
     private let urlSessionLock = NSLock()
     private var urlSession: URLSession {
         urlSessionLock.lock()
@@ -301,8 +302,27 @@ import UIKit
         return session
     }
 
+    private var downloadUrlSession: URLSession {
+        urlSessionLock.lock()
+        defer { urlSessionLock.unlock() }
+        if let session = cachedDownloadUrlSession {
+            return session
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpAdditionalHeaders = ["User-Agent": self.userAgent]
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpMaximumConnectionsPerHost = Self.manifestMaxConcurrentFiles
+        let session = URLSession(configuration: configuration, delegate: downloadStreamDelegate, delegateQueue: nil)
+        cachedDownloadUrlSession = session
+        return session
+    }
+
     /// Owned separately from `CapgoUpdater` because URLSession retains its delegate strongly.
     private let redirectPolicy = RedirectPolicyDelegate()
+    private lazy var downloadStreamDelegate = DownloadStreamDelegate(redirectPolicy: redirectPolicy)
 
     /// Follow redirects from HTTPS to plain HTTP. Off by default so a redirect can never downgrade updater traffic.
     public var allowHttpsToHttpRedirect: Bool {
@@ -477,6 +497,8 @@ import UIKit
     }
 
     /// Downloads a URL to a temporary file, reporting cumulative `(received, expected)` bytes for `2xx` responses.
+    /// The body is streamed to an updater-owned file as bytes arrive, so a mid-transfer
+    /// failure still leaves a partial file for a later Range retry.
     func performDownloadRequest(
         _ request: URLRequest,
         label: String,
@@ -491,44 +513,7 @@ import UIKit
         var tempFileURL: URL?
         var httpResponse: HTTPURLResponse?
         var requestError: Error?
-        var interruptedResumeData: Data?
         let temporaryDownloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let completion: (URL?, URLResponse?, Error?) -> Void = { location, response, error in
-            // URLSession deletes `location` once this handler returns, so move it synchronously here.
-            var movedFileURL: URL?
-            var resultError: Error?
-            var resultResumeData: Data?
-            if let error {
-                resultError = NetworkError.sessionTaskFailed(error)
-                resultResumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-            } else if let location {
-                do {
-                    let fileManager = FileManager.default
-                    try fileManager.createDirectory(
-                        at: temporaryDownloadURL.deletingLastPathComponent(),
-                        withIntermediateDirectories: true,
-                        attributes: nil
-                    )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
-                    try fileManager.moveItem(at: location, to: temporaryDownloadURL)
-                    movedFileURL = temporaryDownloadURL
-                } catch {
-                    resultError = NetworkError.downloadedFileMoveFailed(error, source: location, destination: temporaryDownloadURL)
-                }
-            }
-            let taskResponse = response as? HTTPURLResponse
-            self.networkResponseQueue.async {
-                tempFileURL = movedFileURL
-                httpResponse = taskResponse
-                requestError = resultError
-                interruptedResumeData = resultResumeData
-                semaphore.signal()
-            }
-        }
-        let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
-            ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
         let resumedBytes: Int64 = {
             guard let range = request.value(forHTTPHeaderField: "Range"),
                   range.hasPrefix("bytes="),
@@ -537,40 +522,27 @@ import UIKit
             }
             return Int64(start) ?? 0
         }()
-        let progressObservation: NSKeyValueObservation? = onProgress.map { progressHandler in
-            downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
-                guard let httpResponse = downloadTask.response as? HTTPURLResponse,
-                      (200..<300).contains(httpResponse.statusCode) else {
-                    return
-                }
-                let responseExpected = httpResponse.expectedContentLength
-                let taskExpected = downloadTask.countOfBytesExpectedToReceive
-                let expected = responseExpected > 0
-                    ? responseExpected
-                    : (taskExpected > 0 ? taskExpected : progress.totalUnitCount)
-                let taskReceived = downloadTask.countOfBytesReceived
-                let received: Int64
-                if progress.fractionCompleted >= 1.0 && expected > 0 {
-                    received = expected
-                } else if progress.totalUnitCount == expected && progress.completedUnitCount > taskReceived {
-                    received = min(expected, progress.completedUnitCount)
-                } else if taskReceived > 0 {
-                    received = expected > 0 ? min(expected, taskReceived) : taskReceived
-                } else if expected > 0 && progress.fractionCompleted > 0 {
-                    received = min(expected, Int64((progress.fractionCompleted * Double(expected)).rounded()))
-                } else {
-                    received = progress.completedUnitCount
-                }
-                if expected > 0 && received >= 0 {
-                    let baseline = Self.shouldAppendHttpBody(statusCode: httpResponse.statusCode, existingBytes: resumedBytes)
-                        ? resumedBytes
-                        : 0
-                    progressHandler(baseline + received, baseline + expected)
+        // resumeData is unused: URLSession download-task resume data is not
+        // produced by a streamed data task, and a kept partial file plus Range
+        // is the reliable retry path.
+        _ = resumeData
+        let downloadTask = self.downloadUrlSession.dataTask(with: request)
+        do {
+            try downloadStreamDelegate.registerStream(
+                for: downloadTask,
+                fileURL: temporaryDownloadURL,
+                resumedBytes: resumedBytes,
+                onProgress: onProgress
+            ) { response, error in
+                self.networkResponseQueue.async {
+                    tempFileURL = temporaryDownloadURL
+                    httpResponse = response
+                    requestError = error
+                    semaphore.signal()
                 }
             }
-        }
-        defer {
-            progressObservation?.invalidate()
+        } catch {
+            return DownloadRequestResult(fileURL: nil, response: nil, error: error, timedOut: false)
         }
         downloadTask.resume()
 
@@ -593,8 +565,7 @@ import UIKit
             fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
-            timedOut: isTimedOutError(requestError),
-            resumeData: interruptedResumeData
+            timedOut: isTimedOutError(requestError)
         )
     }
 
@@ -719,6 +690,7 @@ import UIKit
         shutdown()
         // Alamofire's Session invalidated its URLSession on deinit; keep releasing the session the same way.
         cachedUrlSession?.invalidateAndCancel()
+        cachedDownloadUrlSession?.invalidateAndCancel()
     }
 
     public func shutdown() {
@@ -2258,10 +2230,6 @@ import UIKit
         let partialURL = Self.manifestPartialURL(cacheFolder: cacheFolder, downloadId: bundleId, hash: fileHash, fileName: fileName)
         let resumeData = resume.data
         resume.data = nil
-        if resumeData != nil {
-            // URLSession resumes its own interrupted transfer and returns the whole file.
-            try? FileManager.default.removeItem(at: partialURL)
-        }
         let existingBytes: Int64
         if FileManager.default.fileExists(atPath: partialURL.path) {
             existingBytes = Int64((try FileManager.default.attributesOfItem(atPath: partialURL.path)[.size] as? NSNumber)?.int64Value ?? 0)
@@ -2272,11 +2240,20 @@ import UIKit
             request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
         }
         // True while the bytes on disk come from more than one response; a bad result then earns a clean GET.
-        var resumed = resumeData != nil
+        var resumed = existingBytes > 0 || resumeData != nil
 
         let label = "downloadManifestFile \(fileName)"
-        let result = resumeData.map { performDownloadRequest(request, label: label, resumeData: $0) }
-            ?? performDownloadRequest(request, label: label)
+        // Prefer an on-disk partial plus Range over URLSession resumeData.
+        // Resume data may retry without a Range header against a short-lived
+        // connection, which restarts the transfer from byte 0.
+        let result: DownloadRequestResult
+        if existingBytes > 0 {
+            result = performDownloadRequest(request, label: label)
+        } else if let resumeData {
+            result = performDownloadRequest(request, label: label, resumeData: resumeData)
+        } else {
+            result = performDownloadRequest(request, label: label)
+        }
         resume.data = result.resumeData
         defer {
             if let fileURL = result.fileURL {
@@ -4138,10 +4115,20 @@ import UIKit
         let root = pendingStatsRootDirectory()
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            if events.isEmpty {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+                return
+            }
             let data = try JSONEncoder().encode(events)
             let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
             defer { try? FileManager.default.removeItem(at: temp) }
-            try data.write(to: temp, options: .atomic)
+            // Write the unique temp in place. `.atomic` would create another
+            // aux file and can fail with "couldn't be removed" (ENOENT) when
+            // that aux is already gone. Foundation may raise that as an
+            // NSException, which escapes the Swift catch below.
+            try data.write(to: temp)
             try replaceItemAtomically(at: fileURL, withItemAt: temp)
             var resourceURL = fileURL
             var values = URLResourceValues()
