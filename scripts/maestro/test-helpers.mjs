@@ -19,9 +19,9 @@ try {
   await mkdir(scripts, { recursive: true });
   await mkdir(bundles, { recursive: true });
   await mkdir(path.join(manifest, 'manual-manifest-v1'), { recursive: true });
-  for (const file of ['fake-capgo-server.mjs', 'scenarios.mjs']) {
-    await copyFile(path.join(dir, file), path.join(scripts, file));
-  }
+  await Promise.all(
+    ['fake-capgo-server.mjs', 'scenarios.mjs'].map((file) => copyFile(path.join(dir, file), path.join(scripts, file))),
+  );
   const bytes = Buffer.alloc(16384, 42);
   await writeFile(path.join(bundles, 'edge-deferred-v1.zip'), bytes);
   await writeFile(path.join(bundles, 'edge-deferred-v1.checksum'), 'test-checksum\n');
@@ -53,15 +53,9 @@ try {
     assert.equal(response.ok, true, `${route}: ${response.status}\n${logs}`);
     return response;
   }
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await request('/health');
-      break;
-    } catch (error) {
-      if (attempt === 50) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
+  // The server emits its first output only after listen() completes.
+  await once(server.stdout, 'data', { signal: AbortSignal.timeout(5000) });
+  await request('/health');
   const update = await (
     await request('/api/updates/edge-deferred', { method: 'POST', body: JSON.stringify({ version_name: '1.0' }) })
   ).json();
@@ -102,7 +96,7 @@ try {
     'Maestro helper regression checks passed (Node server, ZIP, Range, corruption, manifest, condition allowlist).',
   );
 } finally {
-  if (server && server.exitCode === null) {
+  if (server?.exitCode === null) {
     server.kill();
     await once(server, 'exit');
   }

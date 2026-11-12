@@ -56,47 +56,58 @@ def run(timeout, scenario, device):
     except FileNotFoundError:
         pass
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            return monitor_process(process, selector, report, timeout)
+    finally:
+        stop_process(process)
+
+
+def read_output(selector, output):
+    for key, _ in selector.select(0.2):
+        chunk = os.read(key.fileobj.fileno(), 65536)
+        if not chunk:
+            selector.unregister(key.fileobj)
+            continue
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        output = (output + chunk.decode('utf-8', errors='replace'))[-8192:]
+    return output
+
+
+def monitor_process(process, selector, report, timeout):
     deadline = time.monotonic() + timeout
     passed_at = None
-    summary_passed = False
     output = ''
-    try:
-        while process.poll() is None:
-            for key, _ in selector.select(0.2):
-                chunk = os.read(key.fileobj.fileno(), 65536)
-                if not chunk:
-                    selector.unregister(key.fileobj)
-                    continue
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.buffer.flush()
-                output = (output + chunk.decode('utf-8', errors='replace'))[-8192:]
-                summary_passed = bool(re.search(r'\b(\d+)/\1 Flow Passed\b', output))
-            if summary_passed and report_passed(report):
-                passed_at = passed_at or time.monotonic()
-                if time.monotonic() - passed_at >= 5:
-                    print('Maestro flow and JUnit report passed; stopping stalled CLI teardown.', flush=True)
-                    return 0
-            else:
-                passed_at = None
-            if time.monotonic() >= deadline:
-                return 124
-        return process.returncode
-    finally:
-        selector.close()
-        if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-        os.set_blocking(process.stdout.fileno(), False)
-        remaining = process.stdout.read()
-        if remaining:
-            sys.stdout.buffer.write(remaining)
-        process.stdout.close()
+    while process.poll() is None:
+        output = read_output(selector, output)
+        summary_passed = bool(re.search(r'\b(\d+)/\1 Flow Passed\b', output))
+        if summary_passed and report_passed(report):
+            passed_at = passed_at or time.monotonic()
+            if time.monotonic() - passed_at >= 5:
+                print('Maestro flow and JUnit report passed; stopping stalled CLI teardown.', flush=True)
+                return 0
+        else:
+            passed_at = None
+        if time.monotonic() >= deadline:
+            return 124
+    return process.returncode
+
+
+def stop_process(process):
+    if process.poll() is None:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+    os.set_blocking(process.stdout.fileno(), False)
+    remaining = process.stdout.read()
+    if remaining:
+        sys.stdout.buffer.write(remaining)
+    process.stdout.close()
 
 
 if __name__ == '__main__':
