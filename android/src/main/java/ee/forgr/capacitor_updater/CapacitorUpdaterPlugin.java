@@ -197,7 +197,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreen = false;
     private Boolean autoSplashscreenLoader = false;
     private Integer autoSplashscreenTimeout = 10000;
-    private Boolean autoSplashscreenTimedOut = false;
+    private volatile Boolean autoSplashscreenTimedOut = false;
     private int splashscreenInvocationToken = 0;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
@@ -288,6 +288,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean launchTimeoutReported = false;
     private final Object launchReportLock = new Object();
     private FrameLayout splashscreenLoaderOverlay;
+    private final Object splashscreenTimeoutLock = new Object();
     private Runnable splashscreenTimeoutRunnable;
     private FrameLayout previewTransitionLoaderOverlay;
     private Runnable previewTransitionLoaderTimeoutRunnable;
@@ -1564,7 +1565,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     boolean hasSplashscreenTimeoutScheduledForTesting() {
-        return this.splashscreenTimeoutRunnable != null;
+        synchronized (this.splashscreenTimeoutLock) {
+            return this.splashscreenTimeoutRunnable != null;
+        }
     }
 
     void scheduleLaunchSplashscreenTimeoutIfNeededForTesting() {
@@ -1576,22 +1579,44 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        cancelSplashscreenTimeout();
-
-        this.splashscreenTimeoutRunnable = () -> {
-            logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-            this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
-            hideSplashscreen();
-        };
-
-        this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+        synchronized (this.splashscreenTimeoutLock) {
+            cancelSplashscreenTimeout();
+            this.splashscreenTimeoutRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (splashscreenTimeoutLock) {
+                        if (splashscreenTimeoutRunnable != this) {
+                            return;
+                        }
+                        splashscreenTimeoutRunnable = null;
+                        autoSplashscreenTimedOut = true;
+                        implementation.directUpdate = false;
+                    }
+                    logger.info("autoSplashscreen timeout reached, hiding splashscreen");
+                    hideSplashscreen();
+                }
+            };
+            this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+        }
     }
 
     private void cancelSplashscreenTimeout() {
-        if (this.splashscreenTimeoutRunnable != null) {
-            this.mainHandler.removeCallbacks(this.splashscreenTimeoutRunnable);
-            this.splashscreenTimeoutRunnable = null;
+        synchronized (this.splashscreenTimeoutLock) {
+            if (this.splashscreenTimeoutRunnable != null) {
+                this.mainHandler.removeCallbacks(this.splashscreenTimeoutRunnable);
+                this.splashscreenTimeoutRunnable = null;
+            }
+        }
+    }
+
+    private boolean beginDirectUpdateInstallBeforeTimeout() {
+        synchronized (this.splashscreenTimeoutLock) {
+            if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+                return false;
+            }
+            // Claim the install before staging. Never hold this lock while waiting for JS readiness.
+            cancelSplashscreenTimeout();
+            return true;
         }
     }
 
@@ -2618,6 +2643,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.onLaunchDirectUpdateUsed = true;
             }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true);
+            return;
+        }
+        if (!this.beginDirectUpdateInstallBeforeTimeout()) {
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+            this.implementation.setNextBundle(latest.getId());
+            this.sendReadyToJs(this.implementation.getCurrentBundle(), "update downloaded, will install next background", true);
             return;
         }
         if ("onLaunch".equals(this.directUpdateMode)) {

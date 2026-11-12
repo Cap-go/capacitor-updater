@@ -113,6 +113,9 @@ public class CapacitorUpdaterUnitTest {
         private final AppCompatActivity activity = mock(AppCompatActivity.class);
         private boolean startNewThreadCalled = false;
         private boolean reloadCalled = false;
+        private boolean deferDispatch = false;
+        private Runnable dispatchedWork;
+        private Runnable beforeReload;
 
         @Override
         public AppCompatActivity getActivity() {
@@ -129,12 +132,19 @@ public class CapacitorUpdaterUnitTest {
         @Override
         public Thread startNewThread(final Runnable function) {
             this.startNewThreadCalled = true;
-            function.run();
+            if (this.deferDispatch) {
+                this.dispatchedWork = function;
+            } else {
+                function.run();
+            }
             return new Thread();
         }
 
         @Override
         protected boolean _reload() {
+            if (this.beforeReload != null) {
+                this.beforeReload.run();
+            }
             this.reloadCalled = true;
             return true;
         }
@@ -4150,6 +4160,65 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(1, updater.finalizePendingReloadCalls);
             assertSame(latest, updater.finalizedPendingReloadBundle);
             assertSame(plugin.activity, updater.activity);
+        }
+    }
+
+    @Test
+    public void testDirectUpdateDefersWhenTimeoutWinsBeforeWorkerRuns() throws Exception {
+        assertDirectUpdateTimeoutOrdering(true);
+    }
+
+    @Test
+    public void testDirectUpdateCancelsTimeoutBeforeReloadStarts() throws Exception {
+        assertDirectUpdateTimeoutOrdering(false);
+    }
+
+    private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
+            when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
+            when(delayUpdateUtils.parseDelayConditions("[]")).thenReturn(new ArrayList<>());
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.configureDirectUpdateModeForTesting("onLaunch", false);
+            setPrivateField(plugin, "prefs", prefs);
+            setPrivateField(plugin, "delayUpdateUtils", delayUpdateUtils);
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Runnable timeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            assertNotNull(timeout);
+            plugin.deferDispatch = true;
+            plugin.scheduleDirectUpdateFinish(latest);
+            assertNotNull(plugin.dispatchedWork);
+            assertFalse(plugin.reloadCalled);
+            if (timeoutFirst) {
+                timeout.run();
+            } else {
+                // Simulate a callback already dequeued by the main thread when install wins.
+                plugin.beforeReload = timeout;
+            }
+            plugin.dispatchedWork.run();
+            assertEquals(!timeoutFirst, plugin.reloadCalled);
+            assertEquals(timeoutFirst ? 0 : 1, updater.stagePendingReloadCalls);
+            assertEquals(timeoutFirst ? 0 : 1, updater.finalizePendingReloadCalls);
+            assertEquals(timeoutFirst, getPrivateField(plugin, "autoSplashscreenTimedOut"));
+            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            if (timeoutFirst) {
+                assertEquals("download-id", updater.lastSetNextBundleId);
+            } else {
+                assertNull(updater.getNextBundle());
+            }
         }
     }
 
