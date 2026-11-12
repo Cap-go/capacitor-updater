@@ -793,12 +793,11 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-          setup-node: 'false'
+      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
+      - name: Install Bun runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -864,12 +863,11 @@ jobs:
         with:
           name: maestro-ios-apps
           path: maestro-ios-apps
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-          setup-node: 'false'
+      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
+      - name: Install Bun runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -1009,12 +1007,11 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-          setup-node: 'false'
+      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
+      - name: Install Bun runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/ci/install-bun.sh
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
