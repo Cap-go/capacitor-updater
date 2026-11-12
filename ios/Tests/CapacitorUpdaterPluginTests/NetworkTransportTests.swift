@@ -173,21 +173,39 @@ private final class LoopbackHTTPServer {
             head += "\(name): \(value)\r\n"
         }
         head += "\r\n"
-        let body = response.truncateBodyAt.map { Data(response.body.prefix($0)) } ?? response.body
-        guard let chunkSize = response.chunkSize, chunkSize > 0, body.count > chunkSize else {
-            var payload = Data(head.utf8)
-            payload.append(body)
-            connection.send(content: payload, completion: .contentProcessed { _ in
-                connection.cancel()
+        let bodyData = response.truncateBodyAt.map { Data(response.body.prefix($0)) } ?? response.body
+
+        if let chunkSize = response.chunkSize, chunkSize > 0, bodyData.count > chunkSize {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
+                self?.sendChunks(
+                    of: bodyData, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay,
+                    waitBeforeContinuingBody: response.waitBeforeContinuingBody,
+                    waitTimeout: response.waitBeforeContinuingBodyTimeout, on: connection
+                )
             })
             return
         }
-        connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
-            self?.sendChunks(
-                of: body, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay,
-                waitBeforeContinuingBody: response.waitBeforeContinuingBody,
-                waitTimeout: response.waitBeforeContinuingBodyTimeout, on: connection
-            )
+
+        if response.truncateBodyAt != nil {
+            // Send headers and body in separate writes so a truncated body is a real mid-stream drop,
+            // not one atomic read containing a short body with Content-Length still outstanding.
+            let headerData = Data(head.utf8)
+            connection.send(content: headerData, isComplete: false, completion: .contentProcessed { error in
+                if error != nil {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: bodyData, isComplete: true, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            })
+            return
+        }
+
+        var payload = Data(head.utf8)
+        payload.append(bodyData)
+        connection.send(content: payload, completion: .contentProcessed { _ in
+            connection.cancel()
         })
     }
 
@@ -229,18 +247,57 @@ private final class LoopbackHTTPServer {
 }
 
 final class NetworkTransportTests: XCTestCase {
+    private final class NoGetAfterSuccessGuard {
+        private let lock = NSLock()
+        private(set) var attempts = 0
+        private(set) var postSuccessAttempts = 0
+        private var servedSuccess = false
+
+        enum Phase {
+            case rejectPostSuccess
+            case attempt(number: Int)
+        }
+
+        func next() -> Phase {
+            lock.lock()
+            defer { lock.unlock() }
+            if servedSuccess {
+                postSuccessAttempts += 1
+                return .rejectPostSuccess
+            }
+            attempts += 1
+            return .attempt(number: attempts)
+        }
+
+        func markSuccess() {
+            lock.lock()
+            servedSuccess = true
+            lock.unlock()
+        }
+
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
+    }
+
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
     private var activeUpdaters: [CapgoUpdater] = []
+    private var pendingStatsDirs: [URL] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         server = try LoopbackHTTPServer()
         activeUpdaters = []
+        pendingStatsDirs = []
     }
 
     override func tearDownWithError() throws {
         finishAllUpdaters()
+        for dir in pendingStatsDirs {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        pendingStatsDirs = []
         server.drain(timeout: 0.25)
         server.stop()
         server = nil
@@ -253,6 +310,11 @@ final class NetworkTransportTests: XCTestCase {
         updater.timeout = 5
         // The loopback test server is plain http.
         updater.httpsOnly = false
+        let statsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capgo-stats-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: statsDir, withIntermediateDirectories: true)
+        updater.pendingStatsDirectoryOverride = statsDir
+        pendingStatsDirs.append(statsDir)
         activeUpdaters.append(updater)
         return updater
     }
@@ -263,6 +325,19 @@ final class NetworkTransportTests: XCTestCase {
         activeUpdaters.removeAll { $0 === updater }
         server.drain(timeout: 0.25)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        waitForPendingStatsFileRemoval(in: updater.pendingStatsDirectoryOverride)
+    }
+
+    private func waitForPendingStatsFileRemoval(in root: URL?) {
+        guard let root else { return }
+        let fileURL = root.appendingPathComponent("capgo_pending_stats.json")
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
     }
 
     private func finishAllUpdaters() {
@@ -278,14 +353,18 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
+        let attemptGuard = NoGetAfterSuccessGuard()
         server.respond { _ in
-            lock.lock()
-            attempts += 1
-            let status = attempts == 1 ? 503 : 200
-            lock.unlock()
-            return .init(status: status, body: status == 200 ? body : Data())
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
+                return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let status = number == 1 ? 503 : 200
+                if status == 200 {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: status, body: status == 200 ? body : Data())
+            }
         }
         let updater = makeUpdater()
         defer { releaseUpdater(updater) }
@@ -295,7 +374,12 @@ final class NetworkTransportTests: XCTestCase {
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
-        XCTAssertEqual(attempts, 2)
+        server.drain(timeout: 0.25)
+        // URLSession may issue an extra GET after 503 before surfacing the failure to our retry loop,
+        // so expect at least one 503 and a final 200, and at most three hits on the test server.
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 2)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -306,15 +390,19 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
+        let attemptGuard = NoGetAfterSuccessGuard()
         // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
         server.respond { _ in
-            lock.lock()
-            attempts += 1
-            let drop = attempts <= 2
-            lock.unlock()
-            return .init(status: 200, body: body, dropConnection: drop)
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
+                return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let drop = number <= 2
+                if !drop {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: 200, body: body, dropConnection: drop)
+            }
         }
         let updater = makeUpdater()
         defer { releaseUpdater(updater) }
@@ -324,7 +412,10 @@ final class NetworkTransportTests: XCTestCase {
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
-        XCTAssertEqual(attempts, 3)
+        // Two drops plus URLSession's own replays can hit the server more than three times before success.
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 5)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
