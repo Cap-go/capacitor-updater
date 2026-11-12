@@ -5545,6 +5545,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     false,
                                     plannedDirectUpdate
                                 );
+                                CapacitorUpdaterPlugin.this.installNextIfInBackground();
                             } else {
                                 logger.info("autoUpdate is set to onlyDownload, builtin version will not be set as next bundle");
                                 final boolean builtinUpdateAvailable = !current.isBuiltin();
@@ -5683,6 +5684,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             false,
                                             plannedDirectUpdate
                                         );
+                                        CapacitorUpdaterPlugin.this.installNextIfInBackground();
                                     } else {
                                         logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle");
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);

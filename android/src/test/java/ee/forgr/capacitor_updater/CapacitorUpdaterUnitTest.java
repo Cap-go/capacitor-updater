@@ -3852,6 +3852,127 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testTimedOutBuiltinResponseInstallsWhenAlreadyBackgrounded() throws Exception {
+        assertTimedOutExistingResponseInstalls(true, "background");
+    }
+
+    @Test
+    public void testTimedOutCachedResponseInstallsWhenAlreadyBackgrounded() throws Exception {
+        assertTimedOutExistingResponseInstalls(false, "background");
+    }
+
+    @Test
+    public void testTimedOutBuiltinResponseStaysQueuedInForeground() throws Exception {
+        assertTimedOutExistingResponseInstalls(true, "foreground");
+    }
+
+    @Test
+    public void testTimedOutCachedResponseStaysQueuedInForeground() throws Exception {
+        assertTimedOutExistingResponseInstalls(false, "foreground");
+    }
+
+    @Test
+    public void testTimedOutBuiltinResponseHonorsBackgroundDelay() throws Exception {
+        assertTimedOutExistingResponseInstalls(true, "delay");
+    }
+
+    @Test
+    public void testTimedOutCachedResponseHonorsBackgroundDelay() throws Exception {
+        assertTimedOutExistingResponseInstalls(false, "delay");
+    }
+
+    @Test
+    public void testTimedOutBuiltinResponseHonorsPreviewAtCompletion() throws Exception {
+        assertTimedOutExistingResponseInstalls(true, "preview");
+    }
+
+    @Test
+    public void testTimedOutCachedResponseHonorsPreviewAtCompletion() throws Exception {
+        assertTimedOutExistingResponseInstalls(false, "preview");
+    }
+
+    private void assertTimedOutExistingResponseInstalls(final boolean builtin, final String guard) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class);
+            MockedStatic<CapConfig> configMock = mockStatic(CapConfig.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            configMock.when(() -> CapConfig.loadDefault(any())).thenReturn(mock(CapConfig.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final BundleInfo latest = updater.getBundleInfo(builtin ? BundleInfo.ID_BUILTIN : "bundleB002");
+            doReturn(latest).when(updater).getBundleInfoByName(anyString());
+            final AtomicReference<Callback> responseCallback = new AtomicReference<>();
+            doAnswer((inv) -> {
+                responseCallback.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final ArrayList<DelayCondition> conditions = new ArrayList<>();
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, conditions);
+            plugin.setAutoUpdateModeForTesting("onLaunch");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Runnable timeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            assertNotNull(timeout);
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            assertNotNull(responseCallback.get());
+            timeout.run();
+            if (!"foreground".equals(guard)) {
+                plugin.appMovedToBackground();
+            }
+            if ("delay".equals(guard)) {
+                conditions.add(new DelayCondition(DelayUntilNext.kill, ""));
+            } else if ("preview".equals(guard)) {
+                plugin.onReady = () -> plugin.previewSessionEnabled = true;
+            }
+            assertTrue(plugin.workers.isEmpty());
+            assertNull(updater.getNextBundle());
+            plugin.beforeDispatch = () -> {
+                assertTrue("Report readiness before installing the deferred response", plugin.hasNotifiedEvent("appReady"));
+                try {
+                    assertNull(
+                        "Complete the update check before dispatching installation",
+                        getPrivateField(plugin, "backgroundDownloadTask")
+                    );
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            };
+            final Map<String, Object> response = new HashMap<>();
+            response.put("version", builtin ? "builtin" : latest.getVersionName());
+            response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "checksum");
+            responseCallback.get().callback(response);
+
+            assertEquals(latest.getId(), updater.getNextBundle().getId());
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertEquals("bundleA001", updater.getCurrentBundle().getId());
+            assertEquals(0, plugin.reloadCalls);
+            assertEquals("background".equals(guard) ? 1 : 0, plugin.workers.size());
+            if (!"background".equals(guard)) {
+                conditions.clear();
+                plugin.previewSessionEnabled = false;
+                plugin.onReady = null;
+                plugin.appMovedToBackground();
+            }
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals(latest.getId(), updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(1, plugin.reloadCalls);
+            assertTrue(plugin.hasNotifiedEvent("set"));
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
     public void testBuiltinBackgroundInstallPreservesBundleQueuedBeforeDispatch() throws Exception {
         assertBuiltinBackgroundInstallPreservesNewerBundle(false);
     }
