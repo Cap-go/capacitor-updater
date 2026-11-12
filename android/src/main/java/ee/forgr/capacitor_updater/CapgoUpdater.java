@@ -2625,7 +2625,7 @@ public class CapgoUpdater {
         this.setNextBundle(null);
     }
 
-    private void prepareBuiltinTransition() {
+    void prepareBuiltinTransition() {
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
     }
@@ -4592,6 +4592,16 @@ public class CapgoUpdater {
 
     public boolean setNextBundle(final String next) {
         return this.setNextBundle(next, false);
+    }
+
+    boolean clearNextBundleForDirectInstall(final java.util.function.BooleanSupplier admitInstall) {
+        synchronized (nextBundleLock) {
+            if (!admitInstall.getAsBoolean()) {
+                return false;
+            }
+            // Supersede the old queue at admission, before later writers can enqueue a replacement.
+            return this.setNextBundle(null);
+        }
     }
 
     boolean setNextBundleIfEmpty(final String next) {

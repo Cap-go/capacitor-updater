@@ -800,6 +800,11 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        void prepareBuiltinTransition() {
+            this.prepareResetStateForTransition();
+        }
+
+        @Override
         void finalizeResetTransition(final String previousBundleName, final boolean internal) {
             this.finalizeResetTransitionCalled = true;
             this.finalizeResetTransitionCalls++;
@@ -4355,6 +4360,126 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testDirectInstallAdmissionSerializesQueueCutover() throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.setNextBundle("bundleA001"));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            final Method claim = CapacitorUpdaterPlugin.class.getDeclaredMethod("claimDirectUpdateInstall", long.class);
+            claim.setAccessible(true);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final Thread installing = new Thread(() -> {
+                try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
+                    workerLooper.when(Looper::getMainLooper).thenReturn(main);
+                    workerLooper.when(Looper::myLooper).thenReturn(main);
+                    assertTrue((boolean) claim.invoke(plugin, 0L));
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread writing = new Thread(() -> {
+                try {
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            try {
+                synchronized (getPrivateField(plugin, "splashscreenTimeoutLock")) {
+                    installing.start();
+                    assertBlockedOnMonitor(installing, getPrivateField(plugin, "splashscreenTimeoutLock"), Thread.currentThread());
+                    writing.start();
+                    assertBlockedOnMonitor(writing, getPrivateField(updater, "nextBundleLock"), installing);
+                }
+            } finally {
+                installing.join(5000);
+                writing.join(5000);
+            }
+            assertFalse(installing.isAlive());
+            assertFalse(writing.isAlive());
+            assertNull(failure.get());
+            assertNotNull("The queue write after admission must survive the cutover", updater.getNextBundle());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            final Method release = CapacitorUpdaterPlugin.class.getDeclaredMethod("releaseAutomaticInstall");
+            release.setAccessible(true);
+            release.invoke(plugin);
+            plugin.appMovedToBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals("bundleB002", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+        }
+    }
+
+    @Test
+    public void testBuiltinStagingPreservesBundleQueuedAfterAdmission() throws Exception {
+        assertBuiltinStagingPreservesNewQueue(true);
+    }
+
+    @Test
+    public void testFailedBuiltinStagingPreservesBundleQueuedAfterAdmission() throws Exception {
+        assertBuiltinStagingPreservesNewQueue(false);
+    }
+
+    private void assertBuiltinStagingPreservesNewQueue(final boolean reloadSucceeds) throws Exception {
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class)
+        ) {
+            final Looper main = mock(Looper.class);
+            loopers.when(Looper::getMainLooper).thenReturn(main);
+            loopers.when(Looper::myLooper).thenReturn(main);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            assertTrue(updater.set("bundleA001"));
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            plugin.reloadResult = reloadSucceeds;
+            doAnswer((inv) -> {
+                assertTrue((boolean) getPrivateField(plugin, "automaticInstallInProgress"));
+                final AtomicReference<Throwable> failure = new AtomicReference<>();
+                final Thread writer = new Thread(() -> {
+                    try {
+                        assertTrue(updater.setNextBundle("bundleB002"));
+                    } catch (Throwable error) {
+                        failure.set(error);
+                    }
+                });
+                writer.start();
+                writer.join(5000);
+                assertFalse("Queue writes must proceed after admission", writer.isAlive());
+                assertNull(failure.get());
+                return inv.callRealMethod();
+            })
+                .when(updater)
+                .captureResetState();
+            runAutomaticInstall(plugin, updater, "builtin", updater.getBundleInfo(BundleInfo.ID_BUILTIN), response);
+            assertEquals(reloadSucceeds ? BundleInfo.ID_BUILTIN : "bundleA001", updater.getCurrentBundle().getId());
+            assertNotNull("Builtin staging must not erase the newer queue", updater.getNextBundle());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            plugin.reloadResult = true;
+            plugin.appMovedToBackground();
+            assertEquals(1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals("bundleB002", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+        }
+    }
+
+    @Test
     public void testBackgroundInstallExcludesFreshReload() throws Exception {
         assertAutomaticInstallsDoNotOverlap("queued", "fresh");
     }
@@ -4517,7 +4642,7 @@ public class CapacitorUpdaterUnitTest {
                 } else if ("cached".equals(first)) {
                     doReturn(false).when(updater).set(a);
                 } else {
-                    doThrow(new IllegalStateException("Test reset staging failure")).when(updater).prepareResetStateForTransition();
+                    doThrow(new IllegalStateException("Test reset staging failure")).when(updater).prepareBuiltinTransition();
                 }
             }
             final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
@@ -5163,7 +5288,7 @@ public class CapacitorUpdaterUnitTest {
             if ("queue".equals(kind)) {
                 doAnswer(pauseCommit).when(updater).setNextBundle(latest.getId());
             } else if ("builtin".equals(kind)) {
-                doAnswer(pauseCommit).when(updater).prepareResetStateForTransition();
+                doAnswer(pauseCommit).when(updater).prepareBuiltinTransition();
             } else {
                 doAnswer(pauseCommit).when(updater).set(latest);
             }

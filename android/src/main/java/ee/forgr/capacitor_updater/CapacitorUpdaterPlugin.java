@@ -1714,7 +1714,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private boolean claimDirectUpdateInstall(final long timeoutGeneration) {
         synchronized (this.automaticInstallLock) {
-            if (this.automaticInstallInProgress || !this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)) {
+            if (
+                this.automaticInstallInProgress ||
+                !this.implementation.clearNextBundleForDirectInstall(() -> this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration))
+            ) {
                 return false;
             }
             this.automaticInstallInProgress = true;
@@ -2852,8 +2855,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 installAdmitted = directUpdateAllowed && this.claimDirectUpdateInstall(timeoutGeneration);
                 if (installAdmitted) {
                     this.implementation.directUpdate = false;
-                    // This install supersedes the old queue; entries written during reload belong to later requests.
-                    this.implementation.setNextBundle(null);
                 }
             }
             if (!installAdmitted) {
@@ -5682,11 +5683,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 this.consumeOnLaunchDirectUpdateAttempt(true);
                 this.clearBackgroundDownloadState();
                 if (bundle.isBuiltin()) {
-                    this.implementation.prepareResetStateForTransition();
+                    this.implementation.prepareBuiltinTransition();
                     staged = true;
                 } else {
-                    // Supersede the older queue at admission; later entries belong to newer requests.
-                    this.implementation.setNextBundle(null);
                     staged = this.implementation.set(bundle);
                 }
             }
