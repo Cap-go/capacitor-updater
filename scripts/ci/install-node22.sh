@@ -55,11 +55,31 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 BASE_URL="https://nodejs.org/dist/v${NODE_VERSION}"
+ARCHIVE_PATH="$TMP_DIR/node.tar.gz"
 curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
-  -o "$TMP_DIR/node.tar.gz" \
+  -o "$ARCHIVE_PATH" \
   "${BASE_URL}/${NODE_ARCHIVE}"
 
-tar -xzf "$TMP_DIR/node.tar.gz" -C "$TMP_DIR"
+EXPECTED_SHA256="$(
+  curl --retry 5 --retry-all-errors --retry-delay 5 -fsSL \
+    "${BASE_URL}/SHASUMS256.txt" |
+    awk -v file="$NODE_ARCHIVE" '$2 == file { print $1; exit }'
+)"
+if [[ -z "$EXPECTED_SHA256" ]]; then
+  echo "Missing SHA256 checksum for Node.js archive ${NODE_ARCHIVE}." >&2
+  exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL_SHA256="$(sha256sum "$ARCHIVE_PATH" | awk '{ print $1 }')"
+else
+  ACTUAL_SHA256="$(shasum -a 256 "$ARCHIVE_PATH" | awk '{ print $1 }')"
+fi
+if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+  echo "Node.js archive checksum mismatch for ${NODE_VERSION}." >&2
+  exit 1
+fi
+
+tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 EXTRACTED_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'node-v*' | head -n 1)"
 if [[ -z "$EXTRACTED_DIR" ]]; then
   echo "Unable to locate Node.js after extracting ${NODE_VERSION}" >&2
