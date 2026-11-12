@@ -509,9 +509,7 @@ import UIKit
                         withIntermediateDirectories: true,
                         attributes: nil
                     )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
+                    self.removeFileIfPresent(at: temporaryDownloadURL)
                     try fileManager.moveItem(at: location, to: temporaryDownloadURL)
                     movedFileURL = temporaryDownloadURL
                 } catch {
@@ -689,9 +687,7 @@ import UIKit
             return
         }
 
-        if fileManager.fileExists(atPath: tempPath.path) {
-            try fileManager.removeItem(at: tempPath)
-        }
+        removeFileIfPresent(at: tempPath)
         try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
     }
 
@@ -2516,6 +2512,14 @@ import UIKit
         }
     }
 
+    private func removeFileIfPresent(at url: URL) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return
+        }
+        try? fileManager.removeItem(at: url)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
@@ -4140,8 +4144,8 @@ import UIKit
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(events)
             let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
-            defer { try? FileManager.default.removeItem(at: temp) }
-            try data.write(to: temp, options: .atomic)
+            defer { self.removeFileIfPresent(at: temp) }
+            try data.write(to: temp)
             try replaceItemAtomically(at: fileURL, withItemAt: temp)
             var resourceURL = fileURL
             var values = URLResourceValues()
