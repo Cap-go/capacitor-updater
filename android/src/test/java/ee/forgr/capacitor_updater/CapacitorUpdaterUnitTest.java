@@ -4074,8 +4074,229 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testFreshInstallExcludesCachedReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("fresh", "cached");
+    }
+
+    @Test
+    public void testFreshInstallExcludesBuiltinReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("fresh", "builtin");
+    }
+
+    @Test
+    public void testFreshInstallExcludesFreshReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("fresh", "fresh");
+    }
+
+    @Test
+    public void testFreshInstallExcludesBackgroundReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("fresh", "queued");
+    }
+
+    @Test
+    public void testFailedFreshInstallServicesNewerBackgroundQueue() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("fresh", "queued", false);
+    }
+
+    @Test
+    public void testCachedInstallExcludesFreshReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("cached", "fresh");
+    }
+
+    @Test
+    public void testCachedInstallExcludesCachedReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("cached", "cached");
+    }
+
+    @Test
+    public void testBuiltinInstallExcludesCachedReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("builtin", "cached");
+    }
+
+    @Test
+    public void testBackgroundInstallExcludesFreshReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("queued", "fresh");
+    }
+
+    @Test
+    public void testBackgroundInstallExcludesCachedReload() throws Exception {
+        assertAutomaticInstallsDoNotOverlap("queued", "cached");
+    }
+
+    private void runAutomaticInstall(
+        final QueuedInstallPlugin plugin,
+        final CapgoUpdater updater,
+        final String kind,
+        final BundleInfo bundle,
+        final AtomicReference<Callback> response
+    ) throws Exception {
+        if ("queued".equals(kind)) {
+            assertTrue(updater.setNextBundle(bundle.getId()));
+            plugin.appMovedToBackground();
+            return;
+        }
+        invokeBackgroundDownload(plugin);
+        plugin.workers.remove(0).run();
+        if ("fresh".equals(kind)) {
+            plugin.scheduleDirectUpdateFinish(
+                bundle,
+                (CapgoUpdater.BackgroundDownloadContext) getPrivateField(plugin, "backgroundDownloadContext")
+            );
+            plugin.workers.remove(0).run();
+        } else {
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("version", "builtin".equals(kind) ? "builtin" : bundle.getVersionName());
+            payload.put("url", "https://example.com/update.zip");
+            payload.put("checksum", "checksum");
+            response.get().callback(payload);
+        }
+    }
+
+    private void assertAutomaticInstallsDoNotOverlap(final String first, final String second) throws Exception {
+        assertAutomaticInstallsDoNotOverlap(first, second, true);
+    }
+
+    private void assertAutomaticInstallsDoNotOverlap(final String first, final String second, final boolean firstSucceeds)
+        throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo a = updater.getBundleInfo("builtin".equals(first) ? BundleInfo.ID_BUILTIN : "bundleA001");
+            final BundleInfo b = updater.getBundleInfo("builtin".equals(second) ? BundleInfo.ID_BUILTIN : "bundleB002");
+            doAnswer((inv) -> a.getVersionName().equals(inv.getArgument(0)) ? a : b)
+                .when(updater)
+                .getBundleInfoByName(anyString());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            plugin.reloadResult = firstSucceeds;
+            plugin.beforeReload = () -> {
+                plugin.beforeReload = null;
+                assertEquals(a.getId(), updater.getCurrentBundle().getId());
+                assertFalse("Reload must not hold the ownership monitor", Thread.holdsLock(plugin));
+                try {
+                    runAutomaticInstall(plugin, updater, second, b, response);
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+                assertEquals("The second install must not enter reload", 1, plugin.reloadCalls);
+                assertEquals("The active bundle must remain A until its reload completes", a.getId(), updater.getCurrentBundle().getId());
+                assertNotNull("The competing install must stay queued", updater.getNextBundle());
+                assertEquals(b.getId(), updater.getNextBundle().getId());
+                assertTrue("Background dispatch must also wait for the active reload", plugin.workers.isEmpty());
+            };
+            runAutomaticInstall(plugin, updater, first, a, response);
+            if ("queued".equals(first)) {
+                plugin.workers.remove(0).run();
+            }
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals(firstSucceeds ? a.getId() : BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+            assertEquals(b.getId(), updater.getNextBundle().getId());
+            plugin.reloadResult = true;
+            plugin.appMovedToBackground();
+            assertEquals("Release must service the queued update once", 1, plugin.workers.size());
+            plugin.workers.remove(0).run();
+            assertEquals(2, plugin.reloadCalls);
+            assertEquals(b.getId(), updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
     public void testDirectInstallPreservesBundleQueuedDuringFailedReload() throws Exception {
         assertDirectInstallQueueCompletion("reload-failure", true);
+    }
+
+    @Test
+    public void testFreshInstallClaimReleasesAfterStagingException() throws Exception {
+        assertAutomaticInstallClaimReleased("fresh", "stage-throw");
+    }
+
+    @Test
+    public void testFreshInstallClaimReleasesAfterReloadException() throws Exception {
+        assertAutomaticInstallClaimReleased("fresh", "reload-throw");
+    }
+
+    @Test
+    public void testCachedInstallClaimReleasesAfterSetFailure() throws Exception {
+        assertAutomaticInstallClaimReleased("cached", "stage-false");
+    }
+
+    @Test
+    public void testCachedInstallClaimReleasesAfterReloadException() throws Exception {
+        assertAutomaticInstallClaimReleased("cached", "reload-throw");
+    }
+
+    @Test
+    public void testBuiltinInstallClaimReleasesAfterStagingException() throws Exception {
+        assertAutomaticInstallClaimReleased("builtin", "stage-throw");
+    }
+
+    @Test
+    public void testBuiltinInstallClaimReleasesAfterReloadFailure() throws Exception {
+        assertAutomaticInstallClaimReleased("builtin", "reload-false");
+    }
+
+    private void assertAutomaticInstallClaimReleased(final String first, final String failurePoint) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo a = updater.getBundleInfo("builtin".equals(first) ? BundleInfo.ID_BUILTIN : "bundleA001");
+            final BundleInfo b = updater.getBundleInfo("bundleB002");
+            doAnswer((inv) -> a.getVersionName().equals(inv.getArgument(0)) ? a : b)
+                .when(updater)
+                .getBundleInfoByName(anyString());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            if (failurePoint.startsWith("stage")) {
+                if ("fresh".equals(first)) {
+                    doThrow(new IllegalStateException("Test staging failure")).when(updater).stagePendingReload(a);
+                } else if ("cached".equals(first)) {
+                    doReturn(false).when(updater).set(a);
+                } else {
+                    doThrow(new IllegalStateException("Test reset staging failure")).when(updater).prepareResetStateForTransition();
+                }
+            }
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            if ("reload-throw".equals(failurePoint)) {
+                plugin.beforeReload = () -> {
+                    throw new IllegalStateException("Test reload failure");
+                };
+            }
+            plugin.reloadResult = !"reload-false".equals(failurePoint);
+            runAutomaticInstall(plugin, updater, first, a, response);
+            final int previousReloads = plugin.reloadCalls;
+            assertEquals(failurePoint.startsWith("reload") ? 1 : 0, previousReloads);
+            plugin.beforeReload = null;
+            plugin.reloadResult = true;
+            runAutomaticInstall(plugin, updater, "cached", b, response);
+            assertEquals("Failure must release admission for the next install", previousReloads + 1, plugin.reloadCalls);
+            assertEquals(b.getId(), updater.getCurrentBundle().getId());
+            assertTrue(plugin.workers.isEmpty());
+        }
     }
 
     @Test
