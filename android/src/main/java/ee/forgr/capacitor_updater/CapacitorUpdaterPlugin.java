@@ -247,6 +247,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile Thread backgroundDownloadTask;
     // Guarded by this. Retained after launch release so the same retry can finish until a newer check takes ownership.
     private CapgoUpdater.BackgroundDownloadContext backgroundDownloadContext;
+    private BackgroundReadyState backgroundReadyState = new BackgroundReadyState(-1);
+
+    private static final class BackgroundReadyState {
+
+        boolean claimed;
+        int waitPhase;
+
+        BackgroundReadyState(final int waitPhase) {
+            this.waitPhase = waitPhase;
+        }
+    }
+
     private volatile Thread appReadyCheck;
     // Between appMovedToBackground and appMovedToForeground. Android freezes backgrounded apps, so the
     // page cannot call notifyAppReady until the next foreground, which arms a fresh rollback check.
@@ -1273,16 +1285,37 @@ public class CapacitorUpdaterPlugin extends Plugin {
     ) {
         logger.info("sendReadyToJs: " + msg);
         final int[] pendingPhase = new int[] { -1 };
-        final boolean shouldWait;
+        final BackgroundReadyState readyState;
+        boolean shouldWait;
         synchronized (this) {
             if (!this.ownsBackgroundDownload(downloadContext)) {
                 return;
             }
+            readyState = this.backgroundReadyState;
+            if (downloadContext != null) {
+                if (readyState.claimed) {
+                    return;
+                }
+                readyState.claimed = true;
+            }
             shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
+            if (downloadContext != null) {
+                if (shouldWait) {
+                    readyState.waitPhase = pendingPhase[0];
+                } else if (
+                    readyState.waitPhase >= 0 &&
+                    this.semaphoreReady.getPhase() == readyState.waitPhase &&
+                    this.semaphoreReady.getRegisteredParties() > 0
+                ) {
+                    // A superseded check may already own the waiter for this page's readiness.
+                    pendingPhase[0] = readyState.waitPhase;
+                    shouldWait = true;
+                }
+            }
         }
 
         final Runnable emitReady = () -> {
-            if (!this.ownsBackgroundDownload(downloadContext)) {
+            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
                 return;
             }
             final JSObject ret = new JSObject();
@@ -1291,14 +1324,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
             this.notifyListeners("appReady", ret, true);
 
-            if (!this.ownsBackgroundDownload(downloadContext)) {
+            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
                 return;
             }
 
             // Auto hide splashscreen if enabled
             // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
             if (this.autoSplashscreen) {
-                this.hideSplashscreen();
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    this.hideSplashscreenInternal();
+                } else {
+                    this.mainHandler.post(() -> {
+                        if (this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                            this.hideSplashscreenInternal();
+                        }
+                    });
+                }
             }
             this.hidePreviewTransitionLoader("app-ready");
         };
@@ -2690,6 +2731,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
 
     private synchronized boolean ownsBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
         return downloadContext == null || this.backgroundDownloadContext == downloadContext;
+    }
+
+    private synchronized boolean ownsBackgroundReadiness(
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
+        return downloadContext == null || (this.backgroundDownloadContext == downloadContext && this.backgroundReadyState == readyState);
     }
 
     void reuseBackgroundDownload(
@@ -5804,6 +5852,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
             initialDirectUpdateAllowed
         );
         this.backgroundDownloadContext = downloadContext;
+        // Download identity survives reuse; readiness belongs to each individual check.
+        this.backgroundReadyState = new BackgroundReadyState(this.backgroundReadyState.waitPhase);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()

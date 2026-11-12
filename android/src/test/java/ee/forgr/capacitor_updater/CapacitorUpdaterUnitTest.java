@@ -5677,6 +5677,152 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testQueuedRetryCallbackDoesNotRepeatHandoffReadiness() throws Exception {
+        assertQueuedRetryReadiness(false, false);
+    }
+
+    @Test
+    public void testQueuedRetryCallbackPreservesHandoffReadyWait() throws Exception {
+        assertQueuedRetryReadiness(true, false);
+    }
+
+    @Test
+    public void testLaterReusePreservesPendingReadyWaitAndSuppressesOldWaiter() throws Exception {
+        assertQueuedRetryReadiness(true, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertQueuedRetryReadiness(final boolean waitForReady, final boolean reuseWhileWaiting) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class, (handler, context) -> {
+                doAnswer((inv) -> {
+                    inv.<Runnable>getArgument(0).run();
+                    return true;
+                })
+                    .when(handler)
+                    .post(any(Runnable.class));
+            });
+            MockedStatic<androidx.work.WorkManager> workManagers = mockStatic(androidx.work.WorkManager.class);
+            MockedStatic<DownloadWorkerManager> downloads = mockStatic(DownloadWorkerManager.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final android.content.Context context = mock(android.content.Context.class);
+            when(context.getApplicationContext()).thenReturn(context);
+            doReturn(context).when(updater).context();
+            doReturn(null).when(updater).getBundleInfoByName(anyString());
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            final java.util.concurrent.ExecutorService io = mock(java.util.concurrent.ExecutorService.class);
+            final List<Runnable> ioCallbacks = new ArrayList<>();
+            doAnswer((inv) -> {
+                ioCallbacks.add(inv.getArgument(0));
+                return null;
+            })
+                .when(io)
+                .execute(any(Runnable.class));
+            setPrivateField(updater, "io", io);
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("always");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Object deadline = getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            doAnswer((inv) -> {
+                plugin.emitLaunchDownloadReady(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadSettled(any(), anyString(), any(CapgoUpdater.BackgroundDownloadContext.class));
+            doAnswer((inv) -> {
+                plugin.reuseBackgroundDownload(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .backgroundDownloadReused(any(), any());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final androidx.work.WorkManager manager = mock(androidx.work.WorkManager.class);
+            workManagers.when(() -> androidx.work.WorkManager.getInstance(context)).thenReturn(manager);
+            final androidx.lifecycle.LiveData<List<androidx.work.WorkInfo>> liveData = mock(androidx.lifecycle.LiveData.class);
+            when(manager.getWorkInfosByTagLiveData(anyString())).thenReturn(liveData);
+            final AtomicReference<androidx.lifecycle.Observer<List<androidx.work.WorkInfo>>> observer = new AtomicReference<>();
+            doAnswer((inv) -> {
+                observer.set(inv.getArgument(0));
+                return null;
+            })
+                .when(liveData)
+                .observeForever(any());
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("version", "retrying-download");
+            payload.put("url", "https://example.com/update.zip");
+            payload.put("manifest", new JSONArray());
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            response.get().callback(payload);
+            plugin.workers.remove(0).run();
+            final Object originalContext = getPrivateField(plugin, "backgroundDownloadContext");
+
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            if (waitForReady) {
+                invokePrivateVoidMethod(plugin, "armPendingNotifyAppReadyWait");
+            }
+            final androidx.work.WorkInfo retry = mock(androidx.work.WorkInfo.class);
+            when(retry.getProgress()).thenReturn(androidx.work.Data.EMPTY);
+            when(retry.getState()).thenReturn(androidx.work.WorkInfo.State.ENQUEUED);
+            when(retry.getRunAttemptCount()).thenReturn(1);
+            observer.get().onChanged(List.of(retry));
+            assertEquals("Hold the original retry callback on IO until after reuse", 1, ioCallbacks.size());
+            downloads.when(() -> DownloadWorkerManager.isVersionDownloading(context, "retrying-download")).thenReturn(true);
+            response.get().callback(payload);
+            if (reuseWhileWaiting) {
+                invokeBackgroundDownload(plugin);
+                plugin.workers.remove(plugin.workers.size() - 1).run();
+                response.get().callback(payload);
+            }
+            ioCallbacks.remove(0).run();
+            final TestableCapacitorUpdaterPlugin events = plugin;
+            assertEquals(waitForReady ? 0 : 1, events.notifiedEventNames.stream().filter("appReady"::equals).count());
+            assertSame(originalContext, getPrivateField(plugin, "backgroundDownloadContext"));
+            assertFalse(updater.directUpdate);
+            if (waitForReady) {
+                assertSame(
+                    "The duplicate callback must not hide the splash before readiness",
+                    deadline,
+                    getPrivateField(plugin, "splashscreenTimeoutRunnable")
+                );
+                assertEquals(reuseWhileWaiting ? 2 : 1, plugin.workers.size());
+                assertEquals(1, ((Phaser) getPrivateField(plugin, "semaphoreReady")).getRegisteredParties());
+                invokePrivateVoidMethod(plugin, "semaphoreDown");
+                while (!plugin.workers.isEmpty()) {
+                    plugin.workers.remove(0).run();
+                }
+            }
+            assertEquals(
+                "Only the current check may emit after the wait",
+                1,
+                events.notifiedEventNames.stream().filter("appReady"::equals).count()
+            );
+            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            // Reusing the same download on a later check still owes that check its own readiness.
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            response.get().callback(payload);
+            assertEquals(2, events.notifiedEventNames.stream().filter("appReady"::equals).count());
+            assertTrue(plugin.workers.isEmpty());
+            assertEquals(0, plugin.reloadCalls);
+        }
+    }
+
+    @Test
     public void testCancelledDownloadCannotBeReused() throws Exception {
         assertOriginatingDownloadOwnership("cancelled", false, false);
     }
@@ -5800,7 +5946,10 @@ public class CapacitorUpdaterUnitTest {
                 final CountDownLatch replacementStarted = new CountDownLatch(1);
                 final CountDownLatch replacementFinished = new CountDownLatch(1);
                 final Thread failing = new Thread(() -> {
-                    try {
+                    try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
+                        // Mockito static mocks are thread-local; cleanup may notify before replacement wins.
+                        workerLooper.when(Looper::getMainLooper).thenReturn(mainLooper);
+                        workerLooper.when(Looper::myLooper).thenReturn(mainLooper);
                         download.run();
                     } catch (Throwable error) {
                         failure.compareAndSet(null, error);
