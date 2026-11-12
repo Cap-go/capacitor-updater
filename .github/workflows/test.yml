@@ -777,13 +777,12 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Prepare iOS Maestro workspace
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash ./.github/scripts/prepare-ios-maestro-ci.sh maestro-web-assets maestro-ios-apps maestro-ios-apps
-      - name: Setup iOS Maestro runtime
-        uses: ./.github/actions/setup-ios-maestro-runtime
+      - name: Prepare iOS Maestro job
+        uses: ./.github/actions/prepare-ios-maestro-job
         with:
+          web-artifact-name: maestro-web-assets
+          ios-artifact-name: maestro-ios-apps
+          ios-artifact-dir: maestro-ios-apps
           bun-version: ${{ env.BUN_VERSION }}
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Run Maestro smoke tests
@@ -836,13 +835,12 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Prepare iOS Maestro workspace
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash ./.github/scripts/prepare-ios-maestro-ci.sh maestro-web-assets maestro-ios-apps maestro-ios-apps
-      - name: Setup iOS Maestro runtime
-        uses: ./.github/actions/setup-ios-maestro-runtime
+      - name: Prepare iOS Maestro job
+        uses: ./.github/actions/prepare-ios-maestro-job
         with:
+          web-artifact-name: maestro-web-assets
+          ios-artifact-name: maestro-ios-apps
+          ios-artifact-dir: maestro-ios-apps
           bun-version: ${{ env.BUN_VERSION }}
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Run live update Maestro flows
@@ -970,13 +968,12 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Prepare iOS Maestro workspace
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash ./.github/scripts/prepare-ios-maestro-ci.sh maestro-web-assets maestro-ios-edge-apps maestro-ios-edge-apps
-      - name: Setup iOS Maestro runtime
-        uses: ./.github/actions/setup-ios-maestro-runtime
+      - name: Prepare iOS Maestro job
+        uses: ./.github/actions/prepare-ios-maestro-job
         with:
+          web-artifact-name: maestro-web-assets
+          ios-artifact-name: maestro-ios-edge-apps
+          ios-artifact-dir: maestro-ios-edge-apps
           bun-version: ${{ env.BUN_VERSION }}
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Run edge case Maestro flows

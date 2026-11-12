@@ -1,0 +1,45 @@
+name: Prepare iOS Maestro job
+description: Overlap simulator boot, artifact downloads, Node, Bun, and Maestro setup.
+inputs:
+  web-artifact-name:
+    description: Workflow artifact name for reusable web assets.
+    required: true
+  ios-artifact-name:
+    description: Workflow artifact name for the prebuilt iOS app bundle.
+    required: true
+  ios-artifact-dir:
+    description: Directory where the iOS app artifact should be extracted.
+    required: true
+  bun-version:
+    description: Bun version to install.
+    default: 1.4.2
+  maestro-version:
+    description: Maestro CLI release tag.
+    default: cli-2.4.0
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26.x
+    - name: Cache Bun runtime
+      uses: actions/cache@v6
+      with:
+        path: ~/.bun
+        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
+    - name: Cache Maestro runtime
+      uses: actions/cache@v6
+      with:
+        path: ~/.maestro
+        key: ${{ runner.os }}-maestro-${{ inputs.maestro-version }}
+    - name: Download artifacts and install runtimes
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BUN_VERSION: ${{ inputs.bun-version }}
+        MAESTRO_VERSION: ${{ inputs.maestro-version }}
+        CAPGO_MAESTRO_WEB_ARTIFACT: ${{ inputs.web-artifact-name }}
+        CAPGO_MAESTRO_IOS_ARTIFACT: ${{ inputs.ios-artifact-name }}
+        CAPGO_MAESTRO_IOS_ARTIFACT_DIR: ${{ inputs.ios-artifact-dir }}
+      run: bash ./.github/scripts/prepare-ios-maestro-ci.sh
