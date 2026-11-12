@@ -1,0 +1,46 @@
+name: Setup iOS Maestro runtime
+description: Install cached Node, Bun, and Maestro with overlapping installs.
+inputs:
+  bun-version:
+    description: Bun version to install.
+    default: 1.4.2
+  maestro-version:
+    description: Maestro CLI release tag.
+    default: cli-2.4.0
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26.x
+        cache: bun
+        cache-dependency-path: |
+          bun.lock
+          package.json
+          example-app/bun.lock
+          example-app/package.json
+    - name: Cache Bun runtime
+      uses: actions/cache@v6
+      with:
+        path: ~/.bun
+        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
+    - name: Cache Maestro runtime
+      uses: actions/cache@v6
+      with:
+        path: ~/.maestro
+        key: ${{ runner.os }}-maestro-${{ inputs.maestro-version }}
+    - name: Install Bun and Maestro
+      shell: bash
+      env:
+        BUN_VERSION: ${{ inputs.bun-version }}
+        MAESTRO_VERSION: ${{ inputs.maestro-version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        ./scripts/ci/install-bun.sh &
+        bun_pid=$!
+        ./scripts/ci/install-maestro.sh &
+        maestro_pid=$!
+        wait "$bun_pid"
+        wait "$maestro_pid"

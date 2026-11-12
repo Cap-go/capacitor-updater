@@ -23,6 +23,12 @@ runs:
       uses: actions/setup-node@v7
       with:
         node-version: 26.x
+        cache: bun
+        cache-dependency-path: |
+          bun.lock
+          package.json
+          example-app/bun.lock
+          example-app/package.json
     - name: Cache Bun runtime
       uses: actions/cache@v6
       with:
