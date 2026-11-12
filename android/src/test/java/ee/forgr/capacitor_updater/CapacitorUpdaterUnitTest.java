@@ -4181,7 +4181,17 @@ public class CapacitorUpdaterUnitTest {
         assertDirectUpdateTimeoutOrdering(true, true);
     }
 
+    @Test
+    public void testTimedOutWorkerPreservesNewerDownloadState() throws Exception {
+        assertDirectUpdateTimeoutOrdering(true, true, true);
+    }
+
     private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout) throws Exception {
+        assertDirectUpdateTimeoutOrdering(timeoutFirst, resetAfterTimeout, false);
+    }
+
+    private void assertDirectUpdateTimeoutOrdering(final boolean timeoutFirst, final boolean resetAfterTimeout, final boolean newerDownload)
+        throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
@@ -4206,6 +4216,10 @@ public class CapacitorUpdaterUnitTest {
             plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
             final Runnable timeout = (Runnable) getPrivateField(plugin, "splashscreenTimeoutRunnable");
             assertNotNull(timeout);
+            final Thread originalTask = new Thread();
+            final Thread newerTask = new Thread();
+            setPrivateField(plugin, "backgroundDownloadTask", originalTask);
+            setPrivateField(plugin, "downloadStartTimeMs", 100L);
             plugin.deferDispatch = true;
             plugin.scheduleDirectUpdateFinish(latest);
             assertNotNull(plugin.dispatchedWork);
@@ -4215,6 +4229,12 @@ public class CapacitorUpdaterUnitTest {
                 if (resetAfterTimeout) {
                     // The background handler resets this flag before the queued worker resumes.
                     setPrivateField(plugin, "autoSplashscreenTimedOut", false);
+                    if (newerDownload) {
+                        setPrivateField(plugin, "backgroundDownloadTask", newerTask);
+                        setPrivateField(plugin, "downloadStartTimeMs", 200L);
+                        updater.directUpdate = true;
+                        plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+                    }
                 }
             } else {
                 plugin.beforeReload = () -> {
@@ -4231,7 +4251,19 @@ public class CapacitorUpdaterUnitTest {
             assertEquals(timeoutFirst ? 0 : 1, updater.stagePendingReloadCalls);
             assertEquals(timeoutFirst ? 0 : 1, updater.finalizePendingReloadCalls);
             assertEquals(!resetAfterTimeout, getPrivateField(plugin, "autoSplashscreenTimedOut"));
-            assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+            if (newerDownload) {
+                assertSame(newerTask, getPrivateField(plugin, "backgroundDownloadTask"));
+                assertEquals(200L, getPrivateField(plugin, "downloadStartTimeMs"));
+                assertTrue(updater.directUpdate);
+                assertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting());
+                assertFalse(plugin.hasNotifiedEvent("appReady"));
+            } else {
+                assertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting());
+                if (timeoutFirst) {
+                    assertNull(getPrivateField(plugin, "backgroundDownloadTask"));
+                    assertEquals(0L, getPrivateField(plugin, "downloadStartTimeMs"));
+                }
+            }
             if (timeoutFirst) {
                 assertEquals("download-id", updater.lastSetNextBundleId);
                 assertEquals("download-id", updater.getNextBundle().getId());

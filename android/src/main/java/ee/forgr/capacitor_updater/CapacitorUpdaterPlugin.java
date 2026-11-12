@@ -2624,13 +2624,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
-        final long timeoutGeneration = this.getSplashscreenTimeoutGeneration();
+        final long timeoutGeneration;
+        final Thread downloadTask;
+        synchronized (this) {
+            timeoutGeneration = this.getSplashscreenTimeoutGeneration();
+            downloadTask = this.backgroundDownloadTask;
+        }
         startNewThread(() -> {
             try {
                 if (this.shouldBlockAutoUpdateForPreviewSession()) {
                     logger.info("Skipping direct update install while preview session state is active");
-                    this.implementation.directUpdate = false;
-                    this.clearBackgroundDownloadState();
+                    this.clearDirectUpdateDownloadState(downloadTask);
                     return;
                 }
                 Activity currentActivity = this.getActivity();
@@ -2639,27 +2643,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } else {
                     logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 }
-                this.directUpdateFinish(latest, timeoutGeneration);
+                this.directUpdateFinish(latest, timeoutGeneration, downloadTask);
             } catch (final Exception e) {
                 logger.error("directUpdateFinish failed: " + e.getMessage());
             }
         });
     }
 
-    private void directUpdateFinish(final BundleInfo latest, final long timeoutGeneration) {
+    private void directUpdateFinish(final BundleInfo latest, final long timeoutGeneration, final Thread downloadTask) {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             logger.info("Skipping direct update finish while preview session state is active");
-            this.implementation.directUpdate = false;
-            this.clearBackgroundDownloadState();
+            this.clearDirectUpdateDownloadState(downloadTask);
             return;
         }
         final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
         final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
         if (!delayConditionList.isEmpty()) {
             logger.info("Update delayed until delay conditions met");
-            this.implementation.directUpdate = false;
-            this.clearBackgroundDownloadState();
             this.implementation.setNextBundle(latest.getId());
+            if (!this.clearDirectUpdateDownloadState(downloadTask)) {
+                return;
+            }
             if ("onLaunch".equals(this.directUpdateMode)) {
                 this.onLaunchDirectUpdateUsed = true;
             }
@@ -2667,9 +2671,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
         if (!this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)) {
-            this.implementation.directUpdate = false;
-            this.clearBackgroundDownloadState();
             this.implementation.setNextBundle(latest.getId());
+            if (!this.clearDirectUpdateDownloadState(downloadTask)) {
+                return;
+            }
             this.sendReadyToJs(this.implementation.getCurrentBundle(), "update downloaded, will install next background", true);
             return;
         }
@@ -5339,6 +5344,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
         logger.info("endBackGroundTaskWithNotif " + msg);
+    }
+
+    private synchronized boolean clearDirectUpdateDownloadState(final Thread downloadTask) {
+        if (this.backgroundDownloadTask != downloadTask) {
+            // The newer cycle owns direct-update state and will emit appReady/hide its splash.
+            logger.info("Preserving background download state owned by a newer update check");
+            return false;
+        }
+        this.implementation.directUpdate = false;
+        this.clearBackgroundDownloadState();
+        return true;
     }
 
     private void clearBackgroundDownloadState() {
