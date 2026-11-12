@@ -61,9 +61,6 @@ else
   maestro_pid=""
 fi
 
-./scripts/ci/install-node22.sh &
-node_pid=$!
-
 wait "$web_pid"
 wait "$ios_pid"
 if [[ -n "$bun_pid" ]]; then
@@ -72,5 +69,4 @@ fi
 if [[ -n "$maestro_pid" ]]; then
   wait "$maestro_pid"
 fi
-wait "$node_pid"
 wait "$boot_pid"

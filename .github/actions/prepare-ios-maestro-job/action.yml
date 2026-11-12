@@ -16,9 +16,6 @@ inputs:
   maestro-version:
     description: Maestro CLI release tag.
     default: cli-2.4.0
-  node-version:
-    description: Node.js version for Capacitor CLI.
-    default: 26.11.0
 runs:
   using: composite
   steps:
@@ -35,8 +32,7 @@ runs:
         path: |
           ~/.bun
           ~/.maestro
-          ~/.capgo-node
-        key: ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-${{ inputs.maestro-version }}-${{ inputs.node-version }}
+        key: ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-${{ inputs.maestro-version }}
         restore-keys: |
           ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-${{ inputs.maestro-version }}-
           ${{ runner.os }}-maestro-runtimes-${{ inputs.bun-version }}-
@@ -47,8 +43,11 @@ runs:
         GH_TOKEN: ${{ github.token }}
         BUN_VERSION: ${{ inputs.bun-version }}
         MAESTRO_VERSION: ${{ inputs.maestro-version }}
-        NODE_VERSION: ${{ inputs.node-version }}
         CAPGO_MAESTRO_WEB_ARTIFACT: ${{ inputs.web-artifact-name }}
         CAPGO_MAESTRO_IOS_ARTIFACT: ${{ inputs.ios-artifact-name }}
         CAPGO_MAESTRO_IOS_ARTIFACT_DIR: ${{ inputs.ios-artifact-dir }}
       run: bash ./.github/scripts/prepare-ios-maestro-ci.sh
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26.x
