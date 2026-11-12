@@ -4224,6 +4224,249 @@ public class CapacitorUpdaterUnitTest {
         assertBuiltinBackgroundInstallPreservesNewerBundle(true);
     }
 
+    @Test
+    public void testSupersededBuiltinResponseCannotQueueAfterOwnershipCheck() throws Exception {
+        assertResponseCompletionOwnership("builtin", false, false);
+    }
+
+    @Test
+    public void testSupersededCachedResponseCannotQueueAfterOwnershipCheck() throws Exception {
+        assertResponseCompletionOwnership("cached", false, false);
+    }
+
+    @Test
+    public void testSupersededBuiltinResponseCannotInstallAfterOwnershipCheck() throws Exception {
+        assertResponseCompletionOwnership("builtin", true, false);
+    }
+
+    @Test
+    public void testSupersededCachedResponseCannotInstallAfterOwnershipCheck() throws Exception {
+        assertResponseCompletionOwnership("cached", true, false);
+    }
+
+    @Test
+    public void testSupersededErrorResponseCannotCompleteNewerCheck() throws Exception {
+        assertResponseCompletionOwnership("error", false, false);
+    }
+
+    @Test
+    public void testSupersededCurrentVersionResponseCannotCompleteNewerCheck() throws Exception {
+        assertResponseCompletionOwnership("current", false, false);
+    }
+
+    @Test
+    public void testResponseReadyCallbackCannotClearNewerCheck() throws Exception {
+        assertResponseCompletionOwnership("current", false, true);
+    }
+
+    @Test
+    public void testSupersededFreshResponseCannotChangeNewerDownloadPlan() throws Exception {
+        assertResponseCompletionOwnership("fresh", false, false);
+    }
+
+    private void assertResponseCompletionOwnership(final String kind, final boolean direct, final boolean replaceDuringReady)
+        throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            final Looper mainLooper = mock(Looper.class);
+            looperMock.when(Looper::getMainLooper).thenReturn(mainLooper);
+            looperMock.when(Looper::myLooper).thenReturn(mainLooper);
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo staleBundle = updater.getBundleInfo("bundleA001");
+            final BundleInfo original = updater.getCurrentBundle();
+            doReturn("fresh".equals(kind) ? null : staleBundle)
+                .when(updater)
+                .getBundleInfoByName(anyString());
+            doNothing().when(updater).runPreDownloadSecurityGates(anyString(), anyString(), any());
+            final List<Callback> responses = new ArrayList<>();
+            doAnswer((inv) -> {
+                responses.add(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting(direct ? "always" : "background");
+            setPrivateField(plugin, "autoSplashscreen", true);
+            setPrivateField(plugin, "autoSplashscreenTimeout", 10_000);
+            plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting();
+            final Object timeout = getPrivateField(plugin, "splashscreenTimeoutRunnable");
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final AtomicReference<Object> newerTask = new AtomicReference<>();
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            final Runnable replace = () -> {
+                try {
+                    invokeBackgroundDownload(plugin);
+                    plugin.workers.remove(0).run();
+                    newerTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                    newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                    setPrivateField(plugin, "downloadStartTimeMs", 123L);
+                    updater.directUpdate = true;
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            };
+            final java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+            doAnswer((inv) -> {
+                // The second read is after the cleanup ownership check; error responses use the first read.
+                if (!replaceDuringReady && reads.incrementAndGet() == ("error".equals(kind) ? 1 : 2)) {
+                    replace.run();
+                }
+                return inv.callRealMethod();
+            })
+                .when(updater)
+                .getCurrentBundle();
+            if (replaceDuringReady) {
+                plugin.onReady = replace;
+            }
+            final Map<String, Object> response = new HashMap<>();
+            response.put(
+                "version",
+                "builtin".equals(kind) ? "builtin" : "current".equals(kind) ? original.getVersionName() : staleBundle.getVersionName()
+            );
+            response.put("url", "https://example.com/update.zip");
+            response.put("checksum", "checksum");
+            if ("error".equals(kind)) {
+                response.put("error", "network_error");
+                response.put("kind", "failed");
+            }
+            responses.get(0).callback(response);
+
+            assertEquals(2, responses.size());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            assertSame(newerTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+            assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+            assertEquals(123L, getPrivateField(plugin, "downloadStartTimeMs"));
+            assertTrue(updater.directUpdate);
+            assertSame(timeout, getPrivateField(plugin, "splashscreenTimeoutRunnable"));
+            assertEquals(replaceDuringReady, plugin.hasNotifiedEvent("appReady"));
+            assertFalse(plugin.hasNotifiedEvent("updateAvailable"));
+            assertFalse(plugin.hasNotifiedEvent("downloadFailed"));
+            assertEquals(original.getId(), updater.getCurrentBundle().getId());
+            assertEquals(0, plugin.reloadCalls);
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
+    public void testResponseQueueCommitBlocksOwnershipReplacement() throws Exception {
+        assertResponseCommitBlocksReplacement("queue", true);
+    }
+
+    @Test
+    public void testCachedResponseStagingBlocksOwnershipReplacement() throws Exception {
+        assertResponseCommitBlocksReplacement("cached", true);
+    }
+
+    @Test
+    public void testBuiltinResponseStagingBlocksOwnershipReplacement() throws Exception {
+        assertResponseCommitBlocksReplacement("builtin", true);
+    }
+
+    @Test
+    public void testFailedBuiltinResponseReloadPreservesNewerQueue() throws Exception {
+        assertResponseCommitBlocksReplacement("builtin", false);
+    }
+
+    private void assertResponseCommitBlocksReplacement(final String kind, final boolean reloadResult) throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = spy(persistentQueuedInstallUpdater());
+            final BundleInfo latest = updater.getBundleInfo("bundleA001");
+            doReturn(latest).when(updater).getBundleInfoByName(anyString());
+            final AtomicReference<Callback> response = new AtomicReference<>();
+            doAnswer((inv) -> {
+                response.set(inv.getArgument(2));
+                return null;
+            })
+                .when(updater)
+                .getLatest(any(), isNull(), any(Callback.class));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.setAutoUpdateModeForTesting("queue".equals(kind) ? "background" : "always");
+            plugin.reloadResult = reloadResult;
+            invokeBackgroundDownload(plugin);
+            plugin.workers.remove(0).run();
+            final CountDownLatch committing = new CountDownLatch(1);
+            final CountDownLatch finishCommit = new CountDownLatch(1);
+            final org.mockito.stubbing.Answer<Object> pauseCommit = (inv) -> {
+                committing.countDown();
+                assertTrue(finishCommit.await(5, TimeUnit.SECONDS));
+                return inv.callRealMethod();
+            };
+            if ("queue".equals(kind)) {
+                doAnswer(pauseCommit).when(updater).setNextBundle(latest.getId());
+            } else if ("builtin".equals(kind)) {
+                doAnswer(pauseCommit).when(updater).prepareResetStateForTransition();
+            } else {
+                doAnswer(pauseCommit).when(updater).set(latest);
+            }
+            final CountDownLatch replacementStarted = new CountDownLatch(1);
+            final CountDownLatch replacementFinished = new CountDownLatch(1);
+            final AtomicReference<Throwable> failure = new AtomicReference<>();
+            final AtomicReference<Object> newerTask = new AtomicReference<>();
+            final AtomicReference<Object> newerContext = new AtomicReference<>();
+            plugin.beforeReload = () -> {
+                try {
+                    assertTrue("Replacement must be able to run while reload waits", replacementFinished.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw new AssertionError(e);
+                }
+            };
+            final Map<String, Object> payload = new HashMap<>();
+            payload.put("version", "builtin".equals(kind) ? "builtin" : latest.getVersionName());
+            payload.put("url", "https://example.com/update.zip");
+            payload.put("checksum", "checksum");
+            final Thread completing = new Thread(() -> {
+                try {
+                    response.get().callback(payload);
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                }
+            });
+            final Thread replacing = new Thread(() -> {
+                replacementStarted.countDown();
+                try {
+                    invokeBackgroundDownload(plugin);
+                    newerTask.set(getPrivateField(plugin, "backgroundDownloadTask"));
+                    newerContext.set(getPrivateField(plugin, "backgroundDownloadContext"));
+                    setPrivateField(plugin, "downloadStartTimeMs", 123L);
+                    assertTrue(updater.setNextBundle("bundleB002"));
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                } finally {
+                    replacementFinished.countDown();
+                }
+            });
+            try {
+                completing.start();
+                assertTrue(committing.await(5, TimeUnit.SECONDS));
+                replacing.start();
+                assertTrue(replacementStarted.await(5, TimeUnit.SECONDS));
+                assertFalse("Replacement must wait for the queue/staging commit", replacementFinished.await(100, TimeUnit.MILLISECONDS));
+            } finally {
+                finishCommit.countDown();
+                completing.join(5000);
+                replacing.join(5000);
+            }
+            assertFalse(completing.isAlive());
+            assertFalse(replacing.isAlive());
+            assertNull(failure.get());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            assertSame(newerTask.get(), getPrivateField(plugin, "backgroundDownloadTask"));
+            assertSame(newerContext.get(), getPrivateField(plugin, "backgroundDownloadContext"));
+            assertEquals(123L, getPrivateField(plugin, "downloadStartTimeMs"));
+            assertEquals("queue".equals(kind) ? 0 : 1, plugin.reloadCalls);
+            assertEquals("cached".equals(kind) ? latest.getId() : BundleInfo.ID_BUILTIN, updater.getCurrentBundle().getId());
+        }
+    }
+
     private void assertBuiltinBackgroundInstallPreservesNewerBundle(final boolean duringReload) throws Exception {
         try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
