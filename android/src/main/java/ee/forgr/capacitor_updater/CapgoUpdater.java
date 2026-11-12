@@ -2454,9 +2454,13 @@ public class CapgoUpdater {
     }
 
     void prepareResetStateForTransition() {
+        this.prepareBuiltinTransition();
+        this.setNextBundle(null);
+    }
+
+    private void prepareBuiltinTransition() {
         this.setCurrentBundle(new File("public"));
         this.setFallbackBundle(null);
-        this.setNextBundle(null);
     }
 
     void finalizeResetTransition(final String previousBundleName, final boolean internal) {
@@ -2474,6 +2478,17 @@ public class CapgoUpdater {
 
     public Boolean set(final BundleInfo bundle) {
         return this.set(bundle.getId());
+    }
+
+    boolean setQueuedBundle(final BundleInfo bundle) {
+        if (!bundle.isBuiltin()) {
+            return this.set(bundle);
+        }
+        final String previousBundleName = this.getCurrentBundle().getVersionName();
+        this.prepareBuiltinTransition();
+        // The installing worker clears only its own queue entry after reload succeeds.
+        this.finalizeResetTransition(previousBundleName, false);
+        return true;
     }
 
     public Boolean set(final String id) {

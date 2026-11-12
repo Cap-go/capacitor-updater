@@ -181,6 +181,7 @@ public class CapacitorUpdaterUnitTest {
         private final AppCompatActivity activity = mock(AppCompatActivity.class);
         private final List<Runnable> workers = new ArrayList<>();
         private Runnable onReady;
+        private Runnable beforeDispatch;
         private Runnable beforeReload;
         private int reloadCalls;
         private boolean reloadResult = true;
@@ -193,6 +194,9 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         public Thread startNewThread(final Runnable function) {
+            if (this.beforeDispatch != null) {
+                this.beforeDispatch.run();
+            }
             if (this.failDispatch) {
                 throw new IllegalStateException("Test dispatch failure");
             }
@@ -3848,6 +3852,170 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testBuiltinBackgroundInstallPreservesBundleQueuedBeforeDispatch() throws Exception {
+        assertBuiltinBackgroundInstallPreservesNewerBundle(false);
+    }
+
+    @Test
+    public void testBuiltinBackgroundInstallPreservesBundleQueuedDuringReload() throws Exception {
+        assertBuiltinBackgroundInstallPreservesNewerBundle(true);
+    }
+
+    private void assertBuiltinBackgroundInstallPreservesNewerBundle(final boolean duringReload) throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapgoUpdater updater = persistentQueuedInstallUpdater();
+            assertTrue(updater.set("bundleA001"));
+            assertTrue(updater.setNextBundle(BundleInfo.ID_BUILTIN));
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            final Runnable queueNewer = () -> {
+                assertTrue(updater.setNextBundle("bundleB002"));
+                plugin.installNextIfInBackground();
+                assertTrue("The builtin worker still owns admission", plugin.workers.isEmpty());
+            };
+            plugin.appMovedToBackground();
+            final Runnable builtinWorker = plugin.workers.remove(0);
+            if (duringReload) {
+                plugin.beforeReload = queueNewer;
+            } else {
+                queueNewer.run();
+            }
+            builtinWorker.run();
+
+            assertTrue(updater.getCurrentBundle().isBuiltin());
+            assertTrue(updater.getFallbackBundle().isBuiltin());
+            assertNotNull("Installing builtin must preserve the newer queued bundle", updater.getNextBundle());
+            assertEquals("bundleB002", updater.getNextBundle().getId());
+            assertEquals(1, plugin.reloadCalls);
+            assertEquals(1, plugin.workers.size());
+            plugin.beforeReload = null;
+            plugin.workers.remove(0).run();
+            assertEquals("bundleB002", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(2, plugin.reloadCalls);
+            assertEquals(2, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("set"::equals).count());
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
+    public void testExplicitResetStillClearsQueuedBundle() throws Exception {
+        final CapgoUpdater updater = persistentQueuedInstallUpdater();
+        assertTrue(updater.set("bundleA001"));
+        assertTrue(updater.setNextBundle("bundleB002"));
+        updater.reset();
+        assertTrue(updater.getCurrentBundle().isBuiltin());
+        assertTrue(updater.getFallbackBundle().isBuiltin());
+        assertNull(updater.getNextBundle());
+    }
+
+    private CapgoUpdater persistentQueuedInstallUpdater() throws Exception {
+        final Path tempDir = createExistingBundleDirectory("capgo-builtin-queue", "bundleA001");
+        final Path newerDir = tempDir.resolve("versions").resolve("bundleB002");
+        Files.createDirectories(newerDir);
+        newerDir.toFile().deleteOnExit();
+        Files.createFile(newerDir.resolve("index.html")).toFile().deleteOnExit();
+        final Map<String, String> store = new HashMap<>();
+        for (String id : new String[] { "bundleA001", "bundleB002" }) {
+            store.put(id + "_info", new BundleInfo(id, id, BundleStatus.PENDING, new Date(), "checksum").toString());
+        }
+        final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class)) {
+            @Override
+            android.content.Context context() {
+                return null;
+            }
+        };
+        final SharedPreferences prefs = mock(SharedPreferences.class);
+        final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
+        updater.documentsDir = tempDir.toFile();
+        updater.CAP_SERVER_PATH = "server-path";
+        updater.prefs = prefs;
+        updater.editor = editor;
+        updater.statsUrl = "";
+        when(prefs.getString(anyString(), any())).thenAnswer((inv) -> store.getOrDefault(inv.getArgument(0), inv.getArgument(1)));
+        when(editor.putString(anyString(), anyString())).thenAnswer((inv) -> {
+            store.put(inv.getArgument(0), inv.getArgument(1));
+            return editor;
+        });
+        when(editor.remove(anyString())).thenAnswer((inv) -> {
+            store.remove(inv.getArgument(0));
+            return editor;
+        });
+        when(editor.commit()).thenReturn(true);
+        return updater;
+    }
+
+    @Test
+    public void testBackgroundInstallServicesNewerBundleAfterSetFailure() throws Exception {
+        assertBackgroundInstallServicesNewerBundleAfterFailure("set");
+    }
+
+    @Test
+    public void testBackgroundInstallServicesNewerBundleAfterReloadFailure() throws Exception {
+        assertBackgroundInstallServicesNewerBundleAfterFailure("reload");
+    }
+
+    @Test
+    public void testBackgroundInstallServicesNewerBundleAfterWorkerException() throws Exception {
+        assertBackgroundInstallServicesNewerBundleAfterFailure("exception");
+    }
+
+    @Test
+    public void testBackgroundInstallServicesNewerBundleAfterDispatchFailure() throws Exception {
+        assertBackgroundInstallServicesNewerBundleAfterFailure("dispatch");
+    }
+
+    private void assertBackgroundInstallServicesNewerBundleAfterFailure(final String failure) throws Exception {
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
+            updater.setNextBundle("first-id");
+            updater.setResult = !"set".equals(failure);
+            final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
+            plugin.reloadResult = !"reload".equals(failure);
+            final Runnable queueNewer = () -> {
+                updater.setNextBundle("newer-id");
+                plugin.installNextIfInBackground();
+                assertTrue("The first install still owns admission", plugin.workers.isEmpty());
+            };
+            if ("dispatch".equals(failure)) {
+                plugin.beforeDispatch = () -> {
+                    plugin.beforeDispatch = null;
+                    queueNewer.run();
+                    throw new IllegalStateException("Test dispatch failure after queueing a newer bundle");
+                };
+            } else if (!"set".equals(failure)) {
+                plugin.beforeReload = () -> {
+                    queueNewer.run();
+                    if ("exception".equals(failure)) {
+                        throw new IllegalStateException("Test reload exception after queueing a newer bundle");
+                    }
+                };
+            }
+            plugin.appMovedToBackground();
+            if (!"dispatch".equals(failure)) {
+                final Runnable firstWorker = plugin.workers.remove(0);
+                if ("set".equals(failure)) {
+                    queueNewer.run();
+                }
+                firstWorker.run();
+            }
+            assertEquals("newer-id", updater.getNextBundle().getId());
+            assertFalse(plugin.hasNotifiedEvent("set"));
+            assertEquals("A newer bundle must be serviced without another lifecycle transition", 1, plugin.workers.size());
+            updater.setResult = true;
+            updater.simulatePendingActiveBundleOnSet = true;
+            plugin.reloadResult = true;
+            plugin.beforeReload = null;
+            plugin.workers.remove(0).run();
+            assertEquals("newer-id", updater.getCurrentBundle().getId());
+            assertNull(updater.getNextBundle());
+            assertEquals(1, ((TestableCapacitorUpdaterPlugin) plugin).notifiedEventNames.stream().filter("set"::equals).count());
+            assertTrue(plugin.workers.isEmpty());
+        }
+    }
+
+    @Test
     public void testBackgroundInstallReleasesAdmissionAfterSetFailure() throws Exception {
         assertBackgroundInstallReleasesAdmissionAfterFailure("set");
     }
@@ -3904,7 +4072,7 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private QueuedInstallPlugin queuedInstallPlugin(final ResetTrackingCapgoUpdater updater, final ArrayList<DelayCondition> conditions)
+    private QueuedInstallPlugin queuedInstallPlugin(final CapgoUpdater updater, final ArrayList<DelayCondition> conditions)
         throws Exception {
         final QueuedInstallPlugin plugin = new QueuedInstallPlugin();
         final SharedPreferences prefs = mock(SharedPreferences.class);

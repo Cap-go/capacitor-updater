@@ -5836,14 +5836,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
      * user would open the old version once more. Install it now, like a background transition.
      */
     void installNextIfInBackground() {
+        this.installNextIfInBackground(null);
+    }
+
+    private void installNextIfInBackground(final String excludedBundleId) {
         if (!this.appInBackground) {
             return;
         }
         logger.info("Next bundle downloaded while in background, installing it now");
-        this.installNext();
+        this.installNext(excludedBundleId);
     }
 
-    private BundleInfo claimNextBundleInstall() {
+    private BundleInfo claimNextBundleInstall(final String excludedBundleId) {
         synchronized (this.nextBundleInstallLock) {
             if (this.nextBundleInstallInProgress || this.shouldBlockAutoUpdateForPreviewSession()) {
                 return null;
@@ -5856,7 +5860,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextBundle();
-            if (next == null || next.isErrorStatus() || next.getId().equals(current.getId())) {
+            if (next == null || next.isErrorStatus() || next.getId().equals(current.getId()) || next.getId().equals(excludedBundleId)) {
                 return null;
             }
             this.nextBundleInstallInProgress = true;
@@ -5871,8 +5875,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void installNext() {
+        this.installNext(null);
+    }
+
+    private void installNext(final String excludedBundleId) {
         try {
-            final BundleInfo next = this.claimNextBundleInstall();
+            final BundleInfo next = this.claimNextBundleInstall(excludedBundleId);
             if (next == null) {
                 return;
             }
@@ -5888,7 +5896,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             logger.info("App returned to foreground before deferred install, keeping bundle queued");
                             return;
                         }
-                        if (this.implementation.set(next) && this._reload()) {
+                        if (this.implementation.setQueuedBundle(next) && this._reload()) {
                             logger.info("Updated to bundle: " + next.getVersionName());
                             this.notifyBundleSet(next);
                             this.implementation.clearNextBundleIfMatches(next.getId());
@@ -5901,15 +5909,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     } finally {
                         this.releaseNextBundleInstall();
                         // A download or background transition may have arrived while admission was held.
-                        if (installed || deferredForForeground) {
-                            this.installNextIfInBackground();
-                        }
+                        this.installNextIfInBackground(installed || deferredForForeground ? null : next.getId());
                     }
                 });
                 dispatched = true;
             } finally {
                 if (!dispatched) {
                     this.releaseNextBundleInstall();
+                    this.installNextIfInBackground(next.getId());
                 }
             }
         } catch (final Exception e) {
