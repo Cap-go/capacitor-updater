@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
+# shellcheck source=scripts/maestro/start-fake-server.sh
+source "$ROOT_DIR/scripts/maestro/start-fake-server.sh"
 # shellcheck source=scripts/maestro/maestro-cli-pass.sh
 source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
@@ -188,8 +190,7 @@ assert_fake_server_process_alive() {
 
 start_fake_server() {
   mkdir -p "$ARTIFACT_DIR"
-  maestro_runtime_js "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" 2>&1 &
-  SERVER_PID=$!
+  start_fake_capgo_server "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"
 
   wait_for_server
   sleep 1

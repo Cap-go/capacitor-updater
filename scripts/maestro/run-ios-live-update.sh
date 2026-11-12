@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
+# shellcheck source=scripts/maestro/start-fake-server.sh
+source "$ROOT_DIR/scripts/maestro/start-fake-server.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios-live-update}"
@@ -289,8 +291,7 @@ ensure_server_port_available() {
 start_fake_server() {
   ensure_server_port_available
 
-  maestro_runtime_js "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios.log" 2>&1 &
-  SERVER_PID=$!
+  start_fake_capgo_server "$ARTIFACT_DIR/fake-capgo-server-ios.log"
 
   sleep 1
   if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
