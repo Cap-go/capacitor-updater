@@ -752,12 +752,20 @@ run_edge_case_once() {
     reset_ios_maestro_driver
   fi
 
+  local downloaded_pattern=""
+  downloaded_pattern="$(edge_summary_pattern \
+    "Build label: $builtin_label" \
+    "Scenario: $app_scenario" \
+    "$ASSERT_SOURCE_BUILTIN" \
+    "Next bundle version: $first_release")"
+
   if [[ "$app_scenario" == "edge-direct" ]]; then
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
       "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
+      "DOWNLOADED_PATTERN=$downloaded_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   else
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-deferred.yaml" \
@@ -765,11 +773,7 @@ run_edge_case_once() {
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
-      "DOWNLOADED_PATTERN=$(edge_summary_pattern \
-        "Build label: $builtin_label" \
-        "Scenario: $app_scenario" \
-        "$ASSERT_SOURCE_BUILTIN" \
-        "Next bundle version: $first_release")" \
+      "DOWNLOADED_PATTERN=$downloaded_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   fi
 
