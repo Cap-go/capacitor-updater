@@ -21,7 +21,7 @@ const parameters = Object.fromEntries(
   Object.entries(call.env).map(([name, reference]) => {
     const source = /^\$\{(\w+)\}$/.exec(reference)?.[1];
     assert.ok(Object.hasOwn(fields, source), `Missing deferred fixture for ${source}`);
-    return [name, `.*${fields[source].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`];
+    return [name, `.*${fields[source].replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)}.*`];
   }),
 );
 const template = core.find((step) => step.extendedWaitUntil?.visible.includes('${'))?.extendedWaitUntil.visible;
