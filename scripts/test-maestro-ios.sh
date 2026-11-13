@@ -376,9 +376,16 @@ if ! command -v maestro >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]] && ! command -v node >/dev/null 2>&1; then
-  echo "node is required to run Capacitor CLI commands." >&2
-  exit 1
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node is required to run Capacitor CLI commands." >&2
+    exit 1
+  fi
+
+  if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+    echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+    exit 1
+  fi
 fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -393,11 +400,6 @@ fi
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 is required to enforce iOS Maestro timeouts." >&2
-  exit 1
-fi
-
-if [[ "$SKIP_BUILD" != "1" ]] && ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
-  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
   exit 1
 fi
 
@@ -557,6 +559,6 @@ else
   echo "Skipping iOS native reset Maestro flow because CAPGO_MAESTRO_RUN_NATIVE_RESET is not enabled." >&2
 fi
 
-if [[ -n "${CI:-}" ]]; then
+if [[ -n "${CI:-}" && "$SKIP_BUILD" != "1" && "${CAPGO_MAESTRO_SKIP_POST_DRIVER_RESET:-0}" != "1" ]]; then
   reset_ios_maestro_driver
 fi

@@ -603,7 +603,7 @@ jobs:
       - name: Build iOS app
         run: |
           set -euo pipefail
-          artifact_root="$RUNNER_TEMP/maestro-ios-apps"
+          artifact_root="$RUNNER_TEMP/maestro-ios-runtime"
           derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
           scenarios=(
             deferred
@@ -618,10 +618,9 @@ jobs:
           )
 
           rm -rf "$artifact_root" "$derived_data_path"
-          mkdir -p "$artifact_root"
+          mkdir -p "$artifact_root/maestro-ios-apps"
 
           for scenario in "${scenarios[@]}"; do
-            app_artifact_path="$artifact_root/$scenario"
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
             xcodebuild \
               -project example-app/ios/App/App.xcodeproj \
@@ -630,19 +629,109 @@ jobs:
               -destination "generic/platform=iOS Simulator" \
               -derivedDataPath "$derived_data_path" \
               build
-            mkdir -p "$app_artifact_path"
-            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
+            tar -czf "$artifact_root/maestro-ios-apps/$scenario.tar.gz" \
+              -C "$derived_data_path/Build/Products/Debug-iphonesimulator" App.app
           done
-          # Download one file, then extract only the selected app and shared web fixtures.
-          tar -czf "$RUNNER_TEMP/maestro-ios-apps.tar.gz" \
-            -C "$RUNNER_TEMP" maestro-ios-apps \
-            -C "$GITHUB_WORKSPACE" dist .maestro-artifacts
-      - name: Upload iOS apps
+          # Restore each app and its matching fixtures in one artifact download.
+          cp -R dist .maestro-artifacts "$artifact_root/"
+      - name: Upload iOS app (deferred)
         uses: actions/upload-artifact@v7
         with:
-          name: maestro-ios-apps
-          path: ${{ runner.temp }}/maestro-ios-apps.tar.gz
-          compression-level: 0
+          name: maestro-ios-app-deferred
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/deferred.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (always)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-always
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/always.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (legacy-true)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-legacy-true
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/legacy-true.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (at-install)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-at-install
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/at-install.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (on-launch)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-on-launch
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/on-launch.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip-no-persist)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip-no-persist
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-no-persist.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip-config-guards)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip-config-guards
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-config-guards.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-manifest)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-manifest
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-manifest.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
           if-no-files-found: error
 
   maestro_android_example_app:
@@ -772,9 +861,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs:
-      - maestro_web_assets
-      - maestro_ios_apps
+    needs: maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
     env:
@@ -800,22 +887,22 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app
+      - name: Download iOS app and web assets
         uses: actions/download-artifact@v8
         with:
-          name: maestro-ios-apps
-          path: maestro-ios-artifacts
-      - name: Extract selected iOS app and web fixtures
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Extract iOS app
         env:
-          APP_SCENARIO: ${{ matrix.scenario }}
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
-          tar -xzf maestro-ios-artifacts/maestro-ios-apps.tar.gz -C . \
-            "maestro-ios-apps/$APP_SCENARIO/App.app" dist .maestro-artifacts
-      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
-      - name: Install Bun runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -845,9 +932,7 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs:
-      - maestro_web_assets
-      - maestro_ios_apps
+    needs: maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
     env:
@@ -871,22 +956,22 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app
+      - name: Download iOS app and web assets
         uses: actions/download-artifact@v8
         with:
-          name: maestro-ios-apps
-          path: maestro-ios-artifacts
-      - name: Extract selected iOS app and web fixtures
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Extract iOS app
         env:
-          APP_SCENARIO: ${{ matrix.scenario }}
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
-          tar -xzf maestro-ios-artifacts/maestro-ios-apps.tar.gz -C . \
-            "maestro-ios-apps/$APP_SCENARIO/App.app" dist .maestro-artifacts
-      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
-      - name: Install Bun runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -982,7 +1067,6 @@ jobs:
       contents: read
       actions: write
     needs:
-      - maestro_web_assets
       - maestro_ios_edge_apps
     timeout-minutes: 10
     runs-on: macOS-latest
@@ -1026,11 +1110,10 @@ jobs:
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      # Prebuilt apps need only Bun: avoid Node action downloads and runtime cache lookup.
-      - name: Install Bun runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/ci/install-bun.sh
+      - name: Setup Bun runtime
+        uses: ./.github/actions/setup-bun-runtime
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:

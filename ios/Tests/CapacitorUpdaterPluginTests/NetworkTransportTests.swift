@@ -246,6 +246,59 @@ private final class LoopbackHTTPServer {
     }
 }
 
+/// Observes the real URLSession transport so the fixture can interrupt an established partial download.
+private final class ProgressObservingCapgoUpdater: CapgoUpdater {
+    private let progressLock = NSLock()
+    private var partialBytesReceived: Int64 = 0
+    private var transportAttempts: [String] = []
+
+    var transportDiagnostics: [String] {
+        progressLock.lock()
+        defer { progressLock.unlock() }
+        return transportAttempts
+    }
+
+    var partialDownloadBytes: Int64 {
+        progressLock.lock()
+        defer { progressLock.unlock() }
+        return partialBytesReceived
+    }
+
+    /// Keeps the real request and resume behavior while forwarding progress to the test fixture.
+    override func performDownloadRequest(
+        _ request: URLRequest,
+        label: String,
+        resumeData: Data? = nil,
+        onProgress: ((Int64, Int64) -> Void)? = nil
+    ) -> DownloadRequestResult {
+        let startedAt = Date()
+        let result = super.performDownloadRequest(request, label: label, resumeData: resumeData) { received, expected in
+            if received > 0 && received < expected {
+                self.progressLock.lock()
+                self.partialBytesReceived = max(self.partialBytesReceived, received)
+                self.progressLock.unlock()
+            }
+            onProgress?(received, expected)
+        }
+        let failure: NSError?
+        if case let .sessionTaskFailed(underlying)? = result.error as? CapgoUpdater.NetworkError {
+            failure = underlying as NSError
+        } else {
+            failure = result.error as NSError?
+        }
+        progressLock.lock()
+        transportAttempts.append(
+            "resumeIn=\(resumeData?.count ?? 0) resumeOut=\(result.resumeData?.count ?? 0) " +
+                "status=\(result.response?.statusCode ?? 0) " +
+                "contentRange=\(result.response?.value(forHTTPHeaderField: "Content-Range") ?? "none") " +
+                "timedOut=\(result.timedOut) error=\(failure?.domain ?? "none"):\(failure?.code ?? 0) " +
+                "elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
+        )
+        progressLock.unlock()
+        return result
+    }
+}
+
 final class NetworkTransportTests: XCTestCase {
     private final class CountingDownloadUpdater: CapgoUpdater {
         private(set) var downloadAttempts = 0
@@ -469,9 +522,19 @@ final class NetworkTransportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
         let cut = body.count / 2
+        let chunkSize = 32_768
+        let progressUpdater = ProgressObservingCapgoUpdater()
+        defer {
+            let requests = server.requests.map {
+                "\($0.method) range=\($0.headers["range"] ?? "none") ifRange=\($0.headers["if-range"] ?? "none")"
+            }
+            print("Manifest resume requests: \(requests)")
+            print("Manifest resume transport: \(progressUpdater.transportDiagnostics)")
+        }
         let lock = NSLock()
         var attempts = 0
         var resumedFrom: String?
+        var receivedChunkBeforeDrop = false
         server.respond { request in
             lock.lock()
             attempts += 1
@@ -480,7 +543,21 @@ final class NetworkTransportTests: XCTestCase {
             lock.unlock()
             let validators = ["ETag": "\"capgo-resume\"", "Accept-Ranges": "bytes"]
             if first {
-                return .init(status: 200, body: body, headers: validators, truncateBodyAt: cut)
+                // A completed server write does not mean URLSession has received the bytes yet.
+                // Wait for a full chunk before sending the remaining truncated body and closing.
+                return .init(
+                    status: 200, body: body, headers: validators, truncateBodyAt: cut,
+                    chunkSize: chunkSize,
+                    waitBeforeContinuingBody: {
+                        let received = progressUpdater.partialDownloadBytes >= Int64(chunkSize)
+                        if received {
+                            lock.lock()
+                            receivedChunkBeforeDrop = true
+                            lock.unlock()
+                        }
+                        return received
+                    }
+                )
             }
             guard let range = request.headers["range"], range.hasPrefix("bytes="),
                   let start = Int(range.dropFirst("bytes=".count).split(separator: "-").first ?? "") else {
@@ -490,7 +567,7 @@ final class NetworkTransportTests: XCTestCase {
             headers["Content-Range"] = "bytes \(start)-\(body.count - 1)/\(body.count)"
             return .init(status: 206, body: body.subdata(in: start..<body.count), headers: headers)
         }
-        let updater = makeUpdater()
+        let updater = makeUpdater(progressUpdater)
         defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-resume-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
@@ -498,10 +575,16 @@ final class NetworkTransportTests: XCTestCase {
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
-        XCTAssertEqual(attempts, 2)
+        lock.lock()
+        let attemptCount = attempts
+        let range = resumedFrom
+        let didReceiveChunkBeforeDrop = receivedChunkBeforeDrop
+        lock.unlock()
+        XCTAssertTrue(didReceiveChunkBeforeDrop, "fixture disconnected before the client received a partial download")
+        XCTAssertEqual(attemptCount, 2)
         // The retry continued the interrupted transfer rather than fetching from byte 0.
-        let start = Int(resumedFrom?.dropFirst("bytes=".count).split(separator: "-").first ?? "") ?? 0
-        XCTAssertGreaterThan(start, 0, "retry did not resume: \(resumedFrom ?? "no Range header")")
+        let start = Int(range?.dropFirst("bytes=".count).split(separator: "-").first ?? "") ?? 0
+        XCTAssertGreaterThan(start, 0, "retry did not resume: \(range ?? "no Range header")")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("app.js")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }

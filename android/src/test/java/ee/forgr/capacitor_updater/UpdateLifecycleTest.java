@@ -171,16 +171,17 @@ public class UpdateLifecycleTest {
         }
 
         @Override
-        public String downloadBackground(
+        public BackgroundDownloadResult downloadBackground(
             final String url,
             final String version,
             final String sessionKey,
             final String checksum,
             final JSONArray manifest,
-            final boolean setNext
+            final boolean setNext,
+            final BackgroundDownloadContext downloadContext
         ) {
             this.downloadBackgroundCalls++;
-            return "test-download-id";
+            return BackgroundDownloadResult.started("test-download-id");
         }
 
         @Override
@@ -338,12 +339,16 @@ public class UpdateLifecycleTest {
 
     /** Runs a rollback check whose sleep already expired (what a frozen app sees at thaw). */
     private void runExpiredRollbackCheck() throws Exception {
+        this.createExpiredRollbackCheck().run();
+    }
+
+    private Runnable createExpiredRollbackCheck() throws Exception {
         final Constructor<?> constructor = Class.forName(DEFERRED_CHECK_CLASS).getDeclaredConstructor(
             CapacitorUpdaterPlugin.class,
             long.class
         );
         constructor.setAccessible(true);
-        ((Runnable) constructor.newInstance(this.plugin, 0L)).run();
+        return (Runnable) constructor.newInstance(this.plugin, 0L);
     }
 
     private void invokeBackgroundDownload() throws Exception {
@@ -388,6 +393,19 @@ public class UpdateLifecycleTest {
         assertEquals(1, this.updater.setErrorCalls);
     }
 
+    @Test
+    public void rollbackCheckDoesNotEvaluateANewlyStagedBundle() throws Exception {
+        final Runnable oldCheck = this.createExpiredRollbackCheck();
+        // Staging changes the current bundle before _reload advances the document generation.
+        this.updater.current = new BundleInfo("bundle-2", "2.0.0", BundleStatus.PENDING, new Date(), "abc");
+
+        oldCheck.run();
+
+        assertEquals(BundleStatus.PENDING, this.updater.current.getStatus());
+        assertEquals(0, this.updater.setErrorCalls);
+        assertFalse(this.plugin.events.contains("updateFailed"));
+    }
+
     // Bug: the install at background waited appReadyTimeout (30 s for a pending bundle) for a page that
     // cannot run while frozen, then reported failure and kept the bundle queued as next.
     @Test
@@ -396,7 +414,12 @@ public class UpdateLifecycleTest {
         final WebView webView = mock(WebView.class);
         when(bridge.getWebView()).thenReturn(webView);
         when(bridge.getAppUrl()).thenReturn("https://local-app-domain.com");
-        when(webView.post(any(Runnable.class))).thenReturn(true);
+        when(bridge.getLocalServer()).thenReturn(mock(com.getcapacitor.WebViewLocalServer.class));
+        // Native main-thread dispatch runs; the frozen page never calls notifyAppReady.
+        when(webView.post(any(Runnable.class))).thenAnswer((inv) -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return true;
+        });
         this.plugin.setBridge(bridge);
         this.plugin.stubReload = false;
         this.plugin.runRollbackChecks = false;
@@ -409,6 +432,7 @@ public class UpdateLifecycleTest {
         final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
         assertTrue("Background install waited " + elapsedMs + "ms for notifyAppReady", elapsedMs < 2000);
+        verify(webView).loadUrl("https://local-app-domain.com");
         assertTrue(this.plugin.events.contains("set"));
         assertEquals("bundle-2", this.updater.current.getId());
         assertNull(this.updater.next);

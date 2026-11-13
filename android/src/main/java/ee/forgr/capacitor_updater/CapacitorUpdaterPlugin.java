@@ -69,11 +69,11 @@ import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.Phaser;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -197,7 +197,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean autoSplashscreen = false;
     private Boolean autoSplashscreenLoader = false;
     private Integer autoSplashscreenTimeout = 10000;
-    private Boolean autoSplashscreenTimedOut = false;
+    private volatile Boolean autoSplashscreenTimedOut = false;
     private int splashscreenInvocationToken = 0;
     private String directUpdateMode = "false";
     private Boolean wasRecentlyInstalledOrUpdated = false;
@@ -245,16 +245,68 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private Boolean isPreviousMainActivity = true;
 
     private volatile Thread backgroundDownloadTask;
+    // Guarded by this. Check readiness and accepted update work have separate owners.
+    private CapgoUpdater.BackgroundDownloadContext backgroundDownloadContext;
+    private CapgoUpdater.BackgroundDownloadContext backgroundUpdateContext;
+    private long backgroundCheckSequence;
+    private long acceptedBackgroundCheckSequence;
+    private BackgroundReadyState backgroundReadyState = new BackgroundReadyState(-1);
+
+    private static final class BackgroundReadyState {
+
+        boolean claimed;
+        int pendingCompletions;
+        int waitPhase;
+        boolean pageReplaced;
+
+        BackgroundReadyState(final int waitPhase) {
+            this.waitPhase = waitPhase;
+        }
+    }
+
+    private static final class ReloadReadyWait {
+
+        final int phase;
+        volatile boolean notified;
+
+        ReloadReadyWait(final int phase) {
+            this.phase = phase;
+        }
+    }
+
+    // A phase can advance because it was retired, without its page ever reporting ready.
+    private final Map<Integer, ReloadReadyWait> reloadReadyWaits = new HashMap<>();
+    private final ThreadLocal<Boolean> reloadSupersededByPageReplacement = ThreadLocal.withInitial(() -> false);
     private volatile Thread appReadyCheck;
     // Between appMovedToBackground and appMovedToForeground. Android freezes backgrounded apps, so the
     // page cannot call notifyAppReady until the next foreground, which arms a fresh rollback check.
     private volatile boolean appInBackground = false;
+    private final Object automaticInstallLock = new Object();
+    private boolean automaticInstallInProgress = false;
+    private int automaticInstallPageGeneration = -1;
+    private boolean watchdogRollbackInProgress = false;
     // When true, sendReadyToJs should wait for notifyAppReady before hiding splash.
     private volatile boolean pendingNotifyAppReadyWait = false;
-    // Armed only after a reload. The next document stamps this generation into notifyAppReady.
+    // Armed before staging or reload. The next document stamps this generation into notifyAppReady.
     private final Object readyGuardLock = new Object();
     private volatile int readyGeneration = 0;
     private volatile boolean readyGuardArmed = false;
+    // The document actually dispatched to the WebView, not a bundle staged for a future load.
+    private ReadyPageState liveReadyPage;
+
+    private static final class ReadyPageState {
+
+        final String bundlePath;
+        final int generation;
+        final boolean guardArmed;
+
+        ReadyPageState(final String bundlePath, final int generation, final boolean guardArmed) {
+            this.bundlePath = bundlePath;
+            this.generation = generation;
+            this.guardArmed = guardArmed;
+        }
+    }
+
     private volatile int pendingNotifyAppReadyPhase = -1;
     private volatile long downloadStartTimeMs = 0;
     private static final long DOWNLOAD_TIMEOUT_MS = 600000; // 10 minute timeout
@@ -288,7 +340,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private volatile boolean launchTimeoutReported = false;
     private final Object launchReportLock = new Object();
     private FrameLayout splashscreenLoaderOverlay;
-    private Runnable splashscreenTimeoutRunnable;
+    private final Object splashscreenTimeoutLock = new Object();
+    private SplashscreenTimeout splashscreenTimeoutRunnable;
+    // Unlike the foreground flag, this keeps expired work invalid after a background reset.
+    private long splashscreenTimeoutGeneration = 0;
     private FrameLayout previewTransitionLoaderOverlay;
     private Runnable previewTransitionLoaderTimeoutRunnable;
     private boolean previewTransitionLoaderRequested = false;
@@ -779,8 +834,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 }
 
                 @Override
+                public void directUpdateFinish(final BundleInfo latest, final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+                    CapacitorUpdaterPlugin.this.scheduleDirectUpdateFinish(latest, downloadContext);
+                }
+
+                @Override
                 public void backgroundDownloadSettled(final BundleInfo bundle, final String status) {
                     CapacitorUpdaterPlugin.this.emitLaunchDownloadReady(bundle, status);
+                }
+
+                @Override
+                public void backgroundDownloadSettled(
+                    final BundleInfo bundle,
+                    final String status,
+                    final CapgoUpdater.BackgroundDownloadContext downloadContext
+                ) {
+                    CapacitorUpdaterPlugin.this.emitLaunchDownloadReady(bundle, status, downloadContext);
+                }
+
+                @Override
+                public void backgroundDownloadStarted(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+                    CapacitorUpdaterPlugin.this.acceptBackgroundUpdate(downloadContext);
+                }
+
+                @Override
+                public void backgroundDownloadReused(
+                    final CapgoUpdater.BackgroundDownloadContext original,
+                    final CapgoUpdater.BackgroundDownloadContext replacement
+                ) {
+                    CapacitorUpdaterPlugin.this.reuseBackgroundDownload(original, replacement);
                 }
 
                 @Override
@@ -1036,6 +1118,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.wasRecentlyInstalledOrUpdated = this.checkIfRecentlyInstalledOrUpdated();
 
         this.resetStartupBundleAndReportAppLaunchStart(resetWhenUpdate, nativeBuildVersionChanged);
+        this.captureInitialReadyPage();
         this.reportNativeVersionStatsIfChanged();
         this.reportPreviousAppExitReasons();
         this.reportPreviousWebViewRenderProcessGone();
@@ -1104,12 +1187,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return true;
         } catch (InterruptedException e) {
             logger.info("semaphoreWait InterruptedException");
-            cleanupTimedOutSemaphoreWait(phase);
+            cleanupFailedSemaphoreWait(phase, trackReloadAppReadyTimeout);
             Thread.currentThread().interrupt(); // Restore interrupted status
             return false;
         } catch (TimeoutException e) {
             logger.error("Semaphore timeout: " + e.getMessage());
-            cleanupTimedOutSemaphoreWait(phase);
+            cleanupFailedSemaphoreWait(phase, trackReloadAppReadyTimeout);
             if (trackReloadAppReadyTimeout) {
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(true);
             }
@@ -1152,38 +1235,78 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return semaphoreReady.register();
     }
 
-    private void semaphoreDown() {
+    private synchronized void semaphoreDown() {
         if (semaphoreReady.getRegisteredParties() == 0) {
             logger.info("semaphoreDown skipped, no pending app ready wait");
             return;
         }
         logger.info("semaphoreDown");
         logger.info("semaphoreDown count " + semaphoreReady.getPhase());
+        final int phase = semaphoreReady.getPhase();
+        final ReloadReadyWait reloadWait = this.reloadReadyWaits.get(phase);
+        if (reloadWait != null) {
+            reloadWait.notified = true;
+        }
         semaphoreReady.arriveAndDeregister();
+        this.retirePendingNotifyAppReadyPhase(phase);
     }
 
-    private void cleanupTimedOutSemaphoreWait(final int phase) {
+    private synchronized void cleanupFailedSemaphoreWait(final int phase, final boolean reloadWait) {
+        if (reloadWait || !this.reloadReadyWaits.containsKey(phase)) {
+            this.cleanupTimedOutSemaphoreWait(phase);
+        }
+    }
+
+    private synchronized ReloadReadyWait armReloadReadyWait() {
+        final ReloadReadyWait wait = new ReloadReadyWait(this.armPendingNotifyAppReadyWait());
+        this.reloadReadyWaits.put(wait.phase, wait);
+        return wait;
+    }
+
+    private synchronized void cleanupTimedOutSemaphoreWait(final int phase) {
         if (semaphoreReady.getPhase() != phase || semaphoreReady.getRegisteredParties() == 0) {
             return;
         }
         logger.info("Cleaning up stale app ready wait for phase " + phase);
         semaphoreReady.arriveAndDeregister();
+        this.retirePendingNotifyAppReadyPhase(phase);
     }
 
-    private void armPendingNotifyAppReadyWait() {
+    private void retirePendingNotifyAppReadyPhase(final int phase) {
+        if (this.pendingNotifyAppReadyPhase == phase) {
+            this.pendingNotifyAppReadyWait = false;
+            this.pendingNotifyAppReadyPhase = -1;
+        }
+    }
+
+    private synchronized int armPendingNotifyAppReadyWait() {
+        final BackgroundReadyState readyState = this.backgroundReadyState;
+        final boolean carryCompletion =
+            readyState.pendingCompletions > 0 &&
+            readyState.waitPhase >= 0 &&
+            this.semaphoreReady.getPhase() == readyState.waitPhase &&
+            this.semaphoreReady.getRegisteredParties() > 0;
         this.clearPendingNotifyAppReadyWait();
         this.pendingNotifyAppReadyPhase = this.semaphoreUp();
         this.pendingNotifyAppReadyWait = true;
+        if (carryCompletion) {
+            // This check still owns a completion, even if a different check initiated the reload.
+            readyState.waitPhase = this.pendingNotifyAppReadyPhase;
+            readyState.pageReplaced = true;
+            this.backgroundReadyState = readyState;
+        }
+        return this.pendingNotifyAppReadyPhase;
     }
 
-    private void clearPendingNotifyAppReadyWait() {
-        if (!this.pendingNotifyAppReadyWait) {
-            return;
-        }
+    private synchronized void clearPendingNotifyAppReadyWait() {
         final int phase = this.pendingNotifyAppReadyPhase;
         this.pendingNotifyAppReadyWait = false;
         this.pendingNotifyAppReadyPhase = -1;
-        this.cleanupTimedOutSemaphoreWait(phase);
+        // Invalidate old page completions before releasing their waiters.
+        this.backgroundReadyState = new BackgroundReadyState(-1);
+        if (phase >= 0) {
+            this.cleanupTimedOutSemaphoreWait(phase);
+        }
     }
 
     private boolean consumePendingNotifyAppReadyWait(final int[] phaseOut) {
@@ -1192,7 +1315,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         phaseOut[0] = this.pendingNotifyAppReadyPhase;
         this.pendingNotifyAppReadyWait = false;
-        this.pendingNotifyAppReadyPhase = -1;
+        // Retain the phase until the page is replaced, even after a completion claims its wait.
         return true;
     }
 
@@ -1233,23 +1356,89 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void sendReadyToJs(final BundleInfo current, final String msg, final boolean isDirectUpdate) {
+        this.sendReadyToJs(current, msg, isDirectUpdate, null);
+    }
+
+    private void sendReadyToJs(
+        final BundleInfo current,
+        final String msg,
+        final boolean isDirectUpdate,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
         logger.info("sendReadyToJs: " + msg);
         final int[] pendingPhase = new int[] { -1 };
-        final boolean shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
+        final BackgroundReadyState readyState;
+        boolean shouldWait;
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(downloadContext)) {
+                return;
+            }
+            readyState = this.backgroundReadyState;
+            if (downloadContext != null) {
+                if (readyState.claimed) {
+                    return;
+                }
+                readyState.claimed = true;
+            }
+            shouldWait = this.consumePendingNotifyAppReadyWait(pendingPhase);
+            if (shouldWait) {
+                readyState.waitPhase = pendingPhase[0];
+            } else if (
+                readyState.waitPhase >= 0 &&
+                this.semaphoreReady.getPhase() == readyState.waitPhase &&
+                this.semaphoreReady.getRegisteredParties() > 0
+            ) {
+                // Consuming a waiter does not release the page's gate, including for contextless completions.
+                pendingPhase[0] = readyState.waitPhase;
+                shouldWait = true;
+            }
+            if (shouldWait) {
+                readyState.pendingCompletions++;
+            }
+        }
 
         final Runnable emitReady = () -> {
-            final JSObject ret = new JSObject();
-            ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-            ret.put("status", msg);
-
-            this.notifyListeners("appReady", ret, true);
-
-            // Auto hide splashscreen if enabled
-            // We show it on background when conditions are met, so we should hide it on foreground regardless of update outcome
-            if (this.autoSplashscreen) {
-                this.hideSplashscreen();
+            synchronized (this) {
+                if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                    return;
+                }
+                final BundleInfo readyBundle = readyState.pageReplaced ? this.implementation.getCurrentBundle() : current;
+                final JSObject ret = new JSObject();
+                ret.put("bundle", InternalUtils.mapToJSObject(readyBundle.toJSONMap()));
+                ret.put("status", msg);
+                this.notifyListeners("appReady", ret, true);
+                // A listener can synchronously start another check on this same thread.
+                if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                    return;
+                }
+                if (
+                    !this.autoSplashscreen &&
+                    !this.previewTransitionLoaderRequested &&
+                    this.previewTransitionLoaderOverlay == null &&
+                    this.previewTransitionLoaderTimeoutRunnable == null
+                ) {
+                    return;
+                }
             }
-            this.hidePreviewTransitionLoader("app-ready");
+
+            final Runnable hideReadyLoaders = () -> {
+                synchronized (this) {
+                    if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                        return;
+                    }
+                    if (this.autoSplashscreen) {
+                        this.hideSplashscreenInternal(downloadContext, readyState);
+                    }
+                    if (this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                        this.hidePreviewTransitionLoader("app-ready");
+                    }
+                }
+            };
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                hideReadyLoaders.run();
+            } else {
+                this.mainHandler.post(hideReadyLoaders);
+            }
         };
 
         if (!shouldWait) {
@@ -1257,17 +1446,44 @@ public class CapacitorUpdaterPlugin extends Plugin {
             return;
         }
 
-        // Never block the UI thread waiting for notifyAppReady (JS needs it).
-        if (Looper.myLooper() == Looper.getMainLooper()) {
+        // Completion callers may hold download ownership locks or still need to dispatch an install.
+        // Keep every readiness wait off their stack, not only waits originating on the UI thread.
+        final java.util.concurrent.atomic.AtomicBoolean completionReleased = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
             startNewThread(() -> {
-                this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
-                emitReady.run();
+                try {
+                    int phase = pendingPhase[0];
+                    while (true) {
+                        this.semaphoreWait(phase, this.appReadyTimeout);
+                        synchronized (this) {
+                            if (!this.ownsBackgroundReadiness(downloadContext, readyState)) {
+                                return;
+                            }
+                            if (phase == readyState.waitPhase) {
+                                emitReady.run();
+                                return;
+                            }
+                            // Page replacement retires the old party without completing this check.
+                            phase = readyState.waitPhase;
+                        }
+                    }
+                } finally {
+                    this.releasePendingReadyCompletion(readyState, completionReleased);
+                }
             });
-            return;
+        } catch (final RuntimeException e) {
+            this.releasePendingReadyCompletion(readyState, completionReleased);
+            throw e;
         }
+    }
 
-        this.semaphoreWait(pendingPhase[0], this.appReadyTimeout);
-        emitReady.run();
+    private synchronized void releasePendingReadyCompletion(
+        final BackgroundReadyState readyState,
+        final java.util.concurrent.atomic.AtomicBoolean released
+    ) {
+        if (released.compareAndSet(false, true)) {
+            readyState.pendingCompletions--;
+        }
     }
 
     private void hideSplashscreen() {
@@ -1279,9 +1495,23 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private void hideSplashscreenInternal() {
+        this.hideSplashscreenInternal(null, null);
+    }
+
+    private void hideSplashscreenInternal(
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
         cancelSplashscreenTimeout();
         removeSplashscreenLoader();
-        invokeSplashScreenPluginMethod("hide", new JSObject(), SPLASH_SCREEN_MAX_RETRIES, ++this.splashscreenInvocationToken);
+        invokeSplashScreenPluginMethod(
+            "hide",
+            new JSObject(),
+            SPLASH_SCREEN_MAX_RETRIES,
+            ++this.splashscreenInvocationToken,
+            downloadContext,
+            readyState
+        );
     }
 
     private void showSplashscreen() {
@@ -1310,7 +1540,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final int retriesRemaining,
         final int requestToken
     ) {
-        if (requestToken != this.splashscreenInvocationToken) {
+        this.invokeSplashScreenPluginMethod(methodName, options, retriesRemaining, requestToken, null, null);
+    }
+
+    private synchronized void invokeSplashScreenPluginMethod(
+        final String methodName,
+        final JSObject options,
+        final int retriesRemaining,
+        final int requestToken,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
+        if (
+            requestToken != this.splashscreenInvocationToken ||
+            (readyState != null && !this.ownsBackgroundReadiness(downloadContext, readyState))
+        ) {
             return;
         }
 
@@ -1322,6 +1566,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     options,
                     retriesRemaining,
                     requestToken,
+                    downloadContext,
+                    readyState,
                     "Bridge not ready for " + ("show".equals(methodName) ? "showing" : "hiding") + " splashscreen"
                 );
                 return;
@@ -1334,6 +1580,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     options,
                     retriesRemaining,
                     requestToken,
+                    downloadContext,
+                    readyState,
                     "autoSplashscreen: SplashScreen plugin not found. Install @capacitor/splash-screen plugin."
                 );
                 return;
@@ -1347,6 +1595,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 options,
                 retriesRemaining,
                 requestToken,
+                downloadContext,
+                readyState,
                 "Failed to call SplashScreen " + methodName + " method: " + e.getMessage()
             );
         }
@@ -1357,12 +1607,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final JSObject options,
         final int retriesRemaining,
         final int requestToken,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState,
         final String message
     ) {
         if (retriesRemaining > 0) {
             logger.info(message + ". Retrying.");
             this.mainHandler.postDelayed(
-                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken),
+                () -> invokeSplashScreenPluginMethod(methodName, options, retriesRemaining - 1, requestToken, downloadContext, readyState),
                 SPLASH_SCREEN_RETRY_DELAY_MS
             );
             return;
@@ -1532,27 +1784,127 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
+    private boolean isDirectUpdateEligibleForLaunchSplashTimeout() {
+        if (!Boolean.TRUE.equals(this.autoUpdate) || AUTO_UPDATE_MODE_ONLY_DOWNLOAD.equals(this.autoUpdateMode)) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(this.autoSplashscreenTimedOut)) {
+            return false;
+        }
+        switch (this.directUpdateMode) {
+            case "false":
+                return false;
+            case "always":
+                return true;
+            case "atInstall":
+                return Boolean.TRUE.equals(this.wasRecentlyInstalledOrUpdated);
+            case "onLaunch":
+                return !this.onLaunchDirectUpdateUsed;
+            default:
+                return false;
+        }
+    }
+
+    private void scheduleLaunchSplashscreenTimeoutIfNeeded() {
+        synchronized (this.splashscreenTimeoutLock) {
+            if (
+                this.splashscreenTimeoutRunnable != null ||
+                !Boolean.TRUE.equals(this.autoSplashscreen) ||
+                !this.isDirectUpdateEligibleForLaunchSplashTimeout()
+            ) {
+                return;
+            }
+            this.scheduleSplashscreenTimeout();
+        }
+    }
+
+    boolean hasSplashscreenTimeoutScheduledForTesting() {
+        synchronized (this.splashscreenTimeoutLock) {
+            return this.splashscreenTimeoutRunnable != null;
+        }
+    }
+
+    void scheduleLaunchSplashscreenTimeoutIfNeededForTesting() {
+        this.scheduleLaunchSplashscreenTimeoutIfNeeded();
+    }
+
     private void scheduleSplashscreenTimeout() {
         if (this.autoSplashscreenTimeout == null || this.autoSplashscreenTimeout <= 0) {
             return;
         }
 
-        cancelSplashscreenTimeout();
+        synchronized (this.splashscreenTimeoutLock) {
+            cancelSplashscreenTimeout();
+            this.splashscreenTimeoutRunnable = new SplashscreenTimeout();
+            this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+        }
+    }
 
-        this.splashscreenTimeoutRunnable = () -> {
+    private final class SplashscreenTimeout implements Runnable {
+
+        private boolean installStarted;
+
+        @Override
+        public void run() {
+            synchronized (splashscreenTimeoutLock) {
+                if (splashscreenTimeoutRunnable != this) {
+                    return;
+                }
+                splashscreenTimeoutRunnable = null;
+                splashscreenTimeoutGeneration++;
+                autoSplashscreenTimedOut = true;
+                if (!this.installStarted) {
+                    implementation.directUpdate = false;
+                }
+            }
             logger.info("autoSplashscreen timeout reached, hiding splashscreen");
-            this.autoSplashscreenTimedOut = true;
-            this.implementation.directUpdate = false;
             hideSplashscreen();
-        };
+        }
+    }
 
-        this.mainHandler.postDelayed(this.splashscreenTimeoutRunnable, this.autoSplashscreenTimeout);
+    private long getSplashscreenTimeoutGeneration() {
+        synchronized (this.splashscreenTimeoutLock) {
+            return this.splashscreenTimeoutGeneration;
+        }
     }
 
     private void cancelSplashscreenTimeout() {
-        if (this.splashscreenTimeoutRunnable != null) {
-            this.mainHandler.removeCallbacks(this.splashscreenTimeoutRunnable);
-            this.splashscreenTimeoutRunnable = null;
+        synchronized (this.splashscreenTimeoutLock) {
+            if (this.splashscreenTimeoutRunnable != null) {
+                this.mainHandler.removeCallbacks(this.splashscreenTimeoutRunnable);
+                this.splashscreenTimeoutRunnable = null;
+            }
+        }
+    }
+
+    private boolean claimDirectUpdateInstall(final long timeoutGeneration, final BundleInfo candidate) {
+        synchronized (this.automaticInstallLock) {
+            if (this.automaticInstallInProgress || this.watchdogRollbackInProgress) {
+                return false;
+            }
+            final java.util.function.BooleanSupplier admitInstall = () ->
+                this.implementation.clearNextBundleForDirectInstall(candidate, () ->
+                    this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)
+                );
+            if (!(candidate.isBuiltin() ? this.implementation.admitBuiltinInstall(admitInstall) : admitInstall.getAsBoolean())) {
+                return false;
+            }
+            this.automaticInstallInProgress = true;
+            this.automaticInstallPageGeneration = -1;
+            return true;
+        }
+    }
+
+    private boolean beginDirectUpdateInstallBeforeTimeout(final long timeoutGeneration) {
+        synchronized (this.splashscreenTimeoutLock) {
+            if (!this.isDirectUpdateCurrentlyAllowed(true, timeoutGeneration)) {
+                return false;
+            }
+            // Keep the hide deadline while an admitted install waits for JS readiness.
+            if (this.splashscreenTimeoutRunnable != null) {
+                this.splashscreenTimeoutRunnable.installStarted = true;
+            }
+            return true;
         }
     }
 
@@ -2423,8 +2775,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return shouldAutoUpdateModeSetNextBundle(this.autoUpdateMode);
     }
 
-    private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate) {
-        return plannedDirectUpdate && !Boolean.TRUE.equals(this.autoSplashscreenTimedOut);
+    private boolean isDirectUpdateCurrentlyAllowed(final boolean plannedDirectUpdate, final long timeoutGeneration) {
+        synchronized (this.splashscreenTimeoutLock) {
+            return plannedDirectUpdate && timeoutGeneration == this.splashscreenTimeoutGeneration && !this.autoSplashscreenTimedOut;
+        }
     }
 
     static boolean shouldConsumeOnLaunchDirectUpdate(final String directUpdateMode, final boolean plannedDirectUpdate) {
@@ -2540,12 +2894,96 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     void scheduleDirectUpdateFinish(final BundleInfo latest) {
+        this.scheduleDirectUpdateFinish(latest, null);
+    }
+
+    private synchronized boolean ownsBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        return downloadContext == null || this.backgroundDownloadContext == downloadContext;
+    }
+
+    synchronized void acceptBackgroundUpdate(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        if (downloadContext.checkSequence < this.acceptedBackgroundCheckSequence) {
+            return;
+        }
+        // A later pending check does not discard accepted work, but a later accepted update does.
+        this.backgroundUpdateContext = downloadContext;
+        this.acceptedBackgroundCheckSequence = downloadContext.checkSequence;
+    }
+
+    private synchronized boolean canFinishBackgroundDownload(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        return this.ownsBackgroundDownload(downloadContext) || this.backgroundUpdateContext == downloadContext;
+    }
+
+    private synchronized boolean ownsBackgroundReadiness(
+        final CapgoUpdater.BackgroundDownloadContext downloadContext,
+        final BackgroundReadyState readyState
+    ) {
+        return this.ownsBackgroundDownload(downloadContext) && this.backgroundReadyState == readyState;
+    }
+
+    void reuseBackgroundDownload(
+        final CapgoUpdater.BackgroundDownloadContext original,
+        final CapgoUpdater.BackgroundDownloadContext replacement
+    ) {
+        final boolean releaseRetry;
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(replacement)) {
+                return;
+            }
+            this.backgroundDownloadContext = original;
+            this.backgroundUpdateContext = original;
+            this.acceptedBackgroundCheckSequence = replacement.checkSequence;
+            releaseRetry = original.deferredForRetry;
+            this.implementation.directUpdate =
+                !releaseRetry && this.isDirectUpdateCurrentlyAllowed(original.directUpdate, original.timeoutGeneration);
+        }
+        if (releaseRetry) {
+            // The retry notification may have been discarded while this check owned a different context.
+            this.emitLaunchDownloadReady(null, CapgoUpdater.launchDownloadReadyStatus(false, false), original);
+        }
+    }
+
+    void emitLaunchDownloadReady(
+        final BundleInfo bundle,
+        final String status,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (downloadContext == null) {
+            this.emitLaunchDownloadReady(bundle, status);
+            return;
+        }
+        final BundleInfo readyBundle = bundle != null ? bundle : this.implementation.getCurrentBundle();
+        if (readyBundle == null) {
+            return;
+        }
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(downloadContext)) {
+                return;
+            }
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+        }
+        this.sendReadyToJs(readyBundle, status, false, downloadContext);
+    }
+
+    void scheduleDirectUpdateFinish(final BundleInfo latest, final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        final long timeoutGeneration;
+        final Thread downloadTask;
+        synchronized (this) {
+            if (!this.canFinishBackgroundDownload(downloadContext)) {
+                return;
+            }
+            timeoutGeneration = downloadContext != null ? downloadContext.timeoutGeneration : this.getSplashscreenTimeoutGeneration();
+            downloadTask = this.backgroundDownloadTask;
+        }
         startNewThread(() -> {
             try {
+                if (!this.canFinishBackgroundDownload(downloadContext)) {
+                    return;
+                }
                 if (this.shouldBlockAutoUpdateForPreviewSession()) {
                     logger.info("Skipping direct update install while preview session state is active");
-                    this.implementation.directUpdate = false;
-                    this.clearBackgroundDownloadState();
+                    this.clearDirectUpdateDownloadState(downloadTask, downloadContext);
                     return;
                 }
                 Activity currentActivity = this.getActivity();
@@ -2554,49 +2992,111 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 } else {
                     logger.warn("directUpdateFinish: Activity is null, proceeding without refreshing the activity reference");
                 }
-                this.directUpdateFinish(latest);
+                this.directUpdateFinish(latest, timeoutGeneration, downloadTask, downloadContext);
             } catch (final Exception e) {
                 logger.error("directUpdateFinish failed: " + e.getMessage());
             }
         });
     }
 
-    private void directUpdateFinish(final BundleInfo latest) {
+    private void directUpdateFinish(
+        final BundleInfo latest,
+        final long timeoutGeneration,
+        final Thread downloadTask,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
         if (this.shouldBlockAutoUpdateForPreviewSession()) {
             logger.info("Skipping direct update finish while preview session state is active");
-            this.implementation.directUpdate = false;
-            this.clearBackgroundDownloadState();
+            this.clearDirectUpdateDownloadState(downloadTask, downloadContext);
             return;
         }
-        if ("onLaunch".equals(this.directUpdateMode)) {
-            this.onLaunchDirectUpdateUsed = true;
-            this.implementation.directUpdate = false;
+        final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+        final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
+        if (!delayConditionList.isEmpty()) {
+            logger.info("Update delayed until delay conditions met");
+            if (!this.queueDeferredDirectUpdate(latest, downloadTask, downloadContext)) {
+                return;
+            }
+            if ("onLaunch".equals(this.directUpdateMode) && this.ownsBackgroundDownload(downloadContext)) {
+                this.onLaunchDirectUpdateUsed = true;
+            }
+            this.sendReadyToJs(this.implementation.getCurrentBundle(), "Update delayed until delay conditions met", true, downloadContext);
+            this.installNextIfInBackground();
+            return;
         }
-        if (this.applyDownloadedBundleForDirectUpdate(latest)) {
-            this.implementation.setNextBundle(null);
-            this.notifyBundleSet(latest);
-            sendReadyToJs(latest, "update installed", true);
-        } else {
-            this.implementation.setNextBundle(latest.getId());
-            final JSObject ret = new JSObject();
-            ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-            this.notifyListeners("updateAvailable", ret, false);
-            sendReadyToJs(
-                this.implementation.getCurrentBundle(),
-                "Direct update reload failed, update will install next background",
-                false
-            );
+        boolean installAdmitted = false;
+        boolean installed = false;
+        try {
+            synchronized (this) {
+                final boolean directUpdateAllowed =
+                    this.ownsBackgroundDownload(downloadContext) &&
+                    this.backgroundDownloadTask == downloadTask &&
+                    (downloadContext == null || (downloadContext.directUpdate && !downloadContext.deferredForRetry));
+                installAdmitted = directUpdateAllowed && this.claimDirectUpdateInstall(timeoutGeneration, latest);
+                if (installAdmitted) {
+                    this.implementation.directUpdate = false;
+                }
+            }
+            if (!installAdmitted) {
+                if (!this.queueDeferredDirectUpdate(latest, downloadTask, downloadContext)) {
+                    return;
+                }
+                this.sendReadyToJs(
+                    this.implementation.getCurrentBundle(),
+                    "update downloaded, will install next background",
+                    true,
+                    downloadContext
+                );
+                this.installNextIfInBackground();
+                return;
+            }
+            if ("onLaunch".equals(this.directUpdateMode)) {
+                this.onLaunchDirectUpdateUsed = true;
+                this.implementation.directUpdate = false;
+            }
+            installed = this.applyDownloadedBundleForDirectUpdate(latest);
+            if (installed) {
+                this.implementation.clearNextBundleIfMatches(latest.getId());
+                this.notifyBundleSet(latest);
+                sendReadyToJs(latest, "update installed", true, downloadContext);
+            } else {
+                final boolean queued =
+                    !CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get() &&
+                    !this.reloadSupersededByPageReplacement.get() &&
+                    this.implementation.setNextBundleIfEmpty(latest.getId());
+                if (queued) {
+                    final JSObject ret = new JSObject();
+                    ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
+                    this.notifyListeners("updateAvailable", ret, false);
+                }
+                sendReadyToJs(
+                    this.implementation.getCurrentBundle(),
+                    queued ? "Direct update reload failed, update will install next background" : "Direct update reload failed",
+                    false,
+                    downloadContext
+                );
+            }
+        } finally {
+            if (installAdmitted) {
+                this.releaseAutomaticInstall();
+                this.installNextIfInBackground(installed ? null : latest.getId());
+            }
         }
     }
 
     private boolean applyDownloadedBundleForDirectUpdate(final BundleInfo latest) {
-        final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
-        final String previousBundleName = this.implementation.getCurrentBundle().getVersionName();
-
-        if (!this.implementation.stagePendingReload(latest)) {
-            this.implementation.restoreResetState(previousState);
-            logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
-            return false;
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        this.reloadSupersededByPageReplacement.set(false);
+        final CapgoUpdater.ResetState previousState;
+        final String previousBundleName;
+        synchronized (this) {
+            previousState = this.implementation.captureResetState();
+            previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+            if (!this.stageBundleForReload(() -> this.implementation.stagePendingReload(latest))) {
+                this.implementation.restoreResetStatePreservingNextBundle(previousState);
+                logger.error("Direct update failed to stage downloaded bundle: " + latest.toString());
+                return false;
+            }
         }
 
         if (this._reload()) {
@@ -2605,6 +3105,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
 
         if (
+            !this.reloadSupersededByPageReplacement.get() &&
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 latest,
@@ -2613,7 +3114,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 false
             )
         ) {
-            this.implementation.restoreResetState(previousState);
+            this.implementation.restoreResetStatePreservingNextBundle(previousState);
             this.restoreLiveBundleStateAfterFailedReload();
         }
         logger.error("Direct update reload failed after staging bundle: " + latest.toString());
@@ -3177,103 +3678,94 @@ public class CapacitorUpdaterPlugin extends Plugin {
             : "(function(){try{localStorage.removeItem('" +
               KEEP_URL_FLAG_KEY +
               "');}catch(e){}delete window.__capgoKeepUrlPathAfterReload;var evt;try{evt=new CustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',{detail:{enabled:false}});}catch(err){evt=document.createEvent('CustomEvent');evt.initCustomEvent('CapacitorUpdaterKeepUrlPathAfterReload',false,false,{enabled:false});}window.dispatchEvent(evt);})();";
-        this.bridge.getWebView().post(() -> this.bridge.getWebView().evaluateJavascript(script, null));
+        final Runnable syncFlag = () -> this.bridge.getWebView().evaluateJavascript(script, null);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            syncFlag.run();
+        } else {
+            this.bridge.getWebView().post(syncFlag);
+        }
     }
 
-    private void applyCurrentBundleToBridge() {
-        this.stampReadyGenerationBeforeReload();
+    private boolean applyCurrentBundleToBridge() {
         final String path = this.implementation.getCurrentBundlePath();
         final boolean usingBuiltin = this.implementation.isUsingBuiltin();
-        if (this.keepUrlPathAfterReload) {
-            this.syncKeepUrlPathFlag(true);
+        final android.webkit.WebView webView = this.bridge == null ? null : this.bridge.getWebView();
+        if (webView == null) {
+            logger.error("Cannot reload without a WebView");
+            return false;
         }
-        logger.info("Reloading: " + path);
-
-        AtomicReference<URL> url = new AtomicReference<>();
-        if (this.keepUrlPathAfterReload) {
-            try {
-                if (Looper.myLooper() != Looper.getMainLooper()) {
-                    Semaphore mainThreadSemaphore = new Semaphore(0);
-                    this.bridge.executeOnMainThread(() -> {
-                        try {
-                            if (this.bridge != null && this.bridge.getWebView() != null) {
-                                String currentUrl = this.bridge.getWebView().getUrl();
-                                if (currentUrl != null) {
-                                    url.set(new URL(currentUrl));
-                                }
-                            }
-                        } catch (Exception e) {
-                            logger.error("Error executing on main thread " + e.getMessage());
-                        }
-                        mainThreadSemaphore.release();
-                    });
-
-                    // Add timeout to prevent indefinite blocking
-                    if (!mainThreadSemaphore.tryAcquire(10, TimeUnit.SECONDS)) {
-                        logger.error("Timeout waiting for main thread operation");
+        // Reject the previous document while the main-thread reload is still queued.
+        final int generation = this.armReloadReadyGuard();
+        final Object dispatchLock = new Object();
+        final FutureTask<Void> dispatch = new FutureTask<>(() -> {
+            final boolean guardArmed = this.stampReadyGenerationBeforeReload(generation);
+            String targetUrl = this.bridge.getAppUrl();
+            if (this.keepUrlPathAfterReload) {
+                this.syncKeepUrlPathFlag(true);
+                try {
+                    final String currentUrl = webView.getUrl();
+                    if (currentUrl != null) {
+                        final URL appUrl = new URL(targetUrl);
+                        targetUrl = new URL(
+                            appUrl.getProtocol(),
+                            appUrl.getHost(),
+                            appUrl.getPort(),
+                            new URL(currentUrl).getPath()
+                        ).toString();
                     }
-                } else {
-                    try {
-                        if (this.bridge != null && this.bridge.getWebView() != null) {
-                            String currentUrl = this.bridge.getWebView().getUrl();
-                            if (currentUrl != null) {
-                                url.set(new URL(currentUrl));
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.error("Error executing on main thread " + e.getMessage());
-                    }
+                } catch (final MalformedURLException e) {
+                    logger.warn("Cannot preserve the current URL path: " + e.getMessage());
                 }
-            } catch (InterruptedException e) {
-                logger.error("Error waiting for main thread or getting the current URL from webview " + e.getMessage());
-                Thread.currentThread().interrupt(); // Restore interrupted status
             }
-        }
-
-        if (url.get() != null) {
+            logger.info("Reloading: " + path);
+            // Bridge.setServer*Path posts another load. Keep hosting and loadUrl in this dispatch
+            // so automatic-install admission cannot be released between them.
             if (usingBuiltin) {
                 this.bridge.getLocalServer().hostAssets(path);
             } else {
                 this.bridge.getLocalServer().hostFiles(path);
             }
-
-            try {
-                URL finalUrl = null;
-                finalUrl = new URL(this.bridge.getAppUrl());
-                finalUrl = new URL(finalUrl.getProtocol(), finalUrl.getHost(), finalUrl.getPort(), url.get().getPath());
-                URL finalUrl1 = finalUrl;
-                this.bridge.getWebView().post(() -> {
-                    this.bridge.getWebView().loadUrl(finalUrl1.toString());
-                    if (!this.keepUrlPathAfterReload) {
-                        this.bridge.getWebView().clearHistory();
-                    }
-                });
-            } catch (MalformedURLException e) {
-                logger.error("Cannot get finalUrl from capacitor bridge " + e.getMessage());
-
-                if (usingBuiltin) {
-                    this.bridge.setServerAssetPath(path);
-                } else {
-                    this.bridge.setServerBasePath(path);
-                }
+            webView.loadUrl(targetUrl);
+            synchronized (this.readyGuardLock) {
+                this.liveReadyPage = new ReadyPageState(path, generation, guardArmed);
             }
-        } else {
-            if (usingBuiltin) {
-                this.bridge.setServerAssetPath(path);
-            } else {
-                this.bridge.setServerBasePath(path);
+            if (!this.keepUrlPathAfterReload) {
+                webView.clearHistory();
             }
-            if (this.bridge != null && this.bridge.getWebView() != null) {
-                this.bridge.getWebView().post(() -> {
-                    if (this.bridge.getWebView() != null) {
-                        this.bridge.getWebView().loadUrl(this.bridge.getAppUrl());
-                        if (!this.keepUrlPathAfterReload) {
-                            this.bridge.getWebView().clearHistory();
-                        }
+            return null;
+        });
+        try {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                dispatch.run();
+            } else if (
+                !webView.post(() -> {
+                    synchronized (dispatchLock) {
+                        dispatch.run();
                     }
-                });
+                })
+            ) {
+                logger.error("WebView rejected reload dispatch");
+                return false;
+            }
+            dispatch.get(10, TimeUnit.SECONDS);
+            return true;
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Interrupted waiting for WebView reload dispatch");
+        } catch (final ExecutionException | TimeoutException | RuntimeException e) {
+            logger.error("WebView reload dispatch failed: " + e.getMessage());
+        } finally {
+            // Cancel a queued dispatch before releasing install admission. If it has started,
+            // let its short native loadUrl call finish before another bundle can be staged.
+            final boolean cancelled;
+            synchronized (dispatchLock) {
+                cancelled = dispatch.cancel(false);
+            }
+            if (cancelled) {
+                this.restoreUndispatchedReadyGuard(generation);
             }
         }
+        return false;
     }
 
     protected void restoreLiveBundleStateAfterFailedReload() {
@@ -3281,24 +3773,43 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.applyCurrentBundleToBridge();
         } catch (final Exception e) {
             logger.warn("Failed to restore live bundle after rejected reload: " + e.getMessage());
+        } finally {
+            // The prior watchdog may have expired or belong to an older page generation.
+            // A rejected recovery dispatch still leaves the restored bundle needing validation.
+            this.checkAppReady();
         }
     }
 
     protected boolean _reload() {
+        CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.set(false);
+        this.reloadSupersededByPageReplacement.set(false);
         if (this.appInBackground) {
             return this.reloadInBackground();
         }
-        // Drop any launch pending wait; this reload owns notifyAppReady synchronization.
-        this.clearPendingNotifyAppReadyWait();
-        final int phase = this.semaphoreUp();
-        this.applyCurrentBundleToBridge();
+        // Register reload ownership before a carried notification waiter can time out.
+        final ReloadReadyWait readyWait = this.armReloadReadyWait();
+        try {
+            if (!this.applyCurrentBundleToBridge()) {
+                this.cleanupTimedOutSemaphoreWait(readyWait.phase);
+                return false;
+            }
 
-        final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
-        this.checkAppReady(waitTimeMs);
-        this.notifyListeners("appReloaded", new JSObject(), false);
+            final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
+            this.checkAppReady(waitTimeMs);
+            this.notifyListeners("appReloaded", new JSObject(), false);
 
-        // Wait for the reload to complete (until notifyAppReady is called)
-        return this.semaphoreWait(phase, waitTimeMs, true);
+            // Retirement and timeout cleanup can advance a phase too. Only the page's
+            // notifyAppReady acknowledgement makes this installation successful.
+            final boolean advanced = this.semaphoreWait(readyWait.phase, waitTimeMs, true);
+            if (advanced && !readyWait.notified) {
+                this.reloadSupersededByPageReplacement.set(true);
+            }
+            return advanced && readyWait.notified;
+        } finally {
+            synchronized (this) {
+                this.reloadReadyWaits.remove(readyWait.phase);
+            }
+        }
     }
 
     /**
@@ -3309,11 +3820,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private boolean reloadInBackground() {
         logger.info("App is in background, reload does not wait for notifyAppReady");
         this.armPendingNotifyAppReadyWait();
-        return this.reloadWithoutWaitingForAppReady();
+        if (this.reloadWithoutWaitingForAppReady()) {
+            return true;
+        }
+        this.clearPendingNotifyAppReadyWait();
+        return false;
     }
 
     protected boolean reloadWithoutWaitingForAppReady() {
-        this.applyCurrentBundleToBridge();
+        if (!this.applyCurrentBundleToBridge()) {
+            return false;
+        }
 
         final long waitTimeMs = this.resolveAppReadyCheckTimeoutMs();
         this.checkAppReady(waitTimeMs);
@@ -3352,6 +3869,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         return;
                     }
                     if (
+                        !this.reloadSupersededByPageReplacement.get() &&
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
@@ -3426,7 +3944,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     logger.info("Preview session set active bundle " + id + " without waiting for preview app readiness");
                     final BundleInfo bundle = this.implementation.getBundleInfo(id);
                     this.recordPreviewBundle(bundle);
-                    this.reloadWithoutWaitingForAppReady();
+                    if (!this.reloadWithoutWaitingForAppReady()) {
+                        logger.error("Reload failed after setting bundle " + id);
+                        call.reject("Reload failed after setting bundle " + id);
+                        return;
+                    }
                     this.notifyBundleSet(bundle);
                     this.showPreviewSessionNoticeIfNeeded();
                     call.resolve();
@@ -4585,6 +5107,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean performResetBody(final Boolean toLastSuccessful, final Boolean usePendingBundle, final boolean internal) {
+        this.reloadSupersededByPageReplacement.set(false);
         final BundleInfo fallback = this.implementation.getFallbackBundle();
         final BundleInfo pending = this.implementation.getNextBundle();
         final CapgoUpdater.ResetState previousState = this.implementation.captureResetState();
@@ -4617,6 +5140,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 return true;
             }
             if (
+                !this.reloadSupersededByPageReplacement.get() &&
                 CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                     CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                     this.implementation.getCurrentBundle(),
@@ -4647,6 +5171,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     }
                     if (
                         !internal &&
+                        !this.reloadSupersededByPageReplacement.get() &&
                         CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                             CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                             this.implementation.getCurrentBundle(),
@@ -4659,7 +5184,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.restoreLiveBundleStateAfterFailedReload();
                         return false;
                     }
-                    if (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get()) {
+                    if (
+                        this.reloadSupersededByPageReplacement.get() ||
+                        (!internal && CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get())
+                    ) {
                         return false;
                     }
                 } else if (!internal) {
@@ -4680,6 +5208,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
         if (
             !internal &&
+            !this.reloadSupersededByPageReplacement.get() &&
             CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
                 CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
                 this.implementation.getCurrentBundle(),
@@ -4732,7 +5261,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
     public void getNextBundle(final PluginCall call) {
         try {
             // Heals a next bundle left stored after it was activated (set() did not clear it before).
-            this.implementation.clearNextBundleIfCurrent();
+            synchronized (this.automaticInstallLock) {
+                if (!this.automaticInstallInProgress) {
+                    this.implementation.clearNextBundleIfCurrent();
+                }
+            }
             final BundleInfo bundle = this.implementation.getNextBundle();
             if (bundle == null) {
                 call.resolve(null);
@@ -4858,11 +5391,72 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    private synchronized boolean stageBundleForReload(final java.util.function.BooleanSupplier stage) {
+        final int previousGeneration = this.readyGeneration;
+        final boolean previousGuardArmed = this.readyGuardArmed;
+        this.armReadyGuard();
+        boolean staged = false;
+        try {
+            staged = stage.getAsBoolean();
+            return staged;
+        } finally {
+            if (!staged) {
+                // No document was dispatched. The existing page must remain able to report ready.
+                synchronized (this.readyGuardLock) {
+                    this.readyGeneration = previousGeneration;
+                    this.readyGuardArmed = previousGuardArmed;
+                }
+            }
+        }
+    }
+
+    private synchronized int armReloadReadyGuard() {
+        final int generation = this.armReadyGuard();
+        synchronized (this.automaticInstallLock) {
+            if (this.automaticInstallInProgress && !this.watchdogRollbackInProgress) {
+                this.automaticInstallPageGeneration = generation;
+            }
+        }
+        return generation;
+    }
+
     private int armReadyGuard() {
         synchronized (this.readyGuardLock) {
+            this.captureInitialReadyPage();
             this.readyGeneration = this.readyGeneration + 1;
             this.readyGuardArmed = true;
             return this.readyGeneration;
+        }
+    }
+
+    private void captureInitialReadyPage() {
+        synchronized (this.readyGuardLock) {
+            if (this.liveReadyPage == null && this.implementation != null) {
+                try {
+                    final String path = this.implementation.getCurrentBundlePath();
+                    if (path != null) {
+                        this.liveReadyPage = new ReadyPageState(path, this.readyGeneration, this.readyGuardArmed);
+                    }
+                } catch (final RuntimeException e) {
+                    // Without a known live path, a failed dispatch must keep rejecting stale readiness.
+                    logger.warn("Cannot capture live page readiness: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private synchronized void restoreUndispatchedReadyGuard(final int generation) {
+        synchronized (this.readyGuardLock) {
+            final ReadyPageState livePage = this.liveReadyPage;
+            if (
+                this.readyGeneration == generation &&
+                livePage != null &&
+                livePage.bundlePath.equals(this.implementation.getCurrentBundlePath())
+            ) {
+                // A staged replacement must be restored before its predecessor can report ready.
+                this.readyGeneration = livePage.generation;
+                this.readyGuardArmed = livePage.guardArmed;
+            }
         }
     }
 
@@ -4875,18 +5469,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private void stampReadyGenerationBeforeReload() {
-        final int generation = this.armReadyGuard();
+    private boolean stampReadyGenerationBeforeReload(final int generation) {
         final android.webkit.WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
         if (webView == null) {
             this.disarmReadyGuard(generation);
-            return;
+            return false;
         }
-        webView.post(() -> {
-            if (!this.installReadyGenerationScript(webView, generation)) {
-                this.disarmReadyGuard(generation);
-            }
-        });
+        if (!this.installReadyGenerationScript(webView, generation)) {
+            this.disarmReadyGuard(generation);
+            return false;
+        }
+        return true;
     }
 
     private boolean installReadyGenerationScript(final android.webkit.WebView webView, final int generation) {
@@ -4929,7 +5522,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void notifyAppReady(final PluginCall call) {
+    public synchronized void notifyAppReady(final PluginCall call) {
         ensureBridgeSet();
         try {
             if (!this.acceptsReadyCall(call)) {
@@ -5208,7 +5801,86 @@ public class CapacitorUpdaterPlugin extends Plugin {
         boolean shouldSendStats,
         boolean shouldNotifyNoNeedUpdate
     ) {
-        this.consumeOnLaunchDirectUpdateAttempt(Boolean.TRUE.equals(plannedDirectUpdate));
+        endBackGroundTaskWithNotif(
+            msg,
+            latestVersionName,
+            current,
+            error,
+            plannedDirectUpdate,
+            failureAction,
+            failureEvent,
+            shouldSendStats,
+            shouldNotifyNoNeedUpdate,
+            null
+        );
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        Boolean plannedDirectUpdate,
+        CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        endBackGroundTaskWithNotif(
+            msg,
+            latestVersionName,
+            current,
+            error,
+            plannedDirectUpdate,
+            "download_fail",
+            "downloadFailed",
+            true,
+            true,
+            downloadContext
+        );
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        Boolean plannedDirectUpdate,
+        String failureAction,
+        String failureEvent,
+        boolean shouldSendStats,
+        CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        endBackGroundTaskWithNotif(
+            msg,
+            latestVersionName,
+            current,
+            error,
+            plannedDirectUpdate,
+            failureAction,
+            failureEvent,
+            shouldSendStats,
+            true,
+            downloadContext
+        );
+    }
+
+    private void endBackGroundTaskWithNotif(
+        String msg,
+        String latestVersionName,
+        BundleInfo current,
+        Boolean error,
+        Boolean plannedDirectUpdate,
+        String failureAction,
+        String failureEvent,
+        boolean shouldSendStats,
+        boolean shouldNotifyNoNeedUpdate,
+        CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(downloadContext)) {
+                return;
+            }
+            this.consumeOnLaunchDirectUpdateAttempt(Boolean.TRUE.equals(plannedDirectUpdate));
+            this.clearBackgroundDownloadState();
+        }
         if (error) {
             logger.info(
                 "endBackGroundTaskWithNotif error: " +
@@ -5223,22 +5895,205 @@ public class CapacitorUpdaterPlugin extends Plugin {
             }
             final JSObject ret = new JSObject();
             ret.put("version", latestVersionName);
-            this.notifyListeners(failureEvent, ret, false);
+            if (!this.notifyBackgroundDownloadListeners(failureEvent, ret, downloadContext)) {
+                return;
+            }
         }
         if (shouldNotifyNoNeedUpdate) {
             final JSObject ret = new JSObject();
             ret.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
-            this.notifyListeners("noNeedUpdate", ret, false);
+            if (!this.notifyBackgroundDownloadListeners("noNeedUpdate", ret, downloadContext)) {
+                return;
+            }
         }
-        this.sendReadyToJs(current, msg, plannedDirectUpdate);
-        this.backgroundDownloadTask = null;
-        this.downloadStartTimeMs = 0;
+        this.sendReadyToJs(current, msg, plannedDirectUpdate, downloadContext);
         logger.info("endBackGroundTaskWithNotif " + msg);
+    }
+
+    private synchronized boolean notifyBackgroundDownloadListeners(
+        final String event,
+        final JSObject data,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            return false;
+        }
+        // Admit delivery before another thread can replace this check's ownership.
+        this.notifyListeners(event, data, false);
+        return true;
+    }
+
+    private synchronized boolean queueBackgroundUpdateResponse(
+        final String bundleId,
+        final boolean plannedDirectUpdate,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            return false;
+        }
+        this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+        this.clearBackgroundDownloadState();
+        this.acceptBackgroundUpdate(downloadContext);
+        this.implementation.setNextBundle(bundleId);
+        // A current response still completes readiness if the bundle is no longer queueable.
+        return true;
+    }
+
+    /** Returns false when the current response must defer for its deadline or an active install. */
+    private boolean tryInstallBackgroundUpdateResponse(
+        final BundleInfo bundle,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        boolean installAdmitted = false;
+        boolean installed = false;
+        try {
+            final CapgoUpdater.ResetState previousState;
+            final String previousBundleName;
+            final boolean staged;
+            synchronized (this) {
+                if (!this.ownsBackgroundDownload(downloadContext)) {
+                    return true;
+                }
+                if (!this.claimDirectUpdateInstall(downloadContext.timeoutGeneration, bundle)) {
+                    return false;
+                }
+                installAdmitted = true;
+                this.acceptBackgroundUpdate(downloadContext);
+                previousState = this.implementation.captureResetState();
+                previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+                this.consumeOnLaunchDirectUpdateAttempt(true);
+                this.clearBackgroundDownloadState();
+                staged = this.stageBundleForReload(() -> {
+                    if (bundle.isBuiltin()) {
+                        this.implementation.prepareBuiltinTransition();
+                        return true;
+                    }
+                    return this.implementation.set(bundle);
+                });
+            }
+            // Reload can wait for the bridge; it must not hold the ownership monitor.
+            installed = staged && this.reloadAutomaticBundle(bundle, previousState);
+            if (installed) {
+                if (bundle.isBuiltin()) {
+                    this.implementation.finalizeBuiltinUpdate(previousBundleName);
+                } else {
+                    this.implementation.clearNextBundleIfMatches(bundle.getId());
+                    this.notifyBundleSet(bundle);
+                }
+            }
+            this.endBackGroundTaskWithNotif(
+                installed ? (bundle.isBuiltin() ? "Updated to builtin version" : "Update installed") : "Update install failed",
+                bundle.getVersionName(),
+                bundle.isBuiltin() ? this.implementation.getCurrentBundle() : bundle,
+                !installed,
+                true,
+                downloadContext
+            );
+            return true;
+        } finally {
+            if (installAdmitted) {
+                this.releaseAutomaticInstall();
+                this.installNextIfInBackground(installed ? null : bundle.getId());
+            }
+        }
+    }
+
+    private boolean reloadAutomaticBundle(final BundleInfo bundle, final CapgoUpdater.ResetState previousState) {
+        boolean reloaded = false;
+        try {
+            reloaded = this._reload();
+            return reloaded;
+        } finally {
+            if (
+                !reloaded &&
+                !this.reloadSupersededByPageReplacement.get() &&
+                CapacitorUpdaterPlugin.shouldRestoreStateAfterPendingBundleReloadFailure(
+                    CapacitorUpdaterPlugin.reloadFailedDueToAppReadyTimeout.get(),
+                    this.implementation.getCurrentBundle(),
+                    false,
+                    bundle,
+                    this.isPreviewSessionStateActive()
+                )
+            ) {
+                this.implementation.restoreResetStatePreservingNextBundle(previousState);
+                this.restoreLiveBundleStateAfterFailedReload();
+            }
+        }
+    }
+
+    private void endFailedBackgroundDownload(
+        final String latestVersionName,
+        final boolean plannedDirectUpdate,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        final BundleInfo current;
+        synchronized (this) {
+            if (!this.ownsBackgroundDownload(downloadContext)) {
+                return;
+            }
+            current = this.implementation.getCurrentBundle();
+            this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+            this.implementation.directUpdate = false;
+            this.clearBackgroundDownloadState();
+        }
+        this.implementation.sendStats("download_fail", current.getVersionName());
+        final JSObject failure = new JSObject();
+        failure.put("version", latestVersionName);
+        if (!this.notifyBackgroundDownloadListeners("downloadFailed", failure, downloadContext)) {
+            return;
+        }
+        final JSObject noUpdate = new JSObject();
+        noUpdate.put("bundle", InternalUtils.mapToJSObject(current.toJSONMap()));
+        if (!this.notifyBackgroundDownloadListeners("noNeedUpdate", noUpdate, downloadContext)) {
+            return;
+        }
+        this.sendReadyToJs(current, "Error downloading file", plannedDirectUpdate, downloadContext);
+    }
+
+    private synchronized boolean queueDeferredDirectUpdate(
+        final BundleInfo latest,
+        final Thread downloadTask,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (!this.ownsBackgroundDownload(downloadContext)) {
+            // A pending or failed check does not supersede accepted work. Preserve its result,
+            // without changing that check's readiness, timer, direct-install plan, or newer queue.
+            return (
+                downloadContext != null &&
+                this.backgroundUpdateContext == downloadContext &&
+                this.implementation.setNextBundleIfEmpty(latest.getId())
+            );
+        }
+        if (!this.clearDirectUpdateDownloadState(downloadTask, downloadContext)) {
+            return false;
+        }
+        this.implementation.setNextBundle(latest.getId());
+        return true;
+    }
+
+    private synchronized boolean clearDirectUpdateDownloadState(
+        final Thread downloadTask,
+        final CapgoUpdater.BackgroundDownloadContext downloadContext
+    ) {
+        if (!this.ownsBackgroundDownload(downloadContext) || this.backgroundDownloadTask != downloadTask) {
+            // The newer cycle owns direct-update state and will emit appReady/hide its splash.
+            logger.info("Preserving background download state owned by a newer update check");
+            return false;
+        }
+        this.implementation.directUpdate = false;
+        this.clearBackgroundDownloadState();
+        return true;
     }
 
     private void clearBackgroundDownloadState() {
         this.backgroundDownloadTask = null;
         this.downloadStartTimeMs = 0;
+    }
+
+    private synchronized void clearBackgroundDownloadState(final CapgoUpdater.BackgroundDownloadContext downloadContext) {
+        if (this.ownsBackgroundDownload(downloadContext)) {
+            this.clearBackgroundDownloadState();
+        }
     }
 
     private boolean isDownloadStuckOrTimedOut() {
@@ -5303,8 +6158,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.info("Download already in progress, skipping duplicate download request");
             return this.backgroundDownloadTask;
         }
+        final long timeoutGeneration = this.getSplashscreenTimeoutGeneration();
         final boolean plannedDirectUpdate = this.shouldUseDirectUpdate();
-        final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate);
+        final boolean initialDirectUpdateAllowed = this.isDirectUpdateCurrentlyAllowed(plannedDirectUpdate, timeoutGeneration);
+        final CapgoUpdater.BackgroundDownloadContext downloadContext = new CapgoUpdater.BackgroundDownloadContext(
+            timeoutGeneration,
+            initialDirectUpdateAllowed,
+            ++this.backgroundCheckSequence
+        );
+        this.backgroundDownloadContext = downloadContext;
+        // Download identity survives reuse; readiness belongs to each individual check.
+        this.backgroundReadyState = new BackgroundReadyState(this.backgroundReadyState.waitPhase);
         final String messageUpdate = initialDirectUpdateAllowed
             ? "Update will occur now."
             : this.shouldAutoSetNextBundle()
@@ -5312,18 +6176,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
               : "Update will be downloaded and made available.";
         Thread newTask = startNewThread(() -> {
             if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
-                CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                CapacitorUpdaterPlugin.this.clearBackgroundDownloadState(downloadContext);
                 return;
             }
             logger.info("Check for update via: " + CapacitorUpdaterPlugin.this.updateUrl);
             try {
                 CapacitorUpdaterPlugin.this.implementation.getLatest(CapacitorUpdaterPlugin.this.updateUrl, null, (res) -> {
+                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                        return;
+                    }
                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
-                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState(downloadContext);
                         return;
                     }
                     JSObject jsRes = InternalUtils.mapToJSObject(res);
                     final BundleInfo currentBeforeCleanup = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                        return;
+                    }
 
                     // Handle network errors and other failures first
                     if (jsRes.has("error") || jsRes.has("kind")) {
@@ -5340,6 +6210,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             latestVersion,
                             currentBeforeCleanup
                         );
+                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                            return;
+                        }
                         CapacitorUpdaterPlugin.this.notifyBreakingEventsIfNeeded(
                             jsRes,
                             jsRes.has("version") ? jsRes.getString("version") : ""
@@ -5374,46 +6247,57 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             plannedDirectUpdate,
                             "download_fail",
                             "downloadFailed",
-                            false
+                            false,
+                            downloadContext
                         );
                         return;
                     }
                     try {
                         // File mutations wait here. getLatest already ran in parallel with cleanup.
                         waitForCleanupIfNeeded();
+                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                            return;
+                        }
                         final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
                         final String latestVersionName = jsRes.getString("version");
 
                         if ("builtin".equals(latestVersionName)) {
                             logger.info("Latest version is builtin");
-                            final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
-                                plannedDirectUpdate
-                            );
-                            if (directUpdateAllowedNow) {
-                                logger.info("Direct update to builtin version");
-                                this._reset(false, false);
-                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    "Updated to builtin version",
-                                    latestVersionName,
-                                    CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                    false,
-                                    true
-                                );
-                            } else if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
-                                if (plannedDirectUpdate && !directUpdateAllowedNow) {
-                                    logger.info(
-                                        "Direct update skipped because splashscreen timeout occurred. Update will be applied later."
-                                    );
+                            if (
+                                plannedDirectUpdate &&
+                                CapacitorUpdaterPlugin.this.delayUpdateUtils
+                                    .parseDelayConditions(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]"))
+                                    .isEmpty() &&
+                                CapacitorUpdaterPlugin.this.tryInstallBackgroundUpdateResponse(
+                                    CapacitorUpdaterPlugin.this.implementation.getBundleInfo(BundleInfo.ID_BUILTIN),
+                                    downloadContext
+                                )
+                            ) {
+                                return;
+                            }
+                            if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
+                                if (plannedDirectUpdate) {
+                                    logger.info("Direct installation is unavailable. Update will be applied later.");
                                 }
                                 logger.info("Setting next bundle to builtin");
-                                CapacitorUpdaterPlugin.this.implementation.setNextBundle(BundleInfo.ID_BUILTIN);
+                                if (
+                                    !CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                        BundleInfo.ID_BUILTIN,
+                                        plannedDirectUpdate,
+                                        downloadContext
+                                    )
+                                ) {
+                                    return;
+                                }
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     "Next update will be to builtin version",
                                     latestVersionName,
                                     current,
                                     false,
-                                    plannedDirectUpdate
+                                    plannedDirectUpdate,
+                                    downloadContext
                                 );
+                                CapacitorUpdaterPlugin.this.installNextIfInBackground();
                             } else {
                                 logger.info("autoUpdate is set to onlyDownload, builtin version will not be set as next bundle");
                                 final boolean builtinUpdateAvailable = !current.isBuiltin();
@@ -5423,6 +6307,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         BundleInfo.ID_BUILTIN
                                     );
                                     ret.put("bundle", InternalUtils.mapToJSObject(builtinBundle.toJSONMap()));
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
                                     CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                 }
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
@@ -5434,7 +6321,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     "download_fail",
                                     "downloadFailed",
                                     true,
-                                    !builtinUpdateAvailable
+                                    !builtinUpdateAvailable,
+                                    downloadContext
                                 );
                             }
                             return;
@@ -5448,7 +6336,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 current.getVersionName(),
                                 current,
                                 true,
-                                plannedDirectUpdate
+                                plannedDirectUpdate,
+                                downloadContext
                             );
                             return;
                         }
@@ -5465,8 +6354,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     latestVersionName,
                                     current,
                                     true,
-                                    plannedDirectUpdate
+                                    plannedDirectUpdate,
+                                    downloadContext
                                 );
+                                return;
+                            }
+                            // Reuse the observer and original deadline of work already admitted through the download gates.
+                            if (CapacitorUpdaterPlugin.this.implementation.reuseBackgroundDownload(latestVersionName, downloadContext)) {
+                                logger.info("Reusing automatic download for version: " + latestVersionName);
                                 return;
                             }
                             final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
@@ -5480,7 +6375,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         latestVersionName,
                                         current,
                                         true,
-                                        plannedDirectUpdate
+                                        plannedDirectUpdate,
+                                        downloadContext
                                     );
                                     return;
                                 }
@@ -5493,7 +6389,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 ) {
                                     logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                     final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
-                                        plannedDirectUpdate
+                                        plannedDirectUpdate,
+                                        timeoutGeneration
                                     );
                                     if (directUpdateAllowedNow) {
                                         String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
@@ -5507,47 +6404,46 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                 latestVersionName,
                                                 latest,
                                                 false,
-                                                plannedDirectUpdate
+                                                plannedDirectUpdate,
+                                                downloadContext
                                             );
                                             return;
                                         }
-                                        if (
-                                            CapacitorUpdaterPlugin.this.implementation.set(latest) && CapacitorUpdaterPlugin.this._reload()
-                                        ) {
-                                            CapacitorUpdaterPlugin.this.notifyBundleSet(latest);
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "Update installed",
-                                                latestVersionName,
-                                                latest,
-                                                false,
-                                                true
-                                            );
-                                        } else {
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "Update install failed",
-                                                latestVersionName,
-                                                latest,
-                                                true,
-                                                true
-                                            );
+                                        if (CapacitorUpdaterPlugin.this.tryInstallBackgroundUpdateResponse(latest, downloadContext)) {
+                                            return;
                                         }
-                                    } else if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
-                                        if (plannedDirectUpdate && !directUpdateAllowedNow) {
-                                            logger.info(
-                                                "Direct update skipped because splashscreen timeout occurred. Update will install on next background."
-                                            );
+                                    }
+                                    if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
+                                        if (plannedDirectUpdate) {
+                                            logger.info("Direct installation is unavailable. Update will install on next background.");
+                                        }
+                                        if (
+                                            !CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                                latest.getId(),
+                                                plannedDirectUpdate,
+                                                downloadContext
+                                            )
+                                        ) {
+                                            return;
+                                        }
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
                                         }
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
-                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(latest.getId());
                                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                             "update downloaded, will install next background",
                                             latestVersionName,
                                             latest,
                                             false,
-                                            plannedDirectUpdate
+                                            plannedDirectUpdate,
+                                            downloadContext
                                         );
+                                        CapacitorUpdaterPlugin.this.installNextIfInBackground();
                                     } else {
                                         logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle");
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
                                         CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                         CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                             "update downloaded, autoUpdate onlyDownload",
@@ -5558,20 +6454,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             "download_fail",
                                             "downloadFailed",
                                             true,
-                                            false
+                                            false,
+                                            downloadContext
                                         );
                                     }
                                     return;
                                 }
                                 if (latest.isDeleted()) {
                                     logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
                                     try {
-                                        final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
+                                        final boolean deleted = CapacitorUpdaterPlugin.this.implementation.deleteDeletedBundle(
+                                            latest.getId()
+                                        );
                                         if (deleted) {
                                             logger.info("Failed bundle deleted: " + latest.getVersionName());
                                         }
                                     } catch (final IOException e) {
                                         logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
+                                    }
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
                                     }
                                 }
                             }
@@ -5587,7 +6492,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     latestVersionName,
                                     current,
                                     true,
-                                    plannedDirectUpdate
+                                    plannedDirectUpdate,
+                                    downloadContext
                                 );
                                 return;
                             }
@@ -5595,14 +6501,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 latest != null &&
                                 BundleStatus.DOWNLOADING == latest.getStatus() &&
                                 CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latest.getVersionName());
-                            CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
-                            CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
-                                ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) || initialDirectUpdateAllowed
-                                : initialDirectUpdateAllowed;
+                            synchronized (CapacitorUpdaterPlugin.this) {
+                                if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                    return;
+                                }
+                                CapacitorUpdaterPlugin.this.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate);
+                                final boolean directUpdateStillAllowed = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                    initialDirectUpdateAllowed,
+                                    timeoutGeneration
+                                );
+                                CapacitorUpdaterPlugin.this.implementation.directUpdate = retryingInFlightDownload
+                                    ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
+                                      directUpdateStillAllowed
+                                    : directUpdateStillAllowed;
+                            }
                             startNewThread(() -> {
                                 try {
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
                                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
-                                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState();
+                                        CapacitorUpdaterPlugin.this.clearBackgroundDownloadState(downloadContext);
                                         return;
                                     }
                                     logger.info(
@@ -5618,36 +6537,30 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     final String sessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     final String checksum = jsRes.has("checksum") ? jsRes.getString("checksum") : "";
 
-                                    if (jsRes.has("manifest")) {
-                                        // Handle manifest-based download
-                                        JSONArray manifest = jsRes.getJSONArray("manifest");
+                                    final JSONArray manifest = jsRes.has("manifest") ? jsRes.getJSONArray("manifest") : null;
+                                    final CapgoUpdater.BackgroundDownloadResult result =
                                         CapacitorUpdaterPlugin.this.implementation.downloadBackground(
                                             url,
                                             latestVersionName,
                                             sessionKey,
                                             checksum,
                                             manifest,
-                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()
+                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
+                                            downloadContext
                                         );
-                                    } else {
-                                        // Handle single file download (existing code)
-                                        CapacitorUpdaterPlugin.this.implementation.downloadBackground(
-                                            url,
+                                    if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.NOT_STARTED) {
+                                        CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                             latestVersionName,
-                                            sessionKey,
-                                            checksum,
-                                            null,
-                                            CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()
+                                            plannedDirectUpdate,
+                                            downloadContext
                                         );
                                     }
                                 } catch (final Exception e) {
                                     logger.error("error downloading file " + e.getMessage());
-                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Error downloading file",
+                                    CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                         latestVersionName,
-                                        CapacitorUpdaterPlugin.this.implementation.getCurrentBundle(),
-                                        true,
-                                        plannedDirectUpdate
+                                        plannedDirectUpdate,
+                                        downloadContext
                                     );
                                 }
                             });
@@ -5658,7 +6571,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 latestVersionName,
                                 current,
                                 false,
-                                plannedDirectUpdate
+                                plannedDirectUpdate,
+                                downloadContext
                             );
                         }
                     } catch (final Exception e) {
@@ -5668,7 +6582,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             currentBeforeCleanup.getVersionName(),
                             currentBeforeCleanup,
                             true,
-                            plannedDirectUpdate
+                            plannedDirectUpdate,
+                            downloadContext
                         );
                     }
                 });
@@ -5680,7 +6595,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     current.getVersionName(),
                     current,
                     true,
-                    plannedDirectUpdate
+                    plannedDirectUpdate,
+                    downloadContext
                 );
             }
         });
@@ -5695,60 +6611,150 @@ public class CapacitorUpdaterPlugin extends Plugin {
      * user would open the old version once more. Install it now, like a background transition.
      */
     void installNextIfInBackground() {
+        this.installNextIfInBackground(null);
+    }
+
+    private void installNextIfInBackground(final String excludedBundleId) {
         if (!this.appInBackground) {
             return;
         }
         logger.info("Next bundle downloaded while in background, installing it now");
-        this.installNext();
+        this.installNext(excludedBundleId);
     }
 
-    private void installNext() {
-        try {
-            if (this.shouldBlockAutoUpdateForPreviewSession()) {
-                return;
+    private BundleInfo claimNextBundleInstall(final String excludedBundleId) {
+        synchronized (this.automaticInstallLock) {
+            if (this.automaticInstallInProgress || this.watchdogRollbackInProgress || this.shouldBlockAutoUpdateForPreviewSession()) {
+                return null;
             }
-            String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
-            ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
-            if (!delayConditionList.isEmpty()) {
+            final String delayUpdatePreferences = this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+            final ArrayList<DelayCondition> delayConditions = this.delayUpdateUtils.parseDelayConditions(delayUpdatePreferences);
+            if (!delayConditions.isEmpty()) {
                 logger.info("Update delayed until delay conditions met");
-                return;
+                return null;
             }
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextBundle();
+            if (next == null || next.isErrorStatus() || next.getId().equals(current.getId()) || next.getId().equals(excludedBundleId)) {
+                return null;
+            }
+            if (
+                next.isBuiltin() &&
+                !this.implementation.admitBuiltinInstall(() -> {
+                    final BundleInfo queued = this.implementation.getNextBundle();
+                    return queued != null && queued.isBuiltin();
+                })
+            ) {
+                return null;
+            }
+            this.automaticInstallInProgress = true;
+            this.automaticInstallPageGeneration = -1;
+            return next;
+        }
+    }
 
-            if (next != null && !next.isErrorStatus() && !next.getId().equals(current.getId())) {
-                // There is a next bundle waiting for activation
+    private void releaseAutomaticInstall() {
+        synchronized (this.automaticInstallLock) {
+            this.automaticInstallInProgress = false;
+            this.automaticInstallPageGeneration = -1;
+        }
+    }
+
+    private void installNext() {
+        this.installNext(null);
+    }
+
+    private void installNext(final String excludedBundleId) {
+        try {
+            final BundleInfo next = this.claimNextBundleInstall(excludedBundleId);
+            if (next == null) {
+                return;
+            }
+            boolean dispatched = false;
+            try {
                 logger.debug("Next bundle is: " + next.getVersionName());
                 startNewThread(() -> {
-                    if (this.implementation.set(next) && this._reload()) {
-                        logger.info("Updated to bundle: " + next.getVersionName());
-                        this.notifyBundleSet(next);
-                        this.implementation.setNextBundle(null);
-                    } else {
-                        logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
+                    boolean installed = false;
+                    boolean deferredForForeground = false;
+                    try {
+                        if (!this.appInBackground) {
+                            deferredForForeground = true;
+                            logger.info("App returned to foreground before deferred install, keeping bundle queued");
+                            return;
+                        }
+                        final CapgoUpdater.ResetState previousState;
+                        final String previousBundleName;
+                        final boolean staged;
+                        synchronized (this) {
+                            previousState = this.implementation.captureResetState();
+                            previousBundleName = this.implementation.getCurrentBundle().getVersionName();
+                            staged = this.stageBundleForReload(() -> this.implementation.setQueuedBundle(next));
+                        }
+                        if (staged && this.reloadAutomaticBundle(next, previousState)) {
+                            if (next.isBuiltin()) {
+                                this.implementation.finalizeBuiltinUpdate(previousBundleName);
+                            }
+                            logger.info("Updated to bundle: " + next.getVersionName());
+                            this.notifyBundleSet(next);
+                            this.implementation.clearNextBundleIfMatches(next.getId());
+                            installed = true;
+                        } else {
+                            logger.error("Update to bundle: " + next.getVersionName() + " Failed!");
+                        }
+                    } catch (final Exception e) {
+                        logger.error("Error during installNext " + e);
+                    } finally {
+                        this.releaseAutomaticInstall();
+                        // A download or background transition may have arrived while admission was held.
+                        this.installNextIfInBackground(installed || deferredForForeground ? null : next.getId());
                     }
                 });
+                dispatched = true;
+            } finally {
+                if (!dispatched) {
+                    this.releaseAutomaticInstall();
+                    this.installNextIfInBackground(next.getId());
+                }
             }
         } catch (final Exception e) {
             logger.error("Error during installNext " + e);
         }
     }
 
-    private void checkRevert() {
-        // Automatically roll back to fallback version if notifyAppReady has not been called yet
-        final BundleInfo current = this.implementation.getCurrentBundle();
+    private void checkRevert(final BundleInfo current) {
+        this.checkRevert(current.getId(), this.readyGeneration);
+    }
 
-        if (current.isBuiltin()) {
-            logger.info("Built-in bundle is active. We skip the check for notifyAppReady.");
-            return;
+    private void checkRevert(final String expectedBundleId, final int expectedGeneration) {
+        final BundleInfo current;
+        synchronized (this) {
+            if (this.appInBackground) {
+                logger.info("App is in background, notifyAppReady check deferred to the next foreground");
+                return;
+            }
+            current = this.implementation.getCurrentBundle();
+            if (current == null || !current.getId().equals(expectedBundleId) || this.readyGeneration != expectedGeneration) {
+                logger.info("Skipping notifyAppReady check for a bundle or page that is no longer current");
+                return;
+            }
+            if (current.isBuiltin() || current.getStatus() == BundleStatus.SUCCESS || this.isPreviewSessionStateActive()) {
+                return;
+            }
+            synchronized (this.automaticInstallLock) {
+                if (
+                    this.watchdogRollbackInProgress ||
+                    (this.automaticInstallInProgress && this.automaticInstallPageGeneration != expectedGeneration)
+                ) {
+                    // An admitted replacement has not dispatched its page yet. Its own watchdog
+                    // will check readiness; the previous page must not reset that installation.
+                    return;
+                }
+                this.watchdogRollbackInProgress = true;
+            }
+            // Reject readiness from the failed page throughout rollback staging and dispatch.
+            this.armReadyGuard();
         }
-        if (this.isPreviewSessionStateActive()) {
-            logger.info("Preview session is active. We skip the check for notifyAppReady.");
-            return;
-        }
-        logger.debug("Current bundle is: " + current);
-
-        if (BundleStatus.SUCCESS != current.getStatus()) {
+        try {
             logger.error("notifyAppReady was not called, roll back current bundle: " + current.getId());
             logger.info("Did you forget to call 'notifyAppReady()' in your Capacitor App code?");
             final JSObject ret = new JSObject();
@@ -5784,27 +6790,34 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     });
                 }
             }
-        } else {
-            logger.info("notifyAppReady was called. This is fine: " + current.getId());
+        } finally {
+            synchronized (this.automaticInstallLock) {
+                this.watchdogRollbackInProgress = false;
+            }
+            this.installNextIfInBackground();
         }
     }
 
-    void runDeferredAppReadyCheck() {
-        // A frozen app wakes up with its sleep already expired, before appMovedToForeground re-arms
-        // the check: its page could not run yet, so wait for the fresh check of the next foreground.
+    private void runDeferredAppReadyCheck(final String expectedBundleId, final int expectedGeneration) {
+        // A frozen page gets a fresh deadline on foreground.
         if (this.appInBackground) {
             logger.info("App is in background, notifyAppReady check deferred to the next foreground");
             return;
         }
-        this.checkRevert();
+        this.checkRevert(expectedBundleId, expectedGeneration);
     }
 
     private class DeferredNotifyAppReadyCheck implements Runnable {
 
         private final long waitTimeMs;
+        private final String bundleId;
+        private final int generation;
 
         DeferredNotifyAppReadyCheck(final long waitTimeMs) {
             this.waitTimeMs = waitTimeMs;
+            final BundleInfo current = CapacitorUpdaterPlugin.this.implementation.getCurrentBundle();
+            this.bundleId = current == null ? null : current.getId();
+            this.generation = CapacitorUpdaterPlugin.this.readyGeneration;
         }
 
         @Override
@@ -5813,7 +6826,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             try {
                 logger.info("Wait for " + this.waitTimeMs + "ms, then check for notifyAppReady");
                 Thread.sleep(this.waitTimeMs);
-                CapacitorUpdaterPlugin.this.runDeferredAppReadyCheck();
+                CapacitorUpdaterPlugin.this.runDeferredAppReadyCheck(this.bundleId, this.generation);
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
             } catch (final InterruptedException e) {
                 CapacitorUpdaterPlugin.this.clearAppReadyCheckIfCurrent(currentThread);
@@ -5843,6 +6856,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.delayUpdateUtils.unsetBackgroundTimestamp();
 
         if (CapacitorUpdaterPlugin.this._isAutoUpdateEnabled()) {
+            this.scheduleLaunchSplashscreenTimeoutIfNeeded();
             if (!this.isDownloadStuckOrTimedOut()) {
                 this.backgroundDownload();
             } else {
