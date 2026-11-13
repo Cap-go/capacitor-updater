@@ -36,7 +36,7 @@ const coreShards = [...activeTestIosLines.matchAll(
 function checkCoreShardCoverage() {
   const source = fs.readFileSync(path.join(testsDir, "CapacitorUpdaterPluginTests.swift"), "utf8");
   const prefix = "-only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests/";
-  const expected = new Set([...source.matchAll(/func\s+(test[A-Za-z0-9_]+)/g)].map((match) => prefix + match[1]));
+  const expected = new Set([...source.matchAll(/func\s+(test\w+)/g)].map((match) => prefix + match[1]));
   const counts = new Map();
   for (const shard of coreShards) {
     const output = execFileSync(path.join(root, "scripts/ci/ios-capacitor-updater-core-shard-args.sh"), [shard], {
