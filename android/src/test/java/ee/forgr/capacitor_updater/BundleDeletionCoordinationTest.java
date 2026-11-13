@@ -819,10 +819,7 @@ public class BundleDeletionCoordinationTest {
                 assertTrue(finalizing.await(2, TimeUnit.SECONDS));
                 deletion.start();
                 assertTrue(deletionAdmitted.await(2, TimeUnit.SECONDS));
-                assertFalse(
-                    "Deletion must settle admitted finalization before removing its files",
-                    deletionFinished.await(200, TimeUnit.MILLISECONDS)
-                );
+                awaitFinalizationWait(deletion, deletionFinished);
                 assertTrue(
                     "Unrelated staging must not wait on finalization",
                     plugin.stagePendingReload(plugin.getBundleInfo("bundleA001"))
@@ -844,7 +841,7 @@ public class BundleDeletionCoordinationTest {
                         })
                     );
                     retry.get().start();
-                    assertFalse("Retry must retain the running task's coordination", retryFinished.await(200, TimeUnit.MILLISECONDS));
+                    awaitFinalizationWait(retry.get(), retryFinished);
                 }
             } finally {
                 release.countDown();
@@ -860,6 +857,26 @@ public class BundleDeletionCoordinationTest {
             assertFalse(store.containsKey(ID + "_info"));
             verify(downloader, never()).directUpdateFinish(any(BundleInfo.class), any(CapgoUpdater.BackgroundDownloadContext.class));
         }
+    }
+
+    private static void awaitFinalizationWait(final Thread deletion, final CountDownLatch finished) {
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            assertEquals("Deletion completed before waiting for running finalization", 1, finished.getCount());
+            boolean awaitingLatch = false;
+            boolean deletingBundle = false;
+            for (final StackTraceElement frame : deletion.getStackTrace()) {
+                awaitingLatch |= frame.getClassName().equals(CountDownLatch.class.getName()) && frame.getMethodName().equals("await");
+                deletingBundle |= frame.getClassName().equals(CapgoUpdater.class.getName()) && frame.getMethodName().equals("deleteBundle");
+            }
+            // An unscheduled retry cannot satisfy this checkpoint; the real finalization latch must be waiting.
+            if (deletion.getState() == Thread.State.TIMED_WAITING && awaitingLatch && deletingBundle) {
+                assertEquals("Finalization must remain blocked until the test releases it", 1, finished.getCount());
+                return;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
+        fail("Deletion never reached the running finalization wait");
     }
 
     private static void field(final CapgoUpdater updater, final String name, final Object value) throws Exception {
