@@ -751,8 +751,18 @@ async function handleStats(request, requestUrl) {
   }
 
   const payload = await readJsonPayload(request);
-  const actions = (Array.isArray(payload) ? payload : [payload]).map((event) => event?.action ?? 'unknown');
+  const events = Array.isArray(payload) ? payload : [payload];
+  const actions = events.map((event) => event?.action ?? 'unknown');
   logRequest(requestUrl, request.method, `scenario=${scenario.id} action=${actions.join(',')}`);
+  for (const event of events) {
+    if (event?.action === 'update_check_error') {
+      const details = {
+        error: event.metadata?.error,
+        status_code: event.metadata?.status_code,
+      };
+      console.log(`[fake-capgo] scenario=${scenario.id} update_check_error=${JSON.stringify(details)}`);
+    }
+  }
   rememberRequest(scenario.id, 'stats', requestUrl, payload);
   return jsonResponse({ status: 'ok' });
 }

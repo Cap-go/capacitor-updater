@@ -69,6 +69,12 @@ try {
   const corrupt = Buffer.from(await (await request('/bundles/edge-deferred-v1.zip')).arrayBuffer());
   assert.equal(corrupt.length, bytes.length);
   assert.notDeepEqual(corrupt, bytes);
+  await request('/api/control/fault?scenario=edge-deferred&target=bundle&mode=none', { method: 'POST' });
+  const recoveryUpdate = await (
+    await request('/api/updates/edge-deferred', { method: 'POST', body: JSON.stringify({ version_name: '1.0' }) })
+  ).json();
+  assert.deepEqual(recoveryUpdate, update, 'Recovery must offer the same release and original checksum');
+  assert.deepEqual(Buffer.from(await (await request('/bundles/edge-deferred-v1.zip')).arrayBuffer()), bytes);
   const manifestUpdate = await (
     await request('/api/updates/manual-manifest', { method: 'POST', body: JSON.stringify({ version_name: '1.0' }) })
   ).json();
@@ -93,7 +99,7 @@ try {
   }
   assert.equal(spawnSync(process.execPath, [conditionScript, '{}', 'process.exit(0)']).status, 2);
   console.log(
-    'Maestro helper regression checks passed (Node server, ZIP, Range, corruption, manifest, condition allowlist).',
+    'Maestro helper regression checks passed (Node server, ZIP, Range, corruption recovery, manifest, condition allowlist).',
   );
 } finally {
   if (server?.exitCode === null) {

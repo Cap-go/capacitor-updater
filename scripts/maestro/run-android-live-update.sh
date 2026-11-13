@@ -334,6 +334,7 @@ wait_for_ui_state_with_timeout() {
   done
 
   echo "Timed out waiting for UI state: ${description}" >&2
+  printf 'Last captured UI hierarchy:\n%s\n' "$hierarchy" >&2
   if [[ "${CAPGO_MAESTRO_SKIP_UI_HIERARCHY_DUMP_ON_TIMEOUT:-1}" != "1" ]]; then
     dump_ui_hierarchy >&2 || true
   fi
@@ -1430,7 +1431,8 @@ else
   bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
 fi
 stop_stale_fake_server
-bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
+# The CI emulator retry reuses this path; retain the first attempt's requests.
+bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >>"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!
 wait_for_server
 run_selected_scenarios
