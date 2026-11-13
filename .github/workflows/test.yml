@@ -282,13 +282,16 @@ jobs:
       matrix:
         include:
           # -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-          # CapacitorUpdaterTests is large; split across two shards so each stays under the 5 minute job cap.
+          # Interleave core tests across three shards to leave room for simulator startup and result finalization.
           - shard: core-a
             parallel_testing: '0'
             select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh a
           - shard: core-b
             parallel_testing: '0'
             select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh b
+          - shard: core-c
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh c
           # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
           - shard: delta
             parallel_testing: '0'
