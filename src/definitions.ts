@@ -212,7 +212,9 @@ declare module '@capacitor/cli' {
        * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
        * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
        * Set to `0` (zero) to disable the timeout.
-       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
+       * If installation has not started when the timeout fires, the downloaded bundle is installed on the next background/launch.
+       * If installation has already started, the splashscreen still hides at the deadline while the reload and app-ready checks finish.
+       * This can briefly expose the previous page while the new bundle loads.
        * Requires {@link autoSplashscreen} to be enabled.
        *
        * Only available for Android and iOS.
