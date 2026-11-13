@@ -9,5 +9,5 @@ appId: app.capgo.updater
     visible: '@capgo/capacitor-updater'
     timeout: 120000
 - extendedWaitUntil:
-    visible: '${SUMMARY_PATTERN}'
+    visible: '.*Harness: ready${BUILD_LABEL}${SCENARIO_LINE}${DIRECT_UPDATE_LINE}${AUTO_UPDATE_ENABLED_LINE}${AUTO_UPDATE_AVAILABLE_LINE}${NOTIFY_READY_LINE}${CURRENT_SOURCE_LINE}${CURRENT_VERSION_LINE}'
     timeout: 120000
