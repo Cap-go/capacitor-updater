@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
 import org.junit.Rule;
@@ -71,6 +72,107 @@ public class BundleDeletionCoordinationTest {
         Files.createDirectories(folder);
         Files.write(folder.resolve("index.html"), "existing".getBytes(StandardCharsets.UTF_8));
         assertTrue(updater.saveBundleInfo(id, new BundleInfo(id, VERSION, BundleStatus.PENDING, new Date(), "")));
+    }
+
+    @Test
+    public void deletedDirectInstallCandidatePreservesQueuedBundle() throws Exception {
+        assertDirectInstallCandidateAdmission("deleted");
+    }
+
+    @Test
+    public void deletingDirectInstallCandidatePreservesQueuedBundle() throws Exception {
+        assertDirectInstallCandidateAdmission("deleting");
+    }
+
+    @Test
+    public void missingDirectInstallCandidatePreservesQueuedBundle() throws Exception {
+        assertDirectInstallCandidateAdmission("missing");
+    }
+
+    @Test
+    public void availableDirectInstallCandidateSupersedesQueuedBundle() throws Exception {
+        assertDirectInstallCandidateAdmission("available");
+    }
+
+    private void assertDirectInstallCandidateAdmission(final String candidateState) throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final CapgoUpdater updater = updater(root, new ConcurrentHashMap<>());
+        bundle(updater, "bundleC003");
+        assertTrue(updater.setNextBundle("bundleC003"));
+        assertTrue(updater.saveBundleInfo(ID, new BundleInfo(ID, VERSION, BundleStatus.DOWNLOADING, new Date(), "")));
+        final Path staging = root.resolve("capgo_manifest_admission001");
+        Files.createDirectories(staging);
+        Files.write(staging.resolve("index.html"), "downloaded".getBytes(StandardCharsets.UTF_8));
+        final List<Runnable> workers = new ArrayList<>();
+        final AtomicInteger reloads = new AtomicInteger();
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class);
+            ObserverHarness harness = new ObserverHarness(updater, false)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin() {
+                @Override
+                public androidx.appcompat.app.AppCompatActivity getActivity() {
+                    return null;
+                }
+
+                @Override
+                public Thread startNewThread(final Runnable action) {
+                    workers.add(action);
+                    return new Thread();
+                }
+
+                @Override
+                protected boolean _reload() {
+                    reloads.incrementAndGet();
+                    return true;
+                }
+
+                @Override
+                public void notifyListeners(final String event, final com.getcapacitor.JSObject payload, final boolean retain) {}
+            };
+            plugin.implementation = updater;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            plugin.configureDirectUpdateModeForTesting("always", false);
+            final DelayUpdateUtils delays = mock(DelayUpdateUtils.class);
+            when(delays.parseDelayConditions(anyString())).thenReturn(new ArrayList<>());
+            pluginField(plugin, "prefs", updater.prefs);
+            pluginField(plugin, "delayUpdateUtils", delays);
+            final CapgoUpdater.BackgroundDownloadContext context = new CapgoUpdater.BackgroundDownloadContext(0, true);
+            pluginField(plugin, "backgroundDownloadContext", context);
+            doAnswer((inv) -> {
+                plugin.scheduleDirectUpdateFinish(inv.getArgument(0), inv.getArgument(1));
+                return null;
+            })
+                .when(updater)
+                .directUpdateFinish(any(BundleInfo.class), eq(context));
+            harness.observe(updater, context);
+            harness.succeed(staging.getFileName().toString());
+            harness.tasks.remove(0).run();
+            // Finalization has retired, but the plugin's install worker has not run yet.
+            assertEquals(1, workers.size());
+            assertEquals("bundleC003", updater.getNextBundle().getId());
+            if (candidateState.equals("deleted")) {
+                assertTrue(updater.delete(ID, true, false));
+            } else if (candidateState.equals("deleting")) {
+                assertTrue(updater.saveBundleInfo(ID, updater.getBundleInfo(ID).setStatus(BundleStatus.DELETING)));
+            } else if (candidateState.equals("missing")) {
+                Files.delete(root.resolve("versions").resolve(ID).resolve("index.html"));
+            }
+            workers.remove(0).run();
+            if (candidateState.equals("available")) {
+                assertEquals(1, reloads.get());
+                assertEquals(ID, updater.getCurrentBundle().getId());
+                assertNull(updater.getNextBundle());
+            } else {
+                assertEquals(0, reloads.get());
+                assertTrue(updater.getCurrentBundle().isBuiltin());
+                assertNotNull("An unavailable install candidate must preserve the existing queue", updater.getNextBundle());
+                assertEquals("bundleC003", updater.getNextBundle().getId());
+                verify(updater, never()).stagePendingReload(any(BundleInfo.class));
+            }
+        }
     }
 
     @Test

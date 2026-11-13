@@ -5036,13 +5036,18 @@ public class CapgoUpdater {
         return this.setNextBundle(next, false);
     }
 
-    boolean clearNextBundleForDirectInstall(final java.util.function.BooleanSupplier admitInstall) {
-        synchronized (nextBundleLock) {
-            if (!admitInstall.getAsBoolean()) {
+    boolean clearNextBundleForDirectInstall(final BundleInfo candidate, final java.util.function.BooleanSupplier admitInstall) {
+        synchronized (deleteLock) {
+            if (candidate == null || (!candidate.isBuiltin() && !this.bundleExists(candidate.getId()))) {
                 return false;
             }
-            // Supersede the old queue at admission, before later writers can enqueue a replacement.
-            return this.setNextBundle(null);
+            synchronized (nextBundleLock) {
+                if (!admitInstall.getAsBoolean()) {
+                    return false;
+                }
+                // Supersede the old queue only after validating the candidate under deletion admission.
+                return this.setNextBundle(null);
+            }
         }
     }
 

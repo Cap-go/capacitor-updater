@@ -6209,14 +6209,14 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(updater.setNextBundle("bundleA001"));
             final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
             plugin.setAutoUpdateModeForTesting("always");
-            final Method claim = CapacitorUpdaterPlugin.class.getDeclaredMethod("claimDirectUpdateInstall", long.class);
+            final Method claim = CapacitorUpdaterPlugin.class.getDeclaredMethod("claimDirectUpdateInstall", long.class, BundleInfo.class);
             claim.setAccessible(true);
             final AtomicReference<Throwable> failure = new AtomicReference<>();
             final Thread installing = new Thread(() -> {
                 try (MockedStatic<Looper> workerLooper = mockStatic(Looper.class)) {
                     workerLooper.when(Looper::getMainLooper).thenReturn(main);
                     workerLooper.when(Looper::myLooper).thenReturn(main);
-                    assertTrue((boolean) claim.invoke(plugin, 0L));
+                    assertTrue((boolean) claim.invoke(plugin, 0L, updater.getBundleInfo("bundleA001")));
                 } catch (Throwable error) {
                     failure.compareAndSet(null, error);
                 }
@@ -8863,6 +8863,7 @@ public class CapacitorUpdaterUnitTest {
             final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
             final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
             final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.SUCCESS, new Date(), "checksum");
+            updater.documentsDir = createExistingBundleDirectory("capgo-direct-dispatch", latest.getId()).toFile();
             final SharedPreferences prefs = mock(SharedPreferences.class);
             final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
 
@@ -10557,6 +10558,7 @@ public class CapacitorUpdaterUnitTest {
             final DirectUpdateDispatchPlugin plugin = new DirectUpdateDispatchPlugin();
             final ResetTrackingCapgoUpdater updater = new ResetTrackingCapgoUpdater();
             final BundleInfo latest = new BundleInfo("download-id", "2.0.0", BundleStatus.PENDING, new Date(), "checksum");
+            updater.documentsDir = createExistingBundleDirectory("capgo-direct-timeout", latest.getId()).toFile();
             final SharedPreferences prefs = mock(SharedPreferences.class);
             final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
             when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");
@@ -10698,6 +10700,7 @@ public class CapacitorUpdaterUnitTest {
                     return latest;
                 }
             };
+            updater.documentsDir = createExistingBundleDirectory("capgo-cached-timeout", latest.getId()).toFile();
             final SharedPreferences prefs = mock(SharedPreferences.class);
             final DelayUpdateUtils delayUpdateUtils = mock(DelayUpdateUtils.class);
             when(prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")).thenReturn("[]");

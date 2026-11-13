@@ -1877,18 +1877,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
         }
     }
 
-    private boolean claimDirectUpdateInstall(final long timeoutGeneration) {
-        return this.claimDirectUpdateInstall(timeoutGeneration, false);
-    }
-
-    private boolean claimDirectUpdateInstall(final long timeoutGeneration, final boolean builtin) {
+    private boolean claimDirectUpdateInstall(final long timeoutGeneration, final BundleInfo candidate) {
         synchronized (this.automaticInstallLock) {
             if (this.automaticInstallInProgress || this.watchdogRollbackInProgress) {
                 return false;
             }
             final java.util.function.BooleanSupplier admitInstall = () ->
-                this.implementation.clearNextBundleForDirectInstall(() -> this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration));
-            if (!(builtin ? this.implementation.admitBuiltinInstall(admitInstall) : admitInstall.getAsBoolean())) {
+                this.implementation.clearNextBundleForDirectInstall(candidate, () ->
+                    this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration)
+                );
+            if (!(candidate.isBuiltin() ? this.implementation.admitBuiltinInstall(admitInstall) : admitInstall.getAsBoolean())) {
                 return false;
             }
             this.automaticInstallInProgress = true;
@@ -3034,7 +3032,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                     this.ownsBackgroundDownload(downloadContext) &&
                     this.backgroundDownloadTask == downloadTask &&
                     (downloadContext == null || (downloadContext.directUpdate && !downloadContext.deferredForRetry));
-                installAdmitted = directUpdateAllowed && this.claimDirectUpdateInstall(timeoutGeneration);
+                installAdmitted = directUpdateAllowed && this.claimDirectUpdateInstall(timeoutGeneration, latest);
                 if (installAdmitted) {
                     this.implementation.directUpdate = false;
                 }
@@ -5956,7 +5954,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (!this.ownsBackgroundDownload(downloadContext)) {
                     return true;
                 }
-                if (!this.claimDirectUpdateInstall(downloadContext.timeoutGeneration, bundle.isBuiltin())) {
+                if (!this.claimDirectUpdateInstall(downloadContext.timeoutGeneration, bundle)) {
                     return false;
                 }
                 installAdmitted = true;
