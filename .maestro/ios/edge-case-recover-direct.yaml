@@ -11,8 +11,18 @@ appId: app.capgo.updater
     env:
       HOST_SERVER_URL: '${HOST_SERVER_URL}'
       SCENARIO_ID: '${SCENARIO_ID}'
-# Cold launch: the direct update downloads and installs the release before the app shows.
+# Recovery can install immediately or queue the release if the launch splash deadline expires.
 - runFlow: ../helpers/cold-launch-app.yaml
+- extendedWaitUntil:
+    visible: '${APPLIED_PATTERN}|${DOWNLOADED_PATTERN}'
+    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS || 180000}'
+- runFlow:
+    when:
+      visible: '${DOWNLOADED_PATTERN}'
+    commands:
+      - pressKey: Home
+      - launchApp
+# Both paths must finish on the downloaded release with notifyAppReady acknowledged.
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:
