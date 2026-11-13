@@ -560,7 +560,6 @@ run_core_assert() {
   local current_source_line="$8"
   local current_version_line="$9"
   local summary_pattern=""
-
   summary_pattern="$(edge_summary_pattern \
     "$build_label" \
     "$scenario_line" \
@@ -573,8 +572,44 @@ run_core_assert() {
 
   run_flow \
     "$label" \
-    "$ROOT_DIR/.maestro/ios/assert-live-update-core.yaml" \
+    "$ROOT_DIR/.maestro/ios/assert-live-update-summary.yaml" \
     "SUMMARY_PATTERN=$summary_pattern"
+}
+
+run_on_launch_assert() {
+  local builtin_label="$1"
+  local builtin_version="$2"
+  local first_release="$3"
+  local applied_pattern=""
+  local queued_pattern=""
+
+  applied_pattern="$(edge_summary_pattern \
+    "Build label: $first_release" \
+    'Scenario: on-launch' \
+    'Direct update mode: onLaunch' \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($first_release)" \
+    "$ASSERT_SOURCE_DOWNLOADED" \
+    "Current bundle version: $first_release" \
+    'Next bundle version: none')"
+  queued_pattern="$(edge_summary_pattern \
+    "Build label: $builtin_label" \
+    'Scenario: on-launch' \
+    'Direct update mode: onLaunch' \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($builtin_version)" \
+    "$ASSERT_SOURCE_BUILTIN" \
+    "Current bundle version: $builtin_version" \
+    "Next bundle version: $first_release" \
+    "Last completed download: $first_release")"
+
+  run_flow \
+    'on-launch-first-release' \
+    "$ROOT_DIR/.maestro/ios/live-update-on-launch.yaml" \
+    "APPLIED_PATTERN=$applied_pattern" \
+    "QUEUED_PATTERN=$queued_pattern"
 }
 
 run_download_assert() {
@@ -771,12 +806,20 @@ run_edge_case_once() {
     reset_ios_maestro_driver
   fi
 
+  local downloaded_pattern=""
+  downloaded_pattern="$(edge_summary_pattern \
+    "Build label: $builtin_label" \
+    "Scenario: $app_scenario" \
+    "$ASSERT_SOURCE_BUILTIN" \
+    "Next bundle version: $first_release")"
+
   if [[ "$app_scenario" == "edge-direct" ]]; then
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-direct.yaml" \
       "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS" \
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
+      "DOWNLOADED_PATTERN=$downloaded_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   else
     run_flow "${edge_case_id}-recovery" "$ROOT_DIR/.maestro/ios/edge-case-recover-deferred.yaml" \
@@ -784,11 +827,7 @@ run_edge_case_once() {
       "HOST_SERVER_URL=$HOST_SERVER_URL" \
       "SCENARIO_ID=$app_scenario" \
       "BUILTIN_PATTERN=$builtin_pattern" \
-      "DOWNLOADED_PATTERN=$(edge_summary_pattern \
-        "Build label: $builtin_label" \
-        "Scenario: $app_scenario" \
-        "$ASSERT_SOURCE_BUILTIN" \
-        "Next bundle version: $first_release")" \
+      "DOWNLOADED_PATTERN=$downloaded_pattern" \
       "APPLIED_PATTERN=$applied_pattern" || return 1
   fi
 
@@ -850,7 +889,7 @@ run_scenario() {
     fi
     run_edge_case "$scenario_id"
     echo "=== Completed iOS Maestro edge case: $scenario_id ==="
-    if [[ -n "${CI:-}" ]]; then
+    if [[ -n "${CI:-}" && "$SKIP_BUILD" != "1" ]]; then
       reset_ios_maestro_driver
     fi
     return 0
@@ -904,16 +943,7 @@ run_scenario() {
         "Current bundle version: $first_release"
       ;;
     on-launch)
-      run_core_assert \
-        "${scenario_id}-first-release" \
-        "Build label: $first_release" \
-        'Scenario: on-launch' \
-        'Direct update mode: onLaunch' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
-        "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
+      run_on_launch_assert "$builtin_label" "$builtin_version" "$first_release"
       ;;
     manual-zip)
       run_flow "${scenario_id}-flow" "$ROOT_DIR/.maestro/ios/manual-zip-flow.yaml"
@@ -955,7 +985,7 @@ if (failures.length) {
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
-  if [[ -n "${CI:-}" ]]; then
+  if [[ -n "${CI:-}" && "$SKIP_BUILD" != "1" ]]; then
     reset_ios_maestro_driver
   fi
   return 0
@@ -1019,8 +1049,15 @@ if ! command -v maestro >/dev/null 2>&1; then
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "node is required to run Capacitor CLI commands." >&2
+  echo "node is required to run the test helpers and Capacitor CLI commands." >&2
   exit 1
+fi
+
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+    echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+    exit 1
+  fi
 fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -1045,11 +1082,6 @@ fi
 
 if ! command -v lsof >/dev/null 2>&1; then
   echo "lsof is required to detect stale fake Capgo server processes." >&2
-  exit 1
-fi
-
-if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
-  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
   exit 1
 fi
 

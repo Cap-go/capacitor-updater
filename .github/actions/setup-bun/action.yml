@@ -4,6 +4,9 @@ inputs:
   bun-version:
     description: Bun version to install.
     default: 1.4.2
+  setup-node:
+    description: Install Node.js for build tools that require it.
+    default: 'true'
   dependency-cache-key:
     description: Cache key for dependency directories.
     default: ''
@@ -16,9 +19,6 @@ inputs:
   install-example:
     description: Run bun install in example-app.
     default: 'false'
-  setup-node:
-    description: Run actions/setup-node before installing Bun. Maestro-only jobs can skip this.
-    default: 'true'
 runs:
   using: composite
   steps:
@@ -27,17 +27,10 @@ runs:
       uses: actions/setup-node@v7
       with:
         node-version: 26.x
-    - name: Cache Bun runtime
-      uses: actions/cache@v6
+    - name: Setup Bun runtime
+      uses: ./.github/actions/setup-bun-runtime
       with:
-        path: ~/.bun
-        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
-    - name: Install Bun
-      shell: bash
-      env:
-        BUN_VERSION: ${{ inputs.bun-version }}
-        GH_TOKEN: ${{ github.token }}
-      run: ./scripts/ci/install-bun.sh
+        bun-version: ${{ inputs.bun-version }}
     - name: Cache Bun dependencies
       if: inputs.dependency-cache-key != '' && inputs.dependency-cache-path != ''
       uses: actions/cache@v6
