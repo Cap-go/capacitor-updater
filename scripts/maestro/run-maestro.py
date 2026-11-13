@@ -55,13 +55,31 @@ def run(timeout, scenario, device):
         os.remove(report)
     except FileNotFoundError:
         pass
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    return run_command(command, report, timeout)
+
+
+def run_command(command, report, timeout):
+    process = None
+    termination_signal = 0
+
+    def request_termination(signum, _frame):
+        nonlocal termination_signal
+        termination_signal = signum
+
+    # Record cancellation instead of raising during Popen or interrupting cleanup.
+    previous_handler = signal.signal(signal.SIGTERM, request_termination)
     try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
-            return monitor_process(process, selector, report, timeout)
+            status = monitor_process(process, selector, report, timeout, lambda: termination_signal)
     finally:
-        stop_process(process)
+        try:
+            if process is not None:
+                stop_process(process)
+        finally:
+            signal.signal(signal.SIGTERM, previous_handler)
+    return 128 + termination_signal if termination_signal else status
 
 
 def read_output(selector, output):
@@ -76,11 +94,13 @@ def read_output(selector, output):
     return output
 
 
-def monitor_process(process, selector, report, timeout):
+def monitor_process(process, selector, report, timeout, termination_signal):
     deadline = time.monotonic() + timeout
     passed_at = None
     output = ''
     while process.poll() is None:
+        if termination_signal():
+            return 128 + termination_signal()
         output = read_output(selector, output)
         summary_passed = bool(re.search(r'\b(\d+)/\1 Flow Passed\b', output))
         if summary_passed and report_passed(report):
@@ -95,14 +115,22 @@ def monitor_process(process, selector, report, timeout):
     return process.returncode
 
 
+def signal_process_group(process, signum):
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        pass
+
+
 def stop_process(process):
-    if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+    signal_process_group(process, signal.SIGTERM)
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    # Descendants may outlive the CLI and keep its output pipe or device session open.
+    signal_process_group(process, signal.SIGKILL)
+    process.wait()
     os.set_blocking(process.stdout.fileno(), False)
     remaining = process.stdout.read()
     if remaining:
