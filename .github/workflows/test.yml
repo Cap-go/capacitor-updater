@@ -57,6 +57,7 @@ jobs:
           python3 scripts/maestro/test-run-maestro.py
           bash scripts/maestro/test-server-lifecycle.sh
           python3 scripts/maestro/test-device-animations.py
+          python3 scripts/maestro/test-ios-flow-artifacts.py
       - name: Check plugin wiring (Windows)
         if: runner.os == 'Windows'
         shell: bash

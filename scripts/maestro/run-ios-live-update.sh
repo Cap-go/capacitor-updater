@@ -108,13 +108,8 @@ maestro_runtime_js() {
   fi
   node "$@"
 }
-RESULTS_DIR_READY=0
 
 cleanup() {
-  if [[ "$RESULTS_DIR_READY" == "1" && -f "$ARTIFACT_DIR/fake-capgo-server-ios.log" ]]; then
-    cp "$ARTIFACT_DIR/fake-capgo-server-ios.log" "$RESULTS_DIR/fake-capgo-server-ios.log" 2>/dev/null || true
-  fi
-
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -291,12 +286,12 @@ ensure_server_port_available() {
 start_fake_server() {
   ensure_server_port_available
 
-  start_fake_capgo_server "$ARTIFACT_DIR/fake-capgo-server-ios.log"
+  start_fake_capgo_server "$RESULTS_DIR/fake-capgo-server-ios.log"
 
   sleep 1
   if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     echo "Fake Capgo server exited immediately." >&2
-    sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+    sed -n '1,200p' "$RESULTS_DIR/fake-capgo-server-ios.log" >&2 || true
     return 1
   fi
 
@@ -304,7 +299,7 @@ start_fake_server() {
     return 0
   fi
 
-  sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+  sed -n '1,200p' "$RESULTS_DIR/fake-capgo-server-ios.log" >&2 || true
   return 1
 }
 
@@ -447,7 +442,8 @@ run_flow() {
   local label="$1"
   local flow_path="$2"
   shift 2
-  local flow_results_dir="$RESULTS_DIR/$label"
+  local flow_results_root="$RESULTS_DIR/$label"
+  local flow_results_dir=""
   local -a maestro_args=()
   local attempt=1
   local env_arg=""
@@ -460,10 +456,11 @@ run_flow() {
     shift
   done
 
+  mkdir -p "$flow_results_root"
   while [[ $attempt -le $MAESTRO_TEST_RETRIES ]]; do
-    rm -rf "$flow_results_dir"
-    mkdir -p "$flow_results_dir"
-    output_file="$(mktemp)"
+    # Keep earlier failures even when a retry or an outer edge-case attempt is cancelled.
+    flow_results_dir="$(mktemp -d "$flow_results_root/attempt-${attempt}.XXXXXX")"
+    output_file="$flow_results_dir/console.log"
 
     echo "Running iOS Maestro flow: ${label} (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
 
@@ -500,14 +497,12 @@ run_flow() {
     set -e
 
     if [[ $status -eq 0 ]]; then
-      rm -f "$output_file"
       return 0
     fi
 
     if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
       echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
       reset_ios_maestro_driver
-      rm -f "$output_file"
       return 0
     fi
 
@@ -519,7 +514,6 @@ run_flow() {
       [[ $status -eq 124 ]] || flow_has_retryable_failure "$output_file" "$flow_results_dir/debug/maestro.log"
     }; then
       echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
-      rm -f "$output_file"
       run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
       reset_ios_maestro_driver
       boot_simulator
@@ -529,7 +523,6 @@ run_flow() {
       continue
     fi
 
-    rm -f "$output_file"
     return "$status"
   done
 
@@ -1097,7 +1090,6 @@ mkdir -p "$ARTIFACT_DIR"
 validate_results_dir
 rm -rf -- "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
-RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 
