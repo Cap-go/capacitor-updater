@@ -1038,6 +1038,12 @@ jobs:
           rm -rf "$artifact_root" "$derived_data_path"
           mkdir -p "$artifact_root"
 
+          # Reuse the build job's Bun so each edge job avoids a separate runtime cache restore.
+          mkdir -p "$artifact_root/runtime"
+          cp -L "$(command -v bun)" "$artifact_root/runtime/bun"
+          ln -s bun "$artifact_root/runtime/bunx"
+          tar -czf "$artifact_root/bun-runtime.tar.gz" -C "$artifact_root" runtime
+
           for scenario in "${scenarios[@]}"; do
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
             xcodebuild \
@@ -1105,15 +1111,19 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app
+      - name: Download iOS apps and Bun runtime
         uses: actions/download-artifact@v8
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      - name: Setup Bun runtime
-        uses: ./.github/actions/setup-bun-runtime
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
+      - name: Restore Bun runtime from app artifact
+        run: |
+          set -euo pipefail
+          tar -xzf maestro-ios-edge-apps/bun-runtime.tar.gz -C maestro-ios-edge-apps
+          runtime_bin="$GITHUB_WORKSPACE/maestro-ios-edge-apps/runtime"
+          test "$("$runtime_bin/bun" --version)" = "$BUN_VERSION"
+          echo "$runtime_bin" >> "$GITHUB_PATH"
+          "$runtime_bin/bun" --revision
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
