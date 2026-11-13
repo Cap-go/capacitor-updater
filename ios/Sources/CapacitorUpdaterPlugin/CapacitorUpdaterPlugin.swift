@@ -186,7 +186,21 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let splashscreenPluginName = "SplashScreen"
     private let splashscreenRetryDelayMilliseconds = 100
     private let splashscreenMaxRetries = 20
-    private var autoSplashscreenTimedOut = false
+    private let splashscreenTimeoutStateLock = NSLock()
+    private var splashscreenTimeoutGeneration = 0
+    private var splashscreenTimedOut = false
+    private var autoSplashscreenTimedOut: Bool {
+        get {
+            splashscreenTimeoutStateLock.lock()
+            defer { splashscreenTimeoutStateLock.unlock() }
+            return splashscreenTimedOut
+        }
+        set {
+            splashscreenTimeoutStateLock.lock()
+            defer { splashscreenTimeoutStateLock.unlock() }
+            splashscreenTimedOut = newValue
+        }
+    }
     private var splashscreenInvocationToken = 0
     private var autoDeleteFailed = false
     private var autoDeletePrevious = false
@@ -4141,6 +4155,70 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    private func isDirectUpdateEligibleForLaunchSplashTimeout() -> Bool {
+        if !self.autoUpdate || self.autoUpdateMode == Self.autoUpdateModeOnlyDownload {
+            return false
+        }
+        if self.autoSplashscreenTimedOut {
+            return false
+        }
+        switch directUpdateMode {
+        case "false":
+            return false
+        case "always":
+            return true
+        case "atInstall":
+            return self.wasRecentlyInstalledOrUpdated
+        case "onLaunch":
+            return !self.getOnLaunchDirectUpdateUsed()
+        default:
+            return false
+        }
+    }
+
+    private func scheduleLaunchSplashscreenTimeoutIfNeeded() {
+        guard self.autoSplashscreen else {
+            return
+        }
+        guard self.isDirectUpdateEligibleForLaunchSplashTimeout() else {
+            return
+        }
+        self.scheduleSplashscreenTimeout()
+    }
+
+    func hasSplashscreenTimeoutScheduledForTesting() -> Bool {
+        self.autoSplashscreenTimeoutWorkItem != nil
+    }
+
+    func scheduleLaunchSplashscreenTimeoutIfNeededForTesting() {
+        self.scheduleLaunchSplashscreenTimeoutIfNeeded()
+    }
+
+    func fireSplashscreenTimeoutForTesting() {
+        self.autoSplashscreenTimeoutWorkItem?.perform()
+        self.cancelSplashscreenTimeout()
+    }
+
+    private func recordSplashscreenTimeout() {
+        splashscreenTimeoutStateLock.lock()
+        defer { splashscreenTimeoutStateLock.unlock() }
+        splashscreenTimedOut = true
+        splashscreenTimeoutGeneration += 1
+    }
+
+    private func getSplashscreenTimeoutGeneration() -> Int {
+        splashscreenTimeoutStateLock.lock()
+        defer { splashscreenTimeoutStateLock.unlock() }
+        return splashscreenTimeoutGeneration
+    }
+
+    private func isDirectUpdateAllowedAfterDownload(timeoutGeneration: Int) -> Bool {
+        splashscreenTimeoutStateLock.lock()
+        defer { splashscreenTimeoutStateLock.unlock() }
+        // A later lifecycle cycle may clear the flag, but cannot revive an expired download.
+        return !splashscreenTimedOut && splashscreenTimeoutGeneration == timeoutGeneration
+    }
+
     private func scheduleSplashscreenTimeout() {
         guard self.autoSplashscreenTimeout > 0 else {
             return
@@ -4152,7 +4230,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self = self else { return }
-                self.autoSplashscreenTimedOut = true
+                self.recordSplashscreenTimeout()
                 self.logger.info("autoSplashscreen timeout reached, hiding splashscreen")
                 self.hideSplashscreen()
             }
@@ -4389,6 +4467,15 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.autoUpdate = Self.isAutoUpdateModeEnabled(self.autoUpdateMode)
         self.directUpdate = Self.isDirectUpdateMode(self.directUpdateMode)
         self.setOnLaunchDirectUpdateUsed(onLaunchDirectUpdateUsed)
+    }
+
+    func configureAutoSplashscreenForTesting(enabled: Bool, timeoutMs: Int) {
+        self.autoSplashscreen = enabled
+        self.autoSplashscreenTimeout = max(0, timeoutMs)
+    }
+
+    func setWasRecentlyInstalledOrUpdatedForTesting(_ value: Bool) {
+        self.wasRecentlyInstalledOrUpdated = value
     }
 
     func setUpdateUrlForTesting(_ updateUrl: String) {
@@ -4716,6 +4803,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadStartTime = Date()
         downloadLock.unlock()
 
+        let timeoutGeneration = self.getSplashscreenTimeoutGeneration()
         let plannedDirectUpdate = self.shouldUseDirectUpdate()
         let messageUpdate: String
         if plannedDirectUpdate {
@@ -4774,7 +4862,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             current = self.implementation.getCurrentBundle()
             if res.version == "builtin" {
                 self.logger.info("Latest version is builtin")
-                let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                let directUpdateAllowed = plannedDirectUpdate && self.isDirectUpdateAllowedAfterDownload(timeoutGeneration: timeoutGeneration)
                 if directUpdateAllowed {
                     self.logger.info("Direct update to builtin version")
                     _ = self._reset(toLastSuccessful: false, usePendingBundle: false)
@@ -4944,7 +5032,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.endBackGroundTask()
                         return
                     }
-                    let directUpdateAllowed = plannedDirectUpdate && !self.autoSplashscreenTimedOut
+                    let directUpdateAllowed = plannedDirectUpdate && self.isDirectUpdateAllowedAfterDownload(timeoutGeneration: timeoutGeneration)
                     if directUpdateAllowed {
                         let delayUpdatePreferences = UserDefaults.standard.string(forKey: DelayUpdateUtils.DELAY_CONDITION_PREFERENCES) ?? "[]"
                         let delayConditionList = DelayUpdateUtils.parseDelayConditions(json: delayUpdatePreferences)
@@ -5146,6 +5234,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         self.installQueuedBundleOnForegroundIfNeeded()
         if self._isAutoUpdateEnabled() {
+            self.scheduleLaunchSplashscreenTimeoutIfNeeded()
             // Check if download is already in progress (with timeout protection)
             if !isDownloadStuckOrTimedOut() {
                 self.backgroundDownload()
