@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
+import android.os.Looper;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.Observer;
 import androidx.work.Data;
@@ -31,6 +32,7 @@ import org.json.JSONArray;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 public class BundleDeletionCoordinationTest {
@@ -69,6 +71,165 @@ public class BundleDeletionCoordinationTest {
         Files.createDirectories(folder);
         Files.write(folder.resolve("index.html"), "existing".getBytes(StandardCharsets.UTF_8));
         assertTrue(updater.saveBundleInfo(id, new BundleInfo(id, VERSION, BundleStatus.PENDING, new Date(), "")));
+    }
+
+    @Test
+    public void headlessCompletionAfterBuiltinCannotQueue() throws Exception {
+        assertBuiltinAdmission("older");
+    }
+
+    @Test
+    public void headlessCompletionAfterDirectBuiltinCannotQueue() throws Exception {
+        assertBuiltinAdmission("direct-older");
+    }
+
+    @Test
+    public void headlessStartedAfterDirectBuiltinAdmissionCanQueue() throws Exception {
+        assertBuiltinAdmission("direct-later");
+    }
+
+    @Test
+    public void headlessTerminalTaskQueuedBeforeBuiltinCannotQueue() throws Exception {
+        assertBuiltinAdmission("terminal-queued");
+    }
+
+    @Test
+    public void headlessCompletionCannotReplaceNewerQueueAfterBuiltin() throws Exception {
+        assertBuiltinAdmission("newer-queue");
+    }
+
+    @Test
+    public void headlessStartedAfterBuiltinAdmissionCanQueue() throws Exception {
+        assertBuiltinAdmission("later");
+    }
+
+    @Test
+    public void builtinAdmissionDoesNotRevokeOtherStorageHeadlessWork() throws Exception {
+        assertBuiltinAdmission("other-storage");
+    }
+
+    @Test
+    public void rejectedBuiltinAdmissionRetainsHeadlessPermission() throws Exception {
+        assertBuiltinAdmission("rejected");
+    }
+
+    @Test
+    public void pluginDownloadRetainsCompletionAfterBuiltinAdmission() throws Exception {
+        assertBuiltinAdmission("plugin-context");
+    }
+
+    private void assertBuiltinAdmission(final String scenario) throws Exception {
+        final Path root = temporary.newFolder().toPath();
+        final Map<String, String> store = new ConcurrentHashMap<>();
+        final CapgoUpdater installer = updater(root, store);
+        final boolean otherStorage = scenario.equals("other-storage");
+        final CapgoUpdater downloader = updater(
+            otherStorage ? temporary.newFolder().toPath() : root.resolve("."),
+            otherStorage ? new ConcurrentHashMap<>() : store
+        );
+        bundle(installer, "bundleA001");
+        assertTrue(installer.set("bundleA001"));
+        assertTrue(installer.setNextBundle(BundleInfo.ID_BUILTIN));
+        assertTrue(downloader.saveBundleInfo(ID, new BundleInfo(ID, VERSION, BundleStatus.DOWNLOADING, new Date(), "")));
+        final Path staging = downloader.documentsDir.toPath().resolve("capgo_manifest_success001");
+        Files.createDirectories(staging);
+        Files.write(staging.resolve("index.html"), "downloaded".getBytes(StandardCharsets.UTF_8));
+        final boolean contextual = scenario.equals("plugin-context");
+        final boolean later = scenario.equals("later") || scenario.equals("direct-later");
+        final boolean direct = scenario.startsWith("direct-");
+        final boolean rejected = scenario.equals("rejected");
+        try (
+            MockedStatic<Looper> loopers = mockStatic(Looper.class);
+            MockedConstruction<Handler> handlers = mockConstruction(Handler.class);
+            ObserverHarness harness = new ObserverHarness(downloader, false)
+        ) {
+            loopers.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+            final CapacitorUpdaterPlugin plugin = new CapacitorUpdaterPlugin() {
+                @Override
+                protected boolean _reload() {
+                    return true;
+                }
+
+                @Override
+                public Thread startNewThread(final Runnable action) {
+                    return new Thread();
+                }
+
+                @Override
+                public void notifyListeners(final String event, final com.getcapacitor.JSObject payload, final boolean retain) {}
+            };
+            plugin.implementation = installer;
+            plugin.setLoggerForTesting(mock(Logger.class));
+            final DelayUpdateUtils delays = mock(DelayUpdateUtils.class);
+            when(delays.parseDelayConditions(anyString())).thenReturn(new ArrayList<>());
+            pluginField(plugin, "prefs", installer.prefs);
+            pluginField(plugin, "delayUpdateUtils", delays);
+            if (rejected) pluginField(plugin, "automaticInstallInProgress", true);
+            final CapgoUpdater.BackgroundDownloadContext context = contextual ? new CapgoUpdater.BackgroundDownloadContext(0, true) : null;
+            if (!later) harness.observe(downloader, context);
+            if (scenario.equals("terminal-queued")) harness.succeed(staging.getFileName().toString());
+            if (direct) {
+                if (later) doAnswer((inv) -> {
+                    harness.observe(downloader, context);
+                    return inv.callRealMethod();
+                })
+                    .when(installer)
+                    .prepareBuiltinTransition();
+                final CapgoUpdater.BackgroundDownloadContext check = new CapgoUpdater.BackgroundDownloadContext(0, true);
+                pluginField(plugin, "backgroundDownloadContext", check);
+                final Method response = CapacitorUpdaterPlugin.class.getDeclaredMethod(
+                    "tryInstallBackgroundUpdateResponse",
+                    BundleInfo.class,
+                    CapgoUpdater.BackgroundDownloadContext.class
+                );
+                response.setAccessible(true);
+                assertEquals(true, response.invoke(plugin, installer.getBundleInfo(BundleInfo.ID_BUILTIN), check));
+                assertTrue(installer.getCurrentBundle().isBuiltin());
+            } else {
+                final Method admit = CapacitorUpdaterPlugin.class.getDeclaredMethod("claimNextBundleInstall", String.class);
+                admit.setAccessible(true);
+                final BundleInfo claimed = (BundleInfo) admit.invoke(plugin, new Object[] { null });
+                if (rejected) {
+                    assertNull(claimed);
+                } else {
+                    assertTrue(claimed.isBuiltin());
+                    if (later) harness.observe(downloader, context);
+                    assertTrue(installer.setQueuedBundle(claimed));
+                    installer.finalizeBuiltinUpdate("1.0.0");
+                    installer.clearNextBundleIfMatches(BundleInfo.ID_BUILTIN);
+                }
+            }
+            if (scenario.equals("newer-queue")) {
+                bundle(installer, "bundleC003");
+                assertTrue(installer.setNextBundle("bundleC003"));
+            }
+            if (!scenario.equals("terminal-queued")) harness.succeed(staging.getFileName().toString());
+            while (!harness.tasks.isEmpty()) harness.tasks.remove(0).run();
+            assertEquals(
+                "downloaded",
+                new String(
+                    Files.readAllBytes(downloader.documentsDir.toPath().resolve("versions").resolve(ID).resolve("index.html")),
+                    StandardCharsets.UTF_8
+                )
+            );
+            assertEquals(BundleStatus.PENDING, downloader.getBundleInfo(ID).getStatus());
+            if (contextual) {
+                verify(downloader).directUpdateFinish(any(BundleInfo.class), same(context));
+            } else if (later || otherStorage || rejected) {
+                assertEquals(ID, downloader.getNextBundle().getId());
+                verify(downloader).nextBundleReady(any(BundleInfo.class));
+            } else {
+                if (scenario.equals("newer-queue")) assertEquals("bundleC003", installer.getNextBundle().getId());
+                else assertNull(installer.getNextBundle());
+                verify(downloader, never()).nextBundleReady(any(BundleInfo.class));
+            }
+        }
+    }
+
+    private static void pluginField(final CapacitorUpdaterPlugin plugin, final String name, final Object value) throws Exception {
+        final Field field = CapacitorUpdaterPlugin.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(plugin, value);
     }
 
     @Test
@@ -756,6 +917,10 @@ public class BundleDeletionCoordinationTest {
                 .when(io)
                 .execute(any(Runnable.class));
             field(updater, "io", io);
+            if (observeImmediately) this.observe(updater, new CapgoUpdater.BackgroundDownloadContext(0, true));
+        }
+
+        void observe(final CapgoUpdater updater, final CapgoUpdater.BackgroundDownloadContext downloadContext) throws Exception {
             final Method observe = CapgoUpdater.class.getDeclaredMethod(
                 "observeWorkProgress",
                 Context.class,
@@ -765,14 +930,7 @@ public class BundleDeletionCoordinationTest {
                 CapgoUpdater.BackgroundDownloadContext.class
             );
             observe.setAccessible(true);
-            if (observeImmediately) observe.invoke(
-                updater,
-                context,
-                ID,
-                VERSION,
-                true,
-                new CapgoUpdater.BackgroundDownloadContext(0, true)
-            );
+            observe.invoke(updater, context, ID, VERSION, true, downloadContext);
         }
 
         void start(final CapgoUpdater updater) throws Exception {

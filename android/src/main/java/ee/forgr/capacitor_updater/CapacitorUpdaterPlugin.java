@@ -1878,12 +1878,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean claimDirectUpdateInstall(final long timeoutGeneration) {
+        return this.claimDirectUpdateInstall(timeoutGeneration, false);
+    }
+
+    private boolean claimDirectUpdateInstall(final long timeoutGeneration, final boolean builtin) {
         synchronized (this.automaticInstallLock) {
-            if (
-                this.automaticInstallInProgress ||
-                this.watchdogRollbackInProgress ||
-                !this.implementation.clearNextBundleForDirectInstall(() -> this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration))
-            ) {
+            if (this.automaticInstallInProgress || this.watchdogRollbackInProgress) {
+                return false;
+            }
+            final java.util.function.BooleanSupplier admitInstall = () ->
+                this.implementation.clearNextBundleForDirectInstall(() -> this.beginDirectUpdateInstallBeforeTimeout(timeoutGeneration));
+            if (!(builtin ? this.implementation.admitBuiltinInstall(admitInstall) : admitInstall.getAsBoolean())) {
                 return false;
             }
             this.automaticInstallInProgress = true;
@@ -5951,7 +5956,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                 if (!this.ownsBackgroundDownload(downloadContext)) {
                     return true;
                 }
-                if (!this.claimDirectUpdateInstall(downloadContext.timeoutGeneration)) {
+                if (!this.claimDirectUpdateInstall(downloadContext.timeoutGeneration, bundle.isBuiltin())) {
                     return false;
                 }
                 installAdmitted = true;
@@ -6633,6 +6638,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
             final BundleInfo current = this.implementation.getCurrentBundle();
             final BundleInfo next = this.implementation.getNextBundle();
             if (next == null || next.isErrorStatus() || next.getId().equals(current.getId()) || next.getId().equals(excludedBundleId)) {
+                return null;
+            }
+            if (
+                next.isBuiltin() &&
+                !this.implementation.admitBuiltinInstall(() -> {
+                    final BundleInfo queued = this.implementation.getNextBundle();
+                    return queued != null && queued.isBuiltin();
+                })
+            ) {
                 return null;
             }
             this.automaticInstallInProgress = true;

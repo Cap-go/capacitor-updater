@@ -104,12 +104,15 @@ public class CapgoUpdater {
     private static final class DownloadFinalization {
 
         final File bundle;
+        final boolean headless;
         final CountDownLatch finished = new CountDownLatch(1);
         volatile boolean cancelled;
+        boolean automaticInstallAllowed = true;
         Thread running;
 
-        DownloadFinalization(final File bundle) {
+        DownloadFinalization(final File bundle, final boolean headless) {
             this.bundle = bundle;
+            this.headless = headless;
         }
     }
 
@@ -1331,7 +1334,7 @@ public class CapgoUpdater {
         return handler;
     }
 
-    private DownloadFinalization registerDownloadFinalization(final String id) {
+    private DownloadFinalization registerDownloadFinalization(final String id, final boolean headless) {
         final File bundle;
         try {
             bundle = this.getBundleDirectory(id);
@@ -1339,7 +1342,7 @@ public class CapgoUpdater {
             throw new IllegalArgumentException("Invalid download bundle id", e);
         }
         synchronized (deleteLock) {
-            final DownloadFinalization finalization = new DownloadFinalization(bundle);
+            final DownloadFinalization finalization = new DownloadFinalization(bundle, headless);
             final BundleInfo info = this.getBundleInfo(id);
             finalization.cancelled =
                 activeBundleDeletes.contains(bundle) || !this.hasStoredBundleInfo(id) || info.isDeleting() || info.isDeleted();
@@ -1361,6 +1364,46 @@ public class CapgoUpdater {
             }
             finalization.running = null;
             finalization.finished.countDown();
+        }
+    }
+
+    boolean admitBuiltinInstall(final java.util.function.BooleanSupplier admitInstall) {
+        final File bundles;
+        try {
+            bundles = this.documentsDir == null ? null : new File(this.documentsDir, bundleDirectory).getCanonicalFile();
+        } catch (IOException e) {
+            logger.error("Cannot resolve builtin install storage");
+            return false;
+        }
+        synchronized (deleteLock) {
+            synchronized (nextBundleLock) {
+                if (!admitInstall.getAsBoolean()) {
+                    return false;
+                }
+                for (final Map.Entry<File, Set<DownloadFinalization>> entry : downloadFinalizations.entrySet()) {
+                    if (entry.getKey().getParentFile().equals(bundles)) {
+                        for (final DownloadFinalization finalization : entry.getValue()) {
+                            if (finalization.headless) {
+                                finalization.automaticInstallAllowed = false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+    }
+
+    private void completeContextlessDownload(final DownloadFinalization finalization, final Runnable completion) {
+        if (finalization == null || !finalization.headless) {
+            completion.run();
+            return;
+        }
+        // Serialize queue publication and headless installation with builtin admission across instances.
+        synchronized (deleteLock) {
+            if (!finalization.cancelled && finalization.automaticInstallAllowed) {
+                completion.run();
+            }
         }
     }
 
@@ -1442,7 +1485,10 @@ public class CapgoUpdater {
         final LiveData<List<WorkInfo>> workInfosLiveData = WorkManager.getInstance(
             context.getApplicationContext()
         ).getWorkInfosByTagLiveData(id);
-        final DownloadFinalization finalization = this.registerDownloadFinalization(id);
+        final DownloadFinalization finalization = this.registerDownloadFinalization(
+            id,
+            setNext && downloadContext == null && !awaitedByCaller
+        );
         final AtomicBoolean completionReported = new AtomicBoolean(false);
         final Runnable cancelled = () -> {
             if (completionReported.compareAndSet(false, true)) {
@@ -1850,18 +1896,22 @@ public class CapgoUpdater {
                 }
                 if (downloadContext != null) {
                     this.completeBackgroundDownload(version, downloadContext, () -> this.directUpdateFinish(next, downloadContext));
-                } else if (this.previewSession) {
-                    logger.info("Preview session is active, skipping automatic install of downloaded bundle");
-                    this.directUpdate = false;
-                } else if (this.directUpdate) {
-                    logger.info("directUpdate: " + this.directUpdate);
-                    CapgoUpdater.this.directUpdateFinish(next);
-                    this.directUpdate = false;
                 } else {
-                    logger.info("directUpdate: " + this.directUpdate);
-                    if (this.setNextBundle(next.getId())) {
-                        this.nextBundleReady(next);
-                    }
+                    this.completeContextlessDownload(finalization, () -> {
+                        if (this.previewSession) {
+                            logger.info("Preview session is active, skipping automatic install of downloaded bundle");
+                            this.directUpdate = false;
+                        } else if (this.directUpdate) {
+                            logger.info("directUpdate: " + this.directUpdate);
+                            CapgoUpdater.this.directUpdateFinish(next);
+                            this.directUpdate = false;
+                        } else {
+                            logger.info("directUpdate: " + this.directUpdate);
+                            if (this.setNextBundle(next.getId())) {
+                                this.nextBundleReady(next);
+                            }
+                        }
+                    });
                 }
             }
         } catch (IOException e) {
