@@ -300,6 +300,41 @@ private final class ProgressObservingCapgoUpdater: CapgoUpdater {
 }
 
 final class NetworkTransportTests: XCTestCase {
+    private final class CountingDownloadUpdater: CapgoUpdater {
+        private(set) var downloadAttempts = 0
+        private(set) var failedTransportAttempts = 0
+        private(set) var injectedConnectionLosses = 0
+        var initialConnectionLosses = 0
+        var responseAfterConnectionLosses: DownloadRequestResult?
+
+        override func performDownloadRequest(
+            _ request: URLRequest, label: String, resumeData: Data? = nil,
+            onProgress: ((Int64, Int64) -> Void)? = nil
+        ) -> DownloadRequestResult {
+            downloadAttempts += 1
+            let result: DownloadRequestResult
+            if downloadAttempts <= initialConnectionLosses {
+                injectedConnectionLosses += 1
+                result = DownloadRequestResult(
+                    fileURL: nil, response: nil,
+                    error: NetworkError.sessionTaskFailed(URLError(.networkConnectionLost)), timedOut: false
+                )
+            } else if let responseAfterConnectionLosses {
+                result = responseAfterConnectionLosses
+            } else {
+                result = super.performDownloadRequest(request, label: label, resumeData: resumeData, onProgress: onProgress)
+            }
+            if result.error != nil || result.timedOut {
+                failedTransportAttempts += 1
+            }
+            return result
+        }
+
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
+    }
+
     private final class NoGetAfterSuccessGuard {
         private let lock = NSLock()
         private(set) var attempts = 0
@@ -377,19 +412,6 @@ final class NetworkTransportTests: XCTestCase {
         activeUpdaters.removeAll { $0 === updater }
         server.drain(timeout: 0.25)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        waitForPendingStatsFileRemoval(in: updater.pendingStatsDirectoryOverride)
-    }
-
-    private func waitForPendingStatsFileRemoval(in root: URL?) {
-        guard let root else { return }
-        let fileURL = root.appendingPathComponent("capgo_pending_stats.json")
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
     }
 
     private func finishAllUpdaters() {
@@ -397,6 +419,24 @@ final class NetworkTransportTests: XCTestCase {
             updater.shutdown()
         }
         activeUpdaters.removeAll()
+    }
+
+    func testReleasedUpdaterDoesNotRecreatePendingStatsDirectory() throws {
+        var updater: CapgoUpdater? = makeUpdater()
+        weak var releasedUpdater = updater
+        let statsDir = try XCTUnwrap(updater?.pendingStatsDirectoryOverride)
+        updater?.statsUrl = server.baseURL.absoluteString
+        updater?.sendStats(action: "download_complete", versionName: "shutdown-test")
+
+        releaseUpdater(try XCTUnwrap(updater))
+        let persistedData = try Data(contentsOf: statsDir.appendingPathComponent("capgo_pending_stats.json"))
+        let events = try JSONDecoder().decode([StatsEvent].self, from: persistedData)
+        XCTAssertEqual(events.map(\.action), ["download_complete"], "shutdown must persist queued stats before returning")
+        try FileManager.default.removeItem(at: statsDir)
+        updater = nil
+
+        XCTAssertNil(releasedUpdater)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statsDir.path), "deinit must not persist stats again after shutdown")
     }
 
     func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
@@ -573,8 +613,24 @@ final class NetworkTransportTests: XCTestCase {
     }
 
     func testManifestPermanentFailuresAndRetryBudget() throws {
+        try assertManifestRetryBudget(dropFirstConnection: false)
+    }
+
+    func testManifestRetryBudgetExcludesURLSessionReplay() throws {
+        try assertManifestRetryBudget(dropFirstConnection: true)
+    }
+
+    func testManifestRetryBudgetIncludesSurfacedConnectionLoss() throws {
+        for initialConnectionLosses in 1...2 {
+            try assertManifestRetryBudget(dropFirstConnection: false, initialConnectionLosses: initialConnectionLosses)
+        }
+    }
+
+    private func assertManifestRetryBudget(dropFirstConnection: Bool, initialConnectionLosses: Int = 0) throws {
         for status in [404, 429, 503, 200] {
-            let updater = makeUpdater()
+            let updater = CountingDownloadUpdater()
+            updater.initialConnectionLosses = initialConnectionLosses
+            _ = makeUpdater(updater)
             defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
             let version = UUID().uuidString
@@ -587,13 +643,42 @@ final class NetworkTransportTests: XCTestCase {
             try Data(UUID().uuidString.utf8).write(to: expected)
             defer { try? FileManager.default.removeItem(at: expected) }
             let hash = CryptoCipher.calcChecksum(filePath: expected)
-            let before = server.requests.count
-            server.respond { _ in .init(status: status, body: Data("incorrect".utf8)) }
+            var responseCount = 0
+            server.respond { _ in
+                responseCount += 1
+                return .init(status: status, body: Data("incorrect".utf8), dropConnection: dropFirstConnection && responseCount == 1)
+            }
+            let downloadURL = server.baseURL.appendingPathComponent(UUID().uuidString)
+            let downloadedFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: downloadedFile) }
+            if initialConnectionLosses > 0 {
+                // Keep the injected-loss cases deterministic even when the runner's loopback transport stalls.
+                if status == 200 {
+                    try Data("incorrect".utf8).write(to: downloadedFile)
+                }
+                updater.responseAfterConnectionLosses = CapgoUpdater.DownloadRequestResult(
+                    fileURL: status == 200 ? downloadedFile : nil,
+                    response: try XCTUnwrap(HTTPURLResponse(url: downloadURL, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)),
+                    error: nil, timedOut: false
+                )
+            }
             XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
                 file_name: "index.html", file_hash: hash,
-                download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
-            )], version: version, sessionKey: ""))
-            XCTAssertEqual(server.requests.count - before, status == 503 ? 3 : 1)
+                download_url: downloadURL.absoluteString
+            )], version: version, sessionKey: "")) { error in
+                let failure = error as NSError
+                XCTAssertEqual(failure.domain, status == 200 ? "ChecksumError" : "StatusCodeError")
+                XCTAssertEqual(failure.code, status == 200 ? 1 : status)
+            }
+            // Internal URLSession replays do not consume plugin attempts; surfaced transport
+            // errors do. A permanent response must never earn another attempt of its own.
+            XCTAssertEqual(updater.injectedConnectionLosses, initialConnectionLosses)
+            if initialConnectionLosses > 0 {
+                XCTAssertEqual(updater.failedTransportAttempts, initialConnectionLosses)
+            }
+            let expectedAttempts = status == 503 ? 3 : 1 + updater.failedTransportAttempts
+            XCTAssertEqual(updater.downloadAttempts, expectedAttempts, "HTTP status \(status)")
+            XCTAssertLessThanOrEqual(updater.downloadAttempts, 3, "HTTP status \(status)")
         }
     }
 
