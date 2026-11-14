@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testsDir = path.join(root, "ios/Tests/CapacitorUpdaterPluginTests");
@@ -28,9 +29,32 @@ const activeTestIosLines = testIosBlock
 const listed = new Set(
   [...activeTestIosLines.matchAll(/-only-testing:CapacitorUpdaterPluginTests\/(\w+)/g)].map((m) => m[1])
 );
-const coreShardA = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh a\b/.test(testIosBlock);
-const coreShardB = /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh b\b/.test(testIosBlock);
-const coreShardUsed = coreShardA && coreShardB;
+const coreShards = [...activeTestIosLines.matchAll(
+  /select_cmd:\s*scripts\/ci\/ios-capacitor-updater-core-shard-args\.sh (\S+)/g
+)].map((match) => match[1]);
+
+function checkCoreShardCoverage() {
+  const source = fs.readFileSync(path.join(testsDir, "CapacitorUpdaterPluginTests.swift"), "utf8");
+  const prefix = "-only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests/";
+  const expected = new Set([...source.matchAll(/func\s+(test\w+)/g)].map((match) => prefix + match[1]));
+  const counts = new Map();
+  for (const shard of coreShards) {
+    const output = execFileSync(path.join(root, "scripts/ci/ios-capacitor-updater-core-shard-args.sh"), [shard], {
+      encoding: "utf8",
+    });
+    for (const test of output.trim().split("\n")) {
+      counts.set(test, (counts.get(test) ?? 0) + 1);
+    }
+  }
+  if (counts.size !== expected.size || [...expected].some((test) => counts.get(test) !== 1)) {
+    throw new Error("Core CI shards must select every CapacitorUpdaterTests method exactly once.");
+  }
+  console.log(`Core shard coverage OK (${expected.size} tests across ${coreShards.length} shards).`);
+}
+
+if (coreShards.length > 0) {
+  checkCoreShardCoverage();
+}
 
 const classRe = /(?:final\s+)?class\s+(\w+)\s*:\s*XCTestCase/g;
 const missing = [];
@@ -42,7 +66,7 @@ for (const file of fs.readdirSync(testsDir).filter((f) => f.endsWith(".swift")))
     if (EXCLUDED.has(name)) {
       continue;
     }
-    if (name === "CapacitorUpdaterTests" && coreShardUsed) {
+    if (name === "CapacitorUpdaterTests" && coreShards.length > 0) {
       continue;
     }
     if (!listed.has(name)) {

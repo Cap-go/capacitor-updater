@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/ios-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-ios/native-reset"
@@ -100,6 +101,8 @@ run_maestro_flow() {
   local -a command=(
     maestro
     test
+    --config
+    "$MAESTRO_WORKSPACE_CONFIG"
     -p
     ios
     --device
@@ -189,7 +192,8 @@ build_ios_app() {
 
   (
     cd "$EXAMPLE_DIR"
-    VITE_CAPGO_APP_LABEL="$app_label" \
+    VITE_CAPGO_MAESTRO_BUILD=true \
+      VITE_CAPGO_APP_LABEL="$app_label" \
       VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
       VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
       VITE_CAPGO_SERVER_URL="$update_url" \
@@ -200,7 +204,8 @@ build_ios_app() {
       CAPGO_CHANNEL_URL="$DEVICE_SERVER_URL/api/channel" \
       bun run build
 
-    VITE_CAPGO_APP_LABEL="$app_label" \
+    VITE_CAPGO_MAESTRO_BUILD=true \
+      VITE_CAPGO_APP_LABEL="$app_label" \
       VITE_CAPGO_SCENARIO="$SCENARIO_ID" \
       VITE_CAPGO_DIRECT_UPDATE="$direct_update" \
       VITE_CAPGO_SERVER_URL="$update_url" \
@@ -299,6 +304,8 @@ if ! run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus 
     exit 1
   fi
 fi
+
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 
 bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_ID"
 build_ios_app "native-reset-builtin-v1" "true" "always" "1.0.0" "1" "$DERIVED_DATA_V1"

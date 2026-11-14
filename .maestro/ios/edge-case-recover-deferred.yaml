@@ -22,7 +22,9 @@ appId: app.capgo.updater
       SUMMARY_PATTERN: '${DOWNLOADED_PATTERN}'
 # Background applies the queued release; the next launch runs it.
 - pressKey: Home
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - waitForAnimationToEnd:
     timeout: 5000
 - runFlow:

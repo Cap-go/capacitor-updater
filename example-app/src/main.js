@@ -1,5 +1,7 @@
 import './style.css';
+import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { SplashScreen } from '@capacitor/splash-screen';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 if (window.__capgoProbe) {
@@ -9,6 +11,8 @@ console.log('[Harness] module boot', window.__capgoProbe ?? null);
 
 const plugin = CapacitorUpdater;
 const platform = Capacitor.getPlatform();
+const isMaestroE2E =
+  import.meta.env.VITE_CAPGO_MAESTRO_BUILD === 'true' || window.__capgoMaestroIsE2E === true;
 const buildLabel = import.meta.env.VITE_CAPGO_APP_LABEL ?? 'manual-build';
 const scenarioId = import.meta.env.VITE_CAPGO_SCENARIO ?? 'manual';
 const directUpdateMode = import.meta.env.VITE_CAPGO_DIRECT_UPDATE ?? 'false';
@@ -161,6 +165,7 @@ let refreshStatePromise = null;
 let refreshStateQueued = false;
 let actionInProgress = false;
 let sequenceInProgress = false;
+let smokeSequenceStatus = 'idle';
 let lastTouchLikeActionAt = 0;
 let lastGlobalActionTriggerAt = 0;
 let suppressNonSequenceActionsUntil = 0;
@@ -196,10 +201,10 @@ const quickActionIds = [
   'open-app-store',
   'queue-boot-verify-persisted-config',
 ];
-const smokeSequenceDefaultDelayMs = 150;
-const smokeSequenceMutationDelayMs = 300;
+const smokeSequenceDefaultDelayMs = isMaestroE2E ? 0 : 150;
+const smokeSequenceMutationDelayMs = isMaestroE2E ? 0 : 300;
 const actionTriggerCooldownMs = 250;
-const reloadActionTriggerCooldownMs = 8000;
+const reloadActionTriggerCooldownMs = isMaestroE2E ? 1500 : 8000;
 const smokeSequenceExtendedSettleActionIds = new Set([
   'set-app-id',
   'set-custom-id',
@@ -376,7 +381,8 @@ function getServerBaseUrl() {
 }
 
 function pause(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  const delayMs = isMaestroE2E ? Math.min(ms, Math.max(0, Math.floor(ms * 0.2))) : ms;
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
 function getSmokeSequenceDelayMs(actionId) {
@@ -909,6 +915,7 @@ function renderState() {
   renderDemoActionButtons();
 
   elements.e2eSummary.textContent =
+    `Smoke sequence: ${smokeSequenceStatus} | ` +
     `Action marker: ${state.lastActionMarker} | ` +
     `M:${state.lastActionMarker} | ` +
     `Harness: ${state.harnessReady ? 'ready' : 'pending'}${runtimeUrlsLabel} | ` +
@@ -970,7 +977,11 @@ function resetScrollPosition() {
   window.setTimeout(scrollToTop, 500);
 }
 
-async function waitForCondition(check, timeoutMs = 45000, intervalMs = 500) {
+async function waitForCondition(
+  check,
+  timeoutMs = 45000,
+  intervalMs = isMaestroE2E ? 150 : 500,
+) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -2873,9 +2884,10 @@ async function runSmokeSequence() {
   }
 
   const sequenceActions = getSmokeSequenceActions();
-  suppressNonSequenceActionsUntil = Date.now() + 1500;
+  suppressNonSequenceActionsUntil = Date.now() + (isMaestroE2E ? 200 : 1500);
 
   smokeSequencePromise = (async () => {
+    smokeSequenceStatus = 'running';
     elements.sequenceStatus.textContent = 'Sequence: running';
     elements.resultMarker.textContent = 'M:smoke-sequence:running';
     elements.output.textContent = 'Running smoke test sequence...';
@@ -2883,8 +2895,6 @@ async function runSmokeSequence() {
     elements.quickRunSmokeSequenceButton.disabled = true;
     state.sequenceRuns += 1;
     sequenceInProgress = true;
-
-    await waitForPendingRefresh('pending refreshState before smoke sequence');
 
     state.lastAction = 'Smoke test sequence';
     state.lastActionMarker = 'smoke-sequence:running';
@@ -2897,6 +2907,8 @@ async function runSmokeSequence() {
     renderState();
 
     try {
+      await waitForCondition(() => !actionInProgress, 20000, 100);
+      await waitForPendingRefresh('pending refreshState before smoke sequence');
       for (const action of sequenceActions) {
         state.lastPhase = `smoke-sequence:next:${action.id}`;
         renderState();
@@ -2905,7 +2917,7 @@ async function runSmokeSequence() {
         await withTimeout(
           `smoke action ${action.id}`,
           () => runAction(action, values, { skipRefresh: true }),
-          action.smokeTimeoutMs ?? 45000,
+          action.smokeTimeoutMs ?? (isMaestroE2E ? 25000 : 45000),
         );
         await pause(getSmokeSequenceDelayMs(action.id));
       }
@@ -2918,6 +2930,7 @@ async function runSmokeSequence() {
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
       window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
+      smokeSequenceStatus = 'success';
       elements.sequenceStatus.textContent = 'Sequence: success';
       elements.resultMarker.textContent = 'M:smoke-sequence:success';
       renderState();
@@ -2937,6 +2950,7 @@ async function runSmokeSequence() {
       window.localStorage.setItem(lastActionStorageKey, state.lastAction);
       window.localStorage.setItem(lastActionMarkerStorageKey, state.lastActionMarker);
       window.localStorage.setItem(lastActionResultStorageKey, state.lastActionResult);
+      smokeSequenceStatus = 'error';
       elements.sequenceStatus.textContent = 'Sequence: error';
       elements.resultMarker.textContent = `M:${state.lastActionResult}`;
       elements.output.textContent = `Error: ${failureSummary}`;
@@ -3226,6 +3240,93 @@ function clearElementChildren(element) {
   }
 }
 
+function scrollHarnessElementIntoView(element) {
+  if (!element) {
+    return false;
+  }
+
+  element.scrollIntoView({
+    block: 'center',
+    inline: 'nearest',
+    behavior: isMaestroE2E ? 'instant' : 'smooth',
+  });
+  return true;
+}
+
+function focusQuickAction(actionId) {
+  return scrollHarnessElementIntoView(document.getElementById(`quick-action-${actionId}`));
+}
+
+function focusByVisibleText(label) {
+  const nodes = document.querySelectorAll('button, [role="button"]');
+
+  for (const node of nodes) {
+    if ((node.textContent ?? '').trim().includes(label)) {
+      return scrollHarnessElementIntoView(node);
+    }
+  }
+
+  return false;
+}
+
+async function handleMaestroDeepLink(rawUrl) {
+  if (import.meta.env.VITE_CAPGO_MAESTRO_BUILD !== 'true' || !rawUrl?.startsWith('capgo-maestro://')) {
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return;
+  }
+
+  const route = parsed.host;
+  const value = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+
+  if (route === 'action' && value) {
+    focusQuickAction(value);
+    return;
+  }
+
+  if (route === 'focus-text' && value) {
+    focusByVisibleText(value);
+    return;
+  }
+
+  if (route === 'harness' && value === 'smoke-sequence') {
+    scrollHarnessElementIntoView(elements.quickRunSmokeSequenceButton);
+    return;
+  }
+
+  if (route === 'run' && value === 'smoke-sequence') {
+    await runSmokeSequence();
+    return;
+  }
+
+  if (route === 'run' && value === 'refresh-state') {
+    await refreshState();
+  }
+}
+
+async function attachMaestroDeepLinks() {
+  if (import.meta.env.VITE_CAPGO_MAESTRO_BUILD !== 'true' || !Capacitor.isPluginAvailable('App')) {
+    return;
+  }
+
+  try {
+    await App.addListener('appUrlOpen', ({ url }) => {
+      void handleMaestroDeepLink(url).catch((error) => console.error('Maestro deep link failed', error));
+    });
+    const launch = await App.getLaunchUrl();
+    if (launch?.url) {
+      await handleMaestroDeepLink(launch.url);
+    }
+  } catch (error) {
+    console.error('Maestro deep links unavailable', error);
+  }
+}
+
 function pinMaestroQuickActions() {
   if (platform === 'web') {
     return;
@@ -3332,7 +3433,11 @@ async function attachListeners() {
     },
     { eventName: 'set', label: 'Set event', refreshAfter: true },
     { eventName: 'setNext', label: 'Set next event', refreshAfter: true },
-    { eventName: 'updateAvailable', label: 'Update available event', refreshAfter: false },
+    {
+      eventName: 'updateAvailable',
+      label: 'Update available event',
+      refreshAfter: isMaestroE2E,
+    },
     { eventName: 'updateFailed', label: 'Update failed event', refreshAfter: true },
   ];
 
@@ -3368,14 +3473,20 @@ function startStateRefreshWatchers() {
       await refreshState();
     }
 
-    window.setTimeout(() => {
-      void pollState();
-    }, 5000);
+    window.setTimeout(
+      () => {
+        void pollState();
+      },
+      isMaestroE2E ? 1000 : 5000,
+    );
   };
 
-  window.setTimeout(() => {
-    void pollState();
-  }, 5000);
+  window.setTimeout(
+    () => {
+      void pollState();
+    },
+    isMaestroE2E ? 1000 : 5000,
+  );
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !actionInProgress && !sequenceInProgress) {
@@ -3397,7 +3508,13 @@ async function bootstrap() {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  if (isMaestroE2E && platform !== 'web') {
+    void SplashScreen.hide({ fadeOutDuration: 0 });
+  }
   document.body.classList.add(`platform-${platform}`);
+  if (isMaestroE2E) {
+    document.documentElement.classList.add('maestro-e2e');
+  }
   resetScrollPosition();
   configureQaToolsPanel();
   renderQuickActions();
@@ -3439,7 +3556,31 @@ async function bootstrap() {
   const bootActionIds = bootActionFromStorage !== 'none' ? [bootActionFromStorage] : [];
   startStateRefreshWatchers();
   if (bootActionIds.length) {
-    await pause(platform === 'ios' ? 500 : 100);
+    if (serverUrl.startsWith('http')) {
+      await refreshServerState().catch(() => {});
+      // Android native requests can work even when the WebView cannot fetch server debug.
+      // Let the queued action validate them using its native-only fallback.
+      if (platform !== 'android' && !state.serverDebug?.debug) {
+        await waitForCondition(
+          async () => {
+            try {
+              await refreshServerState();
+              return Boolean(state.serverDebug?.debug);
+            } catch {
+              return false;
+            }
+          },
+          isMaestroE2E ? 15000 : 45000,
+          isMaestroE2E ? 100 : 500,
+        );
+      }
+    } else {
+      await waitForCondition(
+        () => (state.notifyStatus ?? '').startsWith('ok'),
+        45000,
+        isMaestroE2E ? 200 : 500,
+      );
+    }
   }
   for (const bootActionId of bootActionIds) {
     try {
@@ -3454,6 +3595,8 @@ async function bootstrap() {
     state.harnessReady = true;
     renderState();
   }
+
+  await attachMaestroDeepLinks();
 }
 
 bindActionButton(elements.refreshButton, () => {

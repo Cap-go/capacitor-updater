@@ -3,6 +3,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
+# shellcheck source=scripts/maestro/start-fake-server.sh
+source "$ROOT_DIR/scripts/maestro/start-fake-server.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios-live-update}"
@@ -18,7 +21,7 @@ ASSUME_CLEAN_INSTALL="${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}"
 SIMULATOR_BOOT_TIMEOUT_SECONDS="${CAPGO_MAESTRO_IOS_BOOT_TIMEOUT_SECONDS:-180}"
 MAESTRO_TIMEOUT_SECONDS="${CAPGO_MAESTRO_TIMEOUT_SECONDS:-600}"
 # Per wait step in edge-case-wait-summary.yaml; defaults match the old 180s cap.
-export CAPGO_MAESTRO_SUMMARY_WAIT_MS="${CAPGO_MAESTRO_SUMMARY_WAIT_MS:-180000}"
+export CAPGO_MAESTRO_SUMMARY_WAIT_MS="${CAPGO_MAESTRO_SUMMARY_WAIT_MS:-120000}"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_DRIVER_STARTUP_TIMEOUT="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-600000}"
 MAESTRO_TEST_RETRIES="${CAPGO_MAESTRO_TEST_RETRIES:-3}"
@@ -97,13 +100,16 @@ fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/App.app}"
-RESULTS_DIR_READY=0
+
+maestro_runtime_js() {
+  if command -v bun >/dev/null 2>&1 && [[ "${CAPGO_MAESTRO_PREFER_BUN_JS:-0}" == "1" ]]; then
+    bun "$@"
+    return
+  fi
+  node "$@"
+}
 
 cleanup() {
-  if [[ "$RESULTS_DIR_READY" == "1" && -f "$ARTIFACT_DIR/fake-capgo-server-ios.log" ]]; then
-    cp "$ARTIFACT_DIR/fake-capgo-server-ios.log" "$RESULTS_DIR/fake-capgo-server-ios.log" 2>/dev/null || true
-  fi
-
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -280,13 +286,12 @@ ensure_server_port_available() {
 start_fake_server() {
   ensure_server_port_available
 
-  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios.log" 2>&1 &
-  SERVER_PID=$!
+  start_fake_capgo_server "$RESULTS_DIR/fake-capgo-server-ios.log"
 
   sleep 1
   if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     echo "Fake Capgo server exited immediately." >&2
-    sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+    sed -n '1,200p' "$RESULTS_DIR/fake-capgo-server-ios.log" >&2 || true
     return 1
   fi
 
@@ -294,7 +299,7 @@ start_fake_server() {
     return 0
   fi
 
-  sed -n '1,200p' "$ARTIFACT_DIR/fake-capgo-server-ios.log" >&2 || true
+  sed -n '1,200p' "$RESULTS_DIR/fake-capgo-server-ios.log" >&2 || true
   return 1
 }
 
@@ -307,12 +312,26 @@ assert_prebuilt_maestro_assets() {
   exit 1
 }
 
+ios_simulator_is_booted() {
+  bash "$ROOT_DIR/scripts/maestro/ios-simulator-booted.sh" "$SIMULATOR_ID"
+}
+
 boot_simulator() {
   local status=0
 
   xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 
-  if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+  local boot_wait_seconds="$SIMULATOR_BOOT_TIMEOUT_SECONDS"
+  if [[ "${CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL:-0}" == "1" ]]; then
+    boot_wait_seconds="${CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS:-90}"
+    if ios_simulator_is_booted; then
+      "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
+      return 0
+    fi
+  fi
+
+  if run_with_timeout "$boot_wait_seconds" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
+    "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
     return 0
   else
     status=$?
@@ -362,7 +381,7 @@ assert_server_debug_state() {
   local server_state=""
 
   server_state="$(curl --silent --show-error --fail "$HOST_SERVER_URL/api/control/state?scenario=$scenario")"
-  bun --eval "$assertion_script" "$server_state" "$scenario"
+  node --eval "$assertion_script" "$server_state" "$scenario"
 }
 
 load_scenario_config() {
@@ -371,18 +390,7 @@ load_scenario_config() {
 
   builtin_version="$(read_app_marketing_version)" || return $?
 
-  bun --eval "
-import { getScenario, resolveAppScenarioId } from '${ROOT_DIR}/scripts/maestro/scenarios.mjs';
-
-const scenario = getScenario(resolveAppScenarioId(process.argv[1]));
-const builtinVersion = process.argv[2];
-
-if (!builtinVersion) {
-  throw new Error('Unable to determine example-app iOS MARKETING_VERSION');
-}
-
-console.log([scenario.builtinLabel, builtinVersion.trim(), ...scenario.releases.map((release) => release.version)].join('\t'));
-" "$scenario_id" "$builtin_version"
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/load-scenario-labels.mjs" "$scenario_id" "$builtin_version"
 }
 
 clear_swiftpm_capacitor_artifact_cache() {
@@ -434,7 +442,8 @@ run_flow() {
   local label="$1"
   local flow_path="$2"
   shift 2
-  local flow_results_dir="$RESULTS_DIR/$label"
+  local flow_results_root="$RESULTS_DIR/$label"
+  local flow_results_dir=""
   local -a maestro_args=()
   local attempt=1
   local env_arg=""
@@ -447,10 +456,11 @@ run_flow() {
     shift
   done
 
+  mkdir -p "$flow_results_root"
   while [[ $attempt -le $MAESTRO_TEST_RETRIES ]]; do
-    rm -rf "$flow_results_dir"
-    mkdir -p "$flow_results_dir"
-    output_file="$(mktemp)"
+    # Keep earlier failures even when a retry or an outer edge-case attempt is cancelled.
+    flow_results_dir="$(mktemp -d "$flow_results_root/attempt-${attempt}.XXXXXX")"
+    output_file="$flow_results_dir/console.log"
 
     echo "Running iOS Maestro flow: ${label} (attempt ${attempt}/${MAESTRO_TEST_RETRIES})"
 
@@ -458,6 +468,7 @@ run_flow() {
     if ((${#maestro_args[@]} > 0)); then
       run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
         maestro test \
+          --config "$MAESTRO_WORKSPACE_CONFIG" \
           -p ios \
           --device "$SIMULATOR_ID" \
           --no-reinstall-driver \
@@ -471,6 +482,7 @@ run_flow() {
     else
       run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" \
         maestro test \
+          --config "$MAESTRO_WORKSPACE_CONFIG" \
           -p ios \
           --device "$SIMULATOR_ID" \
           --no-reinstall-driver \
@@ -485,14 +497,12 @@ run_flow() {
     set -e
 
     if [[ $status -eq 0 ]]; then
-      rm -f "$output_file"
       return 0
     fi
 
     if [[ $status -eq 124 ]] && maestro_cli_reported_pass "$output_file"; then
       echo "Maestro flow passed but CLI teardown exceeded ${MAESTRO_TIMEOUT_SECONDS}s; resetting iOS driver." >&2
       reset_ios_maestro_driver
-      rm -f "$output_file"
       return 0
     fi
 
@@ -504,7 +514,6 @@ run_flow() {
       [[ $status -eq 124 ]] || flow_has_retryable_failure "$output_file" "$flow_results_dir/debug/maestro.log"
     }; then
       echo "Retrying iOS Maestro flow after simulator/XCTest instability: ${flow_path}" >&2
-      rm -f "$output_file"
       run_cleanup_command 10 xcrun simctl terminate "$SIMULATOR_ID" "$APP_ID"
       reset_ios_maestro_driver
       boot_simulator
@@ -514,7 +523,6 @@ run_flow() {
       continue
     fi
 
-    rm -f "$output_file"
     return "$status"
   done
 
@@ -544,7 +552,6 @@ run_core_assert() {
   local notify_ready_line="$7"
   local current_source_line="$8"
   local current_version_line="$9"
-
   local summary_pattern=""
   summary_pattern="$(edge_summary_pattern \
     "$build_label" \
@@ -1034,21 +1041,14 @@ if ! command -v maestro >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v bun >/dev/null 2>&1; then
-  echo "bun is required to run parts of this script." >&2
+if ! command -v node >/dev/null 2>&1; then
+  echo "node is required to run the test helpers and Capacitor CLI commands." >&2
   exit 1
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "node is required to run Capacitor CLI commands." >&2
-    exit 1
-  fi
-
-  if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
-    echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
-    exit 1
-  fi
+if [[ "$SKIP_BUILD" != "1" ]] && ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+  exit 1
 fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -1090,12 +1090,12 @@ mkdir -p "$ARTIFACT_DIR"
 validate_results_dir
 rm -rf -- "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
-RESULTS_DIR_READY=1
 
 echo "Using iOS device server URL: $DEVICE_SERVER_URL"
 
 if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" == "1" ]]; then
   xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+  "$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
 else
   boot_simulator
 fi
@@ -1105,6 +1105,10 @@ cd "$ROOT_DIR"
 if [[ "$SKIP_BUILD" == "1" || "$SKIP_BUNDLE_BUILD" == "1" ]]; then
   assert_prebuilt_maestro_assets
 else
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "bun is required to build Maestro web assets locally." >&2
+    exit 1
+  fi
   if [[ ! -d node_modules ]]; then
     bun install
   fi
