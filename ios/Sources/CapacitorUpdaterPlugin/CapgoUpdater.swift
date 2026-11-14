@@ -719,11 +719,12 @@ import UIKit
 
     public func shutdown() {
         statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        guard !statsStopped else { return }
         statsStopped = true
-        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-        persistStatsQueue(force: true)
+        persistStatsQueueLocked()
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -4157,13 +4158,15 @@ import UIKit
         }
     }
 
-    private func persistStatsQueue(force: Bool = false) {
+    private func persistStatsQueue() {
         statsPersistLock.lock()
         defer { statsPersistLock.unlock() }
-        if statsStopped && !force {
-            return
-        }
+        guard !statsStopped else { return }
+        persistStatsQueueLocked()
+    }
 
+    /// Caller must hold statsPersistLock, including for the final shutdown snapshot.
+    private func persistStatsQueueLocked() {
         statsQueueLock.lock()
         var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
         statsQueueLock.unlock()

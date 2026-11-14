@@ -1431,7 +1431,8 @@ else
   bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
 fi
 stop_stale_fake_server
-# The CI emulator retry reuses this path; retain the first attempt's requests.
+# The workflow may rerun this script after a timeout; keep the first attempt's server evidence.
+printf '\n=== Android scenario %s started at %s ===\n' "$SCENARIO_SELECTION" "$(date -u +%FT%TZ)" >>"$ARTIFACT_DIR/fake-capgo-server.log"
 bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >>"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!
 wait_for_server
