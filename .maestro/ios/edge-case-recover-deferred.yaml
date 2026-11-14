@@ -13,6 +13,9 @@ appId: app.capgo.updater
       SCENARIO_ID: '${SCENARIO_ID}'
 # Cold launch: the launch check downloads the release and queues it as next.
 - runFlow: ../helpers/cold-launch-app.yaml
+# Wait for the launch transition before XCTest queries the app hierarchy.
+- waitForAnimationToEnd:
+    timeout: 5000
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:
@@ -20,6 +23,8 @@ appId: app.capgo.updater
 # Background applies the queued release; the next launch runs it.
 - pressKey: Home
 - launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
 - runFlow:
     file: edge-case-wait-summary.yaml
     env:
