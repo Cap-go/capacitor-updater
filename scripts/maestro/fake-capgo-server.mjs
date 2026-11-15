@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import {
@@ -92,7 +93,9 @@ function createScenarioDebugState() {
 }
 
 const scenarioState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, 0]));
-const scenarioDebugState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioDebugState()]));
+const scenarioDebugState = new Map(
+  Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioDebugState()]),
+);
 const scenarioFaultState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioFaults()]));
 const stalledDownloadReleasers = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, new Set()]));
 
@@ -249,9 +252,7 @@ function rememberRequest(scenarioId, kind, requestUrl, payload) {
 }
 
 function getScenarioForReleaseVersion(version) {
-  return Object.values(scenarios).find((scenario) =>
-    scenario.releases.some((release) => release.version === version),
-  );
+  return Object.values(scenarios).find((scenario) => scenario.releases.some((release) => release.version === version));
 }
 
 function rememberManifestFileRequest(version, requestUrl, method) {
@@ -369,7 +370,7 @@ async function loadBundleChecksum(version) {
     return null;
   }
 
-  const checksum = (await Bun.file(checksumPath).text()).trim();
+  const checksum = (await readFile(checksumPath, 'utf8')).trim();
   return checksum.length > 0 ? checksum : null;
 }
 
@@ -380,7 +381,7 @@ async function loadManifestEntries(version) {
     return null;
   }
 
-  const manifestData = await Bun.file(metadataPath).json();
+  const manifestData = JSON.parse(await readFile(metadataPath, 'utf8'));
   const files = Array.isArray(manifestData.files) ? manifestData.files : [];
 
   return files.map((entry) => ({
@@ -572,8 +573,8 @@ function parseRangeStart(rangeHeader, size) {
 // Honours open-ended Range requests so clients that resume a dropped download (Android's
 // WorkManager worker does) exercise their 206 append path against real partial content.
 async function serveBundle(request, version, zipPath, debugState) {
-  const file = Bun.file(zipPath);
-  const rangeStart = parseRangeStart(request.headers.get('range'), file.size);
+  const file = await readFile(zipPath);
+  const rangeStart = parseRangeStart(request.headers.get('range'), file.byteLength);
 
   if (rangeStart === null) {
     console.log(`[fake-capgo] bundle=${version} served`);
@@ -589,11 +590,11 @@ async function serveBundle(request, version, zipPath, debugState) {
   }
   console.log(`[fake-capgo] bundle=${version} served from byte ${rangeStart}`);
   // Slice the bytes directly: Blob.slice responses serve the whole file on older Bun releases.
-  const bytes = new Uint8Array(await file.arrayBuffer()).subarray(rangeStart);
+  const bytes = file.subarray(rangeStart);
   return fileResponse(bytes, {
     status: 206,
     headers: {
-      'content-range': `bytes ${rangeStart}-${file.size - 1}/${file.size}`,
+      'content-range': `bytes ${rangeStart}-${file.byteLength - 1}/${file.byteLength}`,
       'content-type': 'application/zip',
     },
   });
@@ -644,7 +645,7 @@ async function handleBundle(request, method, version) {
     return new Response('injected bundle failure', { status: 500, headers: baseHeaders });
   }
 
-  const bytes = new Uint8Array(await Bun.file(zipPath).arrayBuffer());
+  const bytes = new Uint8Array(await readFile(zipPath));
 
   if (bundleFault === 'corrupt') {
     // Same length as the real archive, so only the checksum gate can catch it.
@@ -715,7 +716,7 @@ function decodeManifestFilePath(pathname, version) {
     .join('/');
 }
 
-function handleManifestFile(requestUrl, method, version) {
+async function handleManifestFile(requestUrl, method, version) {
   const relativePath = decodeManifestFilePath(requestUrl.pathname, version);
   const absolutePath = getSafeManifestFilePath(version, relativePath);
 
@@ -735,7 +736,7 @@ function handleManifestFile(requestUrl, method, version) {
     });
   }
 
-  return fileResponse(Bun.file(absolutePath), {
+  return fileResponse(await readFile(absolutePath), {
     headers: {
       'content-type': 'application/octet-stream',
     },
@@ -750,8 +751,18 @@ async function handleStats(request, requestUrl) {
   }
 
   const payload = await readJsonPayload(request);
-  const actions = (Array.isArray(payload) ? payload : [payload]).map((event) => event?.action ?? 'unknown');
+  const events = Array.isArray(payload) ? payload : [payload];
+  const actions = events.map((event) => event?.action ?? 'unknown');
   logRequest(requestUrl, request.method, `scenario=${scenario.id} action=${actions.join(',')}`);
+  for (const event of events) {
+    if (event?.action === 'update_check_error') {
+      const details = {
+        error: event.metadata?.error,
+        status_code: event.metadata?.status_code,
+      };
+      console.log(`[fake-capgo] scenario=${scenario.id} update_check_error=${JSON.stringify(details)}`);
+    }
+  }
   rememberRequest(scenario.id, 'stats', requestUrl, payload);
   return jsonResponse({ status: 'ok' });
 }

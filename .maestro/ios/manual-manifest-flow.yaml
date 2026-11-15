@@ -1,6 +1,8 @@
 appId: app.capgo.updater
 ---
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -9,43 +11,23 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick apply runtime URLs'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20apply%20runtime%20URLs
 - tapOn:
     text: 'Quick apply runtime URLs'
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      text: 'Quick reset release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20reset%20release
 - tapOn:
     text: 'Quick reset release'
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      text: 'Quick download latest bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://focus-text/Quick%20download%20latest%20bundle
 - tapOn:
     text: 'Quick download latest bundle'
     retryTapIfNoChange: true
@@ -56,14 +38,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick queue bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20queue%20bundle
 - tapOn:
     text: 'Quick queue bundle'
     retryTapIfNoChange: true
@@ -77,14 +54,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick reload app'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20reload%20app
 - tapOn:
     text: 'Quick reload app'
     retryTapIfNoChange: true
@@ -95,6 +67,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*Current bundle source: downloaded.*'
@@ -102,26 +75,14 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Current bundle version: manual-manifest-v1.*'
     timeout: 180000
-- scrollUntilVisible:
-    element:
-      text: 'Quick advance release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20advance%20release
 - tapOn:
     text: 'Quick advance release'
     retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      text: 'Quick download latest bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20download%20latest%20bundle
 - tapOn:
     text: 'Quick download latest bundle'
     retryTapIfNoChange: true
@@ -132,14 +93,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick queue bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20queue%20bundle
 - tapOn:
     text: 'Quick queue bundle'
     retryTapIfNoChange: true
@@ -153,14 +109,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      text: 'Quick reload app'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20reload%20app
 - tapOn:
     text: 'Quick reload app'
     retryTapIfNoChange: true
@@ -171,6 +122,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*Current bundle source: downloaded.*'
@@ -182,16 +134,11 @@ appId: app.capgo.updater
     element:
       text: 'Quick read next bundle'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      text: 'Quick confirm no update'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://focus-text/Quick%20confirm%20no%20update
 - tapOn:
     text: 'Quick confirm no update'
     retryTapIfNoChange: true
