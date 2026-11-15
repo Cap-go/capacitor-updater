@@ -1,0 +1,4 @@
+appId: app.capgo.updater
+platform:
+  ios:
+    disableAnimations: true

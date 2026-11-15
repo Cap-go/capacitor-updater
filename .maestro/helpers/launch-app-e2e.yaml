@@ -1,0 +1,5 @@
+appId: app.capgo.updater
+---
+- launchApp:
+    arguments:
+      isE2E: true
