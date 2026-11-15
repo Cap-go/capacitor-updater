@@ -270,6 +270,7 @@ export function createBuildEnv({
     CAPGO_AUTO_UPDATE: String(autoUpdate),
     VITE_CAPGO_APP_LABEL: appLabel,
     VITE_CAPGO_SCENARIO: scenarioId,
+    VITE_CAPGO_MAESTRO_BUILD: 'true',
     VITE_CAPGO_DIRECT_UPDATE: directUpdate,
     VITE_CAPGO_SERVER_URL: updateUrl,
     VITE_CAPGO_ALLOW_MANUAL_BUNDLE_ERROR: mergedEnv.CAPGO_ALLOW_MANUAL_BUNDLE_ERROR ?? 'false',

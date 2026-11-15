@@ -3,6 +3,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/maestro/disable-device-animations.sh
+source "$ROOT_DIR/scripts/maestro/disable-device-animations.sh"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
@@ -48,6 +51,7 @@ else
 fi
 
 cleanup() {
+  restore_android_animation_settings
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
   fi
@@ -330,6 +334,7 @@ wait_for_ui_state_with_timeout() {
   done
 
   echo "Timed out waiting for UI state: ${description}" >&2
+  printf 'Last captured UI hierarchy:\n%s\n' "$hierarchy" >&2
   if [[ "${CAPGO_MAESTRO_SKIP_UI_HIERARCHY_DUMP_ON_TIMEOUT:-1}" != "1" ]]; then
     dump_ui_hierarchy >&2 || true
   fi
@@ -1172,6 +1177,7 @@ prepare_device_for_maestro() {
   wait_for_android_boot
   wait_for_package_manager
   unlock_android_device
+  disable_android_emulator_animations
   configure_server_routing
   return 0
 }
@@ -1339,12 +1345,12 @@ run_flow() {
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     else
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     fi
     command_status=${PIPESTATUS[0]}
     set -e
@@ -1392,6 +1398,8 @@ prepare_scenario() {
 
 mkdir -p "$ARTIFACT_DIR"
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ -z "$TIMEOUT_CMD" ]]; then
   echo "GNU timeout is required to run Maestro flows. Install coreutils (gtimeout) on macOS or make sure timeout is available." >&2

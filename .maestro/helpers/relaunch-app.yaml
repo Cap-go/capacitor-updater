@@ -1,7 +1,9 @@
 appId: app.capgo.updater
 ---
 - pressKey: Home
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '(@capgo/capacitor-updater|CAPGO OTA VALIDATION)'
     timeout: 180000

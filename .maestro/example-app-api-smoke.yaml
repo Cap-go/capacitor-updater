@@ -11,11 +11,13 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - scrollUntilVisible:
     element:
       id: 'quick-run-smoke-sequence'
     direction: DOWN
+    speed: 80
     timeout: 60000
     centerElement: true
     visibilityPercentage: 1
@@ -37,6 +39,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - runFlow: helpers/relaunch-app.yaml
 - extendedWaitUntil:
@@ -49,6 +52,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick verify persisted config'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -57,6 +61,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'
