@@ -51,6 +51,13 @@ jobs:
       - name: Check plugin wiring
         if: runner.os != 'Windows'
         run: bun run check:wiring
+      - name: Check Maestro teardown handling
+        if: runner.os != 'Windows'
+        run: |
+          python3 scripts/maestro/test-run-maestro.py
+          bash scripts/maestro/test-server-lifecycle.sh
+          python3 scripts/maestro/test-device-animations.py
+          python3 scripts/maestro/test-ios-flow-artifacts.py
       - name: Check plugin wiring (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -283,13 +290,16 @@ jobs:
       matrix:
         include:
           # -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
-          # CapacitorUpdaterTests is large; split across two shards so each stays under the 5 minute job cap.
+          # Interleave core tests across three shards to leave room for simulator startup and result finalization.
           - shard: core-a
             parallel_testing: '0'
             select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh a
           - shard: core-b
             parallel_testing: '0'
             select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh b
+          - shard: core-c
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh c
           # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
           - shard: delta
             parallel_testing: '0'
@@ -337,6 +347,7 @@ jobs:
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
+          setup-node: 'false'
           install-dependencies: 'false'
       - name: Download iOS test build and CLI fresh fixtures
         uses: actions/download-artifact@v8
@@ -899,10 +910,6 @@ jobs:
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
           tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Bun runtime
-        uses: ./.github/actions/setup-bun-runtime
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -919,8 +926,10 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000
-          bun run test:maestro:ios:smoke
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
+          ./scripts/test-maestro-ios.sh
       - name: Upload Maestro artifacts
         if: failure() || cancelled()
         uses: actions/upload-artifact@v7
@@ -968,10 +977,6 @@ jobs:
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
           tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Bun runtime
-        uses: ./.github/actions/setup-bun-runtime
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -988,6 +993,8 @@ jobs:
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_TEST_RETRIES=2 \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
@@ -1103,8 +1110,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
-      # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
@@ -1145,6 +1150,8 @@ jobs:
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
           MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts

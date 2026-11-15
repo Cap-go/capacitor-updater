@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
+# shellcheck source=scripts/maestro/start-fake-server.sh
+source "$ROOT_DIR/scripts/maestro/start-fake-server.sh"
 # shellcheck source=scripts/maestro/maestro-cli-pass.sh
 source "$ROOT_DIR/scripts/maestro/maestro-cli-pass.sh"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
@@ -56,6 +59,14 @@ fi
 
 SIMULATOR_ID="${CAPGO_MAESTRO_IOS_SIMULATOR_ID:-$(default_simulator_id)}"
 APP_PATH="${CAPGO_MAESTRO_IOS_APP_PATH:-$(default_app_path)}"
+
+maestro_runtime_js() {
+  if command -v bun >/dev/null 2>&1 && [[ "${CAPGO_MAESTRO_PREFER_BUN_JS:-0}" == "1" ]]; then
+    bun "$@"
+    return
+  fi
+  node "$@"
+}
 
 cleanup() {
   if [[ -f "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" ]]; then
@@ -179,8 +190,7 @@ assert_fake_server_process_alive() {
 
 start_fake_server() {
   mkdir -p "$ARTIFACT_DIR"
-  bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log" 2>&1 &
-  SERVER_PID=$!
+  start_fake_capgo_server "$ARTIFACT_DIR/fake-capgo-server-ios-smoke.log"
 
   wait_for_server
   sleep 1
@@ -208,11 +218,7 @@ server_request_count() {
   local server_state="$1"
   local request_kind="$2"
 
-  bun --eval "
-const state = JSON.parse(process.argv[1]);
-const requestKind = process.argv[2];
-console.log(state.debug?.requestCounts?.[requestKind] ?? 0);
-" "$server_state" "$request_kind"
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/smoke-server-request-count.mjs" "$server_state" "$request_kind"
 }
 
 wait_for_queued_boot_verification() {
@@ -231,48 +237,8 @@ wait_for_queued_boot_verification() {
 
   for _ in $(seq 1 "$max_attempts"); do
     server_state="$(read_smoke_server_state)"
-    if bun --eval "
-const state = JSON.parse(process.argv[1]);
-const scenarioId = process.argv[2];
-const beforeChannelCount = Number(process.argv[3]);
-const debug = state.debug ?? {};
-const channel = debug.lastChannelRequest ?? {};
-const channelPayload = channel.payload ?? {};
-const channelCount = debug.requestCounts?.channel ?? 0;
-const channelUrl = channel.url ?? '';
-const channelAppId = channelPayload.app_id ?? '';
-const channelCustomId = channelPayload.custom_id ?? '';
-const defaultAppId = process.argv[4];
-const runtimeAppId = defaultAppId + '.e2e';
-let ok = channelCount > beforeChannelCount;
-
-if (scenarioId === 'manual-zip') {
-  ok =
-    ok &&
-    channelUrl.includes('/api/channel?scenario=manual-zip&source=runtime-channel') &&
-    channelAppId === defaultAppId &&
-    channelAppId !== runtimeAppId &&
-    channelCustomId === 'qa-user-42';
-} else if (scenarioId === 'manual-zip-config-guards') {
-  ok =
-    ok &&
-    channelUrl.includes('/api/channel?scenario=manual-zip-config-guards') &&
-    channelAppId === defaultAppId &&
-    channelAppId !== runtimeAppId &&
-    !channelUrl.includes('source=runtime-channel') &&
-    channelCustomId === 'qa-user-42';
-} else if (scenarioId === 'manual-zip-no-persist') {
-  ok =
-    ok &&
-    channelUrl.includes('/api/channel?scenario=manual-zip-no-persist') &&
-    channelAppId === defaultAppId &&
-    channelAppId !== runtimeAppId &&
-    !channelUrl.includes('source=runtime-channel') &&
-    channelCustomId !== 'qa-user-42';
-}
-
-process.exit(ok ? 0 : 1);
-" "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
+    if maestro_runtime_js "$ROOT_DIR/scripts/maestro/smoke-boot-verification.mjs" \
+      "$server_state" "$SCENARIO_ID" "$before_channel_count" "$APP_ID"; then
       return 0
     fi
     sleep "$sleep_seconds"
@@ -287,70 +253,7 @@ assert_smoke_server_state() {
 
   server_state="$(read_smoke_server_state)"
 
-  bun --eval "
-const state = JSON.parse(process.argv[1]);
-const scenarioId = process.argv[2];
-const failures = [];
-const debug = state.debug ?? {};
-const update = debug.lastUpdateRequest ?? {};
-const channel = debug.lastChannelRequest ?? {};
-const stats = debug.lastStatsRequest ?? {};
-const updatePayload = update.payload ?? {};
-const channelPayload = channel.payload ?? {};
-const requestCounts = debug.requestCounts ?? {};
-const defaultAppId = 'app.capgo.updater';
-const runtimeAppId = defaultAppId + '.e2e';
-
-function expect(condition, message) {
-  if (!condition) {
-    failures.push(message);
-  }
-}
-
-switch (scenarioId) {
-  case 'manual-zip':
-    expect(channel.url?.includes('/api/channel?scenario=manual-zip&source=runtime-channel'), 'missing persisted runtime channel URL request');
-    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
-    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
-    expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'missing persisted custom ID');
-    expect((requestCounts.channel ?? 0) >= 1, 'expected persisted channel verification to hit the fake server');
-    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
-    break;
-  case 'manual-zip-no-persist':
-    expect(channel.url?.includes('/api/channel?scenario=manual-zip-no-persist'), 'missing default channel URL request after relaunch');
-    expect(!channel.url?.includes('source=runtime-channel'), 'channel URL unexpectedly stayed on the runtime override');
-    expect(channelPayload.app_id === defaultAppId, 'runtime app ID unexpectedly persisted across relaunch');
-    expect(channelPayload.app_id !== runtimeAppId, 'channel request still used runtime app ID after relaunch');
-    expect((channelPayload.custom_id ?? '') !== 'qa-user-42', 'custom ID unexpectedly persisted across relaunch');
-    expect((requestCounts.channel ?? 0) >= 2, 'expected repeated channel checks to hit the fake server');
-    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
-    break;
-  case 'manual-zip-config-guards':
-    expect(!update.url?.includes('source=runtime-update'), 'guarded config unexpectedly accepted a runtime update URL override');
-    expect(channel.url?.includes('/api/channel?scenario=manual-zip-config-guards'), 'missing default channel URL request for guarded config');
-    expect(!channel.url?.includes('source=runtime-channel'), 'guarded config unexpectedly accepted a runtime channel URL override');
-    expect(channelPayload.app_id === defaultAppId, 'guarded config unexpectedly accepted the runtime app ID override');
-    expect(channelPayload.app_id !== runtimeAppId, 'guarded config channel request still used runtime app ID override');
-    expect((updatePayload.custom_id ?? channelPayload.custom_id) === 'qa-user-42', 'custom ID should still persist when only URL/App ID setters are guarded');
-    expect((requestCounts.channel ?? 0) >= 1, 'expected guarded config channel checks to hit the fake server');
-    expect((requestCounts.stats ?? 0) >= 1, 'expected stats traffic to hit the fake server');
-    break;
-  default:
-    expect(update.url?.includes('/api/updates/' + scenarioId), 'missing update request');
-    expect(channel.url?.includes('/api/channel?scenario=' + scenarioId), 'missing channel request');
-    expect((requestCounts.channel ?? 0) >= 1, 'expected channel traffic to hit the fake server');
-    expect((requestCounts.update ?? 0) >= 1, 'expected update traffic to hit the fake server');
-    break;
-}
-
-if (failures.length) {
-  console.error('Smoke server assertions failed:');
-  for (const failure of failures) {
-    console.error('- ' + failure);
-  }
-  process.exit(1);
-}
-" "$server_state" "$SCENARIO_ID"
+  maestro_runtime_js "$ROOT_DIR/scripts/maestro/smoke-server-assert.mjs" "$server_state" "$SCENARIO_ID"
 
   case "$SCENARIO_ID" in
     manual-zip-no-persist)
@@ -376,16 +279,14 @@ if ! command -v maestro >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$SKIP_BUILD" != "1" ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "node is required to run Capacitor CLI commands." >&2
-    exit 1
-  fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "node is required to run the test helpers and Capacitor CLI commands." >&2
+  exit 1
+fi
 
-  if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
-    echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
-    exit 1
-  fi
+if [[ "$SKIP_BUILD" != "1" ]] && ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)"; then
+  echo "Node.js >=22 is required because Capacitor CLI no longer supports older versions." >&2
+  exit 1
 fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
@@ -454,6 +355,10 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+ios_simulator_is_booted() {
+  bash "$ROOT_DIR/scripts/maestro/ios-simulator-booted.sh" "$SIMULATOR_ID"
+}
+
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
   if run_with_timeout "$SIMULATOR_BOOT_TIMEOUT_SECONDS" xcrun simctl bootstatus "$SIMULATOR_ID" -b; then
@@ -467,6 +372,8 @@ if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
   fi
 fi
 
+"$ROOT_DIR/scripts/maestro/disable-device-animations.sh" ios "$SIMULATOR_ID"
+
 install_example_app
 
 attempt=1
@@ -479,6 +386,7 @@ while (( attempt <= MAESTRO_TEST_RETRIES )); do
 
   set +e
   run_with_timeout "$MAESTRO_TIMEOUT_SECONDS" maestro test \
+    --config "$MAESTRO_WORKSPACE_CONFIG" \
     -p ios \
     --device "$SIMULATOR_ID" \
     --no-reinstall-driver \

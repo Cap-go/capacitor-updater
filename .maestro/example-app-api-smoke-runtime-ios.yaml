@@ -1,7 +1,9 @@
 appId: app.capgo.updater
 ---
 - stopApp
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -13,6 +15,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick apply app ID'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -27,6 +30,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick set custom ID'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -41,6 +45,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick apply runtime URLs'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -55,6 +60,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick set beta channel'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -69,6 +75,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick unset channel'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: false
     visibilityPercentage: 1
@@ -83,11 +90,13 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - scrollUntilVisible:
     element:
       text: 'Quick queue persisted check'
     direction: DOWN
+    speed: 80
     timeout: 30000
     centerElement: true
     visibilityPercentage: 1

@@ -11,15 +11,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-runtime-urls'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://action/set-runtime-urls
 - tapOn:
     id: 'quick-action-set-runtime-urls'
     retryTapIfNoChange: true
@@ -27,14 +21,7 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: set-runtime-urls:success|M:set-runtime-urls:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-reset-server-release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://action/reset-server-release
 - tapOn:
     id: 'quick-action-reset-server-release'
     retryTapIfNoChange: true
@@ -42,14 +29,7 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*(Marker: reset:success|M:reset:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-download-latest-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: true
-    visibilityPercentage: 1
-    waitToSettleTimeoutMs: 500
+- openLink: capgo-maestro://action/download-latest-bundle
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     retryTapIfNoChange: true
@@ -70,14 +50,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-last-downloaded-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/set-last-downloaded-bundle
 - tapOn:
     id: 'quick-action-set-last-downloaded-bundle'
     waitToSettleTimeoutMs: 500
@@ -88,42 +63,25 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Current bundle source: downloaded.*'
 - assertVisible: '.*Current bundle version: manual-zip-v1.*'
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-advance-server-release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/advance-server-release
 - tapOn:
     id: 'quick-action-advance-server-release'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-download-latest-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/download-latest-bundle
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: download:success|M:download:success).*'
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-queue-last-downloaded-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/queue-last-downloaded-bundle
 - tapOn:
     id: 'quick-action-queue-last-downloaded-bundle'
     waitToSettleTimeoutMs: 500
@@ -137,14 +95,9 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-get-next-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/get-next-bundle
 - tapOn:
     id: 'quick-action-get-next-bundle'
     waitToSettleTimeoutMs: 500
@@ -155,41 +108,24 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Next bundle version: manual-zip-v2.*'
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-multi-delay'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/set-multi-delay
 - tapOn:
     id: 'quick-action-set-multi-delay'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: delay:success|M:delay:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-cancel-delay'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/cancel-delay
 - tapOn:
     id: 'quick-action-cancel-delay'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: cancel:success|M:cancel:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-reload-app'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/reload-app
 - tapOn:
     id: 'quick-action-reload-app'
     waitToSettleTimeoutMs: 500
@@ -200,42 +136,25 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Current bundle source: downloaded.*'
 - assertVisible: '.*Current bundle version: manual-zip-v2.*'
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-get-latest-no-update'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/get-latest-no-update
 - tapOn:
     id: 'quick-action-get-latest-no-update'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: no-update:success|M:no-update:success).*'
     timeout: 60000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-advance-server-release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/advance-server-release
 - tapOn:
     id: 'quick-action-advance-server-release'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-download-latest-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/download-latest-bundle
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     waitToSettleTimeoutMs: 500
@@ -248,13 +167,7 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Update available event: manual-zip-v3-broken.*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-last-downloaded-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/set-last-downloaded-bundle
 - tapOn:
     id: 'quick-action-set-last-downloaded-bundle'
     waitToSettleTimeoutMs: 500
@@ -265,26 +178,15 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*Current bundle version: manual-zip-v2.*'
     timeout: 120000
 - assertVisible: '.*Current bundle source: downloaded.*'
 - assertVisible: '.*Current bundle version: manual-zip-v2.*'
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-reload-app'
-    direction: DOWN
-    timeout: 120000
-    centerElement: false
-    visibilityPercentage: 1
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-get-failed-update'
-    direction: DOWN
-    timeout: 120000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/reload-app
+- openLink: capgo-maestro://action/get-failed-update
 - tapOn:
     id: 'quick-action-get-failed-update'
     waitToSettleTimeoutMs: 500
@@ -295,33 +197,23 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - scrollUntilVisible:
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Failed update: manual-zip-v3-broken.*'
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-advance-server-release'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/advance-server-release
 - tapOn:
     id: 'quick-action-advance-server-release'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: advance:success|M:advance:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-download-latest-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/download-latest-bundle
 - tapOn:
     id: 'quick-action-download-latest-bundle'
     waitToSettleTimeoutMs: 500
@@ -334,39 +226,21 @@ appId: app.capgo.updater
 - extendedWaitUntil:
     visible: '.*Update available event: manual-zip-v4.*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-set-bundle-error'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/set-bundle-error
 - tapOn:
     id: 'quick-action-set-bundle-error'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: bundle:success|M:bundle:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-delete-inactive-bundle'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/delete-inactive-bundle
 - tapOn:
     id: 'quick-action-delete-inactive-bundle'
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: '.*(Marker: delete:success|M:delete:success).*'
     timeout: 30000
-- scrollUntilVisible:
-    element:
-      id: 'quick-action-reset-to-builtin'
-    direction: DOWN
-    timeout: 30000
-    centerElement: false
-    visibilityPercentage: 1
+- openLink: capgo-maestro://action/reset-to-builtin
 - tapOn:
     id: 'quick-action-reset-to-builtin'
     waitToSettleTimeoutMs: 500
@@ -377,6 +251,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - assertVisible: '.*Current bundle source: builtin.*'
 - assertVisible: '.*Build label: manual-zip-builtin.*'
