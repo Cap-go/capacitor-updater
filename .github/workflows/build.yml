@@ -20,6 +20,16 @@ jobs:
       contents: write
       id-token: write
     steps:
+      - name: Refuse tags outside the Capacitor 9 beta line
+        run: |
+          set -euo pipefail
+          REF_NAME="${{ github.ref_name }}"
+          VERSION="${REF_NAME##*/}"
+          VERSION="${VERSION#v}"
+          case "$VERSION" in
+            9.0.0-beta.*) echo "Publishing $REF_NAME to npm beta" ;;
+            *) echo "Refusing to publish $REF_NAME from v9: only 9.0.0-beta.* tags are allowed"; exit 1 ;;
+          esac
       - name: Check out
         uses: actions/checkout@v7
         with:
@@ -71,7 +81,7 @@ jobs:
           npm --version
           npm stage publish --tag lts-v7 --provenance --access public --ignore-scripts
       - name: Stage publish to npm
-        if: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
+        if: ${{ !contains(github.ref, '-alpha.') && !contains(github.ref, '-beta.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -84,6 +94,13 @@ jobs:
         run: |
           npm --version
           npm stage publish --tag next --provenance --access public --ignore-scripts
+      - name: Stage publish to npm with beta tag
+        if: ${{ contains(github.ref, '-beta.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm --version
+          npm stage publish --tag beta --provenance --access public --ignore-scripts
       - name: Request stage approval
         continue-on-error: true
         env:
@@ -106,6 +123,6 @@ jobs:
             ---
 
             🔗 **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.from_tag || github.ref_name }}...${{ steps.changelog.outputs.to_tag || github.ref_name }}
-          make_latest: ${{ !contains(github.ref, '-alpha.') && !startsWith(github.ref, 'refs/tags/5.') && !startsWith(github.ref, 'refs/tags/6.') && !startsWith(github.ref, 'refs/tags/7.') }}
+          make_latest: false
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
-          prerelease: ${{ contains(github.ref, '-alpha.') }}
+          prerelease: true

@@ -139,6 +139,7 @@ The plugin has no third-party iOS dependencies besides Capacitor: ZIP extraction
 
 | Plugin version | Capacitor compatibility | Maintained        |
 | -------------- | ----------------------- | ----------------- |
+| v9.\*.\*       | v9.\*.\* (beta)         | Prerelease        |
 | v8.\*.\*       | v8.\*.\*                | ✅                 |
 | v7.\*.\*       | v7.\*.\*                | ✅                 |
 | v6.\*.\*       | v6.\*.\*                | ✅                 |

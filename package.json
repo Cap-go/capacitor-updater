@@ -90,11 +90,11 @@
     "capacitor:copy:after": "node scripts/capacitor-builtin-hashes-hook.mjs"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
-    "@capacitor/core": "^8.5.0",
-    "@capacitor/docgen": "^0.3.0",
-    "@capacitor/ios": "^8.5.0",
+    "@capacitor/android": "next",
+    "@capacitor/cli": "next",
+    "@capacitor/core": "next",
+    "@capacitor/docgen": "^0.3.1",
+    "@capacitor/ios": "next",
     "@capgo/cli": "8.104.1",
     "@ionic/eslint-config": "^0.5.0",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
@@ -105,15 +105,15 @@
     "eslint": "^10.0.0",
     "husky": "^9.1.7",
     "prettier": "^3.6.2",
-    "prettier-plugin-java": "^2.7.4",
-    "rimraf": "^6.0.1",
-    "rollup": "^4.50.0",
+    "prettier-plugin-java": "^2.7.7",
+    "rimraf": "^6.1.0",
+    "rollup": "^4.53.2",
     "swiftlint": "^2.0.0",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "prettier-pretty-check": "^0.2.0"
   },
   "peerDependencies": {
-    "@capacitor/core": "^8.0.0"
+    "@capacitor/core": ">=9.0.0-beta.0"
   },
   "prettier": "@ionic/prettier-config",
   "swiftlint": "@ionic/swiftlint-config",

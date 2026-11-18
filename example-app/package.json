@@ -13,17 +13,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@capacitor/app": "^8.0.0",
-    "@capacitor/core": "^8.5.2",
-    "@capacitor/android": "^8.5.2",
-    "@capacitor/ios": "^8.5.2",
+    "@capacitor/app": "next",
+    "@capacitor/core": "next",
+    "@capacitor/android": "next",
+    "@capacitor/ios": "next",
     "@capgo/capacitor-updater": "file:..",
-    "@capacitor/splash-screen": "^8.0.0"
+    "@capacitor/splash-screen": "next"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.2",
+    "@capacitor/cli": "next",
     "typescript": "^6.0.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.8"
   },
   "author": "",
   "license": "ISC"

@@ -4,23 +4,24 @@ import PackageDescription
 // DO NOT MODIFY THIS FILE - managed by Capacitor CLI commands
 let package = Package(
     name: "CapApp-SPM",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(
             name: "CapApp-SPM",
             targets: ["CapApp-SPM"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.0"),
-        .package(name: "CapgoCapacitorUpdater", path: "../../../node_modules/.bun/@capgo+capacitor-updater@file+..+759ce506b1ed1a42/node_modules/@capgo/capacitor-updater"),
-        .package(name: "CapacitorSplashScreen", path: "../../../node_modules/.bun/@capacitor+splash-screen@8.0.1+6139e07751574bda/node_modules/@capacitor/splash-screen")
+        .package(name: "capacitor", path: "../../../node_modules/@capacitor/ios"),
+        .package(name: "CapacitorApp", path: "../../../node_modules/.bun/@capacitor+app@9.0.0-alpha.2+8ac37f13983d4f6d/node_modules/@capacitor/app"),
+        .package(name: "CapgoCapacitorUpdater", path: "../../../node_modules/.bun/@capgo+capacitor-updater@file+..+2aff2eaf0ce376a4/node_modules/@capgo/capacitor-updater"),
+        .package(name: "CapacitorSplashScreen", path: "../../../node_modules/.bun/@capacitor+splash-screen@9.0.0-alpha.2+8ac37f13983d4f6d/node_modules/@capacitor/splash-screen")
     ],
     targets: [
         .target(
             name: "CapApp-SPM",
             dependencies: [
-                .product(name: "Capacitor", package: "capacitor-swift-pm"),
-                .product(name: "Cordova", package: "capacitor-swift-pm"),
+                .product(name: "Capacitor", package: "capacitor"),
+                .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapgoCapacitorUpdater", package: "CapgoCapacitorUpdater"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen")
             ]

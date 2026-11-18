@@ -8,8 +8,9 @@ on:
   push:
     branches:
       - renovate/**
+      - v9
   pull_request:
-    branches: [main, v5, v6, v7]
+    branches: [main, v5, v6, v7, v9]
   workflow_dispatch:
   workflow_call: # Allow this workflow to be called by other workflows
 
@@ -74,14 +75,25 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Enforce capacitor-swift-pm version
+      - name: Enforce Capacitor 9 SwiftPM dependency
         run: |
           set -euo pipefail
-          MAJOR=$(awk -F'"' '/"version":/{print $4; exit}' package.json | cut -d. -f1)
-          if ! grep -Eq "https://github.com/ionic-team/capacitor-swift-pm\\.git\"[[:space:]]*,[[:space:]]*from:[[:space:]]*\"${MAJOR}\\.0\\.0\"" Package.swift; then
-            echo "Expected capacitor-swift-pm to be pinned to ${MAJOR}.0.0 in Package.swift"
+          # Capacitor 9: plugins depend on ionic-team/capacitor.git 9.x, capacitor-swift-pm is gone.
+          files=$(git ls-files 'Package.swift' '*/Package.swift' | grep -v -E '(^|/)example-app/' || true)
+          if [ -z "$files" ]; then
+            echo "No Package.swift found"
             exit 1
           fi
+          for f in $files; do
+            if grep -q 'capacitor-swift-pm' "$f"; then
+              echo "$f still depends on capacitor-swift-pm (Capacitor 8)"
+              exit 1
+            fi
+            if ! grep -Eq 'https://github.com/ionic-team/capacitor\.git"[[:space:]]*,[[:space:]]*from:[[:space:]]*"9\.' "$f"; then
+              echo "Expected ionic-team/capacitor.git from 9.x in $f"
+              exit 1
+            fi
+          done
 
   build_android:
     permissions:
@@ -611,6 +623,16 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Cache SwiftPM and DerivedData (Capacitor 9 builds from source)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData
+            build/ios-derived
+          key: ${{ runner.os }}-cap9-ios-${{ hashFiles('**/Package.swift', '**/Package.resolved', '**/*.podspec', '!**/node_modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-cap9-ios-
       - name: Build iOS app
         run: |
           set -euo pipefail
@@ -1032,6 +1054,16 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
+      - name: Cache SwiftPM and DerivedData (Capacitor 9 builds from source)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData
+            build/ios-derived
+          key: ${{ runner.os }}-cap9-ios-${{ hashFiles('**/Package.swift', '**/Package.resolved', '**/*.podspec', '!**/node_modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-cap9-ios-
       - name: Build iOS apps
         run: |
           set -euo pipefail

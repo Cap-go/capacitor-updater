@@ -8,6 +8,7 @@ on:
       - v5
       - v6
       - v7
+      - v9
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
@@ -39,6 +40,9 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
+      - name: Snapshot tags before bump
+        run: |
+          git tag -l | sort > "$RUNNER_TEMP/tags-before.txt"
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
@@ -57,6 +61,21 @@ jobs:
       - name: Create version bump main
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@2.0.19 --skip.changelog
+      - name: Create version bump v9
+        if: github.ref == 'refs/heads/v9'
+        run: |
+          set -euo pipefail
+          MAJOR=$(node -p "require('./package.json').version.split('.')[0]")
+          if [ "$MAJOR" -lt 9 ]; then
+            bunx capacitor-plugin-standard-version@2.0.19 --release-as 9.0.0 --prerelease beta --skip.changelog
+          else
+            bunx capacitor-plugin-standard-version@2.0.19 --prerelease beta --skip.changelog
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          case "$VERSION" in
+            9.0.0-beta.*) echo "v9 prerelease $VERSION" ;;
+            *) echo "Refusing to tag $VERSION on v9: only 9.0.0-beta.* is allowed"; exit 1 ;;
+          esac
       - name: Create version bump development
         if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@2.0.19 --prerelease alpha --skip.changelog
@@ -82,7 +101,12 @@ jobs:
           git add -A
           git diff --staged --quiet || git commit -m "chore: commit any remaining changes" || true
           git pull --rebase $remote_repo $CURRENT_BRANCH
-          git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
+          git push $remote_repo HEAD:$CURRENT_BRANCH
+          # GitHub fires no tag push event when more than 3 tags arrive in one push, so push each new tag on its own.
+          git tag -l | sort > "$RUNNER_TEMP/tags-after.txt"
+          for t in $(comm -13 "$RUNNER_TEMP/tags-before.txt" "$RUNNER_TEMP/tags-after.txt"); do
+            git push $remote_repo "refs/tags/$t"
+          done
       - name: Push generated doc to doc repo
         if: github.ref == 'refs/heads/main'
         uses: nkoppel/push-files-to-another-repository@82da78d76ccb187ccaf0b8fde044c4153ab5d3e1 # v1.1.4
