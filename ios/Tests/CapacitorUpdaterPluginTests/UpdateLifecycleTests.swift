@@ -148,7 +148,7 @@ private final class LifecyclePlugin: CapacitorUpdaterPlugin {
         reloadResult
     }
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+    override func deliverEvent(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         events.append(eventName)
         if let data {
             payloads[eventName] = data

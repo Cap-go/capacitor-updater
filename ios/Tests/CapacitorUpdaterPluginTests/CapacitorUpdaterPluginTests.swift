@@ -21,7 +21,7 @@ private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventRetainValues: [String: Bool] = [:]
     private(set) var notifiedEvents: [(name: String, data: [String: Any]?, retain: Bool)] = []
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+    override func deliverEvent(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         notifiedEventNames.append(eventName)
         notifiedEvents.append((name: eventName, data: data, retain: retain))
         notifiedEventRetainValues[eventName] = retain
@@ -85,7 +85,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
         return _notifiedEventPayloads
     }
 
-    override func notifyListeners(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
+    override func deliverEvent(_ eventName: String, data: [String: Any]?, retainUntilConsumed retain: Bool) {
         eventLock.lock()
         _notifiedEventNames.append(eventName)
         if eventName == "appReady" {
