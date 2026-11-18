@@ -1320,14 +1320,14 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return eventName != updaterEvent && eventName != deprecatedMajorAvailableEvent
     }
 
-    /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
-    /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
     /// Single delivery point for every event this plugin emits. Capacitor 9 no longer lets plugins
     /// override `notifyListeners` (non-open), so tests override this hook to capture events.
     func deliverEvent(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool) {
         notifyListeners(eventName, data: data, retainUntilConsumed: retainUntilConsumed)
     }
 
+    /// CAPPlugin's listener storage is not thread-safe (ionic-team/capacitor#8157), so every
+    /// event this plugin emits goes through the main thread. Calls already on main stay synchronous.
     private func notifyListenersOnMain(_ eventName: String, data: [String: Any]?, retainUntilConsumed: Bool = false) {
         let notify = {
             self.deliverEvent(eventName, data: data, retainUntilConsumed: retainUntilConsumed)

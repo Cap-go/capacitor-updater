@@ -31,6 +31,8 @@ android {
     buildTypes {
         release {
             minifyEnabled = true
+            // Required with minify: lint NotShrinkingResources flags it otherwise, and on AGP 9.4.1 that
+            // warning crashes :app:lintReportDebug (SarifReporter, location past end of capacitor.build.gradle).
             shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
