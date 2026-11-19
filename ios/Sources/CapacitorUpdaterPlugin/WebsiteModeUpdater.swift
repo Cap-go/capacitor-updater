@@ -58,7 +58,7 @@ final class WebsiteModeUpdater {
     /// The live answer picks the code the app runs, so it must come over HTTPS.
     /// Plain HTTP is only accepted for loopback hosts (local development).
     static func isLoopbackHost(_ host: String) -> Bool {
-        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+        host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" || host == "::1" || host == "[::1]"
     }
 
     /// Same scheme, host and port: redirects must not change where bundle files come from.

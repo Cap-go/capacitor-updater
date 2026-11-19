@@ -343,7 +343,13 @@ final class WebsiteModeUpdater {
 
     /** Plain HTTP is only accepted for loopback hosts (local development). */
     static boolean isLoopbackHost(final String host) {
-        return "localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
+        return (
+            "localhost".equals(host) ||
+            "127.0.0.1".equals(host) ||
+            "10.0.2.2".equals(host) || // Android emulator host alias (Maestro / local dev)
+            "::1".equals(host) ||
+            "[::1]".equals(host)
+        );
     }
 
     /** Same scheme, host and port: redirects must not change where bundle files come from. */

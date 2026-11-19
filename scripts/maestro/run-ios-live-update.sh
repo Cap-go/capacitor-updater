@@ -991,6 +991,7 @@ if (failures.length) {
       ;;
     website-good)
       trust_website_tls_cert
+      run_flow "$scenario_id" "$ROOT_DIR/.maestro/helpers/launch-app-e2e.yaml"
       run_flow "$scenario_id" "$ROOT_DIR/.maestro/website-mode-good.yaml"
       ;;
     website-fail)
