@@ -1093,6 +1093,15 @@ if (existsSync(tlsKeyPath) && existsSync(tlsCertPath) && existsSync(websitesRoot
 
       try {
         const requestUrl = new URL(req.url ?? '/', deviceHttpsBase);
+        const websiteLiveResponse = await handleWebsiteLive(requestUrl, req.method ?? 'GET');
+        if (websiteLiveResponse) {
+          if (websiteLiveResponse instanceof InterruptedResponse) {
+            writeInterruptedResponse(connection, res, websiteLiveResponse);
+            return;
+          }
+          await writeResponse(res, websiteLiveResponse);
+          return;
+        }
         const response = await handleWebsiteStatic(requestUrl.pathname, req.method ?? 'GET');
         if (!response) {
           res.writeHead(404, baseHeaders);

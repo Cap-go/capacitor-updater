@@ -288,13 +288,17 @@ export function createBuildEnv({
 
   if (scenario?.mode === 'website') {
     const suffix = scenario.websiteLiveSuffix ?? scenarioId;
+    const rawTlsPort = env.CAPGO_MAESTRO_TLS_PORT?.trim() || '3193';
+    const tlsPort = Number.parseInt(rawTlsPort, 10);
+    const deviceHttpsBase =
+      env.CAPGO_MAESTRO_DEVICE_HTTPS_BASE ?? `https://10.0.2.2:${tlsPort}`; // NOSONAR Maestro emulator HTTPS
     return {
       ...mergedEnv,
       CAPGO_AUTO_UPDATE: String(autoUpdate),
       CAPGO_DIRECT_UPDATE: directUpdate,
       CAPGO_HTTPS_ONLY: 'false',
       CAPGO_WEBSITE_MODE: 'true',
-      CAPGO_WEBSITE_LIVE_URL: `${deviceBaseUrl}/website_live/${suffix}`,
+      CAPGO_WEBSITE_LIVE_URL: `${deviceHttpsBase}/website_live/${suffix}`,
       VITE_CAPGO_APP_LABEL: appLabel,
       VITE_CAPGO_SCENARIO: scenarioId,
       VITE_CAPGO_MAESTRO_BUILD: 'true',

@@ -346,7 +346,7 @@ final class WebsiteModeUpdater {
         return (
             "localhost".equals(host) ||
             "127.0.0.1".equals(host) ||
-            "10.0.2.2".equals(host) || // Android emulator host alias (Maestro / local dev)
+            "10.0.2.2".equals(host) || // NOSONAR Android emulator host alias (Maestro / local dev)
             "::1".equals(host) ||
             "[::1]".equals(host)
         );
