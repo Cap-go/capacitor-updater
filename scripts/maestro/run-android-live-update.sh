@@ -1111,10 +1111,7 @@ if (failures.length) {
     website-good)
       control_server reset website-good
       prepare_scenario website-good
-      run_flow initial-direct-update.yaml
-      wait_for_direct_update_ui_state \
-        "website good bundle applies on first launch" \
-        "Website Maestro Good"
+      run_flow website-mode-good.yaml
       ;;
     website-fail)
       control_server reset website-fail

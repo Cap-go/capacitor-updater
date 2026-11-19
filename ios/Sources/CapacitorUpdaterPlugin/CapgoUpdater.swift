@@ -590,6 +590,11 @@ import UIKit
             fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
+            timedOut: isTimedOutError(requestError),
+            resumeData: interruptedResumeData
+        )
+    }
+
     private func existingDownloadFileURL(_ fileURL: URL?, fallback: URL) -> URL? {
         let fileManager = FileManager.default
         if let fileURL, fileManager.fileExists(atPath: fileURL.path) {

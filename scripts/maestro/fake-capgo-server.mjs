@@ -110,6 +110,8 @@ const scenarioDebugState = new Map(
 );
 const scenarioFaultState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioFaults()]));
 const stalledDownloadReleasers = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, new Set()]));
+/** Serves HTTPS website assets from the site root; the native plugin only accepts root website_url values. */
+let activeWebsiteVariant = 'good';
 
 function jsonResponse(payload, init = {}) {
   return Response.json(payload, {
@@ -301,6 +303,9 @@ function updateScenarioState(scenario, action) {
     setScenarioFault(scenario.id, 'bundle', 'none');
     setScenarioFault(scenario.id, 'update', 'none');
     resetScenarioDebugState(scenario.id);
+    if (scenario.mode === 'website') {
+      activeWebsiteVariant = scenario.websiteLiveSuffix ?? scenario.id;
+    }
     return true;
   }
 
@@ -914,27 +919,17 @@ async function handleWebsiteLive(requestUrl, method) {
   }
 
   const variant = liveMatch[1];
+  activeWebsiteVariant = variant;
   logRequest(requestUrl, method);
   return jsonResponse({
     allowed: true,
     mode: 'website',
-    website_url: `${deviceHttpsBase}/website/${variant}/`,
+    website_url: `${deviceHttpsBase}/`,
     check_interval_seconds: 0,
   });
 }
 
-async function handleWebsiteStatic(pathname, method) {
-  const match = pathname.match(/^\/website\/(good|fail)\/(.*)$/);
-  if (!match || (method !== 'GET' && method !== 'HEAD')) {
-    return null;
-  }
-
-  const variant = match[1];
-  let relativeFile = match[2] || 'index.html';
-  if (relativeFile.endsWith('/')) {
-    relativeFile += 'index.html';
-  }
-
+async function serveWebsiteVariantFile(variant, relativeFile, method) {
   if (variant === 'fail' && relativeFile === 'app.js') {
     return new Response('missing required asset', { headers: baseHeaders, status: 404 });
   }
@@ -950,6 +945,30 @@ async function handleWebsiteStatic(pathname, method) {
   } catch {
     return new Response('not found', { headers: baseHeaders, status: 404 });
   }
+}
+
+async function handleWebsiteStatic(pathname, method) {
+  if (method !== 'GET' && method !== 'HEAD') {
+    return null;
+  }
+
+  if (pathname === '/' || pathname === '/index.html' || pathname === '/app.js') {
+    const relativeFile = pathname === '/app.js' ? 'app.js' : 'index.html';
+    return serveWebsiteVariantFile(activeWebsiteVariant, relativeFile, method);
+  }
+
+  const match = pathname.match(/^\/website\/(good|fail)\/(.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const variant = match[1];
+  let relativeFile = match[2] || 'index.html';
+  if (relativeFile.endsWith('/')) {
+    relativeFile += 'index.html';
+  }
+
+  return serveWebsiteVariantFile(variant, relativeFile, method);
 }
 
 async function handleRequest(request) {
