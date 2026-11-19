@@ -123,7 +123,7 @@ jobs:
               '',
               `Requested by @${actor}.`,
               '',
-              `This run will publish the PR head to the \`beta\` npm tag.`,
+              `This run will publish the PR head to the \`pr\` npm tag.`,
               '',
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');
@@ -208,7 +208,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm --version
-          npm stage publish --tag beta --provenance --access public --ignore-scripts
+          npm stage publish --tag pr --provenance --access public --ignore-scripts
 
 
       - name: Request stage approval
@@ -245,7 +245,7 @@ jobs:
               '',
               'Latest beta:',
               '```sh',
-              `bun add ${packageName}@beta`,
+              `bun add ${packageName}@pr`,
               `bun add ${packageName}@${version}`,
               '```',
               '',
