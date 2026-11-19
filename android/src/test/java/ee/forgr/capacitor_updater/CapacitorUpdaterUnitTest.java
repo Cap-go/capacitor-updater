@@ -1141,30 +1141,6 @@ public class CapacitorUpdaterUnitTest {
         }
     }
 
-    private static final class ConfigurableTimeoutCapacitorUpdaterPlugin extends TestableCapacitorUpdaterPlugin {
-
-        private final long minimumPendingBundleAppReadyTimeoutMs;
-
-        ConfigurableTimeoutCapacitorUpdaterPlugin(final long minimumPendingBundleAppReadyTimeoutMs) {
-            this.minimumPendingBundleAppReadyTimeoutMs = minimumPendingBundleAppReadyTimeoutMs;
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function, Number waitTime) {
-            return this.startNewThread(function);
-        }
-
-        @Override
-        public Thread startNewThread(final Runnable function) {
-            return new Thread();
-        }
-
-        @Override
-        protected long getMinimumPendingBundleAppReadyTimeoutMs() {
-            return this.minimumPendingBundleAppReadyTimeoutMs;
-        }
-    }
-
     private static final class AutoResetNativeVersionCapgoUpdater extends CapgoUpdater {
 
         private boolean resetCalled = false;
@@ -3658,14 +3634,14 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
-    public void testReloadUsesExtendedTimeoutForPendingBundleValidation() throws Exception {
+    public void testReloadUsesConfiguredTimeoutForPendingBundleValidation() throws Exception {
         try (
             MockedStatic<Looper> looperMock = mockStatic(Looper.class);
             MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
         ) {
             looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-            final ConfigurableTimeoutCapacitorUpdaterPlugin plugin = new ConfigurableTimeoutCapacitorUpdaterPlugin(50);
+            final NoOpThreadCapacitorUpdaterPlugin plugin = new NoOpThreadCapacitorUpdaterPlugin();
             final Bridge bridge = mock(Bridge.class);
             final WebView webView = mock(WebView.class);
             final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
@@ -3683,10 +3659,22 @@ public class CapacitorUpdaterUnitTest {
             assertFalse(plugin._reload());
             final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-            assertTrue("Expected pending bundle timeout extension but reload took only " + elapsedMs + "ms", elapsedMs >= 40);
-            assertTrue("Expected bounded pending bundle timeout but reload took " + elapsedMs + "ms", elapsedMs < 1000);
+            assertTrue("Expected configured appReadyTimeout but reload took " + elapsedMs + "ms", elapsedMs < 500);
             verify(bridge.getLocalServer()).hostFiles("/tmp/capgo-bundle");
         }
+    }
+
+    @Test
+    public void testResolveAppReadyCheckTimeoutMatchesConfiguredValueForPendingBundle() throws Exception {
+        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+        final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+        plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false, pendingBundle);
+        plugin.setLoggerForTesting(mock(Logger.class));
+        setPrivateField(plugin, "appReadyTimeout", 10000);
+
+        final Method resolveTimeout = CapacitorUpdaterPlugin.class.getDeclaredMethod("resolveAppReadyCheckTimeoutMs");
+        resolveTimeout.setAccessible(true);
+        assertEquals(10000L, resolveTimeout.invoke(plugin));
     }
 
     @Test
@@ -7198,7 +7186,6 @@ public class CapacitorUpdaterUnitTest {
             plugin.setAutoUpdateModeForTesting("always");
             plugin.useRealReload = true;
             setPrivateField(plugin, "appReadyTimeout", 0);
-            doReturn(0L).when(plugin).getMinimumPendingBundleAppReadyTimeoutMs();
             setPrivateField(plugin, "autoDeleteFailed", false);
             setPrivateField(plugin, "autoDeletePrevious", false);
             final SharedPreferences prefs = (SharedPreferences) getPrivateField(plugin, "prefs");
