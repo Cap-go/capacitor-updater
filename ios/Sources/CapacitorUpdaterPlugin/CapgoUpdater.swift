@@ -107,6 +107,8 @@ import UIKit
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
     private let pendingStatsFileName = "capgo_pending_stats.json"
+    /// When set, pending stats persist under this directory instead of `libraryDir` (unit tests only).
+    internal var pendingStatsDirectoryOverride: URL?
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -345,8 +347,6 @@ import UIKit
             let body: Data?
             if let data {
                 body = data.isEmpty ? nil : data
-            } else if error == nil, let status = httpResponse?.statusCode, [204, 205].contains(status) {
-                body = nil
             } else {
                 body = nil
             }
@@ -476,11 +476,13 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
-    func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
-        performDownloadRequest(request, label: label, resumeData: nil)
-    }
-
-    func performDownloadRequest(_ request: URLRequest, label: String, resumeData: Data?) -> DownloadRequestResult {
+    /// Downloads a URL to a temporary file, reporting cumulative `(received, expected)` bytes for `2xx` responses.
+    func performDownloadRequest(
+        _ request: URLRequest,
+        label: String,
+        resumeData: Data? = nil,
+        onProgress: ((Int64, Int64) -> Void)? = nil
+    ) -> DownloadRequestResult {
         if let schemeError = checkAllowedScheme(request.url) {
             return DownloadRequestResult(fileURL: nil, response: nil, error: schemeError, timedOut: false)
         }
@@ -507,9 +509,7 @@ import UIKit
                         withIntermediateDirectories: true,
                         attributes: nil
                     )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
+                    self.removeFileIfPresent(at: temporaryDownloadURL)
                     try fileManager.moveItem(at: location, to: temporaryDownloadURL)
                     movedFileURL = temporaryDownloadURL
                 } catch {
@@ -527,6 +527,49 @@ import UIKit
         }
         let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
             ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
+        let resumedBytes: Int64 = {
+            guard let range = request.value(forHTTPHeaderField: "Range"),
+                  range.hasPrefix("bytes="),
+                  let start = range.dropFirst("bytes=".count).split(separator: "-").first else {
+                return 0
+            }
+            return Int64(start) ?? 0
+        }()
+        let progressObservation: NSKeyValueObservation? = onProgress.map { progressHandler in
+            downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+                guard let httpResponse = downloadTask.response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    return
+                }
+                let responseExpected = httpResponse.expectedContentLength
+                let taskExpected = downloadTask.countOfBytesExpectedToReceive
+                let expected = responseExpected > 0
+                    ? responseExpected
+                    : (taskExpected > 0 ? taskExpected : progress.totalUnitCount)
+                let taskReceived = downloadTask.countOfBytesReceived
+                let received: Int64
+                if progress.fractionCompleted >= 1.0 && expected > 0 {
+                    received = expected
+                } else if progress.totalUnitCount == expected && progress.completedUnitCount > taskReceived {
+                    received = min(expected, progress.completedUnitCount)
+                } else if taskReceived > 0 {
+                    received = expected > 0 ? min(expected, taskReceived) : taskReceived
+                } else if expected > 0 && progress.fractionCompleted > 0 {
+                    received = min(expected, Int64((progress.fractionCompleted * Double(expected)).rounded()))
+                } else {
+                    received = progress.completedUnitCount
+                }
+                if expected > 0 && received >= 0 {
+                    let baseline = Self.shouldAppendHttpBody(statusCode: httpResponse.statusCode, existingBytes: resumedBytes)
+                        ? resumedBytes
+                        : 0
+                    progressHandler(baseline + received, baseline + expected)
+                }
+            }
+        }
+        defer {
+            progressObservation?.invalidate()
+        }
         downloadTask.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
@@ -644,9 +687,7 @@ import UIKit
             return
         }
 
-        if fileManager.fileExists(atPath: tempPath.path) {
-            try fileManager.removeItem(at: tempPath)
-        }
+        removeFileIfPresent(at: tempPath)
         try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
     }
 
@@ -678,11 +719,12 @@ import UIKit
 
     public func shutdown() {
         statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        guard !statsStopped else { return }
         statsStopped = true
-        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-        persistStatsQueue(force: true)
+        persistStatsQueueLocked()
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -2471,6 +2513,14 @@ import UIKit
         }
     }
 
+    private func removeFileIfPresent(at url: URL) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return
+        }
+        try? fileManager.removeItem(at: url)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
@@ -2679,6 +2729,7 @@ import UIKit
         return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum)
     }
 
+    /// Downloads, verifies, and extracts a zip bundle while emitting progress from 0% to 100%.
     private func downloadZip(
         url: URL,
         version: String,
@@ -2732,7 +2783,18 @@ import UIKit
             request.setValue("bytes=\(totalReceivedBytes)-", forHTTPHeaderField: "Range")
         }
 
-        let downloadResult = performDownloadRequest(request, label: "download \(version)")
+        let progressLock = NSLock()
+        let downloadResult = performDownloadRequest(request, label: "download \(version)") { [weak self] totalReceived, totalExpected in
+            guard let self, totalExpected > 0 else { return }
+            let rawPercent = Int((Double(totalReceived) / Double(totalExpected)) * 100)
+            let scaledPercent = self.calcTotalPercent(percent: min(100, max(0, rawPercent)), min: 10, max: 70)
+            progressLock.lock()
+            if scaledPercent > lastSentProgress && scaledPercent < 70 {
+                lastSentProgress = scaledPercent
+                self.notifyDownload(id: id, percent: scaledPercent, bundle: bundleInfo)
+            }
+            progressLock.unlock()
+        }
         // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
         defer {
             if let fileURL = downloadResult.fileURL {
@@ -2762,10 +2824,12 @@ import UIKit
             do {
                 try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
 
+                progressLock.lock()
                 if lastSentProgress < 70 {
-                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                     lastSentProgress = 70
+                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 }
+                progressLock.unlock()
                 self.logger.info("Download complete")
             } catch let error as NSError {
                 mainError = error
@@ -3549,7 +3613,12 @@ import UIKit
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.ERROR)
     }
 
-    func unsetChannel(defaultChannelKey: String, configDefaultChannel: String, allowSetDefaultChannel: Bool) -> SetChannel {
+    func unsetChannel(
+        defaultChannelKey: String,
+        defaultChannelFromSetChannelKey: String,
+        configDefaultChannel: String,
+        allowSetDefaultChannel: Bool
+    ) -> SetChannel {
         let setChannel: SetChannel = SetChannel()
 
         if !allowSetDefaultChannel {
@@ -3561,6 +3630,7 @@ import UIKit
 
         // Clear persisted defaultChannel and revert to config value
         UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+        UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
         UserDefaults.standard.synchronize()
         self.defaultChannel = configDefaultChannel
         self.logger.info("Persisted defaultChannel cleared, reverted to config value: \(configDefaultChannel)")
@@ -3573,6 +3643,7 @@ import UIKit
     func setChannel(
         channel: String,
         defaultChannelKey: String,
+        defaultChannelFromSetChannelKey: String,
         allowSetDefaultChannel: Bool,
         configDefaultChannel: String = ""
     ) -> SetChannel {
@@ -3659,6 +3730,7 @@ import UIKit
             setChannel.error = error
         } else if responseValue.unset == true {
             UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+            UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
             UserDefaults.standard.synchronize()
             self.defaultChannel = configDefaultChannel
             self.logger.info("Public channel requested, channel override removed")
@@ -3669,6 +3741,7 @@ import UIKit
         } else {
             self.defaultChannel = channel
             UserDefaults.standard.set(channel, forKey: defaultChannelKey)
+            UserDefaults.standard.set(true, forKey: defaultChannelFromSetChannelKey)
             UserDefaults.standard.synchronize()
             self.logger.info("defaultChannel persisted locally: \(channel)")
 
@@ -3678,7 +3751,11 @@ import UIKit
         return setChannel
     }
 
-    func getChannel(defaultChannelKey: String? = nil) -> GetChannel {
+    func getChannel(
+        defaultChannelKey: String? = nil,
+        defaultChannelFromSetChannelKey: String? = nil,
+        configDefaultChannel: String = ""
+    ) -> GetChannel {
         let getChannel: GetChannel = GetChannel()
         // Check if rate limit was exceeded
         if isRemoteBlocked() {
@@ -3770,21 +3847,77 @@ import UIKit
             getChannel.message = responseValue.message ?? ""
             getChannel.channel = responseValue.channel ?? ""
             getChannel.allowSet = responseValue.allowSet ?? true
-            persistDefaultChannelFromResponse(channel: responseValue.channel, defaultChannelKey: defaultChannelKey)
+            persistDefaultChannelFromResponse(
+                channel: responseValue.channel,
+                status: responseValue.status,
+                defaultChannelKey: defaultChannelKey,
+                defaultChannelFromSetChannelKey: defaultChannelFromSetChannelKey,
+                configDefaultChannel: configDefaultChannel
+            )
         }
         return getChannel
     }
 
-    func persistDefaultChannelFromResponse(channel: String?, defaultChannelKey: String?) {
+    func persistDefaultChannelFromResponse(
+        channel: String?,
+        status: String?,
+        defaultChannelKey: String?,
+        defaultChannelFromSetChannelKey: String? = nil,
+        configDefaultChannel: String = ""
+    ) {
+        if status == "default" {
+            guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !channelName.isEmpty else {
+                return
+            }
+            var persisted = defaultChannel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let defaultChannelKey, !defaultChannelKey.isEmpty,
+               let stored = UserDefaults.standard.string(forKey: defaultChannelKey) {
+                let trimmedStored = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedStored.isEmpty {
+                    persisted = trimmedStored
+                }
+            }
+            let fromSetChannel: Bool
+            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+                fromSetChannel = UserDefaults.standard.bool(forKey: defaultChannelFromSetChannelKey)
+            } else {
+                fromSetChannel = false
+            }
+            // Upgrades: values from setChannel() before this marker existed read as stale fallbacks and may clear here.
+            if channelName == persisted, !fromSetChannel {
+                self.defaultChannel = configDefaultChannel
+                if let defaultChannelKey, !defaultChannelKey.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: defaultChannelKey)
+                    if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+                        UserDefaults.standard.removeObject(forKey: defaultChannelFromSetChannelKey)
+                    }
+                    UserDefaults.standard.synchronize()
+                }
+                logger.info("defaultChannel cleared stale getChannel() fallback: \(channelName)")
+            }
+            return
+        }
         guard let channelName = channel?.trimmingCharacters(in: .whitespacesAndNewlines),
               !channelName.isEmpty,
               channelName != BundleInfo.ID_BUILTIN else {
             return
         }
 
+        let preserveSetChannelMarker: Bool
+        if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty {
+            preserveSetChannelMarker =
+                UserDefaults.standard.bool(forKey: defaultChannelFromSetChannelKey) && channelName == defaultChannel
+        } else {
+            preserveSetChannelMarker = false
+        }
+
         self.defaultChannel = channelName
         if let defaultChannelKey, !defaultChannelKey.isEmpty {
             UserDefaults.standard.set(channelName, forKey: defaultChannelKey)
+            if let defaultChannelFromSetChannelKey, !defaultChannelFromSetChannelKey.isEmpty, !preserveSetChannelMarker {
+                UserDefaults.standard.set(false, forKey: defaultChannelFromSetChannelKey)
+            }
             UserDefaults.standard.synchronize()
         }
         logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
@@ -3997,33 +4130,24 @@ import UIKit
         persistStatsQueue()
     }
 
-    private func pendingStatsFileURL() -> URL {
-        libraryDir.appendingPathComponent(pendingStatsFileName)
+    private func pendingStatsRootDirectory() -> URL {
+        pendingStatsDirectoryOverride ?? libraryDir
     }
 
-    private func persistStatsQueue(force: Bool = false) {
-        statsPersistLock.lock()
-        defer { statsPersistLock.unlock() }
-        if statsStopped && !force {
-            return
-        }
+    private func pendingStatsFileURL() -> URL {
+        pendingStatsRootDirectory().appendingPathComponent(pendingStatsFileName)
+    }
 
-        statsQueueLock.lock()
-        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
-        statsQueueLock.unlock()
-        if events.count > CapgoUpdater.maxPendingStats {
-            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
-        }
-
+    private func writePendingStatsFile(events: [StatsEvent]) {
         let fileURL = pendingStatsFileURL()
-        if events.isEmpty {
-            try? FileManager.default.removeItem(at: fileURL)
-            return
-        }
-
+        let root = pendingStatsRootDirectory()
         do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(events)
-            try data.write(to: fileURL, options: .atomic)
+            let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
+            defer { self.removeFileIfPresent(at: temp) }
+            try data.write(to: temp)
+            try replaceItemAtomically(at: fileURL, withItemAt: temp)
             var resourceURL = fileURL
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -4032,6 +4156,25 @@ import UIKit
             logger.error("Failed to persist stats queue")
             logger.debug("Error: \(error.localizedDescription)")
         }
+    }
+
+    private func persistStatsQueue() {
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        guard !statsStopped else { return }
+        persistStatsQueueLocked()
+    }
+
+    /// Caller must hold statsPersistLock, including for the final shutdown snapshot.
+    private func persistStatsQueueLocked() {
+        statsQueueLock.lock()
+        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
+        statsQueueLock.unlock()
+        if events.count > CapgoUpdater.maxPendingStats {
+            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
+        }
+
+        writePendingStatsFile(events: events)
     }
 
     private func ensureStatsTimerStarted() {

@@ -91,6 +91,27 @@ const RULES = [
     pattern: /\bCAPNotifications\b/,
     exts: [".swift"],
   },
+  {
+    id: "swiftWebKitCallAsyncJavaScriptOverlay",
+    pattern: /\bcallAsyncJavaScript\s*\(/,
+    exts: [".swift"],
+    ignoreLine: /__callAsyncJavaScript\s*\(/,
+  },
+  {
+    id: "swiftWebKitEvaluateJavaScriptContentWorldOverlay",
+    pattern: /\bevaluateJavaScript\s*\([^)]*\bin\s*:/,
+    exts: [".swift"],
+  },
+  {
+    id: "swiftWebKitCreatePDFOverlay",
+    pattern: /\bcreatePDF\s*\(/,
+    exts: [".swift"],
+  },
+  {
+    id: "swiftWebKitCreateWebArchiveDataOverlay",
+    pattern: /\bcreateWebArchiveData\s*\(/,
+    exts: [".swift"],
+  },
 ];
 
 const CORDova_SPM_LINE =
@@ -185,6 +206,10 @@ function scanFile(filePath, rule) {
   const hits = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+      continue;
+    }
     if (filePath.endsWith("Package.swift") && CORDova_SPM_LINE.test(line)) {
       continue;
     }

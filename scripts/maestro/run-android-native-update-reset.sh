@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts/android-native-reset"
 RESULTS_DIR="$ROOT_DIR/maestro-results-android-native-reset"
@@ -170,6 +171,7 @@ build_android_app() {
 
   (
     cd "$EXAMPLE_DIR"
+    export VITE_CAPGO_MAESTRO_BUILD=true
     export VITE_CAPGO_APP_LABEL="$app_label"
     export VITE_CAPGO_SCENARIO="$SCENARIO_ID"
     export VITE_CAPGO_DIRECT_UPDATE="$direct_update"
@@ -200,6 +202,8 @@ run_maestro_flow() {
   local -a command=(
     maestro
     test
+    --config
+    "$MAESTRO_WORKSPACE_CONFIG"
     --platform
     android
     --udid

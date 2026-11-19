@@ -1,0 +1,19 @@
+appId: app.capgo.updater
+---
+- launchApp
+# A download that finishes after the launch splash deadline must remain queued.
+- extendedWaitUntil:
+    visible: '${APPLIED_PATTERN}|${QUEUED_PATTERN}'
+    timeout: 120000
+- runFlow:
+    when:
+      visible: '${QUEUED_PATTERN}'
+    commands:
+      - pressKey: Home
+      - launchApp
+      - extendedWaitUntil:
+          visible: '${APPLIED_PATTERN}'
+          timeout: 120000
+# Queuing alone is not success: installation, app readiness, and queue clearing are required.
+- assertVisible: '${APPLIED_PATTERN}'
+- assertVisible: '@capgo/capacitor-updater'

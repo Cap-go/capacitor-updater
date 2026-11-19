@@ -97,10 +97,28 @@ public class DownloadService extends Worker {
         }
     }
 
-    private static Logger logger;
+    private static volatile Logger logger;
+    private static final Object LOGGER_LOCK = new Object();
 
     public static void setLogger(Logger loggerInstance) {
-        logger = loggerInstance;
+        synchronized (LOGGER_LOCK) {
+            logger = loggerInstance;
+        }
+    }
+
+    public static void setLoggerIfAbsent(Logger loggerInstance) {
+        if (loggerInstance == null) {
+            return;
+        }
+        synchronized (LOGGER_LOCK) {
+            if (logger == null) {
+                logger = loggerInstance;
+            }
+        }
+    }
+
+    public static Logger getLogger() {
+        return logger;
     }
 
     public static final String URL = "URL";
@@ -192,6 +210,10 @@ public class DownloadService extends Worker {
 
     static void setAllowHttpsToHttpRedirect(boolean allow) {
         allowHttpsToHttpRedirect = allow;
+    }
+
+    static boolean isAllowHttpsToHttpRedirect() {
+        return allowHttpsToHttpRedirect;
     }
 
     static void setHttpsOnly(boolean enabled) {
@@ -692,6 +714,9 @@ public class DownloadService extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        if (logger == null) {
+            setLoggerIfAbsent(new Logger("CapgoUpdater", new Logger.Options(true)));
+        }
         final String documentsDir = getInputData().getString(DOCDIR);
         final String dest = getInputData().getString(FILEDEST);
         final String version = getInputData().getString(VERSION);
@@ -703,7 +728,9 @@ public class DownloadService extends Worker {
             String checksum = getInputData().getString(CHECKSUM);
             String publicKey = getInputData().getString(PUBLIC_KEY);
 
-            logger.debug("doWork isManifest: " + isManifest);
+            if (logger != null) {
+                logger.debug("doWork isManifest: " + isManifest);
+            }
 
             if (isManifest) {
                 JSONArray manifest = DataManager.getInstance().getAndClearManifest(id);
@@ -714,7 +741,9 @@ public class DownloadService extends Worker {
                     CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
                     return createFailureResult("download_cancelled", version, dest, true);
                 } else {
-                    logger.error("Manifest is null");
+                    if (logger != null) {
+                        logger.error("Manifest is null");
+                    }
                     CapgoUpdater.deleteManifestStagingFolderAt(documentsDir != null ? new File(documentsDir) : null, dest, logger);
                     return createFailureResult("Manifest is null", version, dest, true);
                 }
@@ -998,6 +1027,7 @@ public class DownloadService extends Worker {
         }
     }
 
+    /** Downloads and verifies a single zip bundle archive while reporting progress from 10% to 70%. */
     private void handleSingleFileDownload(
         String url,
         String id,
@@ -1108,9 +1138,9 @@ public class DownloadService extends Worker {
                     String contentRangeHeader = response.header("Content-Range");
                     writeHttpBody(tempFile, inputStream, writePlan.statusCode, writePlan.writeOffset, this::isStopped, (written) -> {
                         int percent = calcTotalPercent(written, totalContentLength);
-                        if (percent >= lastNotifiedPercent[0] + 10) {
-                            lastNotifiedPercent[0] = (percent / 10) * 10;
-                            setProgress(lastNotifiedPercent[0]);
+                        if (percent > lastNotifiedPercent[0]) {
+                            lastNotifiedPercent[0] = percent;
+                            setProgress(percent);
                         }
                     });
 

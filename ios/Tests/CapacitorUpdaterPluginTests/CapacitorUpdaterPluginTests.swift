@@ -2,6 +2,19 @@ import XCTest
 @testable import CapacitorUpdaterPlugin
 import Capacitor
 
+private let channelSelfTestURLString = "https://example.com/channel"
+
+private func channelSelfTestURL() throws -> URL {
+    try XCTUnwrap(URL(string: channelSelfTestURLString))
+}
+
+private func persistDefaultChannelTestUpdater(defaultChannel: String) -> ChannelRequestCapgoUpdater {
+    let updater = ChannelRequestCapgoUpdater()
+    updater.setLogger(Logger(withTag: "TestLogger"))
+    updater.defaultChannel = defaultChannel
+    return updater
+}
+
 private class TestableCapacitorUpdaterPlugin: CapacitorUpdaterPlugin {
     private(set) var notifiedEventNames: [String] = []
     private(set) var notifiedEventPayloads: [String: [String: Any]] = [:]
@@ -91,7 +104,7 @@ private final class RealSendReadyCapacitorUpdaterPlugin: CapacitorUpdaterPlugin 
     }
 }
 
-private final class FreshDownloadCapgoUpdater: CapgoUpdater {
+private class FreshDownloadCapgoUpdater: CapgoUpdater {
     var currentBundleValue: BundleInfo!
     var latestResponse = AppVersion()
     var existingBundleValue: BundleInfo?
@@ -104,6 +117,7 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         checksum: "builtin"
     )
     var onDownloadStart: (() -> Void)?
+    var onGetLatest: (() -> Void)?
     var downloadCalls = 0
     var deleteCalls = 0
     var lastDeletedId: String?
@@ -115,7 +129,8 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
     var sentStatsActions: [String] = []
 
     override func getLatest(url: URL, channel: String?, appIdOverride: String? = nil) -> AppVersion {
-        latestResponse
+        onGetLatest?()
+        return latestResponse
     }
 
     override func getCurrentBundle() -> BundleInfo {
@@ -175,6 +190,63 @@ private final class FreshDownloadCapgoUpdater: CapgoUpdater {
         sentStatsActions.append(action)
         lastStatsVersionName = versionName
         lastStatsMetadata = metadata
+    }
+}
+
+private final class SplashTimeoutCapgoUpdater: FreshDownloadCapgoUpdater {
+    var stagePendingReloadCalls = 0
+    private var queuedBundle: BundleInfo?
+
+    override func getNextBundle() -> BundleInfo? {
+        queuedBundle
+    }
+
+    override func setNextBundle(next: String?) -> Bool {
+        guard super.setNextBundle(next: next) else {
+            return false
+        }
+        guard let next else {
+            queuedBundle = nil
+            return true
+        }
+        let bundles = [existingBundleValue, downloadedBundleValue, builtinBundleValue].compactMap { $0 }
+        guard let bundle = bundles.first(where: { $0.getId() == next }) else {
+            return false
+        }
+        queuedBundle = bundle
+        return true
+    }
+
+    override func set(bundle: BundleInfo) -> Bool {
+        currentBundleValue = bundle
+        return true
+    }
+
+    override func stagePendingReload(bundle: BundleInfo) -> Bool {
+        stagePendingReloadCalls += 1
+        return true
+    }
+
+    override func finalizePendingReload(bundle: BundleInfo, previousBundleName: String) {
+        currentBundleValue = bundle
+    }
+}
+
+private final class SplashTimeoutCapacitorUpdaterPlugin: TestableCapacitorUpdaterPlugin {
+    var reloadCalls = 0
+    var resetCalls = 0
+
+    override func beginDownloadBackgroundTask() {}
+    override func checkAppReady() {}
+
+    override func _reload() -> Bool {
+        reloadCalls += 1
+        return true
+    }
+
+    override func _reset(toLastSuccessful: Bool, usePendingBundle: Bool) -> Bool {
+        resetCalls += 1
+        return true
     }
 }
 
@@ -1057,10 +1129,10 @@ class CapacitorUpdaterTests: XCTestCase {
     func testSetChannelRejectsNonSuccessStatusWithoutPersistingDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = channelSelfTestURLString
         updater.defaultChannel = "stable"
 
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try channelSelfTestURL()
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 401, httpVersion: nil, headerFields: nil))
         let responseData = try XCTUnwrap("""
         {"status":"error","message":"Unauthorized"}
@@ -1072,7 +1144,13 @@ class CapacitorUpdaterTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
 
-        let result = updater.setChannel(channel: "beta", defaultChannelKey: defaultsKey, allowSetDefaultChannel: true)
+        let fromSetKey = "\(defaultsKey).fromSet"
+        let result = updater.setChannel(
+            channel: "beta",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            allowSetDefaultChannel: true
+        )
 
         XCTAssertEqual(result.error, "response_error")
         XCTAssertEqual(result.message, "Unauthorized")
@@ -1086,13 +1164,16 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.defaultChannel = "beta"
 
         let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
         UserDefaults.standard.set("beta", forKey: defaultsKey)
         defer {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
         }
 
         let result = updater.unsetChannel(
             defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
             configDefaultChannel: "stable",
             allowSetDefaultChannel: true
         )
@@ -1109,13 +1190,16 @@ class CapacitorUpdaterTests: XCTestCase {
         updater.defaultChannel = "beta"
 
         let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
         UserDefaults.standard.set("beta", forKey: defaultsKey)
         defer {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
         }
 
         let result = updater.unsetChannel(
             defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
             configDefaultChannel: "stable",
             allowSetDefaultChannel: false
         )
@@ -1433,9 +1517,9 @@ class CapacitorUpdaterTests: XCTestCase {
     func testGetChannelPersistsServerChannelAsDefaultChannel() throws {
         let updater = ChannelRequestCapgoUpdater()
         updater.setLogger(Logger(withTag: "TestLogger"))
-        updater.channelUrl = "https://example.com/channel"
+        updater.channelUrl = channelSelfTestURLString
 
-        let channelURL = try XCTUnwrap(URL(string: "https://example.com/channel"))
+        let channelURL = try channelSelfTestURL()
         let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
         let responseData = try XCTUnwrap("""
         {"channel":"company-a","status":"ok","allowSet":true}
@@ -1464,10 +1548,128 @@ class CapacitorUpdaterTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
 
-        updater.persistDefaultChannelFromResponse(channel: "builtin", defaultChannelKey: defaultsKey)
+        updater.persistDefaultChannelFromResponse(channel: "builtin", status: "ok", defaultChannelKey: defaultsKey)
 
         XCTAssertEqual(updater.defaultChannel, "stable")
         XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testGetChannelDoesNotPersistDefaultStatusChannel() throws {
+        let updater = ChannelRequestCapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        updater.channelUrl = channelSelfTestURLString
+        updater.defaultChannel = ""
+
+        let channelURL = try channelSelfTestURL()
+        let response = try XCTUnwrap(HTTPURLResponse(url: channelURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let responseData = try XCTUnwrap("""
+        {"channel":"production","status":"default","allowSet":true}
+        """.data(using: .utf8))
+        updater.requestResult = CapgoUpdater.RequestResult(data: responseData, response: response, error: nil, timedOut: false)
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        let result = updater.getChannel(defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(result.channel, "production")
+        XCTAssertEqual(result.status, "default")
+        XCTAssertEqual(updater.defaultChannel, "")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testPersistDefaultChannelFromResponseIgnoresDefaultStatus() {
+        let updater = persistDefaultChannelTestUpdater(defaultChannel: "dev")
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("dev", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(channel: "production", status: "default", defaultChannelKey: defaultsKey)
+
+        XCTAssertEqual(updater.defaultChannel, "dev")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "dev")
+    }
+
+    func testPersistDefaultChannelFromResponseClearsStaleDefaultFallback() {
+        let updater = persistDefaultChannelTestUpdater(defaultChannel: "production")
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        UserDefaults.standard.set("production", forKey: defaultsKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(
+            channel: "production",
+            status: "default",
+            defaultChannelKey: defaultsKey,
+            configDefaultChannel: "stable"
+        )
+
+        XCTAssertEqual(updater.defaultChannel, "stable")
+        XCTAssertNil(UserDefaults.standard.string(forKey: defaultsKey))
+    }
+
+    func testPersistDefaultChannelFromResponsePreservesSetChannelOnDefaultStatus() {
+        let updater = persistDefaultChannelTestUpdater(defaultChannel: "company-a")
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
+        UserDefaults.standard.set("company-a", forKey: defaultsKey)
+        UserDefaults.standard.set(true, forKey: fromSetKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(
+            channel: "company-a",
+            status: "default",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            configDefaultChannel: "stable"
+        )
+
+        XCTAssertEqual(updater.defaultChannel, "company-a")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: fromSetKey))
+    }
+
+    func testPersistDefaultChannelFromResponseKeepsSetChannelMarkerAfterOverrideRefresh() {
+        let updater = persistDefaultChannelTestUpdater(defaultChannel: "company-a")
+
+        let defaultsKey = "CapacitorUpdaterTests.defaultChannel.\(UUID().uuidString)"
+        let fromSetKey = "\(defaultsKey).fromSet"
+        UserDefaults.standard.set("company-a", forKey: defaultsKey)
+        UserDefaults.standard.set(true, forKey: fromSetKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            UserDefaults.standard.removeObject(forKey: fromSetKey)
+        }
+
+        updater.persistDefaultChannelFromResponse(
+            channel: "company-a",
+            status: "ok",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            configDefaultChannel: "stable"
+        )
+        updater.persistDefaultChannelFromResponse(
+            channel: "company-a",
+            status: "default",
+            defaultChannelKey: defaultsKey,
+            defaultChannelFromSetChannelKey: fromSetKey,
+            configDefaultChannel: "stable"
+        )
+
+        XCTAssertEqual(updater.defaultChannel, "company-a")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: defaultsKey), "company-a")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: fromSetKey))
     }
 
     // MARK: - DelayCondition Tests
@@ -2833,6 +3035,157 @@ class CapacitorUpdaterTests: XCTestCase {
         XCTAssertEqual(statsImplementation.resetCallCount, 0)
         XCTAssertEqual(statsImplementation.sentStatsActions, ["app_launch_start"])
         XCTAssertEqual(statsImplementation.lastStatsVersionName, "2.8.35")
+    }
+
+    func testLaunchSplashSchedulesAutoSplashscreenTimeoutWhenDirectUpdateIsActive() {
+        plugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        plugin.configureDirectUpdateModeForTesting("onLaunch", onLaunchDirectUpdateUsed: false)
+
+        plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+
+        XCTAssertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting())
+    }
+
+    private func makeSplashTimeoutPlugin(mode: String = "onLaunch") throws -> (SplashTimeoutCapacitorUpdaterPlugin, SplashTimeoutCapgoUpdater) {
+        clearDelayStorage()
+        CryptoCipher.setLogger(Logger(withTag: "TestLogger"))
+        let implementation = SplashTimeoutCapgoUpdater()
+        implementation.currentBundleValue = makeOnlyDownloadBundle(id: "current-id", version: "1.0.0", status: .SUCCESS)
+        implementation.latestResponse = makeOnlyDownloadLatest()
+        implementation.downloadedBundleValue = makeOnlyDownloadBundle()
+        let testPlugin = SplashTimeoutCapacitorUpdaterPlugin()
+        testPlugin.implementation = implementation
+        testPlugin.configureDirectUpdateModeForTesting(mode)
+        testPlugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        testPlugin.setUpdateUrlForTesting("https://example.com/channel")
+        testPlugin.setDelayUpdateUtilsForTesting(try makeDelayUpdateUtils())
+        testPlugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+        return (testPlugin, implementation)
+    }
+
+    private func resumeAfterSplashTimeout(_ testPlugin: SplashTimeoutCapacitorUpdaterPlugin) {
+        XCTAssertTrue(testPlugin.hasSplashscreenTimeoutScheduledForTesting())
+        testPlugin.fireSplashscreenTimeoutForTesting()
+        XCTAssertFalse(testPlugin.shouldUseDirectUpdateForTesting())
+        testPlugin.appMovedToBackground()
+        testPlugin.appMovedToForeground()
+    }
+
+    private func assertDeferredBundleInstallsOnNextBackground(
+        plugin testPlugin: SplashTimeoutCapacitorUpdaterPlugin,
+        implementation: SplashTimeoutCapgoUpdater,
+        expectedBundleId: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(implementation.getNextBundle()?.getId(), expectedBundleId, file: file, line: line)
+        let previousReloadCalls = testPlugin.reloadCalls
+
+        testPlugin.appMovedToBackground()
+
+        XCTAssertEqual(testPlugin.reloadCalls, previousReloadCalls + 1, file: file, line: line)
+        XCTAssertEqual(implementation.getCurrentBundle().getId(), expectedBundleId, file: file, line: line)
+        XCTAssertNil(implementation.getNextBundle(), file: file, line: line)
+        XCTAssertNil(implementation.lastSetNextBundleId, file: file, line: line)
+    }
+
+    func testExpiredLaunchDownloadStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = {
+            XCTAssertTrue(testPlugin.hasConsumedOnLaunchDirectUpdateForTesting)
+            self.resumeAfterSplashTimeout(testPlugin)
+            XCTAssertFalse(testPlugin.hasSplashscreenTimeoutScheduledForTesting())
+        }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 1)
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "1.0.0")
+        XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: "downloaded-id")
+    }
+
+    func testExpiredLaunchCachedBundleStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        implementation.existingBundleValue = makeOnlyDownloadBundle()
+        defer { implementation.onGetLatest = nil; clearDelayStorage() }
+        implementation.onGetLatest = { self.resumeAfterSplashTimeout(testPlugin) }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.downloadCalls, 0)
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.lastSetNextBundleId, "downloaded-id")
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: "downloaded-id")
+    }
+
+    func testExpiredLaunchBuiltinStaysDeferredAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        implementation.latestResponse.version = "builtin"
+        defer { implementation.onGetLatest = nil; clearDelayStorage() }
+        implementation.onGetLatest = { self.resumeAfterSplashTimeout(testPlugin) }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(testPlugin.resetCalls, 0)
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+        XCTAssertEqual(implementation.lastSetNextBundleId, BundleInfo.ID_BUILTIN)
+        assertDeferredBundleInstallsOnNextBackground(plugin: testPlugin, implementation: implementation, expectedBundleId: BundleInfo.ID_BUILTIN)
+    }
+
+    func testUnexpiredLaunchDownloadCanInstallAfterBackgroundAndForeground() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin()
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = {
+            testPlugin.appMovedToBackground()
+            testPlugin.appMovedToForeground()
+        }
+
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(testPlugin.reloadCalls, 1)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "2.0.0")
+        XCTAssertNil(implementation.lastSetNextBundleId)
+    }
+
+    func testLaterAlwaysDownloadCanInstallAfterEarlierSplashTimeout() throws {
+        let (testPlugin, implementation) = try makeSplashTimeoutPlugin(mode: "always")
+        defer { implementation.onDownloadStart = nil; clearDelayStorage() }
+        implementation.onDownloadStart = { self.resumeAfterSplashTimeout(testPlugin) }
+        testPlugin.backgroundDownload()
+        XCTAssertEqual(testPlugin.reloadCalls, 0)
+
+        implementation.onDownloadStart = nil
+        testPlugin.backgroundDownload()
+
+        XCTAssertEqual(implementation.stagePendingReloadCalls, 1)
+        XCTAssertEqual(testPlugin.reloadCalls, 1)
+        XCTAssertEqual(implementation.currentBundleValue.getVersionName(), "2.0.0")
+    }
+
+    func testLaunchSplashDoesNotScheduleTimeoutAfterOnLaunchDirectUpdateConsumed() {
+        plugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        plugin.configureDirectUpdateModeForTesting("onLaunch", onLaunchDirectUpdateUsed: true)
+
+        plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+
+        XCTAssertFalse(plugin.hasSplashscreenTimeoutScheduledForTesting())
+    }
+
+    func testLaunchSplashTimeoutDoesNotConsumeAtInstallDirectUpdateWindow() {
+        plugin.configureAutoSplashscreenForTesting(enabled: true, timeoutMs: 5000)
+        plugin.configureDirectUpdateModeForTesting("atInstall", onLaunchDirectUpdateUsed: false)
+        plugin.setWasRecentlyInstalledOrUpdatedForTesting(true)
+
+        plugin.scheduleLaunchSplashscreenTimeoutIfNeededForTesting()
+
+        XCTAssertTrue(plugin.hasSplashscreenTimeoutScheduledForTesting())
+        XCTAssertTrue(plugin.shouldUseDirectUpdateForTesting())
     }
 
     func testShowSplashscreenOptionsDisableAutoHide() {

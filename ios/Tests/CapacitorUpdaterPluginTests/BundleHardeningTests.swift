@@ -36,7 +36,12 @@ final class BundleHardeningTests: XCTestCase {
             sentStatsActions.append(action)
         }
 
-        override func performDownloadRequest(_ request: URLRequest, label _: String) -> DownloadRequestResult {
+        override func performDownloadRequest(
+            _ request: URLRequest,
+            label _: String,
+            resumeData _: Data? = nil,
+            onProgress _: ((Int64, Int64) -> Void)? = nil
+        ) -> DownloadRequestResult {
             downloadRequests += 1
             let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-hardening-\(UUID().uuidString).zip")
             do {

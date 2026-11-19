@@ -1,25 +1,24 @@
 appId: app.capgo.updater
 ---
 - stopApp
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
 - assertVisible: '@capgo/capacitor-updater'
 - extendedWaitUntil:
     visible: '.*Harness: ready.*'
-    timeout: 120000
-- extendedWaitUntil:
-    visible: 'Quick run smoke test sequence'
-    timeout: 120000
+    timeout: 90000
+- scrollUntilVisible:
+    element: 'Quick run smoke test sequence'
+    direction: UP
+    timeout: 30000
+    speed: 80
 - tapOn:
     text: 'Quick run smoke test sequence'
-    retryTapIfNoChange: true
-- scrollUntilVisible:
-    element:
-      text: '@capgo/capacitor-updater'
-    direction: UP
-    timeout: 120000
+    retryTapIfNoChange: false
 - extendedWaitUntil:
-    visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
+    visible: '.*Smoke sequence: success.*'
     timeout: 180000

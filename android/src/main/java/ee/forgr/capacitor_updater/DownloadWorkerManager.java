@@ -24,10 +24,28 @@ import java.util.concurrent.TimeoutException;
 
 public class DownloadWorkerManager {
 
-    private static Logger logger;
+    private static volatile Logger logger;
+    private static final Object LOGGER_LOCK = new Object();
 
     public static void setLogger(Logger loggerInstance) {
-        logger = loggerInstance;
+        synchronized (LOGGER_LOCK) {
+            logger = loggerInstance;
+        }
+    }
+
+    public static void setLoggerIfAbsent(Logger loggerInstance) {
+        if (loggerInstance == null) {
+            return;
+        }
+        synchronized (LOGGER_LOCK) {
+            if (logger == null) {
+                logger = loggerInstance;
+            }
+        }
+    }
+
+    public static Logger getLogger() {
+        return logger;
     }
 
     private static volatile boolean isInitialized = false;
