@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/maestro/disable-device-animations.sh
+source "$ROOT_DIR/scripts/maestro/disable-device-animations.sh"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 EXAMPLE_DIR="$ROOT_DIR/example-app"
 APK_PATH="$EXAMPLE_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 RESULTS_DIR="$ROOT_DIR/maestro-results"
@@ -46,6 +49,7 @@ else
 fi
 
 cleanup() {
+  restore_android_animation_settings
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -55,6 +59,8 @@ cleanup() {
 }
 
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_emulator_boot() {
   local sys_boot_completed=""
@@ -408,16 +414,8 @@ run_maestro_test_with_retries() {
     set +e
     MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
       MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT" \
-      "$TIMEOUT_CMD" --foreground "${MAESTRO_TIMEOUT_SECONDS}s" \
-      maestro test \
-      "$FLOW_PATH" \
-      --platform android \
-      --udid "$ANDROID_DEVICE_ID" \
-      --format junit \
-      --output "$RESULTS_DIR/junit.xml" \
-      --debug-output "$RESULTS_DIR/debug" \
-      --flatten-debug-output \
-      --test-output-dir "$RESULTS_DIR/artifacts" 2>&1 | tee "$output_file"
+      python3 "$ROOT_DIR/scripts/maestro/run-maestro.py" \
+      "$MAESTRO_TIMEOUT_SECONDS" "$SCENARIO_ID" "$ANDROID_DEVICE_ID" 2>&1 | tee "$output_file"
     command_status=${PIPESTATUS[0]}
     set -e
 
@@ -508,9 +506,7 @@ if [[ -z "$ANDROID_DEVICE_ID" || "$ANDROID_DEVICE_ID" == "unknown" ]]; then
 fi
 
 wait_for_android_package_service || true
-adb shell settings put global window_animation_scale 0 || true
-adb shell settings put global transition_animation_scale 0 || true
-adb shell settings put global animator_duration_scale 0 || true
+disable_android_emulator_animations
 adb shell input keyevent 82 || true
 configure_server_routing
 prepare_example_app_for_maestro

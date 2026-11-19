@@ -3,6 +3,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/maestro/disable-device-animations.sh
+source "$ROOT_DIR/scripts/maestro/disable-device-animations.sh"
+MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
@@ -20,7 +23,7 @@ SKIP_BUNDLE_BUILD="${CAPGO_MAESTRO_SKIP_BUNDLE_BUILD:-0}"
 FLOW_RETRY_PATTERN="TcpForwarder.waitFor|allocateForwarder|TimeoutException|Android driver did not start up in time|UNAVAILABLE: io exception|UNAVAILABLE: Network closed|DEADLINE_EXCEEDED|waiting_for_connection|device offline|device .* not found|host:transport:emulator|Connection refused|Broken pipe|Failure calling service package|Can.t find service: package|Can.t find service: settings|Cannot access system provider: 'settings'|No service published for: input|UiAutomation not connected|INTERNAL: UiAutomation|No visible element found: id: quick-action|Could not find a visible element matching selector: id: quick-action"
 MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE="${MAESTRO_DRIVER_STARTUP_TIMEOUT:-300000}"
-MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-900}"
+MAESTRO_FLOW_TIMEOUT_SECONDS="${MAESTRO_FLOW_TIMEOUT_SECONDS:-600}"
 MAESTRO_FLOW_RETRIES="${CAPGO_MAESTRO_FLOW_RETRIES:-3}"
 MAESTRO_JAVA_TOOL_OPTIONS="${CAPGO_MAESTRO_JAVA_TOOL_OPTIONS:--Djava.net.preferIPv4Stack=true}"
 APP_BACKGROUND_SETTLE_SECONDS="${CAPGO_MAESTRO_BACKGROUND_SETTLE_SECONDS:-3}"
@@ -48,6 +51,7 @@ else
 fi
 
 cleanup() {
+  restore_android_animation_settings
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
   fi
@@ -330,6 +334,7 @@ wait_for_ui_state_with_timeout() {
   done
 
   echo "Timed out waiting for UI state: ${description}" >&2
+  printf 'Last captured UI hierarchy:\n%s\n' "$hierarchy" >&2
   if [[ "${CAPGO_MAESTRO_SKIP_UI_HIERARCHY_DUMP_ON_TIMEOUT:-1}" != "1" ]]; then
     dump_ui_hierarchy >&2 || true
   fi
@@ -649,11 +654,11 @@ wait_for_edge_recovery_with_wait_seconds() {
   wait_for_ui_state_with_timeout "$description (final)" "$recovery_wait_seconds" "$@"
 }
 
-# Deferred edge-network-drop can finish the download while the UI still shows the builtin bundle as
+# Deferred recovery can finish the download while the UI still shows the builtin bundle as
 # current with the release queued as next. The generic recovery loop only looks for "current:
 # downloaded", so it backgrounds without seeing the queued state and the final wait times out.
 # Treat "download complete + queued next" like early success: resume once, then wait for activation.
-wait_for_edge_network_drop_recovery() {
+wait_for_edge_queued_recovery() {
   local recovery_wait_seconds="$1"
   local description="$2"
   local cycle_mode="$3"
@@ -805,6 +810,12 @@ run_edge_case_once() {
         "Current bundle version: $builtin_version" \
         'Next bundle version: none' || return 1
       assert_edge_case_failure_contained "$edge_case_id" "$app_scenario" || return 1
+      if [[ "$edge_case_id" == "edge-offline-check" ]]; then
+        # Confirm the interrupted check completed before recovery can emit unrelated error stats.
+        wait_for_server_condition "$app_scenario" \
+          'the interrupted update check reported its failure before recovery' \
+          '(stats.update_check_error ?? 0) >= 1' 30 || return 1
+      fi
       set_server_fault "$app_scenario" bundle none || return 1
       set_server_fault "$app_scenario" update none || return 1
 
@@ -825,6 +836,9 @@ run_edge_case_once() {
     background_and_resume_app
   elif [[ "$edge_case_id" == "edge-network-drop" ]]; then
     recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS:-20}"
+  elif [[ "$edge_case_id" == "edge-offline-check" ]]; then
+    recovery_wait_seconds="${CAPGO_MAESTRO_EDGE_OFFLINE_RECOVERY_WAIT_SECONDS:-20}"
+    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_OFFLINE_RECOVERY_CYCLES:-2}"
   elif [[ "$edge_case_id" == "edge-corrupt-bundle" ]]; then
     # Worst case is (cycles + 1) * wait = 240s, well inside the 9 minute step timeout
     # so the success marker is always written before the step deadline.
@@ -839,13 +853,15 @@ run_edge_case_once() {
     'Current bundle source: downloaded'
     "Current bundle version: $first_release"
   )
-  if [[ "$edge_case_id" == "edge-kill-download" ]]; then
+  if [[ "$edge_case_id" == "edge-kill-download" || "$edge_case_id" == "edge-offline-check" ]]; then
     recovery_fragments+=("Notify app ready: ok ($first_release)")
   fi
 
-  if [[ "$edge_case_id" == "edge-network-drop" ]]; then
-    EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
-    if ! wait_for_edge_network_drop_recovery \
+  if [[ "$edge_case_id" == "edge-network-drop" || "$edge_case_id" == "edge-offline-check" ]]; then
+    if [[ "$edge_case_id" == "edge-network-drop" ]]; then
+      EDGE_CASE_RECOVERY_CYCLES="${CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES:-2}"
+    fi
+    if ! wait_for_edge_queued_recovery \
       "$recovery_wait_seconds" \
       "${edge_case_id}: the release applies once the network is back" \
       "$recovery_cycle_mode" \
@@ -1161,6 +1177,7 @@ prepare_device_for_maestro() {
   wait_for_android_boot
   wait_for_package_manager
   unlock_android_device
+  disable_android_emulator_animations
   configure_server_routing
   return 0
 }
@@ -1328,12 +1345,12 @@ run_flow() {
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "${maestro_args[@]}" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     else
       MAESTRO_CLI_NO_ANALYTICS="$MAESTRO_CLI_NO_ANALYTICS" \
         MAESTRO_DRIVER_STARTUP_TIMEOUT="$MAESTRO_DRIVER_STARTUP_TIMEOUT_VALUE" \
         "$TIMEOUT_CMD" --foreground "${MAESTRO_FLOW_TIMEOUT_SECONDS}s" \
-        maestro test "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
+        maestro test --config "$MAESTRO_WORKSPACE_CONFIG" "$ROOT_DIR/.maestro/$flow_file" 2>&1 | tee "$output_file"
     fi
     command_status=${PIPESTATUS[0]}
     set -e
@@ -1381,6 +1398,8 @@ prepare_scenario() {
 
 mkdir -p "$ARTIFACT_DIR"
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ -z "$TIMEOUT_CMD" ]]; then
   echo "GNU timeout is required to run Maestro flows. Install coreutils (gtimeout) on macOS or make sure timeout is available." >&2
@@ -1412,7 +1431,9 @@ else
   bun "$ROOT_DIR/scripts/maestro/build-bundles.mjs" "$SCENARIO_SELECTION"
 fi
 stop_stale_fake_server
-bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
+# The workflow may rerun this script after a timeout; keep the first attempt's server evidence.
+printf '\n=== Android scenario %s started at %s ===\n' "$SCENARIO_SELECTION" "$(date -u +%FT%TZ)" >>"$ARTIFACT_DIR/fake-capgo-server.log"
+bun "$ROOT_DIR/scripts/maestro/fake-capgo-server.mjs" >>"$ARTIFACT_DIR/fake-capgo-server.log" 2>&1 &
 SERVER_PID=$!
 wait_for_server
 run_selected_scenarios

@@ -660,9 +660,7 @@ import UIKit
             return
         }
 
-        if fileManager.fileExists(atPath: tempPath.path) {
-            try fileManager.removeItem(at: tempPath)
-        }
+        removeFileIfPresent(at: tempPath)
         try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
     }
 
@@ -695,11 +693,12 @@ import UIKit
 
     public func shutdown() {
         statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        guard !statsStopped else { return }
         statsStopped = true
-        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-        persistStatsQueue(force: true)
+        persistStatsQueueLocked()
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -2493,6 +2492,14 @@ import UIKit
         }
     }
 
+    private func removeFileIfPresent(at url: URL) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return
+        }
+        try? fileManager.removeItem(at: url)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {
@@ -4140,13 +4147,15 @@ import UIKit
         }
     }
 
-    private func persistStatsQueue(force: Bool = false) {
+    private func persistStatsQueue() {
         statsPersistLock.lock()
         defer { statsPersistLock.unlock() }
-        if statsStopped && !force {
-            return
-        }
+        guard !statsStopped else { return }
+        persistStatsQueueLocked()
+    }
 
+    /// Caller must hold statsPersistLock, including for the final shutdown snapshot.
+    private func persistStatsQueueLocked() {
         statsQueueLock.lock()
         var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
         statsQueueLock.unlock()

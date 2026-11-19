@@ -2,7 +2,7 @@
 /**
  * Writes native-contract-tests/cli/ with bundles zipped and encrypted by the real Capgo CLI.
  *
- * The CLI (`@capgo/cli/sdk`, pinned in devDependencies) is the source of truth: keys come from
+ * The CLI (`@capgo/cli/sdk`, pinned locally and updated to latest in CI) is the source of truth: keys come from
  * generateEncryptionKeys, zips and checksums from zipBundle, and the encrypted zip, checksum and
  * ivSessionKey from encryptBundle. Nothing here encrypts on its own, so the plugin tests decrypt
  * exactly what `capgo bundle upload` produces. Keys, IVs and session keys are random per run;

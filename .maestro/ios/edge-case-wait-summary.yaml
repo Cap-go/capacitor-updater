@@ -6,4 +6,4 @@ appId: app.capgo.updater
 # SUMMARY_PATTERN already starts with Harness: ready, so one wait keeps the flow inside its cap.
 - extendedWaitUntil:
     visible: '${SUMMARY_PATTERN}'
-    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS || 180000}'
+    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS || 120000}'

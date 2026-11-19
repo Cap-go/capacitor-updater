@@ -2,3 +2,5 @@ appId: app.capgo.updater
 ---
 - launchApp:
     clearState: true
+    arguments:
+      isE2E: true

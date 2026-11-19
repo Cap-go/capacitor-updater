@@ -5,7 +5,7 @@ import XCTest
 /// Decrypts bundles encrypted by the real Capgo CLI (native-contract-tests/cli, written by
 /// scripts/generate-cli-crypto-fixtures.mjs) through the plugin's own download path.
 /// CI also writes a fresh set into native-contract-tests/cli-fresh before the run, so the committed
-/// fixtures and a fresh encryption by the pinned CLI are both checked in one xcodebuild invocation.
+/// fixtures and a fresh encryption by the latest CLI are both checked in one xcodebuild invocation.
 final class CliCryptoFixtureTests: XCTestCase {
     private struct InstalledFile {
         let path: String
