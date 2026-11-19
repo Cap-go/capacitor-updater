@@ -11,12 +11,14 @@ appId: app.capgo.updater
     element:
       text: 'Quick open store page'
     direction: DOWN
+    speed: 80
     timeout: 30000
     visibilityPercentage: 1
 - scrollUntilVisible:
     element:
       text: 'Quick run smoke test sequence'
     direction: DOWN
+    speed: 80
     timeout: 30000
     visibilityPercentage: 1
 - tapOn:
@@ -26,6 +28,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: smoke-sequence:success|M:smoke-sequence:success).*'
@@ -41,11 +44,13 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - scrollUntilVisible:
     element:
       text: 'Quick open store page'
     direction: DOWN
+    speed: 80
     timeout: 30000
     visibilityPercentage: 1
 - tapOn: 'Quick open store page'
@@ -63,6 +68,7 @@ appId: app.capgo.updater
     element:
       text: 'Quick verify persisted config'
     direction: DOWN
+    speed: 80
     timeout: 30000
     visibilityPercentage: 1
 - tapOn: 'Quick verify persisted config'
@@ -70,6 +76,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*(Marker: persisted:success|M:persisted:success).*'

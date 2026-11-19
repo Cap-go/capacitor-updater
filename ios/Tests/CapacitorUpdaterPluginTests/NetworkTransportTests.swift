@@ -13,6 +13,12 @@ private final class LoopbackHTTPServer {
         var dropConnection = false
         /// Send only this many body bytes, then close, while Content-Length announces the whole body.
         var truncateBodyAt: Int?
+        /// Stream the response body in chunks of this size with `chunkDelay` between writes.
+        var chunkSize: Int?
+        var chunkDelay: TimeInterval = 0.01
+        /// When set, waits until this returns true before sending each body chunk after the first.
+        var waitBeforeContinuingBody: (() -> Bool)?
+        var waitBeforeContinuingBodyTimeout: TimeInterval = 2
     }
 
     struct RecordedRequest {
@@ -27,6 +33,7 @@ private final class LoopbackHTTPServer {
     private let lock = NSLock()
     private var handler: (RecordedRequest) -> Response = { _ in Response(status: 200, body: Data()) }
     private var recorded: [RecordedRequest] = []
+    private var activeConnections = 0
 
     init() throws {
         let parameters = NWParameters.tcp
@@ -65,7 +72,39 @@ private final class LoopbackHTTPServer {
         listener.cancel()
     }
 
+    /// Waits until accepted connections finish or `timeout` elapses (stray URLSession tasks after invalidate).
+    func drain(timeout: TimeInterval = 2) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            lock.lock()
+            let active = activeConnections
+            lock.unlock()
+            if active == 0 {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+    }
+
+    private func connectionOpened() {
+        lock.lock()
+        activeConnections += 1
+        lock.unlock()
+    }
+
+    private func connectionClosed() {
+        lock.lock()
+        activeConnections = max(0, activeConnections - 1)
+        lock.unlock()
+    }
+
     private func accept(_ connection: NWConnection) {
+        connectionOpened()
+        connection.stateUpdateHandler = { [weak self] state in
+            if case .cancelled = state {
+                self?.connectionClosed()
+            }
+        }
         connection.start(queue: queue)
         receive(on: connection, buffer: Data())
     }
@@ -123,6 +162,7 @@ private final class LoopbackHTTPServer {
         )
     }
 
+    /// Sends an HTTP response, optionally streaming the body in delayed chunks.
     private func send(_ response: Response, on connection: NWConnection) {
         if response.dropConnection {
             connection.cancel()
@@ -133,43 +173,270 @@ private final class LoopbackHTTPServer {
             head += "\(name): \(value)\r\n"
         }
         head += "\r\n"
-        let headerData = Data(head.utf8)
         let bodyData = response.truncateBodyAt.map { Data(response.body.prefix($0)) } ?? response.body
 
-        // Send headers and body in separate writes so a truncated body is a real mid-stream drop,
-        // not one atomic read containing a short body with Content-Length still outstanding.
-        connection.send(content: headerData, isComplete: false, completion: .contentProcessed { error in
-            if error != nil {
+        if let chunkSize = response.chunkSize, chunkSize > 0, bodyData.count > chunkSize {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
+                self?.sendChunks(
+                    of: bodyData, offset: 0, chunkSize: chunkSize, delay: response.chunkDelay,
+                    waitBeforeContinuingBody: response.waitBeforeContinuingBody,
+                    waitTimeout: response.waitBeforeContinuingBodyTimeout, on: connection
+                )
+            })
+            return
+        }
+
+        if response.truncateBodyAt != nil {
+            // Send headers and body in separate writes so a truncated body is a real mid-stream drop,
+            // not one atomic read containing a short body with Content-Length still outstanding.
+            let headerData = Data(head.utf8)
+            connection.send(content: headerData, isComplete: false, completion: .contentProcessed { error in
+                if error != nil {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: bodyData, isComplete: true, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            })
+            return
+        }
+
+        var payload = Data(head.utf8)
+        payload.append(bodyData)
+        connection.send(content: payload, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
+
+    /// Recursively writes slices of `body` over `connection` separated by `delay`.
+    private func sendChunks(
+        of body: Data, offset: Int, chunkSize: Int, delay: TimeInterval,
+        waitBeforeContinuingBody: (() -> Bool)?, waitTimeout: TimeInterval, on connection: NWConnection
+    ) {
+        guard offset < body.count else {
+            connection.cancel()
+            return
+        }
+        let end = min(offset + chunkSize, body.count)
+        let chunk = body.subdata(in: offset..<end)
+        connection.send(content: chunk, completion: .contentProcessed { [weak self] _ in
+            guard let self else {
                 connection.cancel()
                 return
             }
-            connection.send(content: bodyData, isComplete: true, completion: .contentProcessed { _ in
+            if end < body.count {
+                self.queue.asyncAfter(deadline: .now() + delay) {
+                    if let wait = waitBeforeContinuingBody {
+                        let deadline = Date().addingTimeInterval(waitTimeout)
+                        while !wait() && Date() < deadline {
+                            Thread.sleep(forTimeInterval: 0.005)
+                        }
+                    }
+                    self.sendChunks(
+                        of: body, offset: end, chunkSize: chunkSize, delay: delay,
+                        waitBeforeContinuingBody: waitBeforeContinuingBody, waitTimeout: waitTimeout,
+                        on: connection
+                    )
+                }
+            } else {
                 connection.cancel()
-            })
+            }
         })
     }
 }
 
+/// Observes the real URLSession transport so the fixture can interrupt an established partial download.
+private final class ProgressObservingCapgoUpdater: CapgoUpdater {
+    private let progressLock = NSLock()
+    private var partialBytesReceived: Int64 = 0
+    private var transportAttempts: [String] = []
+
+    var transportDiagnostics: [String] {
+        progressLock.lock()
+        defer { progressLock.unlock() }
+        return transportAttempts
+    }
+
+    var partialDownloadBytes: Int64 {
+        progressLock.lock()
+        defer { progressLock.unlock() }
+        return partialBytesReceived
+    }
+
+    /// Keeps the real request and resume behavior while forwarding progress to the test fixture.
+    override func performDownloadRequest(
+        _ request: URLRequest,
+        label: String,
+        resumeData: Data? = nil,
+        onProgress: ((Int64, Int64) -> Void)? = nil
+    ) -> DownloadRequestResult {
+        let startedAt = Date()
+        let result = super.performDownloadRequest(request, label: label, resumeData: resumeData) { received, expected in
+            if received > 0 && received < expected {
+                self.progressLock.lock()
+                self.partialBytesReceived = max(self.partialBytesReceived, received)
+                self.progressLock.unlock()
+            }
+            onProgress?(received, expected)
+        }
+        let failure: NSError?
+        if case let .sessionTaskFailed(underlying)? = result.error as? CapgoUpdater.NetworkError {
+            failure = underlying as NSError
+        } else {
+            failure = result.error as NSError?
+        }
+        progressLock.lock()
+        transportAttempts.append(
+            "resumeIn=\(resumeData?.count ?? 0) resumeOut=\(result.resumeData?.count ?? 0) " +
+                "status=\(result.response?.statusCode ?? 0) " +
+                "contentRange=\(result.response?.value(forHTTPHeaderField: "Content-Range") ?? "none") " +
+                "timedOut=\(result.timedOut) error=\(failure?.domain ?? "none"):\(failure?.code ?? 0) " +
+                "elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
+        )
+        progressLock.unlock()
+        return result
+    }
+}
+
 final class NetworkTransportTests: XCTestCase {
+    private final class CountingDownloadUpdater: CapgoUpdater {
+        private(set) var downloadAttempts = 0
+        private(set) var failedTransportAttempts = 0
+        private(set) var injectedConnectionLosses = 0
+        var initialConnectionLosses = 0
+        var responseAfterConnectionLosses: DownloadRequestResult?
+
+        override func performDownloadRequest(
+            _ request: URLRequest, label: String, resumeData: Data? = nil,
+            onProgress: ((Int64, Int64) -> Void)? = nil
+        ) -> DownloadRequestResult {
+            downloadAttempts += 1
+            let result: DownloadRequestResult
+            if downloadAttempts <= initialConnectionLosses {
+                injectedConnectionLosses += 1
+                result = DownloadRequestResult(
+                    fileURL: nil, response: nil,
+                    error: NetworkError.sessionTaskFailed(URLError(.networkConnectionLost)), timedOut: false
+                )
+            } else if let responseAfterConnectionLosses {
+                result = responseAfterConnectionLosses
+            } else {
+                result = super.performDownloadRequest(request, label: label, resumeData: resumeData, onProgress: onProgress)
+            }
+            if result.error != nil || result.timedOut {
+                failedTransportAttempts += 1
+            }
+            return result
+        }
+
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
+    }
+
+    private final class NoGetAfterSuccessGuard {
+        private let lock = NSLock()
+        private(set) var attempts = 0
+        private(set) var postSuccessAttempts = 0
+        private var servedSuccess = false
+
+        enum Phase {
+            case rejectPostSuccess
+            case attempt(number: Int)
+        }
+
+        func next() -> Phase {
+            lock.lock()
+            defer { lock.unlock() }
+            if servedSuccess {
+                postSuccessAttempts += 1
+                return .rejectPostSuccess
+            }
+            attempts += 1
+            return .attempt(number: attempts)
+        }
+
+        func markSuccess() {
+            lock.lock()
+            servedSuccess = true
+            lock.unlock()
+        }
+
+        deinit {
+            // SwiftLint required_deinit; no owned resources to release.
+        }
+    }
+
     // swiftlint:disable:next implicitly_unwrapped_optional
     private var server: LoopbackHTTPServer!
+    private var activeUpdaters: [CapgoUpdater] = []
+    private var pendingStatsDirs: [URL] = []
 
     override func setUpWithError() throws {
+        try super.setUpWithError()
         server = try LoopbackHTTPServer()
+        activeUpdaters = []
+        pendingStatsDirs = []
     }
 
     override func tearDownWithError() throws {
+        finishAllUpdaters()
+        for dir in pendingStatsDirs {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        pendingStatsDirs = []
+        server.drain(timeout: 0.25)
         server.stop()
         server = nil
+        try super.tearDownWithError()
     }
 
-    private func makeUpdater() -> CapgoUpdater {
-        let updater = CapgoUpdater()
+    private func makeUpdater(_ updater: CapgoUpdater = CapgoUpdater()) -> CapgoUpdater {
         updater.setLogger(Logger(withTag: "network-transport-tests", options: Logger.Options(level: .silent)))
         updater.timeout = 5
         // The loopback test server is plain http.
         updater.httpsOnly = false
+        let statsDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capgo-stats-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: statsDir, withIntermediateDirectories: true)
+        updater.pendingStatsDirectoryOverride = statsDir
+        pendingStatsDirs.append(statsDir)
+        activeUpdaters.append(updater)
         return updater
+    }
+
+    /// Shutdown and drop references before URLSession invalidation so the loopback port is not reused mid-flight.
+    private func releaseUpdater(_ updater: CapgoUpdater) {
+        updater.shutdown()
+        activeUpdaters.removeAll { $0 === updater }
+        server.drain(timeout: 0.25)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func finishAllUpdaters() {
+        for updater in activeUpdaters {
+            updater.shutdown()
+        }
+        activeUpdaters.removeAll()
+    }
+
+    func testReleasedUpdaterDoesNotRecreatePendingStatsDirectory() throws {
+        var updater: CapgoUpdater? = makeUpdater()
+        weak var releasedUpdater = updater
+        let statsDir = try XCTUnwrap(updater?.pendingStatsDirectoryOverride)
+        updater?.statsUrl = server.baseURL.absoluteString
+        updater?.sendStats(action: "download_complete", versionName: "shutdown-test")
+
+        releaseUpdater(try XCTUnwrap(updater))
+        let persistedData = try Data(contentsOf: statsDir.appendingPathComponent("capgo_pending_stats.json"))
+        let events = try JSONDecoder().decode([StatsEvent].self, from: persistedData)
+        XCTAssertEqual(events.map(\.action), ["download_complete"], "shutdown must persist queued stats before returning")
+        try FileManager.default.removeItem(at: statsDir)
+        updater = nil
+
+        XCTAssertNil(releasedUpdater)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statsDir.path), "deinit must not persist stats again after shutdown")
     }
 
     func testManifestRecoversFromTransientStatusWithoutRestartingBundle() throws {
@@ -178,26 +445,33 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
+        let attemptGuard = NoGetAfterSuccessGuard()
         server.respond { _ in
-            lock.lock()
-            attempts += 1
-            let status = attempts == 1 ? 503 : 200
-            lock.unlock()
-            return .init(status: status, body: status == 200 ? body : Data())
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
+                return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let status = number == 1 ? 503 : 200
+                if status == 200 {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: status, body: status == 200 ? body : Data())
+            }
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-retry-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
+        server.drain(timeout: 0.25)
         // URLSession may issue an extra GET after 503 before surfacing the failure to our retry loop,
         // so expect at least one 503 and a final 200, and at most three hits on the test server.
-        XCTAssertGreaterThanOrEqual(attempts, 2)
-        XCTAssertLessThanOrEqual(attempts, 3)
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 2)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -208,17 +482,22 @@ final class NetworkTransportTests: XCTestCase {
         try body.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
-        let lock = NSLock()
-        var attempts = 0
+        let attemptGuard = NoGetAfterSuccessGuard()
         // Two drops: URLSession may replay a GET once by itself, so success needs the plugin retry.
         server.respond { _ in
-            lock.lock()
-            attempts += 1
-            let drop = attempts <= 2
-            lock.unlock()
-            return .init(status: 200, body: body, dropConnection: drop)
+            switch attemptGuard.next() {
+            case .rejectPostSuccess:
+                return .init(status: 500, body: Data())
+            case .attempt(let number):
+                let drop = number <= 2
+                if !drop {
+                    attemptGuard.markSuccess()
+                }
+                return .init(status: 200, body: body, dropConnection: drop)
+            }
         }
         let updater = makeUpdater()
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-drop-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "index.html", file_hash: hash,
@@ -226,8 +505,9 @@ final class NetworkTransportTests: XCTestCase {
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
         // Two drops plus URLSession's own replays can hit the server more than three times before success.
-        XCTAssertGreaterThanOrEqual(attempts, 3)
-        XCTAssertLessThanOrEqual(attempts, 5)
+        XCTAssertGreaterThanOrEqual(attemptGuard.attempts, 3)
+        XCTAssertLessThanOrEqual(attemptGuard.attempts, 5)
+        XCTAssertEqual(attemptGuard.postSuccessAttempts, 0, "unexpected GET after successful download")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("index.html")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -242,9 +522,19 @@ final class NetworkTransportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file) }
         let hash = CryptoCipher.calcChecksum(filePath: file)
         let cut = body.count / 2
+        let chunkSize = 32_768
+        let progressUpdater = ProgressObservingCapgoUpdater()
+        defer {
+            let requests = server.requests.map {
+                "\($0.method) range=\($0.headers["range"] ?? "none") ifRange=\($0.headers["if-range"] ?? "none")"
+            }
+            print("Manifest resume requests: \(requests)")
+            print("Manifest resume transport: \(progressUpdater.transportDiagnostics)")
+        }
         let lock = NSLock()
         var attempts = 0
         var resumedFrom: String?
+        var receivedChunkBeforeDrop = false
         server.respond { request in
             lock.lock()
             attempts += 1
@@ -253,7 +543,21 @@ final class NetworkTransportTests: XCTestCase {
             lock.unlock()
             let validators = ["ETag": "\"capgo-resume\"", "Accept-Ranges": "bytes"]
             if first {
-                return .init(status: 200, body: body, headers: validators, truncateBodyAt: cut)
+                // A completed server write does not mean URLSession has received the bytes yet.
+                // Wait for a full chunk before sending the remaining truncated body and closing.
+                return .init(
+                    status: 200, body: body, headers: validators, truncateBodyAt: cut,
+                    chunkSize: chunkSize,
+                    waitBeforeContinuingBody: {
+                        let received = progressUpdater.partialDownloadBytes >= Int64(chunkSize)
+                        if received {
+                            lock.lock()
+                            receivedChunkBeforeDrop = true
+                            lock.unlock()
+                        }
+                        return received
+                    }
+                )
             }
             guard let range = request.headers["range"], range.hasPrefix("bytes="),
                   let start = Int(range.dropFirst("bytes=".count).split(separator: "-").first ?? "") else {
@@ -263,17 +567,24 @@ final class NetworkTransportTests: XCTestCase {
             headers["Content-Range"] = "bytes \(start)-\(body.count - 1)/\(body.count)"
             return .init(status: 206, body: body.subdata(in: start..<body.count), headers: headers)
         }
-        let updater = makeUpdater()
+        let updater = makeUpdater(progressUpdater)
+        defer { releaseUpdater(updater) }
         CryptoCipher.setLogger(Logger(withTag: "manifest-resume-test", options: Logger.Options(level: .silent)))
         let installed = try updater.downloadManifest(manifest: [ManifestEntry(
             file_name: "app.js", file_hash: hash,
             download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
         )], version: UUID().uuidString, sessionKey: "")
         defer { _ = updater.delete(id: installed.getId()) }
-        XCTAssertEqual(attempts, 2)
+        lock.lock()
+        let attemptCount = attempts
+        let range = resumedFrom
+        let didReceiveChunkBeforeDrop = receivedChunkBeforeDrop
+        lock.unlock()
+        XCTAssertTrue(didReceiveChunkBeforeDrop, "fixture disconnected before the client received a partial download")
+        XCTAssertEqual(attemptCount, 2)
         // The retry continued the interrupted transfer rather than fetching from byte 0.
-        let start = Int(resumedFrom?.dropFirst("bytes=".count).split(separator: "-").first ?? "") ?? 0
-        XCTAssertGreaterThan(start, 0, "retry did not resume: \(resumedFrom ?? "no Range header")")
+        let start = Int(range?.dropFirst("bytes=".count).split(separator: "-").first ?? "") ?? 0
+        XCTAssertGreaterThan(start, 0, "retry did not resume: \(range ?? "no Range header")")
         let target = try updater.getBundleDirectory(id: installed.getId()).appendingPathComponent("app.js")
         XCTAssertEqual(try Data(contentsOf: target), body)
     }
@@ -302,8 +613,25 @@ final class NetworkTransportTests: XCTestCase {
     }
 
     func testManifestPermanentFailuresAndRetryBudget() throws {
+        try assertManifestRetryBudget(dropFirstConnection: false)
+    }
+
+    func testManifestRetryBudgetExcludesURLSessionReplay() throws {
+        try assertManifestRetryBudget(dropFirstConnection: true)
+    }
+
+    func testManifestRetryBudgetIncludesSurfacedConnectionLoss() throws {
+        for initialConnectionLosses in 1...2 {
+            try assertManifestRetryBudget(dropFirstConnection: false, initialConnectionLosses: initialConnectionLosses)
+        }
+    }
+
+    private func assertManifestRetryBudget(dropFirstConnection: Bool, initialConnectionLosses: Int = 0) throws {
         for status in [404, 429, 503, 200] {
-            let updater = makeUpdater()
+            let updater = CountingDownloadUpdater()
+            updater.initialConnectionLosses = initialConnectionLosses
+            _ = makeUpdater(updater)
+            defer { releaseUpdater(updater) }
             CryptoCipher.setLogger(Logger(withTag: "manifest-failure-test", options: Logger.Options(level: .silent)))
             let version = UUID().uuidString
             defer {
@@ -315,13 +643,42 @@ final class NetworkTransportTests: XCTestCase {
             try Data(UUID().uuidString.utf8).write(to: expected)
             defer { try? FileManager.default.removeItem(at: expected) }
             let hash = CryptoCipher.calcChecksum(filePath: expected)
-            let before = server.requests.count
-            server.respond { _ in .init(status: status, body: Data("incorrect".utf8)) }
+            var responseCount = 0
+            server.respond { _ in
+                responseCount += 1
+                return .init(status: status, body: Data("incorrect".utf8), dropConnection: dropFirstConnection && responseCount == 1)
+            }
+            let downloadURL = server.baseURL.appendingPathComponent(UUID().uuidString)
+            let downloadedFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: downloadedFile) }
+            if initialConnectionLosses > 0 {
+                // Keep the injected-loss cases deterministic even when the runner's loopback transport stalls.
+                if status == 200 {
+                    try Data("incorrect".utf8).write(to: downloadedFile)
+                }
+                updater.responseAfterConnectionLosses = CapgoUpdater.DownloadRequestResult(
+                    fileURL: status == 200 ? downloadedFile : nil,
+                    response: try XCTUnwrap(HTTPURLResponse(url: downloadURL, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)),
+                    error: nil, timedOut: false
+                )
+            }
             XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
                 file_name: "index.html", file_hash: hash,
-                download_url: server.baseURL.appendingPathComponent(UUID().uuidString).absoluteString
-            )], version: version, sessionKey: ""))
-            XCTAssertEqual(server.requests.count - before, status == 503 ? 3 : 1)
+                download_url: downloadURL.absoluteString
+            )], version: version, sessionKey: "")) { error in
+                let failure = error as NSError
+                XCTAssertEqual(failure.domain, status == 200 ? "ChecksumError" : "StatusCodeError")
+                XCTAssertEqual(failure.code, status == 200 ? 1 : status)
+            }
+            // Internal URLSession replays do not consume plugin attempts; surfaced transport
+            // errors do. A permanent response must never earn another attempt of its own.
+            XCTAssertEqual(updater.injectedConnectionLosses, initialConnectionLosses)
+            if initialConnectionLosses > 0 {
+                XCTAssertEqual(updater.failedTransportAttempts, initialConnectionLosses)
+            }
+            let expectedAttempts = status == 503 ? 3 : 1 + updater.failedTransportAttempts
+            XCTAssertEqual(updater.downloadAttempts, expectedAttempts, "HTTP status \(status)")
+            XCTAssertLessThanOrEqual(updater.downloadAttempts, 3, "HTTP status \(status)")
         }
     }
 
@@ -419,10 +776,47 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), payload)
     }
 
-    func testPerformDownloadRequestKeepsHttpErrorsAsResponses() throws {
-        server.respond { _ in .init(status: 404, body: Data("missing".utf8)) }
+    /// Verifies that chunked download responses report intermediate byte progress samples.
+    func testPerformDownloadRequestReportsProgressCallbacks() throws {
+        let payload = Data((0..<250_000).map { UInt8($0 % 251) })
+        server.respond { _ in .init(status: 200, body: payload, chunkSize: 50_000, chunkDelay: 0.01) }
 
-        let result = makeUpdater().performDownloadRequest(request("missing.zip"), label: "test")
+        let lock = NSLock()
+        var samples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(request("bundle-progress.zip"), label: "test") { received, expected in
+            lock.lock()
+            samples.append((received, expected))
+            lock.unlock()
+        }
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+
+        XCTAssertNil(result.error)
+        XCTAssertTrue(
+            samples.contains(where: { $0.0 > 0 && $0.0 < $0.1 }),
+            "expected at least one intermediate sample with 0 < received < expected, got \(samples)"
+        )
+        if let lastSample = samples.last {
+            XCTAssertEqual(lastSample.1, Int64(payload.count))
+            XCTAssertGreaterThan(lastSample.0, 0)
+            XCTAssertLessThanOrEqual(lastSample.0, lastSample.1)
+        }
+    }
+
+    /// Verifies that HTTP error bodies are preserved on disk without reporting download progress.
+    func testPerformDownloadRequestKeepsHttpErrorsAsResponses() throws {
+        server.respond { _ in .init(status: 404, body: Data(repeating: 0x41, count: 64_000), chunkSize: 16_000, chunkDelay: 0.01) }
+
+        let lock = NSLock()
+        var samples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(request("missing.zip"), label: "test") { received, expected in
+            lock.lock()
+            samples.append((received, expected))
+            lock.unlock()
+        }
         defer {
             if let fileURL = result.fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
@@ -432,20 +826,131 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertNil(result.error)
         XCTAssertEqual(result.response?.statusCode, 404)
         XCTAssertNotNil(result.fileURL)
+        XCTAssertTrue(samples.isEmpty, "non-2xx responses must not report download progress")
     }
 
+    /// Verifies that `downloadVerified` emits rising intermediate percentages in `10..<70` before `70%` and `100%`.
+    func testDownloadZipEmitsProgressEventsFromZeroThroughOneHundred() throws {
+        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        }
+        var writer = TestZipWriter()
+        writer.addFile("index.html", Data("<html>zip-progress</html>".utf8))
+        writer.addFile("assets/bundle.bin", Data((0..<300_000).map { UInt8($0 % 251) }))
+        let zipPayload = writer.build()
+        let tempZip = FileManager.default.temporaryDirectory.appendingPathComponent("capgo-zip-\(UUID().uuidString).zip")
+        try zipPayload.write(to: tempZip)
+        defer { try? FileManager.default.removeItem(at: tempZip) }
+        let expectedChecksum = CryptoCipher.calcChecksum(filePath: tempZip)
+        server.respond { _ in .init(status: 200, body: zipPayload, chunkSize: 60_000, chunkDelay: 0.01) }
+
+        let updater = makeUpdater()
+        CryptoCipher.setLogger(Logger(withTag: "zip-progress-test", options: Logger.Options(level: .silent)))
+        var percents: [Int] = []
+        updater.notifyDownloadRaw = { _, percent, _, _ in
+            percents.append(percent)
+        }
+
+        let done = expectation(description: "zip download complete")
+        var downloadedBundle: BundleInfo?
+        var downloadError: Error?
+        let downloadURL = server.baseURL.appendingPathComponent("bundle-\(UUID().uuidString).zip")
+        let version = UUID().uuidString
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                downloadedBundle = try updater.downloadVerified(
+                    url: downloadURL,
+                    version: version,
+                    sessionKey: "",
+                    expectedChecksum: expectedChecksum
+                )
+            } catch {
+                downloadError = error
+            }
+            DispatchQueue.main.async {
+                done.fulfill()
+            }
+        }
+        let waitResult = XCTWaiter.wait(for: [done], timeout: 10)
+        XCTAssertEqual(waitResult, .completed, "zip download did not finish before teardown")
+        defer {
+            if let installed = downloadedBundle {
+                _ = updater.delete(id: installed.getId())
+            }
+            releaseUpdater(updater)
+        }
+        XCTAssertNil(downloadError)
+        XCTAssertEqual(percents.first, 0)
+        XCTAssertTrue(percents.contains(where: { (10..<70).contains($0) }), "expected transfer progress in 10..<70, got \(percents)")
+        XCTAssertTrue(percents.contains(70), "expected 70% completion tick, got \(percents)")
+        XCTAssertTrue(percents.contains(75), "expected 75% unzip start tick, got \(percents)")
+        XCTAssertTrue(percents.contains(90), "expected 90% wrap-up tick, got \(percents)")
+        XCTAssertEqual(percents.last, 100)
+        XCTAssertEqual(percents, percents.sorted(), "progress percentages must be non-decreasing: \(percents)")
+    }
+
+    /// Verifies that `Range` requests offset progress only when the server responds with `206 Partial Content`.
     func testPerformDownloadRequestSendsRangeHeader() {
-        server.respond { _ in .init(status: 206, body: Data("tail".utf8)) }
+        let tail = Data(repeating: 0x42, count: 100_000)
+        let expectedTotal = Int64(10 + tail.count)
+        let flowLock = NSLock()
+        var resumeBody = false
+        server.respond { _ in
+            var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
+            response.waitBeforeContinuingBody = {
+                flowLock.lock()
+                let go = resumeBody
+                flowLock.unlock()
+                return go
+            }
+            return response
+        }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
 
-        let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test")
+        let sampleLock = NSLock()
+        var partialSamples: [(Int64, Int64)] = []
+        let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+            sampleLock.lock()
+            partialSamples.append((received, expected))
+            if received > 10 {
+                flowLock.lock()
+                resumeBody = true
+                flowLock.unlock()
+            }
+            sampleLock.unlock()
+        }
         if let fileURL = result.fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
         XCTAssertEqual(result.response?.statusCode, 206)
         XCTAssertEqual(server.requests.first?.headers["range"], "bytes=10-")
+        XCTAssertFalse(partialSamples.isEmpty)
+        XCTAssertTrue(partialSamples.contains(where: { $0.0 > 10 }), "expected resumed bytes beyond the 10 byte offset, got \(partialSamples)")
+        for sample in partialSamples {
+            XCTAssertLessThanOrEqual(sample.0, sample.1)
+            XCTAssertEqual(sample.1, expectedTotal)
+        }
+        if let lastPartial = partialSamples.last {
+            XCTAssertEqual(lastPartial.1, expectedTotal)
+            XCTAssertGreaterThan(lastPartial.0, 10)
+        }
+
+        server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
+        var fullSamples: [(Int64, Int64)] = []
+        let fullResult = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+            sampleLock.lock()
+            fullSamples.append((received, expected))
+            sampleLock.unlock()
+        }
+        if let fileURL = fullResult.fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        XCTAssertFalse(fullSamples.isEmpty)
+        if let lastFull = fullSamples.last {
+            XCTAssertEqual(lastFull.1, Int64(tail.count))
+        }
     }
 
     func testMakeJSONPostRequestMatchesJSONEncoding() throws {

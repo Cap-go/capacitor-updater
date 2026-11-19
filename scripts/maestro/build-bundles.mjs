@@ -16,6 +16,7 @@ import {
   scenarios,
 } from './scenarios.mjs';
 import { runCommand } from './command.mjs';
+import { ensureWebsiteFixtures } from './build-website-fixtures.mjs';
 
 const scenarioSelection = process.argv[2]?.trim() || 'all';
 const selectedScenarios =
@@ -110,8 +111,12 @@ await runCommand('bun', ['install'], {
   cwd: exampleAppDir,
   env: process.env,
 });
+await ensureWebsiteFixtures();
 
 for (const scenario of selectedScenarios) {
+  if (!scenario.releases?.length) {
+    continue;
+  }
   for (const release of scenario.releases) {
     await buildBundle({
       scenarioId: scenario.id,

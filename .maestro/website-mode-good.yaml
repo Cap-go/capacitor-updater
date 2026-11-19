@@ -1,0 +1,6 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: 'Website Maestro Good'
+    timeout: 120000

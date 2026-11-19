@@ -47,10 +47,17 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26.x
       - name: Check plugin wiring
         if: runner.os != 'Windows'
         run: bun run check:wiring
+      - name: Check Maestro teardown handling
+        if: runner.os != 'Windows'
+        run: |
+          python3 scripts/maestro/test-run-maestro.py
+          bash scripts/maestro/test-server-lifecycle.sh
+          python3 scripts/maestro/test-device-animations.py
+          python3 scripts/maestro/test-ios-flow-artifacts.py
       - name: Check plugin wiring (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -110,10 +117,14 @@ jobs:
         run: bun run verify:android
       - name: Verify packed package in example app (Android)
         shell: bash
-        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh android
-      - name: Decrypt bundles freshly encrypted by the pinned Capgo CLI
-        # The committed fixtures ran above; this re-encrypts with the CLI so every CLI bump is re-checked.
-        run: bun run generate:cli-crypto && bun run native:contract:cli:android
+        run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 CAPGO_VERIFY_PACKED_RELEASE_ANDROID=1 bash ./.github/scripts/verify-packed-example.sh android
+      - name: Decrypt bundles freshly encrypted by the latest Capgo CLI
+        # The committed fixtures ran above; also check compatibility with the current CLI release.
+        run: |
+          bun add --no-save @capgo/cli@latest
+          bunx --no-install capgo --version
+          bun run generate:cli-crypto
+          bun run native:contract:cli:android
 
   build_android_next_capacitor:
     permissions:
@@ -208,7 +219,6 @@ jobs:
         shell: bash
         run: CAPGO_VERIFY_PACKED_SKIP_BUILD=1 bash ./.github/scripts/verify-packed-example.sh ios
 
-  # One macOS job builds for testing, writes cli-fresh crypto fixtures, and saves SwiftPM, DerivedData, and native-contract-tests/cli-fresh in the same cache so shard jobs only run xctest under the 5 minute cap.
   test_ios_setup:
     permissions:
       contents: read
@@ -227,20 +237,45 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
           dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
           dependency-cache-path: node_modules
-      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
+      - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            .ci-ios-test-dd
-            native-contract-tests/cli-fresh
-          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
           restore-keys: |
-            ${{ runner.os }}-ios-test-
+            ${{ runner.os }}-swiftpm-
       - name: Build iOS tests once
         run: CAPGO_IOS_TEST_ACTION=build-for-testing ./scripts/test-ios.sh
-      - name: Encrypt fresh bundles with the pinned Capgo CLI
-        run: bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Encrypt fresh bundles with the latest Capgo CLI
+        run: |
+          bun add --no-save @capgo/cli@latest
+          bunx --no-install capgo --version
+          bun run generate:cli-crypto native-contract-tests/cli-fresh
+      - name: Upload iOS test build and CLI fresh fixtures (attempt 1)
+        id: upload_ios_test_build_1
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-build
+          path: |
+            .ci-ios-test-dd
+            native-contract-tests/cli-fresh
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Wait before retrying iOS test build upload
+        if: steps.upload_ios_test_build_1.outcome == 'failure'
+        run: sleep 15
+      - name: Upload iOS test build and CLI fresh fixtures (attempt 2)
+        if: steps.upload_ios_test_build_1.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-test-build
+          overwrite: true
+          path: |
+            .ci-ios-test-dd
+            native-contract-tests/cli-fresh
+          include-hidden-files: true
+          if-no-files-found: error
 
   test_ios:
     needs: test_ios_setup
@@ -254,40 +289,108 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # CapacitorUpdaterTests alone is about 90s of runtime, so it gets its own shard.
-          - shard: core
-            select: -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+          # -only-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests
+          # Interleave core tests across three shards to leave room for simulator startup and result finalization.
+          - shard: core-a
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh a
+          - shard: core-b
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh b
+          - shard: core-c
+            parallel_testing: '0'
+            select_cmd: scripts/ci/ios-capacitor-updater-core-shard-args.sh c
           # PopulateDeltaCacheTests and its companion classes in PopulateDeltaCacheTests.swift need long IO and can push a single "rest" shard past the 5 minute cap; run them alone.
           - shard: delta
+            parallel_testing: '0'
             select: -only-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -only-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -only-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -only-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -only-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
-          - shard: rest
-            select: -skip-testing:CapacitorUpdaterPluginTests/CapacitorUpdaterTests -skip-testing:CapacitorUpdaterPluginTests/PopulateDeltaCacheTests -skip-testing:CapacitorUpdaterPluginTests/IoBufferSizeTests -skip-testing:CapacitorUpdaterPluginTests/ManifestConcurrencyTests -skip-testing:CapacitorUpdaterPluginTests/StreamDecodeTests -skip-testing:CapacitorUpdaterPluginTests/ImmutableCacheLinkTests
+          - shard: rest-a
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/BuiltinHashesTests
+              -only-testing:CapacitorUpdaterPluginTests/BundleHardeningTests
+              -only-testing:CapacitorUpdaterPluginTests/CapgoSemanticVersionTests
+              -only-testing:CapacitorUpdaterPluginTests/ChecksumRequiredTests
+          - shard: rest-b
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/CliCryptoFixtureTests
+              -only-testing:CapacitorUpdaterPluginTests/HttpsOnlyBuiltinMinimumTests
+              -only-testing:CapacitorUpdaterPluginTests/ListChannelsTests
+              -only-testing:CapacitorUpdaterPluginTests/LoggerSecurityTests
+              -only-testing:CapacitorUpdaterPluginTests/WebKitOverlayGuardTests
+          - shard: rest-c
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
+              -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
+              -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
+              -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
+          - shard: rest-d
+            parallel_testing: '0'
+            select: >-
+              -only-testing:CapacitorUpdaterPluginTests/SessionKeyRequiredTests
+              -only-testing:CapacitorUpdaterPluginTests/UpdateLifecycleTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipArchiveReaderTests
+              -only-testing:CapacitorUpdaterPluginTests/ZipBundleExtractionTests
     env:
       CAPGO_IOS_DERIVED_DATA: ${{ github.workspace }}/.ci-ios-test-dd
+      CAPGO_IOS_PARALLEL_TESTING: ${{ matrix.parallel_testing }}
     steps:
       - name: Check out
         uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Setup Bun
+        # Only the core shard selector invokes Node; other shards run prebuilt Swift tests directly.
+        if: matrix.select_cmd != ''
         uses: ./.github/actions/setup-bun
         with:
           bun-version: ${{ env.BUN_VERSION }}
-          dependency-cache-key: ${{ runner.os }}-bun-deps-root-${{ hashFiles('bun.lock', 'package.json') }}
-          dependency-cache-path: node_modules
-      - name: Cache SwiftPM, DerivedData, and CLI crypto fixtures
+          setup-node: 'false'
+          install-dependencies: 'false'
+      - name: Download iOS test build and CLI fresh fixtures
+        uses: actions/download-artifact@v8
+        with:
+          name: ios-test-build
+          path: .
+      - name: Cache SwiftPM
         uses: actions/cache@v6
         with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            .ci-ios-test-dd
-            native-contract-tests/cli-fresh
-          key: ${{ runner.os }}-ios-test-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
-          restore-keys: |
-            ${{ runner.os }}-ios-test-
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.swift', 'Package.resolved', 'ios/Sources/**', 'ios/Tests/**') }}
       - name: Run iOS native tests (${{ matrix.shard }})
         id: test_ios
-        run: CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ matrix.select_cmd }}" ]]; then
+            select_args=()
+            select_cmd_output=""
+            if ! select_cmd_output=$(./${{ matrix.select_cmd }}); then
+              echo "select_cmd failed: ./${{ matrix.select_cmd }}"
+              exit 1
+            fi
+            while IFS= read -r arg; do
+              [[ -n "$arg" ]] && select_args+=("$arg")
+            done <<< "$select_cmd_output"
+            if [[ ${#select_args[@]} -eq 0 ]]; then
+              echo "select_cmd produced no -only-testing arguments"
+              exit 1
+            fi
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh "${select_args[@]}"
+          else
+            CAPGO_IOS_TEST_ACTION=test-without-building ./scripts/test-ios.sh ${{ matrix.select }}
+          fi
+      - name: Upload failed iOS native test results
+        if: failure() && steps.test_ios.outcome == 'failure'
+        timeout-minutes: 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-results-${{ matrix.shard }}
+          path: .ci-ios-test-dd/Logs/Test
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
 
   maestro_web_assets:
     permissions:
@@ -375,6 +478,8 @@ jobs:
           - manual-zip-no-persist
           - manual-zip-config-guards
           - manual-manifest
+          - website-good
+          - website-fail
           - edge-deferred
           - edge-direct
     steps:
@@ -511,7 +616,7 @@ jobs:
       - name: Build iOS app
         run: |
           set -euo pipefail
-          artifact_root="$RUNNER_TEMP/maestro-ios-apps"
+          artifact_root="$RUNNER_TEMP/maestro-ios-runtime"
           derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
           scenarios=(
             deferred
@@ -523,13 +628,14 @@ jobs:
             manual-zip-no-persist
             manual-zip-config-guards
             manual-manifest
+            website-good
+            website-fail
           )
 
           rm -rf "$artifact_root" "$derived_data_path"
-          mkdir -p "$artifact_root"
+          mkdir -p "$artifact_root/maestro-ios-apps"
 
           for scenario in "${scenarios[@]}"; do
-            app_artifact_path="$artifact_root/$scenario"
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
             xcodebuild \
               -project example-app/ios/App/App.xcodeproj \
@@ -538,14 +644,131 @@ jobs:
               -destination "generic/platform=iOS Simulator" \
               -derivedDataPath "$derived_data_path" \
               build
-            mkdir -p "$app_artifact_path"
-            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
+            tar -czf "$artifact_root/maestro-ios-apps/$scenario.tar.gz" \
+              -C "$derived_data_path/Build/Products/Debug-iphonesimulator" App.app
           done
-      - name: Upload iOS apps
+          # Restore each app and its matching fixtures in one artifact download.
+          cp -R dist .maestro-artifacts "$artifact_root/"
+      - name: Upload iOS app (deferred)
         uses: actions/upload-artifact@v7
         with:
-          name: maestro-ios-apps
-          path: ${{ runner.temp }}/maestro-ios-apps
+          name: maestro-ios-app-deferred
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/deferred.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (always)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-always
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/always.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (legacy-true)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-legacy-true
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/legacy-true.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (at-install)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-at-install
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/at-install.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (on-launch)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-on-launch
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/on-launch.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip-no-persist)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip-no-persist
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-no-persist.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-zip-config-guards)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-zip-config-guards
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-config-guards.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (manual-manifest)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-manual-manifest
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-manifest.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (website-good)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-website-good
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/website-good.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (website-fail)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-website-fail
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/website-fail.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
           if-no-files-found: error
 
   maestro_android_example_app:
@@ -675,11 +898,13 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs:
-      - maestro_web_assets
-      - maestro_ios_apps
+    needs: maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS: '25'
+      CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS: '1'
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -699,25 +924,24 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
+      - name: Download iOS app and web assets
+        uses: actions/download-artifact@v8
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Extract iOS app
+        env:
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-web-assets
-          path: .
-      - name: Download iOS app
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-ios-apps
-          path: maestro-ios-apps
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -728,10 +952,12 @@ jobs:
           CAPGO_MAESTRO_TEST_RETRIES=2
           CAPGO_MAESTRO_IOS_REINSTALL_ON_RETRY=1
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1
           MAESTRO_DRIVER_STARTUP_TIMEOUT=90000
-          bun run test:maestro:ios:smoke
+          ./scripts/test-maestro-ios.sh
       - name: Upload Maestro artifacts
-        if: always()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-${{ matrix.scenario }}
@@ -741,11 +967,11 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs:
-      - maestro_web_assets
-      - maestro_ios_apps
+    needs: maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -765,25 +991,24 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
+      - name: Download iOS app and web assets
+        uses: actions/download-artifact@v8
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Extract iOS app
+        env:
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
           maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-web-assets
-          path: .
-      - name: Download iOS app
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-ios-apps
-          path: maestro-ios-apps
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -794,14 +1019,82 @@ jobs:
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
           CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_TEST_RETRIES=2 \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload live update Maestro artifacts
-        if: always()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
+
+  maestro_ios_website_mode:
+    permissions:
+      contents: read
+      actions: write
+    needs: maestro_ios_apps
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+    name: iOS Maestro website mode / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - website-good
+          - website-fail
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Boot iOS simulator early
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+      - name: Download iOS app and web assets
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Extract iOS app
+        env:
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
+      - name: Run website mode Maestro flows
+        run: |
+          set -euo pipefail
+          CAPGO_MAESTRO_SKIP_BUILD=1 \
+          CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
+          CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
+          CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-website-mode/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
+          ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Upload website mode Maestro artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-website-${{ matrix.scenario }}
+          path: maestro-results-ios-website-mode/${{ matrix.scenario }}
 
   # Built separately from maestro_ios_apps so both builds stay under the 10 minute job cap.
   maestro_ios_edge_apps:
@@ -844,8 +1137,13 @@ jobs:
           rm -rf "$artifact_root" "$derived_data_path"
           mkdir -p "$artifact_root"
 
+          # Reuse the build job's Bun so each edge job avoids a separate runtime cache restore.
+          mkdir -p "$artifact_root/runtime"
+          cp -L "$(command -v bun)" "$artifact_root/runtime/bun"
+          ln -s bun "$artifact_root/runtime/bunx"
+          tar -czf "$artifact_root/bun-runtime.tar.gz" -C "$artifact_root" runtime
+
           for scenario in "${scenarios[@]}"; do
-            app_artifact_path="$artifact_root/$scenario"
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
             xcodebuild \
               -project example-app/ios/App/App.xcodeproj \
@@ -854,14 +1152,19 @@ jobs:
               -destination "generic/platform=iOS Simulator" \
               -derivedDataPath "$derived_data_path" \
               build
-            mkdir -p "$app_artifact_path"
-            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$app_artifact_path/App.app"
+            mkdir -p "$artifact_root/$scenario"
+            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$artifact_root/$scenario/App.app"
+            # Ship one archive per scenario, including the web fixtures needed by the fake server.
+            tar -czf "$artifact_root/$scenario.tar.gz" \
+              -C "$RUNNER_TEMP" "maestro-ios-edge-apps/$scenario/App.app" \
+              -C "$GITHUB_WORKSPACE" dist .maestro-artifacts
           done
       - name: Upload iOS apps
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-edge-apps
-          path: ${{ runner.temp }}/maestro-ios-edge-apps
+          path: ${{ runner.temp }}/maestro-ios-edge-apps/*.tar.gz
+          compression-level: 0
           if-no-files-found: error
 
   maestro_ios_edge_cases:
@@ -869,10 +1172,11 @@ jobs:
       contents: read
       actions: write
     needs:
-      - maestro_web_assets
       - maestro_ios_edge_apps
     timeout-minutes: 10
     runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
     name: iOS example app Maestro edge case / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -880,7 +1184,7 @@ jobs:
         include:
           - scenario: edge-network-drop
             app: edge-deferred
-            edge_case_retries: 2
+            edge_case_retries: 1
           - scenario: edge-kill-download
             app: edge-deferred
             edge_case_retries: 1
@@ -898,59 +1202,52 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Boot in the background so it overlaps the setup steps; the runner waits on bootstatus.
-      # A full edge case needs most of the 10 minute cap, so a blocking boot can push it over.
       - name: Boot iOS simulator early
         run: |
           set -euo pipefail
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          nohup xcrun simctl boot "$simulator_id" >/dev/null 2>&1 &
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-          install-dependencies: 'false'
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Download reusable Maestro web assets
-        uses: actions/download-artifact@v8
-        with:
-          name: maestro-web-assets
-          path: .
-      - name: Download iOS app
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+      - name: Download iOS apps and Bun runtime
         uses: actions/download-artifact@v8
         with:
           name: maestro-ios-edge-apps
           path: maestro-ios-edge-apps
-      # A full case takes most of the 10 minute cap on hosted macOS runners. edge-network-drop
-      # alone gets one retry for simulator crashes during recovery; other cases stay at one attempt.
-      # The single recovery flow includes the XCTest driver startup (up to ~2 minutes), hence 360s.
-      # edge-direct-network-drop runs an extra direct-update path; tighten waits and flow timeout so the job still finishes within the 10 minute job cap after checkout plus artifact downloads.
-      - name: Run edge case Maestro flows
-        env:
-          MATRIX_SCENARIO: ${{ matrix.scenario }}
+      - name: Restore Bun runtime from app artifact
         run: |
           set -euo pipefail
-          if [[ "$MATRIX_SCENARIO" == "edge-direct-network-drop" ]]; then
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=300
-            export CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90
-            export CAPGO_MAESTRO_SUMMARY_WAIT_MS=90000
-          else
-            export CAPGO_MAESTRO_TIMEOUT_SECONDS=360
-          fi
+          tar -xzf maestro-ios-edge-apps/bun-runtime.tar.gz -C maestro-ios-edge-apps
+          runtime_bin="$GITHUB_WORKSPACE/maestro-ios-edge-apps/runtime"
+          test "$("$runtime_bin/bun" --version)" = "$BUN_VERSION"
+          echo "$runtime_bin" >> "$GITHUB_PATH"
+          "$runtime_bin/bun" --revision
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Extract selected iOS app
+        env:
+          APP_SCENARIO: ${{ matrix.app }}
+        run: |
+          tar -xzf "maestro-ios-edge-apps/$APP_SCENARIO.tar.gz" -C .
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
+      - name: Run edge case Maestro flows
+        run: |
+          set -euo pipefail
           CAPGO_MAESTRO_SKIP_BUILD=1 \
           CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
           CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
           CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-edge-apps/${{ matrix.app }}/App.app \
           CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-live-update/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
           CAPGO_MAESTRO_EDGE_CASE_RETRIES=${{ matrix.edge_case_retries }} \
-          MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
           ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
       - name: Upload edge case Maestro artifacts
-        if: always()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: maestro-results-ios-edge-${{ matrix.scenario }}
@@ -1013,6 +1310,8 @@ jobs:
           - on-launch
           - manual-zip-config-guards
           - manual-manifest
+          - website-good
+          - website-fail
         # Edge cases share one app build per app scenario and inject failures via the fake server.
         include:
           - scenario: edge-network-drop
@@ -1111,25 +1410,6 @@ jobs:
       - name: Clear Android SDK temp cache
         shell: bash
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
-      # edge-network-drop defaults to 6 recovery cycles at 90s each (9 minutes of waits alone),
-      # which exceeds the 8 minute emulator step cap below. Keep (cycles * wait) under the step budget.
-      - name: Tune Maestro env for Android edge-network-drop
-        if: matrix.scenario == 'edge-network-drop'
-        run: |
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_NETWORK_DROP_RECOVERY_WAIT_SECONDS=35" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
-      # edge-offline-check can sit in the default recovery poll loop too long for the 8 minute emulator step.
-      - name: Tune Maestro env for Android edge-offline-check
-        if: matrix.scenario == 'edge-offline-check'
-        run: |
-          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_CYCLES=3" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_CASE_RECOVERY_WAIT_SECONDS=35" >> "$GITHUB_ENV"
-          echo "CAPGO_MAESTRO_EDGE_SERVER_TIMEOUT_SECONDS=90" >> "$GITHUB_ENV"
-      # The runner action tears the emulator down inside this step, and that teardown can hang
-      # for minutes after the flow already passed (an orphaned crashpad_handler keeps the pipe
-      # open). Bound the step below the job cap and let the success marker decide the result,
-      # so a hung teardown cannot burn the whole 10 minutes or fail a passing scenario.
       - name: Run live update Maestro flow
         id: maestro_live_flow_1
         timeout-minutes: ${{ matrix.scenario == 'edge-corrupt-bundle' && 9 || 8 }}

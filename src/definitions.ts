@@ -163,7 +163,7 @@ declare module '@capacitor/cli' {
        *
        * @default false
        * @example true
-       * @since 8.53.0
+       * @since 8.55.0
        */
       websiteMode?: boolean;
 
@@ -181,7 +181,7 @@ declare module '@capacitor/cli' {
        *
        * @default https://plugin.capgo.app/website_live
        * @example https://example.com/api/website_live
-       * @since 8.53.0
+       * @since 8.55.0
        */
       websiteLiveUrl?: string;
 
@@ -196,7 +196,7 @@ declare module '@capacitor/cli' {
        *
        * @default true
        * @example false
-       * @since 8.53.0
+       * @since 8.55.0
        */
       websiteAutoNotifyReady?: boolean;
 
@@ -277,7 +277,9 @@ declare module '@capacitor/cli' {
        * Automatically hide the splashscreen after the specified number of milliseconds when using automatic direct updates.
        * If the timeout elapses, the update continues to download in the background while the splashscreen is dismissed.
        * Set to `0` (zero) to disable the timeout.
-       * When the timeout fires, the direct update flow is skipped and the downloaded bundle is installed on the next background/launch.
+       * If installation has not started when the timeout fires, the downloaded bundle is installed on the next background/launch.
+       * If installation has already started, the splashscreen still hides at the deadline while the reload and app-ready checks finish.
+       * This can briefly expose the previous page while the new bundle loads.
        * Requires {@link autoSplashscreen} to be enabled.
        *
        * Only available for Android and iOS.
@@ -1332,8 +1334,9 @@ export interface CapacitorUpdaterPlugin {
    * - Check if a device is on a specific channel before showing features
    * - Verify channel assignment after calling {@link setChannel}
    *
-   * On native platforms, a successful response also refreshes the default channel used by update checks.
-   * This refresh is persisted across app restarts.
+   * On native platforms, a successful response with a device channel override also refreshes the
+   * default channel used by update checks. Responses with `status: 'default'` are reported only and
+   * are not persisted. This refresh is persisted across app restarts.
    *
    * @returns {Promise<GetChannelRes>} The current channel information.
    * @throws {Error} If the operation fails.

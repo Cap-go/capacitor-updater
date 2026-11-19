@@ -1,0 +1,7 @@
+appId: app.capgo.updater
+---
+- launchApp
+- extendedWaitUntil:
+    visible: '@capgo/capacitor-updater'
+    timeout: 120000
+- assertNotVisible: 'Website Maestro Fail'

@@ -194,6 +194,26 @@ export const scenarios = {
     builtinLabel: 'native-reset-builtin-v1',
     releases: [{ version: 'native-reset-live', label: 'native-reset-live' }],
   },
+  'website-good': {
+    id: 'website-good',
+    mode: 'website',
+    delivery: 'website',
+    autoUpdate: true,
+    directUpdate: 'always',
+    builtinLabel: 'website-good-builtin',
+    websiteLiveSuffix: 'good',
+    releases: [],
+  },
+  'website-fail': {
+    id: 'website-fail',
+    mode: 'website',
+    delivery: 'website',
+    autoUpdate: true,
+    directUpdate: 'always',
+    builtinLabel: 'website-fail-builtin',
+    websiteLiveSuffix: 'fail',
+    releases: [],
+  },
 };
 
 // Edge cases reuse one app build per scenario and drive failures through the fake server's
@@ -259,17 +279,35 @@ export function createBuildEnv({
 
   const deviceBaseUrl = env.CAPGO_MAESTRO_DEVICE_BASE_URL ?? `http://10.0.2.2:${envPort}`;
   const updateUrl = `${deviceBaseUrl}/api/updates/${scenarioId}`;
+  const scenario = findScenario(scenarioId);
 
   const mergedEnv = {
     ...env,
     ...extraEnv,
   };
 
+  if (scenario?.mode === 'website') {
+    const suffix = scenario.websiteLiveSuffix ?? scenarioId;
+    return {
+      ...mergedEnv,
+      CAPGO_AUTO_UPDATE: String(autoUpdate),
+      CAPGO_DIRECT_UPDATE: directUpdate,
+      CAPGO_HTTPS_ONLY: 'false',
+      CAPGO_WEBSITE_MODE: 'true',
+      CAPGO_WEBSITE_LIVE_URL: `${deviceBaseUrl}/website_live/${suffix}`,
+      VITE_CAPGO_APP_LABEL: appLabel,
+      VITE_CAPGO_SCENARIO: scenarioId,
+      VITE_CAPGO_MAESTRO_BUILD: 'true',
+      VITE_CAPGO_DIRECT_UPDATE: directUpdate,
+    };
+  }
+
   return {
     ...mergedEnv,
     CAPGO_AUTO_UPDATE: String(autoUpdate),
     VITE_CAPGO_APP_LABEL: appLabel,
     VITE_CAPGO_SCENARIO: scenarioId,
+    VITE_CAPGO_MAESTRO_BUILD: 'true',
     VITE_CAPGO_DIRECT_UPDATE: directUpdate,
     VITE_CAPGO_SERVER_URL: updateUrl,
     VITE_CAPGO_ALLOW_MANUAL_BUNDLE_ERROR: mergedEnv.CAPGO_ALLOW_MANUAL_BUNDLE_ERROR ?? 'false',

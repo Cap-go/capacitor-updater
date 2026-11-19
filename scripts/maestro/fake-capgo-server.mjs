@@ -1,7 +1,11 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import {
+  artifactDir,
   defaultDeviceBaseUrl,
   defaultHostBaseUrl,
   defaultPort,
@@ -12,6 +16,15 @@ import {
   getManifestMetadataPath,
   scenarios,
 } from './scenarios.mjs';
+
+const tlsPort = Number.parseInt(process.env.CAPGO_MAESTRO_TLS_PORT ?? '3193', 10);
+const deviceHttpsBase = (process.env.CAPGO_MAESTRO_DEVICE_HTTPS_BASE ?? `https://127.0.0.1:${tlsPort}`).replace(
+  /\/$/,
+  '',
+);
+const websitesRoot = path.join(artifactDir, 'website', 'sites');
+const tlsKeyPath = path.join(artifactDir, 'website', 'tls', 'key.pem');
+const tlsCertPath = path.join(artifactDir, 'website', 'tls', 'cert.pem');
 
 const baseHeaders = {
   'access-control-allow-headers': '*',
@@ -92,7 +105,9 @@ function createScenarioDebugState() {
 }
 
 const scenarioState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, 0]));
-const scenarioDebugState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioDebugState()]));
+const scenarioDebugState = new Map(
+  Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioDebugState()]),
+);
 const scenarioFaultState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioFaults()]));
 const stalledDownloadReleasers = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, new Set()]));
 
@@ -249,9 +264,7 @@ function rememberRequest(scenarioId, kind, requestUrl, payload) {
 }
 
 function getScenarioForReleaseVersion(version) {
-  return Object.values(scenarios).find((scenario) =>
-    scenario.releases.some((release) => release.version === version),
-  );
+  return Object.values(scenarios).find((scenario) => scenario.releases.some((release) => release.version === version));
 }
 
 function rememberManifestFileRequest(version, requestUrl, method) {
@@ -369,7 +382,7 @@ async function loadBundleChecksum(version) {
     return null;
   }
 
-  const checksum = (await Bun.file(checksumPath).text()).trim();
+  const checksum = (await readFile(checksumPath, 'utf8')).trim();
   return checksum.length > 0 ? checksum : null;
 }
 
@@ -380,7 +393,7 @@ async function loadManifestEntries(version) {
     return null;
   }
 
-  const manifestData = await Bun.file(metadataPath).json();
+  const manifestData = JSON.parse(await readFile(metadataPath, 'utf8'));
   const files = Array.isArray(manifestData.files) ? manifestData.files : [];
 
   return files.map((entry) => ({
@@ -572,8 +585,8 @@ function parseRangeStart(rangeHeader, size) {
 // Honours open-ended Range requests so clients that resume a dropped download (Android's
 // WorkManager worker does) exercise their 206 append path against real partial content.
 async function serveBundle(request, version, zipPath, debugState) {
-  const file = Bun.file(zipPath);
-  const rangeStart = parseRangeStart(request.headers.get('range'), file.size);
+  const file = await readFile(zipPath);
+  const rangeStart = parseRangeStart(request.headers.get('range'), file.byteLength);
 
   if (rangeStart === null) {
     console.log(`[fake-capgo] bundle=${version} served`);
@@ -589,11 +602,11 @@ async function serveBundle(request, version, zipPath, debugState) {
   }
   console.log(`[fake-capgo] bundle=${version} served from byte ${rangeStart}`);
   // Slice the bytes directly: Blob.slice responses serve the whole file on older Bun releases.
-  const bytes = new Uint8Array(await file.arrayBuffer()).subarray(rangeStart);
+  const bytes = file.subarray(rangeStart);
   return fileResponse(bytes, {
     status: 206,
     headers: {
-      'content-range': `bytes ${rangeStart}-${file.size - 1}/${file.size}`,
+      'content-range': `bytes ${rangeStart}-${file.byteLength - 1}/${file.byteLength}`,
       'content-type': 'application/zip',
     },
   });
@@ -644,7 +657,7 @@ async function handleBundle(request, method, version) {
     return new Response('injected bundle failure', { status: 500, headers: baseHeaders });
   }
 
-  const bytes = new Uint8Array(await Bun.file(zipPath).arrayBuffer());
+  const bytes = new Uint8Array(await readFile(zipPath));
 
   if (bundleFault === 'corrupt') {
     // Same length as the real archive, so only the checksum gate can catch it.
@@ -715,7 +728,7 @@ function decodeManifestFilePath(pathname, version) {
     .join('/');
 }
 
-function handleManifestFile(requestUrl, method, version) {
+async function handleManifestFile(requestUrl, method, version) {
   const relativePath = decodeManifestFilePath(requestUrl.pathname, version);
   const absolutePath = getSafeManifestFilePath(version, relativePath);
 
@@ -735,7 +748,7 @@ function handleManifestFile(requestUrl, method, version) {
     });
   }
 
-  return fileResponse(Bun.file(absolutePath), {
+  return fileResponse(await readFile(absolutePath), {
     headers: {
       'content-type': 'application/octet-stream',
     },
@@ -750,8 +763,18 @@ async function handleStats(request, requestUrl) {
   }
 
   const payload = await readJsonPayload(request);
-  const actions = (Array.isArray(payload) ? payload : [payload]).map((event) => event?.action ?? 'unknown');
+  const events = Array.isArray(payload) ? payload : [payload];
+  const actions = events.map((event) => event?.action ?? 'unknown');
   logRequest(requestUrl, request.method, `scenario=${scenario.id} action=${actions.join(',')}`);
+  for (const event of events) {
+    if (event?.action === 'update_check_error') {
+      const details = {
+        error: event.metadata?.error,
+        status_code: event.metadata?.status_code,
+      };
+      console.log(`[fake-capgo] scenario=${scenario.id} update_check_error=${JSON.stringify(details)}`);
+    }
+  }
   rememberRequest(scenario.id, 'stats', requestUrl, payload);
   return jsonResponse({ status: 'ok' });
 }
@@ -877,6 +900,52 @@ async function handleExactRoute(request, requestUrl, method, pathname) {
   return handler ? handler() : null;
 }
 
+async function handleWebsiteLive(requestUrl, method) {
+  const { pathname } = requestUrl;
+  const liveMatch = pathname.match(/^\/website_live\/(good|fail)$/);
+  if (!liveMatch || method !== 'GET') {
+    return null;
+  }
+
+  const variant = liveMatch[1];
+  logRequest(requestUrl, method);
+  return jsonResponse({
+    allowed: true,
+    mode: 'website',
+    website_url: `${deviceHttpsBase}/website/${variant}/`,
+    check_interval_seconds: 0,
+  });
+}
+
+async function handleWebsiteStatic(pathname, method) {
+  const match = pathname.match(/^\/website\/(good|fail)\/(.*)$/);
+  if (!match || (method !== 'GET' && method !== 'HEAD')) {
+    return null;
+  }
+
+  const variant = match[1];
+  let relativeFile = match[2] || 'index.html';
+  if (relativeFile.endsWith('/')) {
+    relativeFile += 'index.html';
+  }
+
+  if (variant === 'fail' && relativeFile === 'app.js') {
+    return new Response('missing required asset', { headers: baseHeaders, status: 404 });
+  }
+
+  const filePath = path.join(websitesRoot, variant, relativeFile);
+  try {
+    const data = await readFile(filePath);
+    const contentType = relativeFile.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8';
+    return new Response(method === 'HEAD' ? null : data, {
+      headers: { ...baseHeaders, 'content-type': contentType },
+      status: 200,
+    });
+  } catch {
+    return new Response('not found', { headers: baseHeaders, status: 404 });
+  }
+}
+
 async function handleRequest(request) {
   const requestUrl = new URL(request.url);
   const { method } = request;
@@ -885,6 +954,16 @@ async function handleRequest(request) {
 
   if (exactRouteResponse) {
     return exactRouteResponse;
+  }
+
+  const websiteLiveResponse = await handleWebsiteLive(requestUrl, method);
+  if (websiteLiveResponse) {
+    return websiteLiveResponse;
+  }
+
+  const websiteStaticResponse = await handleWebsiteStatic(pathname, method);
+  if (websiteStaticResponse) {
+    return websiteStaticResponse;
   }
 
   if (pathname.startsWith('/api/updates/') && method === 'POST') {
@@ -996,3 +1075,41 @@ const listeningUrl = defaultHostBaseUrl.endsWith(defaultPortSuffix)
   : defaultHostBaseUrl;
 
 console.log(`[fake-capgo] listening on ${listeningUrl}`);
+
+if (existsSync(tlsKeyPath) && existsSync(tlsCertPath) && existsSync(websitesRoot)) {
+  const tlsServer = https.createServer(
+    {
+      key: fs.readFileSync(tlsKeyPath),
+      cert: fs.readFileSync(tlsCertPath),
+    },
+    async (req, res) => {
+      const connection = trackConnection(req);
+
+      try {
+        const requestUrl = new URL(req.url ?? '/', deviceHttpsBase);
+        const response = await handleWebsiteStatic(requestUrl.pathname, req.method ?? 'GET');
+        if (!response) {
+          res.writeHead(404, baseHeaders);
+          res.end();
+          return;
+        }
+
+        if (response instanceof InterruptedResponse) {
+          writeInterruptedResponse(connection, res, response);
+          return;
+        }
+
+        await writeResponse(res, response);
+      } catch (error) {
+        console.error('[fake-capgo] https request failed', error);
+        if (!res.headersSent) {
+          res.writeHead(500, baseHeaders);
+        }
+        res.end();
+      }
+    },
+  );
+
+  await new Promise((resolve) => tlsServer.listen(tlsPort, '0.0.0.0', resolve));
+  console.log(`[fake-capgo] website TLS listening on ${deviceHttpsBase}`);
+}

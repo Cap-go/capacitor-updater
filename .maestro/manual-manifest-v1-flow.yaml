@@ -1,6 +1,8 @@
 appId: app.capgo.updater
 ---
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -12,6 +14,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: 'Quick apply runtime URLs'
@@ -50,6 +53,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: 'Quick queue bundle'
@@ -67,6 +71,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: 'Quick reload app'
@@ -75,7 +80,9 @@ appId: app.capgo.updater
     text: 'Quick reload app'
     waitToSettleTimeoutMs: 500
 - stopApp
-- launchApp
+- launchApp:
+    arguments:
+      isE2E: true
 - extendedWaitUntil:
     visible: '@capgo/capacitor-updater'
     timeout: 180000
@@ -83,6 +90,7 @@ appId: app.capgo.updater
     element:
       text: '@capgo/capacitor-updater'
     direction: UP
+    speed: 80
     timeout: 120000
 - extendedWaitUntil:
     visible: '.*Current bundle source: downloaded.*'

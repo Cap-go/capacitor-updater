@@ -1,0 +1,20 @@
+name: Setup Bun runtime
+description: Install cached Bun without loading Node setup or installing dependencies.
+inputs:
+  bun-version:
+    description: Bun version to install.
+    default: 1.4.2
+runs:
+  using: composite
+  steps:
+    - name: Cache Bun runtime
+      uses: actions/cache@v6
+      with:
+        path: ~/.bun
+        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}
+    - name: Install Bun
+      shell: bash
+      env:
+        BUN_VERSION: ${{ inputs.bun-version }}
+        GH_TOKEN: ${{ github.token }}
+      run: ./scripts/ci/install-bun.sh

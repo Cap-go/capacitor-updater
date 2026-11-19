@@ -49,6 +49,9 @@ case "$platform" in
     bunx cap sync android
     cd android
     ./gradlew build test
+    if [[ "${CAPGO_VERIFY_PACKED_RELEASE_ANDROID:-0}" == "1" ]]; then
+      ./gradlew assembleRelease
+    fi
     ;;
   ios)
     if [[ ! -d ios ]]; then
