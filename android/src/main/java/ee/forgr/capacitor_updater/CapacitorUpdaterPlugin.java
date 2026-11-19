@@ -6429,7 +6429,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final ArrayList<DelayCondition> delayConditionList = this.delayUpdateUtils.parseDelayConditions(
             this.prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]")
         );
-        if (!delayConditionList.isEmpty() || !this.isDirectUpdateCurrentlyAllowed(true)) {
+        final long timeoutGeneration = this.getSplashscreenTimeoutGeneration();
+        if (!delayConditionList.isEmpty() || !this.isDirectUpdateCurrentlyAllowed(true, timeoutGeneration)) {
             logger.info("Website update cannot be applied now, it will install on next background");
             this.implementation.setNextBundle(target.getId());
             final JSObject ret = new JSObject();
