@@ -325,6 +325,8 @@ jobs:
               -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
               -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
               -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
+              -only-testing:CapacitorUpdaterPluginTests/WebsiteFetchDelegateTests
+              -only-testing:CapacitorUpdaterPluginTests/WebsiteModeUpdaterTests
               -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
           - shard: rest-d
             parallel_testing: '0'
