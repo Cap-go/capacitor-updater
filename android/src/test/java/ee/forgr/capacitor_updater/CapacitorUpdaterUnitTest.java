@@ -3666,15 +3666,19 @@ public class CapacitorUpdaterUnitTest {
 
     @Test
     public void testResolveAppReadyCheckTimeoutMatchesConfiguredValueForPendingBundle() throws Exception {
-        final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
-        final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
-        plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false, pendingBundle);
-        plugin.setLoggerForTesting(mock(Logger.class));
-        setPrivateField(plugin, "appReadyTimeout", 10000);
+        try (MockedStatic<Looper> looperMock = mockStatic(Looper.class)) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
 
-        final Method resolveTimeout = CapacitorUpdaterPlugin.class.getDeclaredMethod("resolveAppReadyCheckTimeoutMs");
-        resolveTimeout.setAccessible(true);
-        assertEquals(10000L, resolveTimeout.invoke(plugin));
+            final TestableCapacitorUpdaterPlugin plugin = new TestableCapacitorUpdaterPlugin();
+            final BundleInfo pendingBundle = new BundleInfo("pending-bundle-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+            plugin.implementation = new FixedPathCapgoUpdater("/tmp/capgo-bundle", false, pendingBundle);
+            plugin.setLoggerForTesting(mock(Logger.class));
+            setPrivateField(plugin, "appReadyTimeout", 10000);
+
+            final Method resolveTimeout = CapacitorUpdaterPlugin.class.getDeclaredMethod("resolveAppReadyCheckTimeoutMs");
+            resolveTimeout.setAccessible(true);
+            assertEquals(10000L, resolveTimeout.invoke(plugin));
+        }
     }
 
     @Test
