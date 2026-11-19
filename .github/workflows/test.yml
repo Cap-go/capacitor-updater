@@ -898,7 +898,7 @@ jobs:
         with:
           web-artifact-name: maestro-web-assets
           ios-artifact-name: maestro-ios-app-${{ matrix.scenario }}
-          ios-artifact-dir: .
+          ios-artifact-dir: maestro-ios-staging
           bun-version: ${{ env.BUN_VERSION }}
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Extract iOS app
@@ -907,7 +907,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "$MAESTRO_APP_SCENARIO.tar.gz" \
+          tar -xzf "maestro-ios-staging/maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
       - name: Run Maestro smoke tests
         run: >-
@@ -958,7 +958,7 @@ jobs:
         with:
           web-artifact-name: maestro-web-assets
           ios-artifact-name: maestro-ios-app-${{ matrix.scenario }}
-          ios-artifact-dir: .
+          ios-artifact-dir: maestro-ios-staging
           bun-version: ${{ env.BUN_VERSION }}
           maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Extract iOS app
@@ -967,7 +967,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "$MAESTRO_APP_SCENARIO.tar.gz" \
+          tar -xzf "maestro-ios-staging/maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
       - name: Run live update Maestro flows
         run: |
