@@ -476,11 +476,12 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
-    func performDownloadRequest(_ request: URLRequest, label: String) -> DownloadRequestResult {
-        performDownloadRequest(request, label: label, resumeData: nil)
-    }
-
-    func performDownloadRequest(_ request: URLRequest, label: String, resumeData: Data?) -> DownloadRequestResult {
+    func performDownloadRequest(
+        _ request: URLRequest,
+        label: String,
+        resumeData: Data? = nil,
+        onProgress: ((Int64, Int64) -> Void)? = nil
+    ) -> DownloadRequestResult {
         if let schemeError = checkAllowedScheme(request.url) {
             return DownloadRequestResult(fileURL: nil, response: nil, error: schemeError, timedOut: false)
         }
@@ -507,9 +508,7 @@ import UIKit
                         withIntermediateDirectories: true,
                         attributes: nil
                     )
-                    if fileManager.fileExists(atPath: temporaryDownloadURL.path) {
-                        try fileManager.removeItem(at: temporaryDownloadURL)
-                    }
+                    self.removeFileIfPresent(at: temporaryDownloadURL)
                     try fileManager.moveItem(at: location, to: temporaryDownloadURL)
                     movedFileURL = temporaryDownloadURL
                 } catch {
@@ -527,6 +526,49 @@ import UIKit
         }
         let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
             ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
+        let resumedBytes: Int64 = {
+            guard let range = request.value(forHTTPHeaderField: "Range"),
+                  range.hasPrefix("bytes="),
+                  let start = range.dropFirst("bytes=".count).split(separator: "-").first else {
+                return 0
+            }
+            return Int64(start) ?? 0
+        }()
+        let progressObservation: NSKeyValueObservation? = onProgress.map { progressHandler in
+            downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+                guard let httpResponse = downloadTask.response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    return
+                }
+                let responseExpected = httpResponse.expectedContentLength
+                let taskExpected = downloadTask.countOfBytesExpectedToReceive
+                let expected = responseExpected > 0
+                    ? responseExpected
+                    : (taskExpected > 0 ? taskExpected : progress.totalUnitCount)
+                let taskReceived = downloadTask.countOfBytesReceived
+                let received: Int64
+                if progress.fractionCompleted >= 1.0 && expected > 0 {
+                    received = expected
+                } else if progress.totalUnitCount == expected && progress.completedUnitCount > taskReceived {
+                    received = min(expected, progress.completedUnitCount)
+                } else if taskReceived > 0 {
+                    received = expected > 0 ? min(expected, taskReceived) : taskReceived
+                } else if expected > 0 && progress.fractionCompleted > 0 {
+                    received = min(expected, Int64((progress.fractionCompleted * Double(expected)).rounded()))
+                } else {
+                    received = progress.completedUnitCount
+                }
+                if expected > 0 && received >= 0 {
+                    let baseline = Self.shouldAppendHttpBody(statusCode: httpResponse.statusCode, existingBytes: resumedBytes)
+                        ? resumedBytes
+                        : 0
+                    progressHandler(baseline + received, baseline + expected)
+                }
+            }
+        }
+        defer {
+            progressObservation?.invalidate()
+        }
         downloadTask.resume()
 
         if semaphore.wait(timeout: .now() + waitTimeout) == .timedOut {
@@ -548,11 +590,6 @@ import UIKit
             fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
             response: httpResponse,
             error: requestError,
-            timedOut: isTimedOutError(requestError),
-            resumeData: interruptedResumeData
-        )
-    }
-
     private func existingDownloadFileURL(_ fileURL: URL?, fallback: URL) -> URL? {
         let fileManager = FileManager.default
         if let fileURL, fileManager.fileExists(atPath: fileURL.path) {
