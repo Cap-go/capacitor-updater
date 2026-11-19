@@ -675,8 +675,22 @@ import UIKit
             return
         }
 
+        var storeOffset = existingBytes
+        if existingBytes > 0, downloadResult.response?.statusCode == 206 {
+            switch Self.contentRangeStart(downloadResult.response?.value(forHTTPHeaderField: "Content-Range")) {
+            case .some(existingBytes):
+                break
+            case .some(0):
+                storeOffset = 0
+            default:
+                logger.debug("Skipping partial persist: Content-Range does not continue existing bytes")
+                try? FileManager.default.removeItem(at: downloadedFileURL)
+                return
+            }
+        }
+
         do {
-            try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: existingBytes, response: downloadResult.response)
+            try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: storeOffset, response: downloadResult.response)
             logger.info("Stored partial download for retry")
         } catch {
             logger.error("Failed to store partial download")
