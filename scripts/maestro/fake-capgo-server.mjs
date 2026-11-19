@@ -152,9 +152,12 @@ function getScenarioFromQuery(requestUrl, fallbackScenarioId = null) {
 
 function getScenarioStatePayload(scenario) {
   const activeReleaseIndex = scenarioState.get(scenario.id) ?? 0;
+  const release = scenario.releases[activeReleaseIndex];
+  const activeRelease =
+    release?.version ?? (scenario.mode === 'website' ? (scenario.websiteLiveSuffix ?? scenario.id) : scenario.id);
 
   return {
-    activeRelease: scenario.releases[activeReleaseIndex].version,
+    activeRelease,
     activeReleaseIndex,
     delivery: scenario.delivery,
     faults: { ...(scenarioFaultState.get(scenario.id) ?? createScenarioFaults()) },
@@ -302,6 +305,9 @@ function updateScenarioState(scenario, action) {
   }
 
   if (action === 'advance') {
+    if (scenario.releases.length === 0) {
+      return false;
+    }
     scenarioState.set(scenario.id, Math.min(currentIndex + 1, scenario.releases.length - 1));
     return true;
   }
