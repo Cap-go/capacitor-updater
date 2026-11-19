@@ -3480,7 +3480,8 @@ public class CapacitorUpdaterUnitTest {
             assertTrue(updater.set("bundleA001"));
             final QueuedInstallPlugin plugin = queuedInstallPlugin(updater, new ArrayList<>());
             plugin.useRealReload = true;
-            setPrivateField(plugin, "appReadyTimeout", 1);
+            // Keep reload blocked on its armed wait; the launch notification worker reads appReadyTimeout when it runs.
+            setPrivateField(plugin, "appReadyTimeout", 30_000);
             setPrivateField(plugin, "autoDeletePrevious", false);
             final Bridge bridge = mock(Bridge.class);
             final WebView webView = mock(WebView.class);
@@ -3524,6 +3525,7 @@ public class CapacitorUpdaterUnitTest {
                 final int reloadPhase = semaphore.getPhase();
                 if ("timeout".equals(outcome) || "interrupted".equals(outcome)) {
                     try {
+                        setPrivateField(plugin, "appReadyTimeout", 1);
                         if ("interrupted".equals(outcome)) Thread.currentThread().interrupt();
                         notification.run();
                         if ("interrupted".equals(outcome)) assertTrue(Thread.currentThread().isInterrupted());
