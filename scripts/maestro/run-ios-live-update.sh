@@ -1024,6 +1024,7 @@ run_selected_scenarios() {
 validate_results_dir() {
   local resolved_results_dir=""
   local resolved_default_results_dir=""
+  local resolved_website_results_dir=""
   local resolved_artifact_dir=""
   local resolved_root_dir=""
   local resolved_home_dir=""
@@ -1036,6 +1037,7 @@ validate_results_dir() {
 
   resolved_results_dir="$(resolve_path "$RESULTS_DIR")"
   resolved_default_results_dir="$(resolve_path "$ROOT_DIR/maestro-results-ios-live-update")"
+  resolved_website_results_dir="$(resolve_path "$ROOT_DIR/maestro-results-ios-website-mode")"
   resolved_artifact_dir="$(resolve_path "$ARTIFACT_DIR")"
   resolved_root_dir="$(resolve_path "$ROOT_DIR")"
   resolved_home_dir="$(resolve_path "$HOME")"
@@ -1049,7 +1051,7 @@ validate_results_dir() {
   esac
 
   case "$resolved_results_dir" in
-    "$resolved_default_results_dir"|"$resolved_default_results_dir"/*|"$resolved_artifact_dir"/*)
+    "$resolved_default_results_dir"|"$resolved_default_results_dir"/*|"$resolved_website_results_dir"|"$resolved_website_results_dir"/*|"$resolved_artifact_dir"/*)
       RESULTS_DIR="$resolved_results_dir"
       return 0
       ;;

@@ -107,6 +107,8 @@ import UIKit
     private static let statsFlushInterval: TimeInterval = 1.0
     private static let maxPendingStats = 200
     private let pendingStatsFileName = "capgo_pending_stats.json"
+    /// When set, pending stats persist under this directory instead of `libraryDir` (unit tests only).
+    internal var pendingStatsDirectoryOverride: URL?
 
     private struct QueuedStatsEvent {
         let event: StatsEvent
@@ -4171,8 +4173,12 @@ import UIKit
         persistStatsQueue()
     }
 
+    private func pendingStatsRootDirectory() -> URL {
+        pendingStatsDirectoryOverride ?? libraryDir
+    }
+
     private func pendingStatsFileURL() -> URL {
-        libraryDir.appendingPathComponent(pendingStatsFileName)
+        pendingStatsRootDirectory().appendingPathComponent(pendingStatsFileName)
     }
 
     private func persistStatsQueue(force: Bool = false) {

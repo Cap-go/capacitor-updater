@@ -1,4 +1,5 @@
 import { runCommand } from './command.mjs';
+import { ensureWebsiteFixtures } from './build-website-fixtures.mjs';
 import { purgeLocalPluginCopy } from './purge-local-plugin-copy.mjs';
 import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
@@ -9,6 +10,10 @@ if (!scenarioId) {
 }
 
 const scenario = getScenario(resolveAppScenarioId(scenarioId));
+
+if (scenario.mode === 'website') {
+  await ensureWebsiteFixtures();
+}
 
 const env = {
   ...createBuildEnv({
