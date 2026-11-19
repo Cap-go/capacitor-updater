@@ -2513,6 +2513,14 @@ import UIKit
         }
     }
 
+    private func removeFileIfPresent(at url: URL) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return
+        }
+        try? fileManager.removeItem(at: url)
+    }
+
     /// Atomically try to copy a file from cache - returns true if successful, false if file doesn't exist or copy failed
     /// This handles the race condition where OS can delete cache files between exists() check and copy
     private func tryCopyFromCache(from source: URL, to destination: URL, expectedHash: String) -> Bool {

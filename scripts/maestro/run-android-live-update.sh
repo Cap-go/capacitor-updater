@@ -111,6 +111,13 @@ assert_prebuilt_maestro_assets() {
     exit 1
   fi
 
+  if [[ "$SCENARIO_SELECTION" == website-good || "$SCENARIO_SELECTION" == website-fail ]]; then
+    if [[ ! -f "$ARTIFACT_DIR/website/tls/ca.pem" || ! -d "$ARTIFACT_DIR/website/sites/good" ]]; then
+      echo "Website Maestro scenarios require .maestro-artifacts/website TLS and site fixtures." >&2
+      exit 1
+    fi
+  fi
+
   if [[ "$SKIP_BUILD" == "1" && ! -f "$APK_PATH" ]]; then
     echo "CAPGO_MAESTRO_SKIP_BUILD=1 requires a prebuilt Android APK at $APK_PATH." >&2
     exit 1

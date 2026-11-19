@@ -9,8 +9,15 @@ const tlsDir = path.join(websiteRoot, 'tls');
 const sitesDir = path.join(websiteRoot, 'sites');
 
 export async function ensureWebsiteFixtures() {
-  await ensureTlsMaterial();
+  const { caPath } = await ensureTlsMaterial();
   await writeSites();
+  await syncAndroidTrustAnchor(caPath);
+}
+
+async function syncAndroidTrustAnchor(caPath) {
+  const rawDir = path.join(repoRoot, 'example-app/android/app/src/debug/res/raw');
+  await mkdir(rawDir, { recursive: true });
+  await runCommand('cp', [caPath, path.join(rawDir, 'maestro_website_ca.crt')], { cwd: repoRoot });
 }
 
 async function ensureTlsMaterial() {
@@ -48,10 +55,6 @@ async function ensureTlsMaterial() {
   );
 
   await runCommand('cp', [certPath, caPath], { cwd: repoRoot });
-
-  const rawDir = path.join(repoRoot, 'example-app/android/app/src/debug/res/raw');
-  await mkdir(rawDir, { recursive: true });
-  await runCommand('cp', [caPath, path.join(rawDir, 'maestro_website_ca.crt')], { cwd: repoRoot });
 
   return { keyPath, certPath, caPath };
 }

@@ -1,4 +1,5 @@
 import { runCommand } from './command.mjs';
+import { ensureWebsiteFixtures } from './build-website-fixtures.mjs';
 import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
 async function runCommandWithRetries(command, args, options, maxAttempts = 3) {
@@ -30,6 +31,10 @@ if (!scenarioId) {
 }
 
 const scenario = getScenario(resolveAppScenarioId(scenarioId));
+
+if (scenario.mode === 'website') {
+  await ensureWebsiteFixtures();
+}
 
 const env = {
   ...createBuildEnv({
