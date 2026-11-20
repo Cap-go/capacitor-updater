@@ -1,4 +1,5 @@
 import { runCommand } from './command.mjs';
+import { ensureWebsiteFixtures } from './build-website-fixtures.mjs';
 import { createBuildEnv, exampleAppDir, getScenario, resolveAppScenarioId } from './scenarios.mjs';
 
 async function runCommandWithRetries(command, args, options, maxAttempts = 3) {
@@ -31,13 +32,22 @@ if (!scenarioId) {
 
 const scenario = getScenario(resolveAppScenarioId(scenarioId));
 
+if (scenario.mode === 'website') {
+  await ensureWebsiteFixtures();
+}
+
+const websiteDeviceHttpsBase = process.env.CAPGO_MAESTRO_DEVICE_HTTPS_BASE ?? 'https://10.0.2.2:3193'; // NOSONAR Android emulator host alias
+
 const env = {
   ...createBuildEnv({
     scenarioId: scenario.id,
     directUpdate: scenario.directUpdate,
     appLabel: scenario.builtinLabel,
     autoUpdate: scenario.autoUpdate,
-    extraEnv: scenario.env ?? {},
+    extraEnv: {
+      ...(scenario.env ?? {}),
+      ...(scenario.mode === 'website' ? { CAPGO_MAESTRO_DEVICE_HTTPS_BASE: websiteDeviceHttpsBase } : {}),
+    },
   }),
   CAPGO_DIRECT_UPDATE: scenario.directUpdate,
 };

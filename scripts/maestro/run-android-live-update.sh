@@ -8,8 +8,10 @@ source "$ROOT_DIR/scripts/maestro/disable-device-animations.sh"
 MAESTRO_WORKSPACE_CONFIG="$ROOT_DIR/.maestro/config.yaml"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
+HOST_TLS_PORT="${CAPGO_MAESTRO_TLS_PORT:-3193}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
 DEVICE_SERVER_URL="${CAPGO_MAESTRO_DEVICE_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
+export CAPGO_MAESTRO_DEVICE_HTTPS_BASE="${CAPGO_MAESTRO_DEVICE_HTTPS_BASE:-https://10.0.2.2:${HOST_TLS_PORT}}"
 APP_ID="app.capgo.updater"
 APP_ACTIVITY="${CAPGO_MAESTRO_ANDROID_ACTIVITY:-app.capgo.updater/.MainActivity}"
 APP_READY_TITLE="@capgo/capacitor-updater"
@@ -109,6 +111,13 @@ assert_prebuilt_maestro_assets() {
     exit 1
   fi
 
+  if [[ "$SCENARIO_SELECTION" == website-good || "$SCENARIO_SELECTION" == website-fail ]]; then
+    if [[ ! -f "$ARTIFACT_DIR/website/tls/ca.pem" || ! -d "$ARTIFACT_DIR/website/sites/good" ]]; then
+      echo "Website Maestro scenarios require .maestro-artifacts/website TLS and site fixtures." >&2
+      exit 1
+    fi
+  fi
+
   if [[ "$SKIP_BUILD" == "1" && ! -f "$APK_PATH" ]]; then
     echo "CAPGO_MAESTRO_SKIP_BUILD=1 requires a prebuilt Android APK at $APK_PATH." >&2
     exit 1
@@ -137,7 +146,8 @@ configure_server_routing() {
   esac
 
   while [[ $attempt -le $max_attempts ]]; do
-    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1; then
+    if run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_SERVER_PORT}" "tcp:${HOST_SERVER_PORT}" >/dev/null 2>&1 \
+      && run_adb_command "$ADB_COMMAND_TIMEOUT_SECONDS" reverse "tcp:${HOST_TLS_PORT}" "tcp:${HOST_TLS_PORT}" >/dev/null 2>&1; then
       return 0
     fi
 
@@ -1104,6 +1114,16 @@ if (failures.length) {
   process.exit(1);
 }
 '
+      ;;
+    website-good)
+      control_server reset website-good
+      prepare_scenario website-good
+      run_flow website-mode-good.yaml
+      ;;
+    website-fail)
+      control_server reset website-fail
+      prepare_scenario website-fail
+      run_flow website-mode-fail.yaml
       ;;
     *)
       echo "Unknown Maestro scenario selection: $scenario_id" >&2

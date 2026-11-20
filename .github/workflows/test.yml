@@ -325,6 +325,8 @@ jobs:
               -only-testing:CapacitorUpdaterPluginTests/NativeContractTests
               -only-testing:CapacitorUpdaterPluginTests/NetworkTransportTests
               -only-testing:CapacitorUpdaterPluginTests/RedirectPolicyTests
+              -only-testing:CapacitorUpdaterPluginTests/WebsiteFetchDelegateTests
+              -only-testing:CapacitorUpdaterPluginTests/WebsiteModeUpdaterTests
               -only-testing:CapacitorUpdaterPluginTests/RsaContractTests
           - shard: rest-d
             parallel_testing: '0'
@@ -478,6 +480,8 @@ jobs:
           - manual-zip-no-persist
           - manual-zip-config-guards
           - manual-manifest
+          - website-good
+          - website-fail
           - edge-deferred
           - edge-direct
     steps:
@@ -626,6 +630,8 @@ jobs:
             manual-zip-no-persist
             manual-zip-config-guards
             manual-manifest
+            website-good
+            website-fail
           )
 
           rm -rf "$artifact_root" "$derived_data_path"
@@ -739,6 +745,28 @@ jobs:
           name: maestro-ios-app-manual-manifest
           path: |
             ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-manifest.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (website-good)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-website-good
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/website-good.tar.gz
+            ${{ runner.temp }}/maestro-ios-runtime/dist
+            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
+          include-hidden-files: true
+          compression-level: 6
+          if-no-files-found: error
+      - name: Upload iOS app (website-fail)
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-ios-app-website-fail
+          path: |
+            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/website-fail.tar.gz
             ${{ runner.temp }}/maestro-ios-runtime/dist
             ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
           include-hidden-files: true
@@ -1004,6 +1032,117 @@ jobs:
           name: maestro-results-ios-live-update-${{ matrix.scenario }}
           path: maestro-results-ios-live-update/${{ matrix.scenario }}
 
+  maestro_ios_website_mode:
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - maestro_web_assets
+      - maestro_ios_apps
+    timeout-minutes: 10
+    runs-on: macOS-latest
+    env:
+      CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+    name: iOS Maestro website mode / ${{ matrix.scenario }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - website-good
+          - website-fail
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Boot iOS simulator early
+        run: |
+          set -euo pipefail
+          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
+          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
+      - name: Download iOS app (attempt 1)
+        id: download_maestro_ios_app_website_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download iOS app (attempt 2)
+        if: steps.download_maestro_ios_app_website_1.outcome == 'failure'
+        id: download_maestro_ios_app_website_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download iOS app (attempt 3)
+        if: steps.download_maestro_ios_app_website_1.outcome == 'failure' && steps.download_maestro_ios_app_website_2.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download reusable Maestro web assets (attempt 1)
+        id: download_maestro_web_assets_ios_website_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before retrying Maestro web assets download
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 2)
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure'
+        id: download_maestro_web_assets_ios_website_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before final Maestro web assets download
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure' && steps.download_maestro_web_assets_ios_website_2.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 3)
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure' && steps.download_maestro_web_assets_ios_website_2.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Extract iOS app
+        env:
+          MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+      - name: Setup Maestro
+        uses: ./.github/actions/setup-maestro
+        with:
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Wait for iOS simulator boot
+        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
+      - name: Run website mode Maestro flows
+        run: |
+          set -euo pipefail
+          CAPGO_MAESTRO_SKIP_BUILD=1 \
+          CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1 \
+          CAPGO_MAESTRO_IOS_ASSUME_CLEAN_INSTALL=1 \
+          CAPGO_MAESTRO_IOS_APP_PATH=maestro-ios-apps/${{ matrix.scenario }}/App.app \
+          CAPGO_MAESTRO_RESULTS_DIR=maestro-results-ios-website-mode/${{ matrix.scenario }} \
+          CAPGO_MAESTRO_TIMEOUT_SECONDS=300 \
+          CAPGO_MAESTRO_TEST_RETRIES=2 \
+          CAPGO_MAESTRO_IOS_BOOT_WAIT_SECONDS=45 \
+          CAPGO_MAESTRO_FAST_SERVER_POLL=1 \
+          MAESTRO_DRIVER_STARTUP_TIMEOUT=120000 \
+          ./scripts/maestro/run-ios-live-update.sh "${{ matrix.scenario }}"
+      - name: Upload website mode Maestro artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-results-ios-website-${{ matrix.scenario }}
+          path: maestro-results-ios-website-mode/${{ matrix.scenario }}
+
   # Built separately from maestro_ios_apps so both builds stay under the 10 minute job cap.
   maestro_ios_edge_apps:
     permissions:
@@ -1218,6 +1357,8 @@ jobs:
           - on-launch
           - manual-zip-config-guards
           - manual-manifest
+          - website-good
+          - website-fail
         # Edge cases share one app build per app scenario and inject failures via the fake server.
         include:
           - scenario: edge-network-drop
@@ -1318,7 +1459,7 @@ jobs:
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       - name: Run live update Maestro flow
         id: maestro_live_flow_1
-        timeout-minutes: ${{ matrix.scenario == 'edge-corrupt-bundle' && 9 || 8 }}
+        timeout-minutes: ${{ (matrix.scenario == 'edge-corrupt-bundle' || matrix.scenario == 'on-launch') && 9 || 8 }}
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -1349,7 +1490,7 @@ jobs:
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       - name: Run live update Maestro flow (retry after emulator SDK flake)
         if: steps.maestro_live_flow_1.outcome == 'failure' && steps.maestro_live_marker_1.outputs.present != 'true'
-        timeout-minutes: ${{ matrix.scenario == 'edge-corrupt-bundle' && 9 || 8 }}
+        timeout-minutes: ${{ (matrix.scenario == 'edge-corrupt-bundle' || matrix.scenario == 'on-launch') && 9 || 8 }}
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
