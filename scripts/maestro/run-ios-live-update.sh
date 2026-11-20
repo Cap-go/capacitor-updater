@@ -566,7 +566,8 @@ run_core_assert() {
   run_flow \
     "$label" \
     "$ROOT_DIR/.maestro/ios/assert-live-update-summary.yaml" \
-    "SUMMARY_PATTERN=$summary_pattern"
+    "SUMMARY_PATTERN=$summary_pattern" \
+    "CAPGO_MAESTRO_SUMMARY_WAIT_MS=$CAPGO_MAESTRO_SUMMARY_WAIT_MS"
 }
 
 run_on_launch_assert() {
@@ -681,6 +682,53 @@ build_and_install_scenario() {
 
 launch_example_app() {
   xcrun simctl launch "$SIMULATOR_ID" "$APP_ID" >/dev/null
+}
+
+background_and_resume_ios_app() {
+  local settle_seconds="${1:-2}"
+
+  echo "Backgrounding ${APP_ID} on the simulator and waiting ${settle_seconds}s"
+  kill_example_app || return 1
+  sleep "$settle_seconds"
+  launch_example_app
+}
+
+wait_for_ios_direct_update_applied() {
+  local label="$1"
+  local build_label="$2"
+  local scenario_line="$3"
+  local direct_update_line="$4"
+  local current_source_line="$5"
+  local current_version_line="$6"
+  local bundle_version="${current_version_line#Current bundle version: }"
+
+  if run_core_assert \
+    "$label" \
+    "$build_label" \
+    "$scenario_line" \
+    "$direct_update_line" \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($bundle_version)" \
+    "$current_source_line" \
+    "$current_version_line"; then
+    return 0
+  fi
+
+  echo "Direct update summary did not settle for ${label}; cold relaunching once." >&2
+  kill_example_app || return 1
+  reset_ios_maestro_driver
+  launch_example_app || return 1
+  run_core_assert \
+    "${label}-relaunch" \
+    "$build_label" \
+    "$scenario_line" \
+    "$direct_update_line" \
+    "$ASSERT_AUTO_UPDATE_ENABLED" \
+    "$ASSERT_AUTO_UPDATE_AVAILABLE" \
+    "Notify app ready: ok ($bundle_version)" \
+    "$current_source_line" \
+    "$current_version_line"
 }
 
 # Simulator apps are host processes under the device's data directory.
@@ -912,16 +960,23 @@ run_scenario() {
         "Current bundle version: $first_release"
       ;;
     legacy-true)
-      run_core_assert \
+      run_flow "${scenario_id}-initial" "$ROOT_DIR/.maestro/initial-direct-update.yaml"
+      wait_for_ios_direct_update_applied \
         "${scenario_id}-first-release" \
         "Build label: $first_release" \
         'Scenario: legacy-true' \
         'Direct update mode: true' \
-        "$ASSERT_AUTO_UPDATE_ENABLED" \
-        "$ASSERT_AUTO_UPDATE_AVAILABLE" \
-        "Notify app ready: ok ($first_release)" \
         "$ASSERT_SOURCE_DOWNLOADED" \
-        "Current bundle version: $first_release"
+        "Current bundle version: $first_release" || return 1
+      control_server advance "$scenario_id"
+      background_and_resume_ios_app || return 1
+      wait_for_ios_direct_update_applied \
+        "${scenario_id}-second-release" \
+        "Build label: $second_release" \
+        'Scenario: legacy-true' \
+        'Direct update mode: true' \
+        "$ASSERT_SOURCE_DOWNLOADED" \
+        "Current bundle version: $second_release" || return 1
       ;;
     at-install)
       run_core_assert \
