@@ -1459,7 +1459,7 @@ jobs:
         run: bash ./.github/scripts/ensure-android-emulator-sdk.sh
       - name: Run live update Maestro flow
         id: maestro_live_flow_1
-        timeout-minutes: ${{ matrix.scenario == 'edge-corrupt-bundle' && 9 || 8 }}
+        timeout-minutes: ${{ (matrix.scenario == 'edge-corrupt-bundle' || matrix.scenario == 'on-launch') && 9 || 8 }}
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
