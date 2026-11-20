@@ -4,5 +4,5 @@ appId: app.capgo.updater
 # The pinned summary must contain every expected field in the same ready state.
 - extendedWaitUntil:
     visible: '${SUMMARY_PATTERN}'
-    timeout: 120000
+    timeout: '${CAPGO_MAESTRO_SUMMARY_WAIT_MS || 120000}'
 - assertVisible: '@capgo/capacitor-updater'

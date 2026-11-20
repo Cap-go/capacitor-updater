@@ -317,7 +317,9 @@ fi
 mkdir -p "$ARTIFACT_DIR" "$RESULTS_DIR"
 printf 'scenario=%s\n' "$SCENARIO_ID" >"$RESULTS_DIR/runner-metadata.txt"
 
-xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+if [[ "${CAPGO_MAESTRO_IOS_SKIP_BOOT:-0}" != "1" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+fi
 
 cd "$ROOT_DIR"
 
