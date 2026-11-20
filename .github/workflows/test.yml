@@ -1036,7 +1036,9 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: maestro_ios_apps
+    needs:
+      - maestro_web_assets
+      - maestro_ios_apps
     timeout-minutes: 10
     runs-on: macOS-latest
     env:
@@ -1059,10 +1061,53 @@ jobs:
           simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
           echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app and web assets
+      - name: Download iOS app (attempt 1)
+        id: download_maestro_ios_app_website_1
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download iOS app (attempt 2)
+        if: steps.download_maestro_ios_app_website_1.outcome == 'failure'
+        id: download_maestro_ios_app_website_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download iOS app (attempt 3)
+        if: steps.download_maestro_ios_app_website_1.outcome == 'failure' && steps.download_maestro_ios_app_website_2.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-ios-app-${{ matrix.scenario }}
+          path: .
+      - name: Download reusable Maestro web assets (attempt 1)
+        id: download_maestro_web_assets_ios_website_1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before retrying Maestro web assets download
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 2)
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure'
+        id: download_maestro_web_assets_ios_website_2
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
+          path: .
+      - name: Wait before final Maestro web assets download
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure' && steps.download_maestro_web_assets_ios_website_2.outcome == 'failure'
+        run: sleep 15
+      - name: Download reusable Maestro web assets (attempt 3)
+        if: steps.download_maestro_web_assets_ios_website_1.outcome == 'failure' && steps.download_maestro_web_assets_ios_website_2.outcome == 'failure'
+        uses: actions/download-artifact@v8
+        with:
+          name: maestro-web-assets
           path: .
       - name: Extract iOS app
         env:

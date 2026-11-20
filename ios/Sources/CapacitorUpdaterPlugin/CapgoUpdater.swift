@@ -580,7 +580,8 @@ import UIKit
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
                 response: httpResponse,
                 error: requestError,
-                timedOut: true
+                timedOut: true,
+                resumeData: interruptedResumeData
             )
         }
 
@@ -2784,7 +2785,18 @@ import UIKit
             request.setValue("bytes=\(totalReceivedBytes)-", forHTTPHeaderField: "Range")
         }
 
-        let downloadResult = performDownloadRequest(request, label: "download \(version)")
+        let progressLock = NSLock()
+        let downloadResult = performDownloadRequest(request, label: "download \(version)") { [weak self] totalReceived, totalExpected in
+            guard let self, totalExpected > 0 else { return }
+            let rawPercent = Int((Double(totalReceived) / Double(totalExpected)) * 100)
+            let scaledPercent = self.calcTotalPercent(percent: min(100, max(0, rawPercent)), min: 10, max: 70)
+            progressLock.lock()
+            if scaledPercent > lastSentProgress && scaledPercent < 70 {
+                lastSentProgress = scaledPercent
+                self.notifyDownload(id: id, percent: scaledPercent, bundle: bundleInfo)
+            }
+            progressLock.unlock()
+        }
         // Error responses (e.g. an HTTP 404 body) are also saved to a temp file; never leave them behind.
         defer {
             if let fileURL = downloadResult.fileURL {
@@ -2814,10 +2826,12 @@ import UIKit
             do {
                 try storeDownloadedFile(downloadedFileURL, at: tempPath, existingBytes: totalReceivedBytes, response: downloadResult.response)
 
+                progressLock.lock()
                 if lastSentProgress < 70 {
-                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                     lastSentProgress = 70
+                    self.notifyDownload(id: id, percent: 70, ignoreMultipleOfTen: true)
                 }
+                progressLock.unlock()
                 self.logger.info("Download complete")
             } catch let error as NSError {
                 mainError = error

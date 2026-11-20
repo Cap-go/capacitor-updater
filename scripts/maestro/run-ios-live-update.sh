@@ -322,6 +322,12 @@ assert_prebuilt_maestro_assets() {
     return 0
   fi
 
+  if [[ "$SCENARIO_SELECTION" == website-good || "$SCENARIO_SELECTION" == website-fail ]]; then
+    if [[ -d "$ROOT_DIR/dist" && -f "$ARTIFACT_DIR/website/tls/ca.pem" && -d "$ARTIFACT_DIR/website/sites/good" ]]; then
+      return 0
+    fi
+  fi
+
   echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
   exit 1
 }
