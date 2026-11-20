@@ -16,6 +16,9 @@ inputs:
   maestro-version:
     description: Maestro CLI release tag.
     default: cli-2.4.0
+  cache-runtimes:
+    description: Restore the Bun/Maestro/Node runtime cache before installing runtimes.
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -27,6 +30,7 @@ runs:
         echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
         xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
     - name: Cache Maestro job runtimes
+      if: inputs.cache-runtimes == 'true'
       uses: actions/cache@v6
       with:
         path: |
