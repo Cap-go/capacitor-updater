@@ -14,6 +14,7 @@
     "android/build.gradle",
     "dist/",
     "ios/Sources/",
+    "ios/Tests/",
     "CapgoCapacitorUpdater.podspec",
     "Package.swift",
     "scripts/builtin-hashes-lib.mjs",
