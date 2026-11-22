@@ -1910,7 +1910,7 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for manifest download start
-        self.sendStats(action: "download_manifest_start", versionName: version)
+        self.sendStats(action: "download_manifest_start", versionName: version, oldVersionName: "", metadata: ["attempt_id": id])
 
         // Notify the start of the download process
         self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
@@ -1923,6 +1923,20 @@ import UIKit
         var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
         var downloadError: Error?
+        var firstFile: String?
+        var failedFiles = 0
+        let started = ProcessInfo.processInfo.systemUptime
+        func reportFailure(_ error: Error) {
+            let failure = error as NSError
+            var metadata = ["attempt_id": id, "files_completed": String(completedFiles), "files_total": String(totalFiles),
+                            "files_failed": String(failedFiles), "error_type": failure.domain, "error_code": String(failure.code),
+                            "elapsed_ms": String(Int((ProcessInfo.processInfo.systemUptime - started) * 1000))]
+            metadata["failure_stage"] = firstFile == nil ? "prepare_or_schedule" : "process_file"
+            metadata["last_percent"] = String(max(0, lastProgressPercent))
+            metadata["first_file"] = firstFile
+            if failure.domain == "StatusCodeError" { metadata["http_status"] = String(failure.code) }
+            self.sendStats(action: "download_manifest_file_fail", versionName: version, oldVersionName: "", metadata: metadata)
+        }
         let errorLock = NSLock()
 
         var tasks: [ManifestDownloadTask] = []
@@ -2068,6 +2082,7 @@ import UIKit
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
+            reportFailure(resolvedError)
             throw resolvedError
         }
 
@@ -2085,6 +2100,7 @@ import UIKit
                 self.saveBundleInfo(id: id, bundle: errorBundle)
                 removePartialManifestBundleDirectory(destFolder)
                 self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
+                reportFailure(error)
                 throw error
             }
 
@@ -2124,8 +2140,10 @@ import UIKit
 
                 } catch {
                     errorLock.lock()
+                    failedFiles += 1
                     if downloadError == nil {
                         downloadError = error
+                        firstFile = task.fileName
                     }
                     errorLock.unlock()
                     hasError.value = true
@@ -2150,6 +2168,7 @@ import UIKit
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
+            reportFailure(resolvedError)
             throw resolvedError
         }
 
@@ -2158,7 +2177,7 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
         // Send stats for manifest download complete
-        self.sendStats(action: "download_manifest_complete", versionName: version)
+        self.sendStats(action: "download_manifest_complete", versionName: version, oldVersionName: "", metadata: ["attempt_id": id])
 
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
@@ -2178,10 +2197,6 @@ import UIKit
                 return
             } catch {
                 guard attempt < 3 && Self.isRetryableManifestError(error) else {
-                    // One failure stat per file, after the last attempt.
-                    if Self.isManifestTransferError(error) {
-                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(task.fileName)")
-                    }
                     throw error
                 }
                 // Back off in short steps so a failed or cancelled manifest stops retrying promptly.
@@ -2209,16 +2224,6 @@ import UIKit
             NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
             NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
         ].contains(failure.code)
-    }
-
-    /// Failures that reach the server or network, as opposed to checksum, decryption or storage errors.
-    private static func isManifestTransferError(_ error: Error) -> Bool {
-        if error is NetworkError {
-            return true
-        }
-        let failure = error as NSError
-        return failure.domain == NSURLErrorDomain || failure.domain == "StatusCodeError" || failure.domain == manifestResumeErrorDomain ||
-            (failure.domain == "ManifestDownloadError" && failure.code == 3)
     }
 
     /// A resumed transfer that cannot be trusted: drop the partial and fetch the whole file on the next attempt.
@@ -2762,7 +2767,7 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for zip download start
-        self.sendStats(action: "download_zip_start", versionName: version)
+        self.sendStats(action: "download_zip_start", versionName: version, oldVersionName: "", metadata: ["attempt_id": id])
 
         // Opening connection for streaming the bytes
         if totalReceivedBytes == 0 {
@@ -2907,7 +2912,7 @@ import UIKit
         self.cleanDownloadData(for: id)
 
         // Send stats for zip download complete
-        self.sendStats(action: "download_zip_complete", versionName: version)
+        self.sendStats(action: "download_zip_complete", versionName: version, oldVersionName: "", metadata: ["attempt_id": id])
 
         self.notifyDownload(id: id, percent: 100, bundle: info)
         logger.info("Downloading: 100% (complete)")

@@ -775,6 +775,10 @@ public class DownloadService extends Worker {
     }
 
     private void sendStatsAsync(String action, String version) {
+        sendStatsAsync(action, version, null);
+    }
+
+    private void sendStatsAsync(String action, String version, Map<String, String> metadata) {
         try {
             String statsUrl = getInputData().getString(STATS_URL);
             if (statsUrl == null || statsUrl.isEmpty()) {
@@ -789,6 +793,7 @@ public class DownloadService extends Worker {
             json.put("version_name", version != null ? version : "");
             json.put("old_version_name", "");
             json.put("action", action);
+            if (metadata != null) json.put("metadata", new JSONObject(metadata));
             json.put("device_id", getInputString(DEVICE_ID, ""));
             json.put("custom_id", getInputString(CUSTOM_ID, ""));
             json.put("version_build", getInputString(VERSION_BUILD, ""));
@@ -839,6 +844,11 @@ public class DownloadService extends Worker {
         String publicKey,
         JSONArray manifest
     ) {
+        final long started = android.os.SystemClock.elapsedRealtime();
+        final AtomicLong completedFiles = new AtomicLong(0);
+        final AtomicLong failedFiles = new AtomicLong(0);
+        final Map<String, String> summary = new HashMap<>();
+        summary.put("attempt_id", id);
         try {
             logger.debug("handleManifestDownload");
 
@@ -849,7 +859,7 @@ public class DownloadService extends Worker {
             }
 
             // Send stats for manifest download start
-            sendStatsAsync("download_manifest_start", version);
+            sendStatsAsync("download_manifest_start", version, java.util.Collections.singletonMap("attempt_id", id));
 
             File destFolder = new File(documentsDir, dest);
             File cacheFolder = new File(getApplicationContext().getCacheDir(), "capgo_downloads");
@@ -866,7 +876,6 @@ public class DownloadService extends Worker {
             }
 
             int totalFiles = manifest.length();
-            final AtomicLong completedFiles = new AtomicLong(0);
             final AtomicBoolean hasError = new AtomicBoolean(false);
             final List<ManifestDownloadTask> tasks = new ArrayList<>();
             final Set<String> seenTargets = new HashSet<>();
@@ -987,7 +996,13 @@ public class DownloadService extends Worker {
                         setProgress(percent);
                     } catch (Exception e) {
                         logger.error("Error processing file: " + task.fileName + " " + e.getMessage());
-                        sendStatsAsync("download_manifest_file_fail", version + ":" + task.fileName);
+                        if (failedFiles.incrementAndGet() == 1) {
+                            synchronized (summary) {
+                                summary.put("first_file", task.fileName);
+                                summary.put("failure_stage", "process_file");
+                                recordManifestError(summary, e);
+                            }
+                        }
                         hasError.set(true);
                     }
                 });
@@ -1020,10 +1035,34 @@ public class DownloadService extends Worker {
             }
 
             // Send stats for manifest download complete
-            sendStatsAsync("download_manifest_complete", version);
+            sendStatsAsync("download_manifest_complete", version, java.util.Collections.singletonMap("attempt_id", id));
         } catch (Exception e) {
+            synchronized (summary) {
+                if (!summary.containsKey("error_type")) {
+                    summary.put("failure_stage", "prepare_or_schedule");
+                    recordManifestError(summary, e);
+                }
+                summary.put("files_completed", String.valueOf(completedFiles.get()));
+                summary.put("files_total", String.valueOf(manifest.length()));
+                summary.put(
+                    "last_percent",
+                    String.valueOf(completedFiles.get() == 0 ? 0 : calcTotalPercent(completedFiles.get(), manifest.length()))
+                );
+                summary.put("files_failed", String.valueOf(failedFiles.get()));
+                summary.put("elapsed_ms", String.valueOf(android.os.SystemClock.elapsedRealtime() - started));
+                sendStatsAsync("download_manifest_file_fail", version, summary);
+            }
             logger.error("Error in handleManifestDownload " + e.getMessage());
             throw new RuntimeException(e.getLocalizedMessage());
+        }
+    }
+
+    static void recordManifestError(Map<String, String> summary, Throwable error) {
+        while (error.getCause() != null && error != error.getCause()) error = error.getCause();
+        summary.put("error_type", error.getClass().getSimpleName());
+        String message = error.getMessage();
+        if (message != null && message.matches("Unexpected response code: [0-9]{3}")) {
+            summary.put("http_status", message.substring(message.length() - 3));
         }
     }
 
@@ -1050,7 +1089,7 @@ public class DownloadService extends Worker {
         }
 
         // Send stats for zip download start
-        sendStatsAsync("download_zip_start", version);
+        sendStatsAsync("download_zip_start", version, java.util.Collections.singletonMap("attempt_id", id));
 
         File target = new File(documentsDir, dest);
         // Use bundle ID in temp file names to prevent collisions when multiple downloads run concurrently
@@ -1162,7 +1201,7 @@ public class DownloadService extends Worker {
                     infoFile.delete();
 
                     // Send stats for zip download complete
-                    sendStatsAsync("download_zip_complete", version);
+                    sendStatsAsync("download_zip_complete", version, java.util.Collections.singletonMap("attempt_id", id));
                 } catch (OutOfMemoryError e) {
                     logger.error("Out of memory during download: " + e.getMessage());
                     // Try to free some memory

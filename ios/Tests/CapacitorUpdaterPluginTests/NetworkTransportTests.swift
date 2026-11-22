@@ -304,6 +304,12 @@ final class NetworkTransportTests: XCTestCase {
         private(set) var downloadAttempts = 0
         private(set) var failedTransportAttempts = 0
         private(set) var injectedConnectionLosses = 0
+        private(set) var summaries: [[String: String]] = []
+
+        override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+            if action == "download_manifest_file_fail" { summaries.append(metadata) }
+        }
+
         var initialConnectionLosses = 0
         var responseAfterConnectionLosses: DownloadRequestResult?
 
@@ -670,6 +676,14 @@ final class NetworkTransportTests: XCTestCase {
                 XCTAssertEqual(failure.domain, status == 200 ? "ChecksumError" : "StatusCodeError")
                 XCTAssertEqual(failure.code, status == 200 ? 1 : status)
             }
+            XCTAssertEqual(updater.summaries.count, 1)
+            let summary = try XCTUnwrap(updater.summaries.first)
+            XCTAssertEqual(summary["first_file"], "index.html")
+            XCTAssertEqual(summary["files_completed"], "0")
+            XCTAssertEqual(summary["files_failed"], "1")
+            XCTAssertEqual(summary["files_total"], "1")
+            XCTAssertEqual(summary["http_status"], status == 200 ? nil : String(status))
+            XCTAssertFalse((summary["attempt_id"] ?? "").isEmpty)
             // Internal URLSession replays do not consume plugin attempts; surfaced transport
             // errors do. A permanent response must never earn another attempt of its own.
             XCTAssertEqual(updater.injectedConnectionLosses, initialConnectionLosses)

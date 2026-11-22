@@ -3247,12 +3247,22 @@ public class CapacitorUpdaterPlugin extends Plugin {
             if (percent == 100) {
                 final JSObject retDownloadComplete = new JSObject(ret, new String[] { "bundle" });
                 this.notifyListeners("downloadComplete", retDownloadComplete, false);
-                this.implementation.sendStats("download_complete", bundleInfo.getVersionName());
+                this.implementation.sendStats(
+                    "download_complete",
+                    bundleInfo.getVersionName(),
+                    "",
+                    java.util.Collections.singletonMap("attempt_id", id)
+                );
                 this.markDownloadStatPercent(id, 100);
             } else {
                 final String statAction = this.nextDownloadStatAction(id, percent);
                 if (statAction != null) {
-                    this.implementation.sendStats(statAction, bundleInfo.getVersionName());
+                    this.implementation.sendStats(
+                        statAction,
+                        bundleInfo.getVersionName(),
+                        "",
+                        java.util.Collections.singletonMap("attempt_id", id)
+                    );
                 }
             }
         } catch (final Exception e) {

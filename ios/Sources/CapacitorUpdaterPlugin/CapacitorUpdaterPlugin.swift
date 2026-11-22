@@ -1361,9 +1361,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             var downloadCompletePayload: JSObject = [:]
             downloadCompletePayload["bundle"] = bundlePayload(bundleInfo)
             self.notifyListenersOnMain("downloadComplete", data: downloadCompletePayload)
-            self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName())
+            self.implementation.sendStats(action: "download_complete", versionName: bundleInfo.getVersionName(), oldVersionName: "", metadata: ["attempt_id": id])
         } else if percent.isMultiple(of: 10) || ignoreMultipleOfTen {
-            self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName())
+            self.implementation.sendStats(action: "download_\(percent)", versionName: bundleInfo.getVersionName(), oldVersionName: "", metadata: ["attempt_id": id])
         }
     }
 

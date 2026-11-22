@@ -20,6 +20,18 @@ import org.junit.Test;
 
 public class ManifestNetworkReliabilityTest {
 
+    @Test
+    public void summaryKeepsHttpStatusWithoutTransportMessages() {
+        java.util.Map<String, String> metadata = new java.util.HashMap<>();
+        DownloadService.recordManifestError(
+            metadata,
+            new IOException("private request details", new IOException("Unexpected response code: 503"))
+        );
+        assertEquals("503", metadata.get("http_status"));
+        assertEquals("IOException", metadata.get("error_type"));
+        assertEquals(2, metadata.size());
+    }
+
     @Before
     public void disableHttpsOnly() {
         // The loopback test server is plain http: opt out of the default httpsOnly policy.
