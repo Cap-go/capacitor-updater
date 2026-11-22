@@ -618,6 +618,28 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: CapgoUpdater.manifestResumeErrorDomain, code: 1)))
     }
 
+    func testManifestSummaryCountsRejectedEntriesBeforeScheduling() throws {
+        let updater = CountingDownloadUpdater()
+        _ = makeUpdater(updater)
+        defer { releaseUpdater(updater) }
+        let version = UUID().uuidString
+        defer {
+            for bundle in updater.list(raw: true) where bundle.getVersionName() == version {
+                _ = updater.delete(id: bundle.getId())
+            }
+        }
+        let entries = ["first.js", "second.js"].map {
+            ManifestEntry(file_name: $0, file_hash: "", download_url: server.baseURL.absoluteString)
+        }
+        XCTAssertThrowsError(try updater.downloadManifest(manifest: entries, version: version, sessionKey: ""))
+        let summary = try XCTUnwrap(updater.summaries.first)
+        XCTAssertEqual(updater.summaries.count, 1)
+        XCTAssertEqual(summary["files_failed"], "2")
+        XCTAssertEqual(summary["first_file"], "first.js")
+        XCTAssertEqual(summary["failure_stage"], "prepare_or_schedule")
+        XCTAssertEqual(updater.downloadAttempts, 0)
+    }
+
     func testManifestSummaryPreservesTransportDomainAndCode() throws {
         let updater = CountingDownloadUpdater()
         _ = makeUpdater(updater)

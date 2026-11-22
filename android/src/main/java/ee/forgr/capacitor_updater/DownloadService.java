@@ -888,6 +888,7 @@ public class DownloadService extends Worker {
 
                 if (fileHash.isEmpty()) {
                     logger.error("Missing file_hash for manifest entry: " + fileName);
+                    recordManifestFileFailure(summary, failedFiles, fileName, "prepare_or_schedule", new IOException("Missing file hash"));
                     hasError.set(true);
                     continue;
                 }
@@ -896,6 +897,13 @@ public class DownloadService extends Worker {
                     if (!CryptoCipher.isValidSessionKey(sessionKey)) {
                         logger.error("Public key present but no valid session key provided");
                         sendStatsAsync("session_key_required", version);
+                        recordManifestFileFailure(
+                            summary,
+                            failedFiles,
+                            fileName,
+                            "prepare_or_schedule",
+                            new IOException("Invalid session key")
+                        );
                         hasError.set(true);
                         continue;
                     }
@@ -903,6 +911,7 @@ public class DownloadService extends Worker {
                         fileHash = CryptoCipher.decryptChecksum(fileHash, publicKey);
                     } catch (Exception e) {
                         logger.error("Error decrypting checksum for " + fileName + "fileHash: " + fileHash);
+                        recordManifestFileFailure(summary, failedFiles, fileName, "prepare_or_schedule", e);
                         hasError.set(true);
                         continue;
                     }
@@ -922,12 +931,20 @@ public class DownloadService extends Worker {
                     if (!rememberManifestTarget(seenTargets, targetFile)) {
                         logger.error("Duplicate manifest target path: " + fileName);
                         sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                        recordManifestFileFailure(
+                            summary,
+                            failedFiles,
+                            fileName,
+                            "prepare_or_schedule",
+                            new IOException("Duplicate target path")
+                        );
                         hasError.set(true);
                         continue;
                     }
                 } catch (IOException e) {
                     logger.error("Invalid manifest file path: " + fileName);
                     sendStatsAsync("manifest_path_fail", version + ":" + fileName);
+                    recordManifestFileFailure(summary, failedFiles, fileName, "prepare_or_schedule", e);
                     hasError.set(true);
                     continue;
                 }
@@ -996,13 +1013,7 @@ public class DownloadService extends Worker {
                         setProgress(percent);
                     } catch (Exception e) {
                         logger.error("Error processing file: " + task.fileName + " " + e.getMessage());
-                        if (failedFiles.incrementAndGet() == 1) {
-                            synchronized (summary) {
-                                summary.put("first_file", task.fileName);
-                                summary.put("failure_stage", "process_file");
-                                recordManifestError(summary, e);
-                            }
-                        }
+                        recordManifestFileFailure(summary, failedFiles, task.fileName, "process_file", e);
                         hasError.set(true);
                     }
                 });
@@ -1054,6 +1065,22 @@ public class DownloadService extends Worker {
             }
             logger.error("Error in handleManifestDownload " + e.getMessage());
             throw new RuntimeException(e.getLocalizedMessage());
+        }
+    }
+
+    private static void recordManifestFileFailure(
+        Map<String, String> summary,
+        AtomicLong failedFiles,
+        String fileName,
+        String stage,
+        Exception error
+    ) {
+        synchronized (summary) {
+            if (failedFiles.incrementAndGet() == 1) {
+                summary.put("first_file", fileName);
+                summary.put("failure_stage", stage);
+                recordManifestError(summary, error);
+            }
         }
     }
 
