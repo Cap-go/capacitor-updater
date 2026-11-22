@@ -628,13 +628,14 @@ final class NetworkTransportTests: XCTestCase {
                 _ = updater.delete(id: bundle.getId())
             }
         }
-        let entries = ["first.js", "second.js"].map {
+        let entries = [nil, "first.js", "second.js"].map {
             ManifestEntry(file_name: $0, file_hash: "", download_url: server.baseURL.absoluteString)
         }
         XCTAssertThrowsError(try updater.downloadManifest(manifest: entries, version: version, sessionKey: ""))
         let summary = try XCTUnwrap(updater.summaries.first)
         XCTAssertEqual(updater.summaries.count, 1)
-        XCTAssertEqual(summary["files_failed"], "2")
+        XCTAssertEqual(summary["files_failed"], "3")
+        XCTAssertEqual(summary["error_code"], "1")
         XCTAssertEqual(summary["first_file"], "first.js")
         XCTAssertEqual(summary["failure_stage"], "prepare_or_schedule")
         XCTAssertEqual(updater.downloadAttempts, 0)

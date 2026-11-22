@@ -1916,6 +1916,8 @@ import UIKit
             failedFiles += 1
             if downloadError == nil {
                 downloadError = error
+            }
+            if firstFile == nil, let fileName, !fileName.isEmpty {
                 firstFile = fileName
             }
             hasError.value = true
