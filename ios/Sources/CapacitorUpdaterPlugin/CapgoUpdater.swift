@@ -1927,7 +1927,7 @@ import UIKit
         var failedFiles = 0
         let started = ProcessInfo.processInfo.systemUptime
         func reportFailure(_ error: Error) {
-            let failure = error as NSError
+            let failure = Self.manifestFailureCause(error)
             var metadata = ["attempt_id": id, "files_completed": String(completedFiles), "files_total": String(totalFiles),
                             "files_failed": String(failedFiles), "error_type": failure.domain, "error_code": String(failure.code),
                             "elapsed_ms": String(Int((ProcessInfo.processInfo.systemUptime - started) * 1000))]
@@ -2209,11 +2209,15 @@ import UIKit
     }
 
     /// Transport errors arrive wrapped in NetworkError.sessionTaskFailed; classify the underlying error.
-    static func isRetryableManifestError(_ error: Error) -> Bool {
+    static func manifestFailureCause(_ error: Error) -> NSError {
         if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
-            return isRetryableManifestError(underlying)
+            return manifestFailureCause(underlying)
         }
-        let failure = error as NSError
+        return error as NSError
+    }
+
+    static func isRetryableManifestError(_ error: Error) -> Bool {
+        let failure = manifestFailureCause(error)
         if failure.domain == manifestResumeErrorDomain {
             return true
         }

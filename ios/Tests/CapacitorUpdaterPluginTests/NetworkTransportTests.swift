@@ -618,6 +618,28 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertTrue(CapgoUpdater.isRetryableManifestError(NSError(domain: CapgoUpdater.manifestResumeErrorDomain, code: 1)))
     }
 
+    func testManifestSummaryPreservesTransportDomainAndCode() throws {
+        let updater = CountingDownloadUpdater()
+        _ = makeUpdater(updater)
+        defer { releaseUpdater(updater) }
+        updater.initialConnectionLosses = 3
+        let version = UUID().uuidString
+        defer {
+            for bundle in updater.list(raw: true) where bundle.getVersionName() == version {
+                _ = updater.delete(id: bundle.getId())
+            }
+        }
+        XCTAssertThrowsError(try updater.downloadManifest(manifest: [ManifestEntry(
+            file_name: UUID().uuidString, file_hash: String(repeating: "a", count: 64),
+            download_url: server.baseURL.absoluteString
+        )], version: version, sessionKey: ""))
+        XCTAssertEqual(updater.summaries.count, 1)
+        let summary = try XCTUnwrap(updater.summaries.first)
+        XCTAssertEqual(summary["error_type"], NSURLErrorDomain)
+        XCTAssertEqual(summary["error_code"], String(NSURLErrorNetworkConnectionLost))
+        XCTAssertNil(summary["http_status"])
+    }
+
     func testManifestPermanentFailuresAndRetryBudget() throws {
         try assertManifestRetryBudget(dropFirstConnection: false)
     }
