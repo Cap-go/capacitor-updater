@@ -306,7 +306,7 @@ final class NetworkTransportTests: XCTestCase {
         private(set) var injectedConnectionLosses = 0
         private(set) var summaries: [[String: String]] = []
 
-        override func sendStats(action: String, versionName: String?, oldVersionName: String?, metadata: [String: String]) {
+        override func sendStats(action: String, versionName _: String?, oldVersionName _: String?, metadata: [String: String]) {
             if action == "download_manifest_file_fail" { summaries.append(metadata) }
         }
 
