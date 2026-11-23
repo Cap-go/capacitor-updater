@@ -1883,38 +1883,7 @@ import UIKit
     }
 
     public func downloadManifest(manifest: [ManifestEntry], version: String, sessionKey: String, link: String? = nil, comment: String? = nil) throws -> BundleInfo {
-        let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
-        try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
-        try self.requireVersionNotBelowBuiltin(version)
-        for entry in manifest {
-            if let downloadUrl = entry.download_url, let url = URL(string: downloadUrl) {
-                try self.assertAllowedScheme(url)
-            }
-        }
-        try self.runBeforeDownload()
         let id = self.randomString(length: 10)
-        logger.info("downloadManifest start \(id)")
-        let destFolder = try self.getBundleDirectory(id: id)
-        let builtinFolder = self.builtinFolderURL()
-
-        // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
-        let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
-        try checkDiskSpace(estimatedSize: estimatedSize)
-
-        try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
-        cleanupOldManifestPartials()
-        try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
-
-        // Create and save BundleInfo before starting the download process
-        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "", link: link, comment: comment)
-        self.saveBundleInfo(id: id, bundle: bundleInfo)
-
-        // Send stats for manifest download start
-        self.sendStats(action: "download_manifest_start", versionName: version)
-
-        // Notify the start of the download process
-        self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
-
         let totalFiles = manifest.count
 
         // Thread-safe counters for concurrent operations
@@ -1923,7 +1892,81 @@ import UIKit
         var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
         var downloadError: Error?
+        var firstFile: String?
+        var failedFiles = 0
+        var failureStage = "prepare_or_schedule"
+        let started = ProcessInfo.processInfo.systemUptime
+        func reportFailure(_ error: Error) {
+            let failure = Self.manifestFailureCause(error)
+            var metadata = ["attempt_id": id, "files_completed": String(completedFiles), "files_total": String(totalFiles),
+                            "files_failed": String(failedFiles), "error_type": failure.domain, "error_code": String(failure.code),
+                            "elapsed_ms": String(Int((ProcessInfo.processInfo.systemUptime - started) * 1000))]
+            metadata["failure_stage"] = failureStage
+            metadata["last_percent"] = String(max(0, lastProgressPercent))
+            metadata["first_file"] = firstFile
+            if failure.domain == "StatusCodeError" { metadata["http_status"] = String(failure.code) }
+            self.sendStats(
+                action: "download_manifest_file_fail", versionName: version,
+                oldVersionName: "", metadata: metadata
+            )
+        }
         let errorLock = NSLock()
+
+        func recordInvalidEntry(_ error: Error, _ fileName: String?) {
+            failedFiles += 1
+            if downloadError == nil {
+                downloadError = error
+            }
+            if firstFile == nil, let fileName, !fileName.isEmpty {
+                firstFile = fileName
+            }
+            hasError.value = true
+        }
+
+        let decryptionSession = CryptoCipher.DecryptionSession(publicKey: self.publicKey, sessionKey: sessionKey)
+        let builtinFolder = self.builtinFolderURL()
+        let destFolder: URL
+        do {
+            try self.requireSessionKeyForEncryptedUpdate(sessionKey: sessionKey, versionName: version)
+            try self.requireVersionNotBelowBuiltin(version)
+            for entry in manifest {
+                if let downloadUrl = entry.download_url, let url = URL(string: downloadUrl) {
+                    do {
+                        try self.assertAllowedScheme(url)
+                    } catch {
+                        recordInvalidEntry(error, entry.file_name)
+                        throw error
+                    }
+                }
+            }
+            try self.runBeforeDownload()
+            logger.info("downloadManifest start \(id)")
+            destFolder = try self.getBundleDirectory(id: id)
+
+            // Check disk space before starting manifest download (estimate 100KB per file, minimum 50MB)
+            let estimatedSize = Int64(max(manifest.count * 100 * 1024, 50 * 1024 * 1024))
+            try checkDiskSpace(estimatedSize: estimatedSize)
+
+            try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
+            cleanupOldManifestPartials()
+            try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            reportFailure(error)
+            throw error
+        }
+
+        // Create and save BundleInfo before starting the download process
+        let bundleInfo = BundleInfo(id: id, version: version, status: BundleStatus.DOWNLOADING, downloaded: Date(), checksum: "", link: link, comment: comment)
+        self.saveBundleInfo(id: id, bundle: bundleInfo)
+
+        // Send stats for manifest download start
+        self.sendStats(
+            action: "download_manifest_start", versionName: version,
+            oldVersionName: "", metadata: ["attempt_id": id]
+        )
+
+        // Notify the start of the download process
+        self.notifyDownload(id: id, percent: 0, ignoreMultipleOfTen: true)
 
         var tasks: [ManifestDownloadTask] = []
         var seenTargets = Set<String>()
@@ -1938,12 +1981,7 @@ import UIKit
                         NSLocalizedDescriptionKey: "Manifest entry is missing file_name or download_url"
                     ]
                 )
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
+                recordInvalidEntry(error, entry.file_name)
                 logger.error("Manifest entry is missing file_name or download_url")
                 continue
             }
@@ -1956,12 +1994,7 @@ import UIKit
                         NSLocalizedDescriptionKey: "Manifest entry is missing file_hash for \(entry.file_name ?? "unknown")"
                     ]
                 )
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
+                recordInvalidEntry(error, entry.file_name)
                 continue
             }
             var fileHash = entryFileHash
@@ -1975,22 +2008,14 @@ import UIKit
                         userInfo: [NSLocalizedDescriptionKey: "Session key required when public key is present"]
                     )
                     self.sendStats(action: "session_key_required", versionName: version)
-                    errorLock.lock()
-                    if downloadError == nil {
-                        downloadError = error
-                    }
-                    errorLock.unlock()
-                    hasError.value = true
+                    recordInvalidEntry(error, entry.file_name)
                     logger.error("Public key present but no valid session key provided")
                     continue
                 }
                 do {
                     fileHash = try CryptoCipher.decryptChecksum(checksum: fileHash, publicKey: self.publicKey)
                 } catch {
-                    errorLock.lock()
-                    downloadError = error
-                    errorLock.unlock()
-                    hasError.value = true
+                    recordInvalidEntry(error, entry.file_name)
                     logger.error("Checksum decryption failed")
                     logger.debug("Bundle: \(id), File: \(fileName), Error: \(error)")
                     continue
@@ -2024,23 +2049,13 @@ import UIKit
                             NSLocalizedDescriptionKey: "Duplicate manifest target path for \(fileName)"
                         ]
                     )
-                    errorLock.lock()
-                    if downloadError == nil {
-                        downloadError = error
-                    }
-                    errorLock.unlock()
-                    hasError.value = true
+                    recordInvalidEntry(error, entry.file_name)
                     continue
                 }
             } catch {
                 logger.error("Invalid manifest file path: \(fileName)")
                 self.sendStats(action: "manifest_path_fail", versionName: "\(version):\(fileName)")
-                errorLock.lock()
-                if downloadError == nil {
-                    downloadError = error
-                }
-                errorLock.unlock()
-                hasError.value = true
+                recordInvalidEntry(error, entry.file_name)
                 continue
             }
 
@@ -2068,6 +2083,7 @@ import UIKit
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
+            reportFailure(resolvedError)
             throw resolvedError
         }
 
@@ -2085,6 +2101,8 @@ import UIKit
                 self.saveBundleInfo(id: id, bundle: errorBundle)
                 removePartialManifestBundleDirectory(destFolder)
                 self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
+                recordInvalidEntry(error, task.fileName)
+                reportFailure(error)
                 throw error
             }
 
@@ -2124,8 +2142,11 @@ import UIKit
 
                 } catch {
                     errorLock.lock()
+                    failureStage = "process_file"
+                    failedFiles += 1
                     if downloadError == nil {
                         downloadError = error
+                        firstFile = task.fileName
                     }
                     errorLock.unlock()
                     hasError.value = true
@@ -2150,6 +2171,7 @@ import UIKit
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
+            reportFailure(resolvedError)
             throw resolvedError
         }
 
@@ -2158,7 +2180,10 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: updatedBundle)
 
         // Send stats for manifest download complete
-        self.sendStats(action: "download_manifest_complete", versionName: version)
+        self.sendStats(
+            action: "download_manifest_complete", versionName: version,
+            oldVersionName: "", metadata: ["attempt_id": id]
+        )
 
         self.notifyDownload(id: id, percent: 100, bundle: updatedBundle)
         logger.info("downloadManifest done \(id)")
@@ -2178,10 +2203,6 @@ import UIKit
                 return
             } catch {
                 guard attempt < 3 && Self.isRetryableManifestError(error) else {
-                    // One failure stat per file, after the last attempt.
-                    if Self.isManifestTransferError(error) {
-                        self.sendStats(action: "download_manifest_file_fail", versionName: "\(version):\(task.fileName)")
-                    }
                     throw error
                 }
                 // Back off in short steps so a failed or cancelled manifest stops retrying promptly.
@@ -2194,11 +2215,15 @@ import UIKit
     }
 
     /// Transport errors arrive wrapped in NetworkError.sessionTaskFailed; classify the underlying error.
-    static func isRetryableManifestError(_ error: Error) -> Bool {
+    static func manifestFailureCause(_ error: Error) -> NSError {
         if case let .sessionTaskFailed(underlying)? = error as? NetworkError {
-            return isRetryableManifestError(underlying)
+            return manifestFailureCause(underlying)
         }
-        let failure = error as NSError
+        return error as NSError
+    }
+
+    static func isRetryableManifestError(_ error: Error) -> Bool {
+        let failure = manifestFailureCause(error)
         if failure.domain == manifestResumeErrorDomain {
             return true
         }
@@ -2209,16 +2234,6 @@ import UIKit
             NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet,
             NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed
         ].contains(failure.code)
-    }
-
-    /// Failures that reach the server or network, as opposed to checksum, decryption or storage errors.
-    private static func isManifestTransferError(_ error: Error) -> Bool {
-        if error is NetworkError {
-            return true
-        }
-        let failure = error as NSError
-        return failure.domain == NSURLErrorDomain || failure.domain == "StatusCodeError" || failure.domain == manifestResumeErrorDomain ||
-            (failure.domain == "ManifestDownloadError" && failure.code == 3)
     }
 
     /// A resumed transfer that cannot be trusted: drop the partial and fetch the whole file on the next attempt.
@@ -2762,7 +2777,10 @@ import UIKit
         self.saveBundleInfo(id: id, bundle: bundleInfo)
 
         // Send stats for zip download start
-        self.sendStats(action: "download_zip_start", versionName: version)
+        self.sendStats(
+            action: "download_zip_start", versionName: version,
+            oldVersionName: "", metadata: ["attempt_id": id]
+        )
 
         // Opening connection for streaming the bytes
         if totalReceivedBytes == 0 {
@@ -2907,7 +2925,10 @@ import UIKit
         self.cleanDownloadData(for: id)
 
         // Send stats for zip download complete
-        self.sendStats(action: "download_zip_complete", versionName: version)
+        self.sendStats(
+            action: "download_zip_complete", versionName: version,
+            oldVersionName: "", metadata: ["attempt_id": id]
+        )
 
         self.notifyDownload(id: id, percent: 100, bundle: info)
         logger.info("Downloading: 100% (complete)")
