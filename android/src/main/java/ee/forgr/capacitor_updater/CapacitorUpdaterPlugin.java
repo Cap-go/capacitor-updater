@@ -2882,13 +2882,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ) {
             return false;
         }
+        if (
+            bundle != null && bundle.isDownloaded() && BundleStatus.DOWNLOADING != bundle.getStatus() && this.implementation.canSet(bundle)
+        ) {
+            return false;
+        }
         if (bundle != null && (bundle.isDeleted() || bundle.isDeleting())) {
-            final BundleInfo sameVersionBundle = this.implementation.getBundleInfoByName(latestVersionName);
+            final BundleInfo liveSameVersion = this.implementation.findRegistryBundleByVersionName(latestVersionName);
             if (
-                sameVersionBundle != null &&
-                !sameVersionBundle.getId().equals(bundle.getId()) &&
-                !sameVersionBundle.isDeleted() &&
-                !sameVersionBundle.isDeleting()
+                liveSameVersion != null &&
+                !liveSameVersion.getId().equals(bundle.getId()) &&
+                !liveSameVersion.isDeleted() &&
+                !liveSameVersion.isDeleting()
             ) {
                 return false;
             }
@@ -6457,6 +6462,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest == null) {
                                 latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
+                            } else if (latest.isDeleted() || latest.isDeleting()) {
+                                final BundleInfo liveSameVersion =
+                                    CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
+                                if (liveSameVersion != null && !liveSameVersion.isDeleted() && !liveSameVersion.isDeleting()) {
+                                    latest = liveSameVersion;
+                                }
                             }
                             boolean retryDownloadSlot = false;
                             if (latest != null) {
@@ -6466,7 +6477,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             latest.getStatus() +
                                             ") and will be deleted, download will overwrite it."
                                     );
-                                    retryDownloadSlot = true;
+                                    retryDownloadSlot =
+                                        CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >
+                                            0 ||
+                                        CapacitorUpdaterPlugin.this.implementation.isInterruptedDownloadBundle(latest.getId());
                                     final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
                                     if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
                                         CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
@@ -6531,11 +6545,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         BundleStatus.DOWNLOADING != latest.getStatus() &&
                                         CapacitorUpdaterPlugin.this.implementation.canSet(latest)
                                     ) {
-                                        final String downloadBlockedReason =
-                                            CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
-                                                jsRes,
-                                                latestVersionName
-                                            );
+                                        final String downloadBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
+                                            jsRes,
+                                            latestVersionName
+                                        );
                                         if (downloadBlockedReason != null) {
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                 downloadBlockedReason,
@@ -6677,12 +6690,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 return;
                             }
                             if (
-                                CapgoUpdater.incompleteDownloadRetryCount(
-                                    CapacitorUpdaterPlugin.this.prefs,
-                                    latestVersionName
-                                ) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES &&
-                                (latest == null ||
-                                    CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current))
+                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >=
+                                CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES
                             ) {
                                 logger.error("Latest bundle exceeded incomplete download retries. Aborting update.");
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(

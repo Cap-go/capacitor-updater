@@ -4427,6 +4427,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo
     ) -> Bool {
+        if bundle.isDownloaded() && !bundle.isDownloading() && self.implementation.canSet(bundle: bundle) {
+            return false
+        }
         if bundle.isDownloading() && self.isVersionDownloadInProgress(version: latestVersionName) {
             return false
         }
@@ -5048,10 +5051,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName)
                     }
                     if needsDownload {
+                        if self.implementation.incompleteDownloadRetryCount(version: latestVersionName) >= CapgoUpdater.maxIncompleteDownloadRetries {
+                            self.logger.error("Latest bundle exceeded incomplete download retries. Aborting update.")
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Latest version is in error state. Aborting update.",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                            return
+                        }
                         var retryDownloadSlot = false
                         if let existing = nextImpl {
                             self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")
-                            retryDownloadSlot = true
+                            retryDownloadSlot =
+                                self.implementation.incompleteDownloadRetryCount(version: latestVersionName) > 0 ||
+                                self.implementation.isInterruptedDownloadBundle(bundleId: existing.getId())
                             if self.implementation.getNextBundle()?.getId() == existing.getId() {
                                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
                             }
@@ -5068,9 +5083,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.downloadActiveVersionName = latestVersionName
                         self.downloadLock.unlock()
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
-                        if retryDownloadSlot {
-                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
-                        }
+                        let consumeRetrySlotOnStart = retryDownloadSlot
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
@@ -5093,6 +5106,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 link: res.link,
                                 comment: res.comment
                             )
+                        }
+                        if consumeRetrySlotOnStart {
+                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
                         }
                     }
                     if nextImpl == nil && !needsDownload {
