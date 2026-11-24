@@ -546,6 +546,28 @@ public class CapgoUpdater {
         return version != null && !version.isEmpty() && this.observedDownloadVersions.contains(version);
     }
 
+    boolean isVersionDownloadActive(final String version) {
+        return (
+            this.isVersionDownloadObservedInThisProcess(version) ||
+            (this.context() != null && DownloadWorkerManager.isVersionDownloading(this.context(), version))
+        );
+    }
+
+    private boolean hasPendingDownloadFinalizationForBundleId(final String id) {
+        if (id == null || id.isEmpty()) {
+            return false;
+        }
+        synchronized (this.deleteLock) {
+            try {
+                final File bundleDir = this.getBundleDirectory(id);
+                final Set<DownloadFinalization> pending = downloadFinalizations.get(bundleDir);
+                return pending != null && !pending.isEmpty();
+            } catch (final IOException e) {
+                return false;
+            }
+        }
+    }
+
     /**
      * True when a stored bundle for the offered version must be removed and downloaded again.
      * Integrity-blocked versions never retry here.
@@ -600,8 +622,13 @@ public class CapgoUpdater {
                 continue;
             }
             final String version = info.getVersionName();
-            if (this.isVersionDownloadObservedInThisProcess(version)) {
+            if (this.isVersionDownloadActive(version)) {
                 continue;
+            }
+            synchronized (this.deleteLock) {
+                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
+                    continue;
+                }
             }
             final String reportedKey = INCOMPLETE_FAIL_REPORTED_PREFIX + info.getId();
             if (this.prefs != null && !this.prefs.getBoolean(reportedKey, false)) {

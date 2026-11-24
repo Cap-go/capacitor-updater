@@ -218,7 +218,7 @@ public class HeadlessUpdateWorker extends Worker {
                         isCurrent,
                         isQueuedNext
                     ) &&
-                    !(BundleStatus.DOWNLOADING == existing.getStatus() && updater.isVersionDownloadObservedInThisProcess(version))
+                    !(BundleStatus.DOWNLOADING == existing.getStatus() && updater.isVersionDownloadActive(version))
                 ) {
                     updater.incrementIncompleteDownloadRetryCount(version);
                     if (isQueuedNext) {

@@ -6497,6 +6497,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             );
                                             if (!delayConditionList.isEmpty()) {
                                                 logger.info("Update delayed until delay conditions met");
+                                                if (
+                                                    CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle() &&
+                                                    CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)
+                                                ) {
+                                                    CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                                        latest.getId(),
+                                                        plannedDirectUpdate,
+                                                        downloadContext
+                                                    );
+                                                }
                                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                     "Update delayed until delay conditions met",
                                                     latestVersionName,
