@@ -6417,13 +6417,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     "Latest version failed integrity check and will not retry",
                                     latestVersionName,
                                     current,
-                                    true,
+                                    false,
                                     plannedDirectUpdate,
                                     downloadContext
                                 );
                                 return;
                             }
                             BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                            boolean incompleteDownloadRetryCounted = false;
                             if (latest != null) {
                                 if (CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
                                     logger.info(
@@ -6432,6 +6433,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             ") and will be deleted, download will overwrite it."
                                     );
                                     CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
+                                    incompleteDownloadRetryCounted = true;
                                     final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
                                     if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
                                         CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
@@ -6572,22 +6574,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                 }
                             }
-                            if (
-                                latest == null &&
-                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >=
-                                    CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES
-                            ) {
-                                logger.error("Latest bundle exceeded incomplete download retries. Aborting update.");
-                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    "Latest version is in error state. Aborting update.",
-                                    latestVersionName,
-                                    current,
-                                    true,
-                                    plannedDirectUpdate,
-                                    downloadContext
-                                );
-                                return;
-                            }
                             // The store refuses these downloads without a callback, so end the cycle here
                             // (appReady, splash hide) like iOS does.
                             final String downloadBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
@@ -6622,6 +6608,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
                                       directUpdateStillAllowed
                                     : directUpdateStillAllowed;
+                                if (!incompleteDownloadRetryCounted) {
+                                    CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
+                                }
                             }
                             startNewThread(() -> {
                                 try {

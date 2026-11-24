@@ -497,14 +497,22 @@ public class CapgoUpdater {
         }
         this.editor.remove(INCOMPLETE_RETRY_COUNT_PREFIX + version);
         this.editor.remove(INTEGRITY_BLOCKED_VERSION_PREFIX + version);
+        this.editor.remove(INTEGRITY_BLOCKED_VERSION_PREFIX + "preview:" + version);
         this.editor.commit();
+    }
+
+    private String integrityBlockedVersionKey(final String version) {
+        if (version == null || version.isEmpty()) {
+            return INTEGRITY_BLOCKED_VERSION_PREFIX;
+        }
+        return INTEGRITY_BLOCKED_VERSION_PREFIX + (Boolean.TRUE.equals(this.previewSession) ? "preview:" : "") + version;
     }
 
     void markIntegrityBlockedVersion(final String version) {
         if (this.editor == null || version == null || version.isEmpty()) {
             return;
         }
-        this.editor.putBoolean(INTEGRITY_BLOCKED_VERSION_PREFIX + version, true);
+        this.editor.putBoolean(this.integrityBlockedVersionKey(version), true);
         this.editor.commit();
     }
 
@@ -513,7 +521,7 @@ public class CapgoUpdater {
             this.prefs != null &&
             version != null &&
             !version.isEmpty() &&
-            this.prefs.getBoolean(INTEGRITY_BLOCKED_VERSION_PREFIX + version, false)
+            this.prefs.getBoolean(this.integrityBlockedVersionKey(version), false)
         );
     }
 
@@ -593,6 +601,12 @@ public class CapgoUpdater {
         if (bundle.isErrorStatus()) {
             return interruptedDownloadFailure;
         }
+        if (BundleStatus.SUCCESS == bundle.getStatus()) {
+            if (isCurrentBundle || bundleOnDisk) {
+                return false;
+            }
+            return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+        }
         if (BundleStatus.PENDING == bundle.getStatus()) {
             if (bundleOnDisk) {
                 return false;
@@ -622,27 +636,34 @@ public class CapgoUpdater {
                 continue;
             }
             final String version = info.getVersionName();
-            if (this.isVersionDownloadActive(version)) {
+            if (this.isVersionDownloadObservedInThisProcess(version)) {
                 continue;
-            }
-            synchronized (this.deleteLock) {
-                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
-                    continue;
-                }
             }
             final String reportedKey = INCOMPLETE_FAIL_REPORTED_PREFIX + info.getId();
             if (this.prefs != null && !this.prefs.getBoolean(reportedKey, false)) {
+                this.sendStats("download_fail", version);
                 if (this.editor != null) {
                     this.editor.putBoolean(reportedKey, true);
                     this.editor.commit();
                 }
-                this.sendStats("download_fail", version);
             }
             this.cleanupManifestStagingAfterDownloadCancelled(info.getId());
             if (this.context() != null) {
                 DownloadWorkerManager.cancelVersionDownload(this.context(), version);
             }
             synchronized (this.deleteLock) {
+                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
+                    continue;
+                }
+                final BundleInfo currentInfo = this.getBundleInfo(info.getId());
+                if (
+                    currentInfo == null ||
+                    currentInfo.isDeleted() ||
+                    currentInfo.isDeleting() ||
+                    BundleStatus.DOWNLOADING != currentInfo.getStatus()
+                ) {
+                    continue;
+                }
                 this.markInterruptedDownloadBundle(info.getId());
                 this.saveBundleInfo(info.getId(), info.setStatus(BundleStatus.ERROR));
             }
@@ -1836,8 +1857,10 @@ public class CapgoUpdater {
                                     new Date(System.currentTimeMillis()),
                                     ""
                                 );
-                                saveBundleInfo(id, failedBundle);
-                                CapgoUpdater.this.markInterruptedDownloadBundle(id);
+                                synchronized (CapgoUpdater.this.deleteLock) {
+                                    CapgoUpdater.this.markInterruptedDownloadBundle(id);
+                                    saveBundleInfo(id, failedBundle);
+                                }
                                 // Cleanup download tracking for failed downloads
                                 DownloadWorkerManager.cancelBundleDownload(context, id, failedVersion);
                                 Map<String, Object> ret = new HashMap<>();

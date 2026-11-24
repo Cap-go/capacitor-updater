@@ -5011,6 +5011,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             } else {
                                 self.logger.error("Failed to delete incomplete bundle: \(existing.toString())")
                             }
+                        } else {
+                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
                         }
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
                         if res.manifest != nil {

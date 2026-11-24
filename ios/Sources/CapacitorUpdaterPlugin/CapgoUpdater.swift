@@ -3498,19 +3498,25 @@ import UIKit
         }
         UserDefaults.standard.removeObject(forKey: incompleteRetryCountPrefix + version)
         UserDefaults.standard.removeObject(forKey: integrityBlockedVersionPrefix + version)
+        UserDefaults.standard.removeObject(forKey: integrityBlockedVersionPrefix + "preview:" + version)
         UserDefaults.standard.synchronize()
+    }
+
+    private func integrityBlockedVersionKey(version: String) -> String {
+        let scope = self.previewSession ? "preview:" : ""
+        return integrityBlockedVersionPrefix + scope + version
     }
 
     func markIntegrityBlockedVersion(version: String) {
         guard !version.isEmpty else {
             return
         }
-        UserDefaults.standard.set(true, forKey: integrityBlockedVersionPrefix + version)
+        UserDefaults.standard.set(true, forKey: self.integrityBlockedVersionKey(version: version))
         UserDefaults.standard.synchronize()
     }
 
     func isIntegrityBlockedVersion(version: String) -> Bool {
-        !version.isEmpty && UserDefaults.standard.bool(forKey: integrityBlockedVersionPrefix + version)
+        !version.isEmpty && UserDefaults.standard.bool(forKey: self.integrityBlockedVersionKey(version: version))
     }
 
     func markInterruptedDownloadBundle(bundleId: String) {
@@ -3551,6 +3557,12 @@ import UIKit
         if bundle.isErrorStatus() {
             return interruptedDownloadFailure
         }
+        if bundle.getStatus() == BundleStatus.SUCCESS.storedValue {
+            if isCurrentBundle || bundleOnDisk {
+                return false
+            }
+            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+        }
         if bundle.getStatus() == BundleStatus.PENDING.storedValue {
             if bundleOnDisk {
                 return false
@@ -3579,9 +3591,13 @@ import UIKit
             let version = info.getVersionName()
             let reportedKey = incompleteFailReportedPrefix + info.getId()
             if !UserDefaults.standard.bool(forKey: reportedKey) {
+                self.sendStats(action: "download_fail", versionName: version)
                 UserDefaults.standard.set(true, forKey: reportedKey)
                 UserDefaults.standard.synchronize()
-                self.sendStats(action: "download_fail", versionName: version)
+            }
+            let currentInfo = self.getBundleInfo(id: info.getId())
+            if currentInfo.isDeleted() || currentInfo.isDeleting() || !currentInfo.isDownloading() {
+                continue
             }
             self.markInterruptedDownloadBundle(bundleId: info.getId())
             _ = self.saveBundleInfo(id: info.getId(), bundle: info.setStatus(status: BundleStatus.ERROR.storedValue))
