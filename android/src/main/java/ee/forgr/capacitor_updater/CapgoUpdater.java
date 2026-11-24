@@ -534,19 +534,14 @@ public class CapgoUpdater {
         if (integrityBlocked) {
             return false;
         }
-        if (bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading()) {
+        if (bundle.isDeleted() || bundle.isDeleting() || BundleStatus.DOWNLOADING == bundle.getStatus()) {
             return true;
         }
         if (bundle.isErrorStatus()) {
             return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
         }
         if (BundleStatus.PENDING == bundle.getStatus()) {
-            if (!bundleOnDisk) {
-                return true;
-            }
-            if (!isCurrentBundle && !isQueuedNext) {
-                return true;
-            }
+            return !bundleOnDisk;
         }
         return false;
     }

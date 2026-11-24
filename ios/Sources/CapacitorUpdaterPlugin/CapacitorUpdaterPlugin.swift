@@ -4430,7 +4430,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo
     ) -> Bool {
-        let bundleOnDisk = self.implementation.isBundleOnDisk(id: bundle.getId())
+        let bundleOnDisk = self.implementation.canSet(bundle: bundle)
         let retryCount = self.implementation.incompleteDownloadRetryCount(version: latestVersionName)
         let integrityBlocked = self.implementation.isIntegrityBlockedVersion(version: latestVersionName)
         let isCurrent = current.getId() == bundle.getId()

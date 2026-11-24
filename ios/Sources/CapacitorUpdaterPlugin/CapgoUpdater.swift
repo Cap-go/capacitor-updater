@@ -3522,12 +3522,7 @@ import UIKit
             return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
         }
         if bundle.getStatus() == BundleStatus.PENDING.storedValue {
-            if !bundleOnDisk {
-                return true
-            }
-            if !isCurrentBundle && !isQueuedNext {
-                return true
-            }
+            return !bundleOnDisk
         }
         return false
     }

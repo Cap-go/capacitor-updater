@@ -176,6 +176,16 @@ private class FreshDownloadCapgoUpdater: CapgoUpdater {
         return true
     }
 
+    override func canSet(bundle: BundleInfo) -> Bool {
+        if let existingBundleValue, existingBundleValue.getId() == bundle.getId() {
+            return existingBundleValue.getStatus() == BundleStatus.PENDING.storedValue
+        }
+        if let downloadedBundleValue, downloadedBundleValue.getId() == bundle.getId() {
+            return downloadedBundleValue.getStatus() == BundleStatus.PENDING.storedValue
+        }
+        return super.canSet(bundle: bundle)
+    }
+
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
@@ -1020,7 +1030,7 @@ class CapacitorUpdaterTests: XCTestCase {
             isCurrentBundle: false,
             isQueuedNext: true
         ))
-        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
             pendingStale,
             bundleOnDisk: true,
             incompleteRetryCount: 0,

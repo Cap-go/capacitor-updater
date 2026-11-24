@@ -25,6 +25,7 @@ import androidx.work.WorkerParameters;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.plugin.WebView;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -193,7 +194,7 @@ public class HeadlessUpdateWorker extends Worker {
                 existing != null &&
                 CapgoUpdater.shouldRetryDownloadForExistingBundle(
                     existing,
-                    updater.isBundleOnDisk(existing.getId()),
+                    updater.canSet(existing),
                     updater.incompleteDownloadRetryCount(version),
                     false,
                     isCurrent,

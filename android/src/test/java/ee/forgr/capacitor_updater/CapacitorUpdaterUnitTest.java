@@ -2214,7 +2214,7 @@ public class CapacitorUpdaterUnitTest {
         final BundleInfo interruptedError = new BundleInfo("error-id", "2.0.0", BundleStatus.ERROR, new Date(), "");
 
         assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingQueued, true, 0, false, false, true));
-        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, true, 0, false, false, false));
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, true, 0, false, false, false));
         assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, false, 0, false, false, false));
         assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(downloading, false, 0, false, false, false));
         assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false));

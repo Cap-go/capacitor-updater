@@ -2859,7 +2859,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
             latestVersionName.equals(current.getVersionName());
         return CapgoUpdater.shouldRetryDownloadForExistingBundle(
             bundle,
-            this.implementation.isBundleOnDisk(bundle.getId()),
+            this.implementation.canSet(bundle),
             CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName),
             this.implementation.isIntegrityBlockedVersion(latestVersionName),
             isCurrent,
