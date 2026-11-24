@@ -6504,9 +6504,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                         if (preferred != null) {
                                             latest = preferred;
+                                        } else if (latest.isDeleted() || latest.isDeleting()) {
+                                            latest = null;
                                         }
                                     }
                                     if (
+                                        latest != null &&
                                         latest.isErrorStatus() &&
                                         !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
                                     ) {
@@ -6652,6 +6655,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             if (downloadBlockedReason != null) {
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     downloadBlockedReason,
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate,
+                                    downloadContext
+                                );
+                                return;
+                            }
+                            if (
+                                CapgoUpdater.incompleteDownloadRetryCount(
+                                    CapacitorUpdaterPlugin.this.prefs,
+                                    latestVersionName
+                                ) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES &&
+                                (latest == null ||
+                                    CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current))
+                            ) {
+                                logger.error("Latest bundle exceeded incomplete download retries. Aborting update.");
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    "Latest version is in error state. Aborting update.",
                                     latestVersionName,
                                     current,
                                     true,

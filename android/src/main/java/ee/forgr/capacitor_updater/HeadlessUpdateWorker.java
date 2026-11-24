@@ -284,7 +284,7 @@ public class HeadlessUpdateWorker extends Worker {
             if (existing == null && updater.isIntegrityBlockedVersion(version)) {
                 return "failed";
             }
-            if (existing == null && updater.incompleteDownloadRetryCount(version) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
+            if (updater.incompleteDownloadRetryCount(version) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
                 return "failed";
             }
             if (existing == null && updater.incompleteDownloadRetryCount(version) > 0) {

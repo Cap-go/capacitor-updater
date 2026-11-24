@@ -4513,15 +4513,22 @@ import UIKit
         guard !version.isEmpty else {
             return nil
         }
+        var tombstoneMatch: BundleInfo?
         for i in self.list(raw: true) {
-            if i.isBuiltin() || i.isUnknown() {
+            if i.isBuiltin() || i.isUnknown() || i.getVersionName() != version {
                 continue
             }
-            if i.getVersionName() == version {
-                return i
+            if !i.isDeleted() && !i.isDeleting() {
+                if i.isErrorStatus() || i.isDownloading() {
+                    return i
+                }
+                continue
+            }
+            if tombstoneMatch == nil {
+                tombstoneMatch = i
             }
         }
-        return nil
+        return tombstoneMatch
     }
 
     private func removeBundleInfo(id: String) {

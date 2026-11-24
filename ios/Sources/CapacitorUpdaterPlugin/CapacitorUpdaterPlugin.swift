@@ -5045,7 +5045,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.shouldRetryDownloadForExistingBundle($0, latestVersionName: latestVersionName, current: current)
                     } ?? self.shouldRetryDownloadForMissingBundle(latestVersionName: latestVersionName)
                     if !needsDownload, let existing = nextImpl {
-                        nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName) ?? existing
+                        nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName)
                     }
                     if needsDownload {
                         var retryDownloadSlot = false
@@ -5068,6 +5068,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         self.downloadActiveVersionName = latestVersionName
                         self.downloadLock.unlock()
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
+                        if retryDownloadSlot {
+                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
+                        }
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
@@ -5090,9 +5093,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 link: res.link,
                                 comment: res.comment
                             )
-                        }
-                        if retryDownloadSlot {
-                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
                         }
                     }
                     if nextImpl == nil && !needsDownload {

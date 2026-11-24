@@ -5148,15 +5148,22 @@ public class CapgoUpdater {
         if (versionName == null || versionName.isEmpty() || this.prefs == null) {
             return null;
         }
+        BundleInfo tombstoneMatch = null;
         for (final BundleInfo i : this.list(true)) {
             if (i == null || i.isBuiltin() || i.isUnknown() || !versionName.equals(i.getVersionName())) {
                 continue;
             }
-            if (i.isDeleted() || i.isDeleting() || i.isErrorStatus() || BundleStatus.DOWNLOADING == i.getStatus()) {
-                return i;
+            if (!i.isDeleted() && !i.isDeleting()) {
+                if (i.isErrorStatus() || BundleStatus.DOWNLOADING == i.getStatus()) {
+                    return i;
+                }
+                continue;
+            }
+            if (tombstoneMatch == null) {
+                tombstoneMatch = i;
             }
         }
-        return null;
+        return tombstoneMatch;
     }
 
     private void removeBundleInfo(final String id) {
