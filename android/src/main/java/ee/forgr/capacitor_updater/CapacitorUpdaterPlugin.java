@@ -2898,6 +2898,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
             ) {
                 return false;
             }
+            if (
+                !this.implementation.isInterruptedDownloadBundle(bundle.getId()) &&
+                CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName) == 0
+            ) {
+                return false;
+            }
         }
         final boolean isQueuedNext = bundle != null && next != null && bundle.getId().equals(next.getId());
         final boolean isCurrent =
@@ -6206,10 +6212,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     /**
-     * Security gates of an auto-update download, checked before it starts. Returns the cycle status
-     * when the download must not start (after sending its stat), or null.
+     * Session/checksum checks before reusing an on-device bundle (does not re-run transport gates).
      */
-    private String autoUpdateDownloadBlockedReason(final JSObject latest, final String latestVersionName) {
+    private String autoUpdateReuseBlockedReason(final JSObject latest, final String latestVersionName) {
         final String sessionKey = latest.getString("sessionKey", "");
         if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
             logger.error("Public key present but no valid session key provided");
@@ -6221,6 +6226,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("No checksum provided");
             this.implementation.sendStats("checksum_required", latestVersionName);
             return "Checksum required";
+        }
+        return null;
+    }
+
+    /**
+     * Security gates of an auto-update download, checked before it starts. Returns the cycle status
+     * when the download must not start (after sending its stat), or null.
+     */
+    private String autoUpdateDownloadBlockedReason(final JSObject latest, final String latestVersionName) {
+        final String reuseBlockedReason = this.autoUpdateReuseBlockedReason(latest, latestVersionName);
+        if (reuseBlockedReason != null) {
+            return reuseBlockedReason;
         }
         try {
             this.implementation.runPreDownloadSecurityGates(
@@ -6546,13 +6563,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     ) {
                                         final JSObject ret = new JSObject();
                                         ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                        final String downloadBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
+                                        final String reuseBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateReuseBlockedReason(
                                             jsRes,
                                             latestVersionName
                                         );
-                                        if (downloadBlockedReason != null) {
+                                        if (reuseBlockedReason != null) {
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                downloadBlockedReason,
+                                                reuseBlockedReason,
                                                 latestVersionName,
                                                 current,
                                                 true,
