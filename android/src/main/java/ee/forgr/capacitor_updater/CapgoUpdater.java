@@ -566,16 +566,16 @@ public class CapgoUpdater {
             return true;
         }
         if (bundle.isDeleted() || bundle.isDeleting() || BundleStatus.DOWNLOADING == bundle.getStatus()) {
-            return true;
+            return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
         }
         if (bundle.isErrorStatus()) {
             return interruptedDownloadFailure;
         }
         if (BundleStatus.PENDING == bundle.getStatus()) {
-            if (isQueuedNext && bundleOnDisk) {
+            if (bundleOnDisk) {
                 return false;
             }
-            return !bundleOnDisk;
+            return true;
         }
         return false;
     }

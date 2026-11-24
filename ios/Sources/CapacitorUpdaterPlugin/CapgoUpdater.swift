@@ -3546,16 +3546,16 @@ import UIKit
             return false
         }
         if bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading() {
-            return true
+            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
         }
         if bundle.isErrorStatus() {
             return interruptedDownloadFailure
         }
         if bundle.getStatus() == BundleStatus.PENDING.storedValue {
-            if isQueuedNext && bundleOnDisk {
+            if bundleOnDisk {
                 return false
             }
-            return !bundleOnDisk
+            return true
         }
         return false
     }
