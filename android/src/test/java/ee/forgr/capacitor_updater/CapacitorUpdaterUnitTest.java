@@ -2207,6 +2207,31 @@ public class CapacitorUpdaterUnitTest {
     }
 
     @Test
+    public void testShouldRetryDownloadForIncompleteExistingBundles() {
+        final BundleInfo pendingQueued = new BundleInfo("pending-id", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+        final BundleInfo pendingStale = new BundleInfo("pending-stale", "2.0.0", BundleStatus.PENDING, new Date(), "abc123");
+        final BundleInfo downloading = new BundleInfo("downloading-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "");
+        final BundleInfo interruptedError = new BundleInfo("error-id", "2.0.0", BundleStatus.ERROR, new Date(), "");
+
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingQueued, true, 0, false, false, true));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, true, 0, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, false, 0, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(downloading, false, 0, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false));
+        assertFalse(
+            CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                interruptedError,
+                false,
+                CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES,
+                false,
+                false,
+                false
+            )
+        );
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, false, false));
+    }
+
+    @Test
     public void testRetryingDirectLaunchDownloadReleasesTheLaunch() {
         assertTrue(CapgoUpdater.shouldReleaseLaunchWhileRetrying(false, true, true, false));
     }

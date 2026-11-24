@@ -3461,6 +3461,108 @@ import UIKit
         }
     }
 
+    /// Retries for interrupted downloads only. Checksum/signature blocks use `markIntegrityBlockedVersion(version:)`.
+    public static let maxIncompleteDownloadRetries = 3
+    private let incompleteRetryCountPrefix = "capgo_incomplete_retry_count_"
+    private let incompleteFailReportedPrefix = "capgo_incomplete_fail_reported_"
+    private let integrityBlockedVersionPrefix = "capgo_integrity_blocked_version_"
+
+    func incompleteDownloadRetryCount(version: String) -> Int {
+        guard !version.isEmpty else {
+            return 0
+        }
+        return max(0, UserDefaults.standard.integer(forKey: incompleteRetryCountPrefix + version))
+    }
+
+    func incrementIncompleteDownloadRetryCount(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        let next = self.incompleteDownloadRetryCount(version: version) + 1
+        UserDefaults.standard.set(next, forKey: incompleteRetryCountPrefix + version)
+        UserDefaults.standard.synchronize()
+    }
+
+    func resetIncompleteDownloadRetryCount(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        UserDefaults.standard.removeObject(forKey: incompleteRetryCountPrefix + version)
+        UserDefaults.standard.removeObject(forKey: integrityBlockedVersionPrefix + version)
+        UserDefaults.standard.synchronize()
+    }
+
+    func markIntegrityBlockedVersion(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: integrityBlockedVersionPrefix + version)
+        UserDefaults.standard.synchronize()
+    }
+
+    func isIntegrityBlockedVersion(version: String) -> Bool {
+        !version.isEmpty && UserDefaults.standard.bool(forKey: integrityBlockedVersionPrefix + version)
+    }
+
+    static func shouldRetryDownloadForExistingBundle(
+        _ bundle: BundleInfo,
+        bundleOnDisk: Bool,
+        incompleteRetryCount: Int,
+        integrityBlocked: Bool,
+        isCurrentBundle: Bool,
+        isQueuedNext: Bool
+    ) -> Bool {
+        if integrityBlocked {
+            return false
+        }
+        if bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading() {
+            return true
+        }
+        if bundle.isErrorStatus() {
+            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+        }
+        if bundle.getStatus() == BundleStatus.PENDING.storedValue {
+            if !bundleOnDisk {
+                return true
+            }
+            if !isCurrentBundle && !isQueuedNext {
+                return true
+            }
+        }
+        return false
+    }
+
+    func isBundleOnDisk(id: String) -> Bool {
+        self.bundleExists(id: id)
+    }
+
+    /// Interrupted `downloading` records (e.g. process kill) emit `download_fail` once on the next launch, then move to `error`.
+    func reconcileInterruptedDownloadsOnLaunch(isVersionActivelyDownloading: ((String) -> Bool)?) {
+        for info in self.list(raw: true) {
+            if info.isBuiltin() || info.getId().isEmpty {
+                continue
+            }
+            if !info.isDownloading() {
+                continue
+            }
+            if info.getId() == self.getCurrentBundleId() {
+                continue
+            }
+            let version = info.getVersionName()
+            if let isActive = isVersionActivelyDownloading, isActive(version) {
+                continue
+            }
+            let reportedKey = incompleteFailReportedPrefix + info.getId()
+            if !UserDefaults.standard.bool(forKey: reportedKey) {
+                UserDefaults.standard.set(true, forKey: reportedKey)
+                UserDefaults.standard.synchronize()
+                self.sendStats(action: "download_fail", versionName: version)
+            }
+            _ = self.saveBundleInfo(id: info.getId(), bundle: info.setStatus(status: BundleStatus.ERROR.storedValue))
+            self.incrementIncompleteDownloadRetryCount(version: version)
+        }
+    }
+
     func canSet(bundle: BundleInfo) -> Bool {
         bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
     }

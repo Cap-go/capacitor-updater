@@ -178,11 +178,40 @@ public class HeadlessUpdateWorker extends Worker {
             final String sessionKey = latest.get("sessionKey") instanceof String ? (String) latest.get("sessionKey") : "";
             final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
 
-            final BundleInfo existing = updater.getBundleInfoByName(version);
-            if (existing != null && existing.isErrorStatus()) {
+            BundleInfo existing = updater.getBundleInfoByName(version);
+            if (updater.isIntegrityBlockedVersion(version)) {
                 return "failed";
             }
-            if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
+            final BundleInfo next = updater.getNextBundle();
+            final boolean isQueuedNext = existing != null && next != null && existing.getId().equals(next.getId());
+            final boolean isCurrent =
+                existing != null &&
+                existing.getId().equals(current.getId()) &&
+                BundleStatus.SUCCESS == current.getStatus() &&
+                version.equals(current.getVersionName());
+            if (
+                existing != null &&
+                CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                    existing,
+                    updater.isBundleOnDisk(existing.getId()),
+                    updater.incompleteDownloadRetryCount(version),
+                    false,
+                    isCurrent,
+                    isQueuedNext
+                )
+            ) {
+                updater.incrementIncompleteDownloadRetryCount(version);
+                updater.setNextBundle(null);
+                try {
+                    updater.delete(existing.getId(), true);
+                } catch (final IOException e) {
+                    logger.error("Failed to delete incomplete bundle: " + version + " " + e.getMessage());
+                }
+                existing = updater.getBundleInfoByName(version);
+            }
+            if (
+                existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus() && updater.canSet(existing)
+            ) {
                 if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
                     if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
                         updater.handOverPendingStats();

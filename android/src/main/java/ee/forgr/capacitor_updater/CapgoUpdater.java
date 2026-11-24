@@ -464,6 +464,131 @@ public class CapgoUpdater {
         return !observedByThisProcess;
     }
 
+    /** Retries for interrupted downloads only. Checksum/signature blocks use {@link #markIntegrityBlockedVersion}. */
+    public static final int MAX_INCOMPLETE_DOWNLOAD_RETRIES = 3;
+    private static final String INCOMPLETE_RETRY_COUNT_PREFIX = "capgo_incomplete_retry_count_";
+    private static final String INCOMPLETE_FAIL_REPORTED_PREFIX = "capgo_incomplete_fail_reported_";
+    private static final String INTEGRITY_BLOCKED_VERSION_PREFIX = "capgo_integrity_blocked_version_";
+
+    static int incompleteDownloadRetryCount(final SharedPreferences prefs, final String version) {
+        if (prefs == null || version == null || version.isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, prefs.getInt(INCOMPLETE_RETRY_COUNT_PREFIX + version, 0));
+    }
+
+    int incompleteDownloadRetryCount(final String version) {
+        return incompleteDownloadRetryCount(this.prefs, version);
+    }
+
+    void incrementIncompleteDownloadRetryCount(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        final int next = incompleteDownloadRetryCount(this.prefs, version) + 1;
+        this.editor.putInt(INCOMPLETE_RETRY_COUNT_PREFIX + version, next);
+        this.editor.commit();
+    }
+
+    void resetIncompleteDownloadRetryCount(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        this.editor.remove(INCOMPLETE_RETRY_COUNT_PREFIX + version);
+        this.editor.remove(INTEGRITY_BLOCKED_VERSION_PREFIX + version);
+        this.editor.commit();
+    }
+
+    void markIntegrityBlockedVersion(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        this.editor.putBoolean(INTEGRITY_BLOCKED_VERSION_PREFIX + version, true);
+        this.editor.commit();
+    }
+
+    boolean isIntegrityBlockedVersion(final String version) {
+        return (
+            this.prefs != null &&
+            version != null &&
+            !version.isEmpty() &&
+            this.prefs.getBoolean(INTEGRITY_BLOCKED_VERSION_PREFIX + version, false)
+        );
+    }
+
+    /**
+     * True when a stored bundle for the offered version must be removed and downloaded again.
+     * Integrity-blocked versions never retry here.
+     */
+    public static boolean shouldRetryDownloadForExistingBundle(
+        final BundleInfo bundle,
+        final boolean bundleOnDisk,
+        final int incompleteRetryCount,
+        final boolean integrityBlocked,
+        final boolean isCurrentBundle,
+        final boolean isQueuedNext
+    ) {
+        if (bundle == null) {
+            return true;
+        }
+        if (integrityBlocked) {
+            return false;
+        }
+        if (bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading()) {
+            return true;
+        }
+        if (bundle.isErrorStatus()) {
+            return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+        }
+        if (BundleStatus.PENDING == bundle.getStatus()) {
+            if (!bundleOnDisk) {
+                return true;
+            }
+            if (!isCurrentBundle && !isQueuedNext) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean isBundleOnDisk(final String id) {
+        return id != null && !id.isEmpty() && this.bundleExists(id);
+    }
+
+    /**
+     * Interrupted {@link BundleStatus#DOWNLOADING} records (e.g. process kill) emit {@code download_fail}
+     * once on the next launch, then move to ERROR so a later update check can retry.
+     */
+    public void reconcileInterruptedDownloadsOnLaunch(final java.util.function.Predicate<String> isVersionActivelyDownloading) {
+        for (final BundleInfo info : this.list(true)) {
+            if (info == null || info.isBuiltin() || info.getId() == null || info.getId().isEmpty()) {
+                continue;
+            }
+            if (info.getStatus() != BundleStatus.DOWNLOADING) {
+                continue;
+            }
+            if (info.getId().equals(this.getCurrentBundleId())) {
+                continue;
+            }
+            final String version = info.getVersionName();
+            if (isVersionActivelyDownloading != null && isVersionActivelyDownloading.test(version)) {
+                continue;
+            }
+            final String reportedKey = INCOMPLETE_FAIL_REPORTED_PREFIX + info.getId();
+            if (this.prefs != null && !this.prefs.getBoolean(reportedKey, false)) {
+                if (this.editor != null) {
+                    this.editor.putBoolean(reportedKey, true);
+                    this.editor.commit();
+                }
+                this.sendStats("download_fail", version);
+            }
+            this.saveBundleInfo(info.getId(), info.setStatus(BundleStatus.ERROR));
+            this.incrementIncompleteDownloadRetryCount(version);
+            this.cleanupManifestStagingAfterDownloadCancelled(info.getId());
+            DownloadWorkerManager.cancelVersionDownloadAndAwait(this.context(), version);
+        }
+    }
+
     static boolean shouldReleaseLaunchWhileRetrying(
         final boolean awaitedByCaller,
         final boolean setNext,
@@ -1840,6 +1965,7 @@ public class CapgoUpdater {
                     logger.error("Checksum mismatch");
                     logger.debug("Expected: " + expectedChecksum + ", Got: " + checksum);
                     this.sendStats("checksum_fail");
+                    this.markIntegrityBlockedVersion(version);
                     throw new IOException("Checksum failed: " + id);
                 }
             }

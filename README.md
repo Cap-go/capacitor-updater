@@ -45,6 +45,7 @@ Capgo provides skills and a hosted MCP server so AI coding agents can set up and
 ## Key features
 
 - **Auto update**: downloads and applies the latest bundle from Capgo Cloud or your own update server.
+- **Interrupted downloads**: auto update retries incomplete downloads after app kill or background interruption, with a bounded retry (3 attempts) and a `download_fail` stat reported on the next launch at latest.
 - **Safe rollouts**: `notifyAppReady()` confirms a bundle works, otherwise the app rolls back to the last working one.
 - **Bundle control**: `download()`, `next()`, `set()`, `list()`, `delete()` and `reset()` for manual flows.
 - **Channels**: `setChannel()`, `getChannel()` and `listChannels()` for environments and per-device QA.
