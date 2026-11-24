@@ -1131,7 +1131,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.persistCurrentNativeBuildVersion();
         }
         this.cleanupObsoleteVersions(resetWhenUpdate);
-        this.implementation.reconcileInterruptedDownloadsOnLaunch(this::isVersionDownloadInProgress);
 
         // Check for 'kill' delay condition on app launch
         // This handles cases where the app was killed by the system (onDestroy is not reliable)
@@ -2848,20 +2847,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean shouldRetryIncompleteDownload(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
-        if (bundle == null) {
-            return true;
-        }
         final BundleInfo next = this.implementation.getNextBundle();
-        final boolean isQueuedNext = next != null && bundle.getId().equals(next.getId());
+        final boolean isQueuedNext = bundle != null && next != null && bundle.getId().equals(next.getId());
         final boolean isCurrent =
+            bundle != null &&
             bundle.getId().equals(current.getId()) &&
             BundleStatus.SUCCESS == current.getStatus() &&
             latestVersionName.equals(current.getVersionName());
+        final boolean interrupted = bundle != null && this.implementation.isInterruptedDownloadBundle(bundle.getId());
         return CapgoUpdater.shouldRetryDownloadForExistingBundle(
             bundle,
-            this.implementation.canSet(bundle),
+            bundle != null && this.implementation.canSet(bundle),
             CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName),
             this.implementation.isIntegrityBlockedVersion(latestVersionName),
+            interrupted,
             isCurrent,
             isQueuedNext
         );
@@ -3185,6 +3184,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.implementation.cleanupOrphanedManifestStagingFolders(null);
 
                         this.persistCurrentNativeBuildVersion();
+                        if (this.implementation != null) {
+                            this.implementation.reconcileInterruptedDownloadsOnLaunch();
+                        }
                     } catch (Exception e) {
                         logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
                     } finally {
@@ -6395,20 +6397,20 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 logger.info("Reusing automatic download for version: " + latestVersionName);
                                 return;
                             }
+                            if (CapacitorUpdaterPlugin.this.implementation.isIntegrityBlockedVersion(latestVersionName)) {
+                                logger.error("Latest bundle version is blocked after integrity failure and will not retry.");
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    "Latest version failed integrity check and will not retry",
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate,
+                                    downloadContext
+                                );
+                                return;
+                            }
                             BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest != null) {
-                                if (CapacitorUpdaterPlugin.this.implementation.isIntegrityBlockedVersion(latestVersionName)) {
-                                    logger.error("Latest bundle version is blocked after integrity failure and will not retry.");
-                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Latest version failed integrity check and will not retry",
-                                        latestVersionName,
-                                        current,
-                                        true,
-                                        plannedDirectUpdate,
-                                        downloadContext
-                                    );
-                                    return;
-                                }
                                 if (CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
                                     logger.info(
                                         "Latest bundle already exists in incomplete state (" +
@@ -6416,7 +6418,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             ") and will be deleted, download will overwrite it."
                                     );
                                     CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
-                                    CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                    final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
+                                    if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
+                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                    }
                                     if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
                                         return;
                                     }
@@ -6539,10 +6544,25 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                                 downloadContext
                                             );
                                         }
-                                        CapacitorUpdaterPlugin.this.implementation.resetIncompleteDownloadRetryCount(latestVersionName);
                                         return;
                                     }
                                 }
+                            }
+                            if (
+                                latest == null &&
+                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >=
+                                    CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES
+                            ) {
+                                logger.error("Latest bundle exceeded incomplete download retries. Aborting update.");
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    "Latest version is in error state. Aborting update.",
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate,
+                                    downloadContext
+                                );
+                                return;
                             }
                             // The store refuses these downloads without a callback, so end the cycle here
                             // (appReady, splash hide) like iOS does.

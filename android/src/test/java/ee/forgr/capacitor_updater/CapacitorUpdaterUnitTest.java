@@ -2213,22 +2213,24 @@ public class CapacitorUpdaterUnitTest {
         final BundleInfo downloading = new BundleInfo("downloading-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "");
         final BundleInfo interruptedError = new BundleInfo("error-id", "2.0.0", BundleStatus.ERROR, new Date(), "");
 
-        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingQueued, true, 0, false, false, true));
-        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, true, 0, false, false, false));
-        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, false, 0, false, false, false));
-        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(downloading, false, 0, false, false, false));
-        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false));
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingQueued, true, 0, false, false, false, true));
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, true, 0, false, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(pendingStale, false, 0, false, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(downloading, false, 0, false, false, false, false));
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, true, false, false));
         assertFalse(
             CapgoUpdater.shouldRetryDownloadForExistingBundle(
                 interruptedError,
                 false,
                 CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES,
                 false,
+                true,
                 false,
                 false
             )
         );
-        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, false, false));
+        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, true, false, false));
     }
 
     @Test

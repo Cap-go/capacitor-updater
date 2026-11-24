@@ -190,25 +190,47 @@ public class HeadlessUpdateWorker extends Worker {
                 existing.getId().equals(current.getId()) &&
                 BundleStatus.SUCCESS == current.getStatus() &&
                 version.equals(current.getVersionName());
-            if (
-                existing != null &&
-                CapgoUpdater.shouldRetryDownloadForExistingBundle(
-                    existing,
-                    updater.canSet(existing),
-                    updater.incompleteDownloadRetryCount(version),
-                    false,
-                    isCurrent,
-                    isQueuedNext
-                )
-            ) {
-                updater.incrementIncompleteDownloadRetryCount(version);
-                updater.setNextBundle(null);
-                try {
-                    updater.delete(existing.getId(), true);
-                } catch (final IOException e) {
-                    logger.error("Failed to delete incomplete bundle: " + version + " " + e.getMessage());
+            if (existing != null) {
+                final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
+                final int retryCount = updater.incompleteDownloadRetryCount(version);
+                final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                if (
+                    existing.isErrorStatus() &&
+                    !CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        updater.canSet(existing),
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    )
+                ) {
+                    return "failed";
                 }
-                existing = updater.getBundleInfoByName(version);
+                if (
+                    CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        updater.canSet(existing),
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    ) &&
+                    !(BundleStatus.DOWNLOADING == existing.getStatus() && updater.isVersionDownloadObservedInThisProcess(version))
+                ) {
+                    updater.incrementIncompleteDownloadRetryCount(version);
+                    if (isQueuedNext) {
+                        updater.setNextBundle(null);
+                    }
+                    try {
+                        updater.delete(existing.getId(), true);
+                    } catch (final IOException e) {
+                        logger.error("Failed to delete incomplete bundle: " + version + " " + e.getMessage());
+                    }
+                    existing = updater.getBundleInfoByName(version);
+                }
             }
             if (
                 existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus() && updater.canSet(existing)

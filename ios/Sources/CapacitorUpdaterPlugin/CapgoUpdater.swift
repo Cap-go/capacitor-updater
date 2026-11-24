@@ -2081,6 +2081,7 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
             )
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
             reportFailure(resolvedError)
@@ -2098,6 +2099,7 @@ import UIKit
                 )
             } catch {
                 let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+                self.markInterruptedDownloadBundle(bundleId: id)
                 self.saveBundleInfo(id: id, bundle: errorBundle)
                 removePartialManifestBundleDirectory(destFolder)
                 self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
@@ -2169,6 +2171,7 @@ import UIKit
             )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
             reportFailure(resolvedError)
@@ -2789,6 +2792,7 @@ import UIKit
         var mainError: NSError?
 
         guard var request = createRequest(url: url, method: "GET") else {
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw NSError(
                 domain: "DownloadError",
@@ -2865,6 +2869,7 @@ import UIKit
         if mainError != nil {
             logger.error("Failed to download bundle")
             logger.debug("Error: \(String(describing: mainError))")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw mainError!
         }
@@ -2876,6 +2881,7 @@ import UIKit
         } catch {
             logger.error("Failed to decrypt file")
             logger.debug("Error: \(error)")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData(for: id)
             throw error
@@ -2888,6 +2894,7 @@ import UIKit
             logger.error("Checksum mismatch, bundle rejected before extraction")
             CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: expectedHash)
             self.sendStats(action: "checksum_fail", versionName: version)
+            self.markIntegrityBlockedVersion(version: version)
             try? FileManager.default.removeItem(at: finalPath)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData(for: id)
@@ -2904,6 +2911,7 @@ import UIKit
         } catch {
             logger.error("Failed to unzip file")
             logger.debug("Error: \(error)")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             // Best-effort cleanup of the decrypted zip file when unzip fails
             do {
@@ -3466,6 +3474,7 @@ import UIKit
     private let incompleteRetryCountPrefix = "capgo_incomplete_retry_count_"
     private let incompleteFailReportedPrefix = "capgo_incomplete_fail_reported_"
     private let integrityBlockedVersionPrefix = "capgo_integrity_blocked_version_"
+    private let interruptedDownloadBundlePrefix = "capgo_interrupted_download_bundle_"
 
     func incompleteDownloadRetryCount(version: String) -> Int {
         guard !version.isEmpty else {
@@ -3504,24 +3513,48 @@ import UIKit
         !version.isEmpty && UserDefaults.standard.bool(forKey: integrityBlockedVersionPrefix + version)
     }
 
+    func markInterruptedDownloadBundle(bundleId: String) {
+        guard !bundleId.isEmpty else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: interruptedDownloadBundlePrefix + bundleId)
+        UserDefaults.standard.synchronize()
+    }
+
+    func isInterruptedDownloadBundle(bundleId: String) -> Bool {
+        !bundleId.isEmpty && UserDefaults.standard.bool(forKey: interruptedDownloadBundlePrefix + bundleId)
+    }
+
+    func clearInterruptedDownloadBundle(bundleId: String) {
+        guard !bundleId.isEmpty else {
+            return
+        }
+        UserDefaults.standard.removeObject(forKey: interruptedDownloadBundlePrefix + bundleId)
+        UserDefaults.standard.synchronize()
+    }
+
     static func shouldRetryDownloadForExistingBundle(
         _ bundle: BundleInfo,
         bundleOnDisk: Bool,
         incompleteRetryCount: Int,
         integrityBlocked: Bool,
+        interruptedDownloadFailure: Bool,
         isCurrentBundle: Bool,
         isQueuedNext: Bool
     ) -> Bool {
-        if integrityBlocked {
+        if integrityBlocked || incompleteRetryCount >= CapgoUpdater.maxIncompleteDownloadRetries {
             return false
         }
         if bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading() {
             return true
         }
         if bundle.isErrorStatus() {
-            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+            return interruptedDownloadFailure
         }
         if bundle.getStatus() == BundleStatus.PENDING.storedValue {
+            if isQueuedNext && bundleOnDisk {
+                return false
+            }
             return !bundleOnDisk
         }
         return false
@@ -3532,7 +3565,7 @@ import UIKit
     }
 
     /// Interrupted `downloading` records (e.g. process kill) emit `download_fail` once on the next launch, then move to `error`.
-    func reconcileInterruptedDownloadsOnLaunch(isVersionActivelyDownloading: ((String) -> Bool)?) {
+    func reconcileInterruptedDownloadsOnLaunch() {
         for info in self.list(raw: true) {
             if info.isBuiltin() || info.getId().isEmpty {
                 continue
@@ -3544,17 +3577,14 @@ import UIKit
                 continue
             }
             let version = info.getVersionName()
-            if let isActive = isVersionActivelyDownloading, isActive(version) {
-                continue
-            }
             let reportedKey = incompleteFailReportedPrefix + info.getId()
             if !UserDefaults.standard.bool(forKey: reportedKey) {
                 UserDefaults.standard.set(true, forKey: reportedKey)
                 UserDefaults.standard.synchronize()
                 self.sendStats(action: "download_fail", versionName: version)
             }
+            self.markInterruptedDownloadBundle(bundleId: info.getId())
             _ = self.saveBundleInfo(id: info.getId(), bundle: info.setStatus(status: BundleStatus.ERROR.storedValue))
-            self.incrementIncompleteDownloadRetryCount(version: version)
         }
     }
 
@@ -3687,6 +3717,11 @@ import UIKit
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
+        let versionName = bundle.getVersionName()
+        if !versionName.isEmpty {
+            self.resetIncompleteDownloadRetryCount(version: versionName)
+        }
+        self.clearInterruptedDownloadBundle(bundleId: bundle.getId())
         let fallback: BundleInfo = self.getFallbackBundle()
         let previewFallback = self.getPreviewFallbackBundle()
         let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
