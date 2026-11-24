@@ -6494,83 +6494,42 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             }
                             boolean retryDownloadSlot = false;
                             if (latest != null) {
-                                if (CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
-                                    logger.info(
-                                        "Latest bundle already exists in incomplete state (" +
-                                            latest.getStatus() +
-                                            ") and will be deleted, download will overwrite it."
+                                if (
+                                    latest.isErrorStatus() &&
+                                    !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
+                                ) {
+                                    logger.error("Latest bundle is in error state after incomplete retries. Aborting update.");
+                                    CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                        "Latest version is in error state. Aborting update.",
+                                        latestVersionName,
+                                        current,
+                                        true,
+                                        plannedDirectUpdate,
+                                        downloadContext
                                     );
-                                    retryDownloadSlot =
-                                        CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >
-                                            0 ||
-                                        CapacitorUpdaterPlugin.this.implementation.isInterruptedDownloadBundle(latest.getId());
-                                    final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
-                                    if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
-                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
-                                    }
-                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                        return;
-                                    }
-                                    try {
-                                        final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
-                                        if (Boolean.TRUE.equals(deleted)) {
-                                            logger.info("Incomplete bundle deleted: " + latest.toString());
-                                        } else {
-                                            logger.error("Failed to delete incomplete bundle: " + latest.toString());
-                                        }
-                                    } catch (final IOException e) {
-                                        logger.error(
-                                            "Failed to delete incomplete bundle: " + latest.getVersionName() + " " + e.getMessage()
-                                        );
-                                    }
-                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                        return;
-                                    }
-                                    latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
-                                    if (latest == null) {
-                                        latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(
-                                            latestVersionName
-                                        );
-                                    }
+                                    return;
                                 }
-                                if (latest != null) {
-                                    if (!CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
-                                        final BundleInfo preferred = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
-                                            latest,
-                                            latestVersionName
-                                        );
-                                        if (preferred != null) {
-                                            latest = preferred;
-                                        } else if (latest.isDeleted() || latest.isDeleting()) {
-                                            latest = null;
-                                        }
+                                if (!CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
+                                    final BundleInfo preferred = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
+                                        latest,
+                                        latestVersionName
+                                    );
+                                    if (preferred != null) {
+                                        latest = preferred;
+                                    } else if (latest.isDeleted() || latest.isDeleting()) {
+                                        latest = null;
                                     }
-                                    if (
-                                        latest != null &&
-                                        latest.isErrorStatus() &&
-                                        !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
-                                    ) {
-                                        logger.error("Latest bundle is in error state after incomplete retries. Aborting update.");
-                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                            "Latest version is in error state. Aborting update.",
-                                            latestVersionName,
-                                            current,
-                                            true,
-                                            plannedDirectUpdate,
-                                            downloadContext
-                                        );
-                                        return;
-                                    }
-                                    final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
-                                    if (
-                                        latest.isDownloaded() &&
-                                        BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
-                                            CryptoCipher.isValidSessionKey(latestSessionKey))
-                                    ) {
+                                    if (latest != null) {
                                         final JSObject ret = new JSObject();
                                         ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                        logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
+                                        final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                        if (
+                                            latest.isDownloaded() &&
+                                            BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                            (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                                CryptoCipher.isValidSessionKey(latestSessionKey))
+                                        ) {
+                                            logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                         final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                             plannedDirectUpdate,
                                             timeoutGeneration
@@ -6658,6 +6617,62 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         }
                                         return;
                                     }
+                                    if (latest.isDeleted()) {
+                                        logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                        try {
+                                            final boolean deleted = CapacitorUpdaterPlugin.this.implementation.deleteDeletedBundle(
+                                                latest.getId()
+                                            );
+                                            if (deleted) {
+                                                logger.info("Failed bundle deleted: " + latest.getVersionName());
+                                            }
+                                        } catch (final IOException e) {
+                                            logger.error(
+                                                "Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage()
+                                            );
+                                        }
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                    }
+                                }
+                            } else {
+                                logger.info(
+                                    "Latest bundle already exists in incomplete state (" +
+                                        latest.getStatus() +
+                                        ") and will be deleted, download will overwrite it."
+                                );
+                                retryDownloadSlot =
+                                    CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) > 0 ||
+                                    CapacitorUpdaterPlugin.this.implementation.isInterruptedDownloadBundle(latest.getId());
+                                final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
+                                if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
+                                    CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                }
+                                if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                    return;
+                                }
+                                try {
+                                    final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
+                                    if (Boolean.TRUE.equals(deleted)) {
+                                        logger.info("Incomplete bundle deleted: " + latest.toString());
+                                    } else {
+                                        logger.error("Failed to delete incomplete bundle: " + latest.toString());
+                                    }
+                                } catch (final IOException e) {
+                                    logger.error(
+                                        "Failed to delete incomplete bundle: " + latest.getVersionName() + " " + e.getMessage()
+                                    );
+                                }
+                                if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                    return;
+                                }
+                                latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                                if (latest == null) {
+                                    latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
                                 }
                             }
                             if (
