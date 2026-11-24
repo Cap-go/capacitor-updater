@@ -4463,6 +4463,23 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return self.implementation.incompleteDownloadRetryCount(version: latestVersionName) < CapgoUpdater.maxIncompleteDownloadRetries
     }
 
+    private func preferredAutoUpdateBundle(existing: BundleInfo?, latestVersionName: String) -> BundleInfo? {
+        guard let existing else {
+            return nil
+        }
+        if let queued = self.implementation.getNextBundle(),
+           latestVersionName == queued.getVersionName(),
+           existing.getId() != queued.getId(),
+           !queued.isDeleted(),
+           !queued.isDeleting() {
+            return queued
+        }
+        if existing.isDeleted() || existing.isDeleting() {
+            return nil
+        }
+        return existing
+    }
+
     static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
         directUpdateMode == autoUpdateModeInstall || directUpdateMode == autoUpdateModeLaunch || directUpdateMode == autoUpdateModeAlways
     }
@@ -4998,6 +5015,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                     let needsDownload = nextImpl.map {
                         self.shouldRetryDownloadForExistingBundle($0, latestVersionName: latestVersionName, current: current)
                     } ?? self.shouldRetryDownloadForMissingBundle(latestVersionName: latestVersionName)
+                    if !needsDownload, let existing = nextImpl {
+                        nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName) ?? existing
+                    }
                     if needsDownload {
                         if let existing = nextImpl {
                             self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")

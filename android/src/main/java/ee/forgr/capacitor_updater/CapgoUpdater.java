@@ -496,8 +496,7 @@ public class CapgoUpdater {
             return;
         }
         this.editor.remove(INCOMPLETE_RETRY_COUNT_PREFIX + version);
-        this.editor.remove(INTEGRITY_BLOCKED_VERSION_PREFIX + version);
-        this.editor.remove(INTEGRITY_BLOCKED_VERSION_PREFIX + "preview:" + version);
+        this.editor.remove(this.integrityBlockedVersionKey(version));
         this.editor.commit();
     }
 
@@ -639,6 +638,11 @@ public class CapgoUpdater {
             if (this.isVersionDownloadObservedInThisProcess(version)) {
                 continue;
             }
+            synchronized (this.deleteLock) {
+                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
+                    continue;
+                }
+            }
             final String reportedKey = INCOMPLETE_FAIL_REPORTED_PREFIX + info.getId();
             if (this.prefs != null && !this.prefs.getBoolean(reportedKey, false)) {
                 this.sendStats("download_fail", version);
@@ -652,9 +656,6 @@ public class CapgoUpdater {
                 DownloadWorkerManager.cancelVersionDownload(this.context(), version);
             }
             synchronized (this.deleteLock) {
-                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
-                    continue;
-                }
                 final BundleInfo currentInfo = this.getBundleInfo(info.getId());
                 if (
                     currentInfo == null ||

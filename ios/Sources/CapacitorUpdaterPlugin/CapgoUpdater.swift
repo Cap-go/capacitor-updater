@@ -3497,8 +3497,7 @@ import UIKit
             return
         }
         UserDefaults.standard.removeObject(forKey: incompleteRetryCountPrefix + version)
-        UserDefaults.standard.removeObject(forKey: integrityBlockedVersionPrefix + version)
-        UserDefaults.standard.removeObject(forKey: integrityBlockedVersionPrefix + "preview:" + version)
+        UserDefaults.standard.removeObject(forKey: self.integrityBlockedVersionKey(version: version))
         UserDefaults.standard.synchronize()
     }
 

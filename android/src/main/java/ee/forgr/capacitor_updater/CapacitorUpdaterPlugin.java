@@ -2846,6 +2846,26 @@ public class CapacitorUpdaterPlugin extends Plugin {
         );
     }
 
+    private BundleInfo preferredAutoUpdateBundle(final BundleInfo existing, final String latestVersionName) {
+        if (existing == null) {
+            return null;
+        }
+        final BundleInfo queued = this.implementation.getNextBundle();
+        if (
+            queued != null &&
+            latestVersionName.equals(queued.getVersionName()) &&
+            !existing.getId().equals(queued.getId()) &&
+            !queued.isDeleted() &&
+            !queued.isDeleting()
+        ) {
+            return queued;
+        }
+        if (existing.isDeleted() || existing.isDeleting()) {
+            return null;
+        }
+        return existing;
+    }
+
     private boolean shouldRetryIncompleteDownload(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
         if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus() && this.isVersionDownloadInProgress(latestVersionName)) {
             return false;
@@ -6470,6 +6490,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                                 }
                                 if (latest != null) {
+                                    if (!CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
+                                        final BundleInfo preferred = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
+                                            latest,
+                                            latestVersionName
+                                        );
+                                        if (preferred != null) {
+                                            latest = preferred;
+                                        }
+                                    }
                                     if (
                                         latest.isErrorStatus() &&
                                         !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
@@ -6584,6 +6613,28 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         return;
                                     }
                                 }
+                            }
+                            if (
+                                latest != null &&
+                                BundleStatus.DOWNLOADING == latest.getStatus() &&
+                                CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latestVersionName) &&
+                                !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
+                            ) {
+                                if (
+                                    CapacitorUpdaterPlugin.this.implementation.reuseBackgroundDownload(latestVersionName, downloadContext)
+                                ) {
+                                    return;
+                                }
+                                logger.info("Active download already in progress for version: " + latestVersionName);
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    "Update already downloading",
+                                    latestVersionName,
+                                    current,
+                                    false,
+                                    plannedDirectUpdate,
+                                    downloadContext
+                                );
+                                return;
                             }
                             // The store refuses these downloads without a callback, so end the cycle here
                             // (appReady, splash hide) like iOS does.
