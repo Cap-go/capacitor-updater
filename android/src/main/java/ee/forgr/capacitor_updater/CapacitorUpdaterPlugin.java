@@ -2870,6 +2870,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
         if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus() && this.isVersionDownloadInProgress(latestVersionName)) {
             return false;
         }
+        if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus()) {
+            if (!this.implementation.isInterruptedDownloadBundle(bundle.getId())) {
+                return false;
+            }
+        }
         final BundleInfo next = this.implementation.getNextBundle();
         if (
             bundle != null &&
@@ -6556,28 +6561,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                         return;
                                     }
+                                    final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     if (
                                         latest.isDownloaded() &&
                                         BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest)
+                                        (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                            CryptoCipher.isValidSessionKey(latestSessionKey))
                                     ) {
                                         final JSObject ret = new JSObject();
                                         ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                        final String reuseBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateReuseBlockedReason(
-                                            jsRes,
-                                            latestVersionName
-                                        );
-                                        if (reuseBlockedReason != null) {
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                reuseBlockedReason,
-                                                latestVersionName,
-                                                current,
-                                                true,
-                                                plannedDirectUpdate,
-                                                downloadContext
-                                            );
-                                            return;
-                                        }
                                         logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                         final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                             plannedDirectUpdate,
