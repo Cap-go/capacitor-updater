@@ -374,6 +374,11 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        public BundleInfo findRegistryBundleByVersionName(final String versionName) {
+            return null;
+        }
+
+        @Override
         public boolean canSet(final BundleInfo bundle) {
             if (bundle != null && bundle.isErrorStatus()) {
                 return false;

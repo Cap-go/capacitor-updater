@@ -5140,16 +5140,19 @@ public class CapgoUpdater {
         return null;
     }
 
-    /** Includes deleted or incomplete registry entries not returned by {@link #list(boolean)} with raw=false. */
+    /**
+     * Finds a same-version registry record only when {@link #getBundleInfoByName(String)} returned null,
+     * typically a deleted tombstone or other incomplete state kept in prefs.
+     */
     public BundleInfo findRegistryBundleByVersionName(final String versionName) {
-        if (versionName == null || versionName.isEmpty()) {
+        if (versionName == null || versionName.isEmpty() || this.prefs == null) {
             return null;
         }
         for (final BundleInfo i : this.list(true)) {
-            if (i == null || i.isBuiltin() || i.isUnknown()) {
+            if (i == null || i.isBuiltin() || i.isUnknown() || !versionName.equals(i.getVersionName())) {
                 continue;
             }
-            if (versionName.equals(i.getVersionName())) {
+            if (i.isDeleted() || i.isDeleting() || i.isErrorStatus() || BundleStatus.DOWNLOADING == i.getStatus()) {
                 return i;
             }
         }
