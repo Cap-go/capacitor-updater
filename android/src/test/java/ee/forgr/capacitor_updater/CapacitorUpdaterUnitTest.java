@@ -387,6 +387,14 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        boolean isBundleOnDisk(final String id) {
+            if (this.existingLatestBundle != null && this.existingLatestBundle.getId().equals(id)) {
+                return this.existingLatestBundle.isDownloaded();
+            }
+            return super.isBundleOnDisk(id);
+        }
+
+        @Override
         public void downloadBackground(
             final String url,
             final String version,

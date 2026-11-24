@@ -4437,7 +4437,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
            !next.isDeleting() {
             return false
         }
-        let bundleOnDisk = self.implementation.canSet(bundle: bundle)
+        let bundleOnDisk = self.implementation.isBundleOnDisk(id: bundle.getId())
         let retryCount = self.implementation.incompleteDownloadRetryCount(version: latestVersionName)
         let integrityBlocked = self.implementation.isIntegrityBlockedVersion(version: latestVersionName)
         let isCurrent = current.getId() == bundle.getId()

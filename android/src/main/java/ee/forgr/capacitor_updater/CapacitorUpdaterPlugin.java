@@ -2871,7 +2871,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         final boolean interrupted = bundle != null && this.implementation.isInterruptedDownloadBundle(bundle.getId());
         return CapgoUpdater.shouldRetryDownloadForExistingBundle(
             bundle,
-            bundle != null && this.implementation.canSet(bundle),
+            bundle != null && this.implementation.isBundleOnDisk(bundle.getId()),
             CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName),
             this.implementation.isIntegrityBlockedVersion(latestVersionName),
             interrupted,
@@ -6608,10 +6608,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     ? Boolean.TRUE.equals(CapacitorUpdaterPlugin.this.implementation.directUpdate) ||
                                       directUpdateStillAllowed
                                     : directUpdateStillAllowed;
-                                if (!incompleteDownloadRetryCounted) {
-                                    CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
-                                }
                             }
+                            final boolean countIncompleteDownloadRetry = incompleteDownloadRetryCounted;
                             startNewThread(() -> {
                                 try {
                                     if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
@@ -6620,6 +6618,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                                         CapacitorUpdaterPlugin.this.clearBackgroundDownloadState(downloadContext);
                                         return;
+                                    }
+                                    if (!countIncompleteDownloadRetry) {
+                                        CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
                                     }
                                     logger.info(
                                         "New bundle: " +
