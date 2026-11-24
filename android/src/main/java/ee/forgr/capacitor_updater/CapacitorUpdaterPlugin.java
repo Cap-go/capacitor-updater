@@ -6524,9 +6524,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (
                                         latest.isDownloaded() &&
                                         BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
-                                        !CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() &&
-                                        !CryptoCipher.isValidSessionKey(latestSessionKey)
+                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest)
                                     ) {
                                         final String reuseBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateReuseBlockedReason(
                                             jsRes,
@@ -6543,14 +6541,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             );
                                             return;
                                         }
-                                    }
-                                    if (
-                                        latest.isDownloaded() &&
-                                        BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
-                                        (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
-                                            CryptoCipher.isValidSessionKey(latestSessionKey))
-                                    ) {
                                         logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                         final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                             plannedDirectUpdate,
@@ -6675,8 +6665,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             0 ||
                                         CapacitorUpdaterPlugin.this.implementation.isInterruptedDownloadBundle(latest.getId());
                                     final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
-                                    if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
-                                        CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                    synchronized (CapacitorUpdaterPlugin.this) {
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                        if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
+                                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                        }
                                     }
                                     if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
                                         return;
