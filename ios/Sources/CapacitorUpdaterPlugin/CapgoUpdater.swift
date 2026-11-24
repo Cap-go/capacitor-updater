@@ -1891,6 +1891,7 @@ import UIKit
         var completedFiles = 0
         var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
+        let hasChecksumError = AtomicBool(initialValue: false)
         var downloadError: Error?
         var firstFile: String?
         var failedFiles = 0
@@ -2146,6 +2147,9 @@ import UIKit
                     errorLock.lock()
                     failureStage = "process_file"
                     failedFiles += 1
+                    if (error as NSError).domain == "ChecksumError" {
+                        hasChecksumError.value = true
+                    }
                     if downloadError == nil {
                         downloadError = error
                         firstFile = task.fileName
@@ -2171,7 +2175,7 @@ import UIKit
             )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
-            let checksumFailure = (resolvedError as NSError).domain == "ChecksumError"
+            let checksumFailure = hasChecksumError.value || (resolvedError as NSError).domain == "ChecksumError"
             if checksumFailure {
                 self.markIntegrityBlockedVersion(version: version)
             } else {

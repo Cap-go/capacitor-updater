@@ -6526,14 +6526,27 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     }
                                     final JSObject ret = new JSObject();
                                     ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                    final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                     if (
                                         latest.isDownloaded() &&
                                         BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
-                                        (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
-                                            CryptoCipher.isValidSessionKey(latestSessionKey))
+                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest)
                                     ) {
+                                        final String downloadBlockedReason =
+                                            CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
+                                                jsRes,
+                                                latestVersionName
+                                            );
+                                        if (downloadBlockedReason != null) {
+                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                downloadBlockedReason,
+                                                latestVersionName,
+                                                current,
+                                                true,
+                                                plannedDirectUpdate,
+                                                downloadContext
+                                            );
+                                            return;
+                                        }
                                         logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
                                         final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
                                             plannedDirectUpdate,
