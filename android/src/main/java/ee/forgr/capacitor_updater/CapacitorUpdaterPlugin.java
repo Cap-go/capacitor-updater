@@ -6526,6 +6526,29 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             latest.isDownloaded() &&
                                             BundleStatus.DOWNLOADING != latest.getStatus() &&
                                             CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
+                                            !CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() &&
+                                            !CryptoCipher.isValidSessionKey(latestSessionKey)
+                                        ) {
+                                            final String reuseBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateReuseBlockedReason(
+                                                jsRes,
+                                                latestVersionName
+                                            );
+                                            if (reuseBlockedReason != null) {
+                                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                                    reuseBlockedReason,
+                                                    latestVersionName,
+                                                    current,
+                                                    true,
+                                                    plannedDirectUpdate,
+                                                    downloadContext
+                                                );
+                                                return;
+                                            }
+                                        }
+                                        if (
+                                            latest.isDownloaded() &&
+                                            BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                            CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
                                             (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
                                                 CryptoCipher.isValidSessionKey(latestSessionKey))
                                         ) {
@@ -6736,7 +6759,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             }
                             if (
                                 latest == null &&
-                                CapacitorUpdaterPlugin.this.implementation.incompleteDownloadRetryCount(latestVersionName) > 0
+                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) > 0
                             ) {
                                 retryDownloadSlot = true;
                             }
