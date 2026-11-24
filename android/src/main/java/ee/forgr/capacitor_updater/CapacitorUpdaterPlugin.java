@@ -2862,6 +2862,17 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ) {
             return false;
         }
+        if (bundle != null && (bundle.isDeleted() || bundle.isDeleting())) {
+            final BundleInfo sameVersionBundle = this.implementation.getBundleInfoByName(latestVersionName);
+            if (
+                sameVersionBundle != null &&
+                !sameVersionBundle.getId().equals(bundle.getId()) &&
+                !sameVersionBundle.isDeleted() &&
+                !sameVersionBundle.isDeleting()
+            ) {
+                return false;
+            }
+        }
         final boolean isQueuedNext = bundle != null && next != null && bundle.getId().equals(next.getId());
         final boolean isCurrent =
             bundle != null &&

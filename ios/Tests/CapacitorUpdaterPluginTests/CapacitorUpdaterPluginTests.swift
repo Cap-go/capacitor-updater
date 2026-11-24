@@ -186,6 +186,16 @@ private class FreshDownloadCapgoUpdater: CapgoUpdater {
         return super.canSet(bundle: bundle)
     }
 
+    override func isBundleOnDisk(id: String) -> Bool {
+        if let existingBundleValue, existingBundleValue.getId() == id {
+            return self.canSet(bundle: existingBundleValue)
+        }
+        if let downloadedBundleValue, downloadedBundleValue.getId() == id {
+            return self.canSet(bundle: downloadedBundleValue)
+        }
+        return super.isBundleOnDisk(id: id)
+    }
+
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
