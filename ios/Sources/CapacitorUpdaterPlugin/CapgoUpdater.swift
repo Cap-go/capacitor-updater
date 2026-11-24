@@ -4523,10 +4523,7 @@ import UIKit
                 continue
             }
             if !i.isDeleted() && !i.isDeleting() {
-                if i.isErrorStatus() || i.isDownloading() {
-                    return i
-                }
-                continue
+                return i
             }
             if tombstoneMatch == nil {
                 tombstoneMatch = i

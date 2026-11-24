@@ -5154,10 +5154,7 @@ public class CapgoUpdater {
                 continue;
             }
             if (!i.isDeleted() && !i.isDeleting()) {
-                if (i.isErrorStatus() || BundleStatus.DOWNLOADING == i.getStatus()) {
-                    return i;
-                }
-                continue;
+                return i;
             }
             if (tombstoneMatch == null) {
                 tombstoneMatch = i;
