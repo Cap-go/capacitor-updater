@@ -4427,7 +4427,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo
     ) -> Bool {
-        if bundle.isDownloaded() && !bundle.isDownloading() && self.implementation.canSet(bundle: bundle) {
+        if bundle.isDownloaded() && !bundle.isDownloading() && !bundle.isErrorStatus() {
             return false
         }
         if bundle.isDownloading() && self.isVersionDownloadInProgress(version: latestVersionName) {

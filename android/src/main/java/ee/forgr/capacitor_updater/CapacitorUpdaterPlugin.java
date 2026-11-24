@@ -2882,12 +2882,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
         ) {
             return false;
         }
-        if (
-            bundle != null && bundle.isDownloaded() && BundleStatus.DOWNLOADING != bundle.getStatus() && this.implementation.canSet(bundle)
-        ) {
+        if (bundle != null && bundle.isDownloaded() && BundleStatus.DOWNLOADING != bundle.getStatus() && !bundle.isErrorStatus()) {
             return false;
         }
         if (bundle != null && (bundle.isDeleted() || bundle.isDeleting())) {
+            if (this.isVersionDownloadInProgress(latestVersionName)) {
+                return false;
+            }
             final BundleInfo liveSameVersion = this.implementation.findRegistryBundleByVersionName(latestVersionName);
             if (
                 liveSameVersion != null &&
@@ -6538,13 +6539,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                         return;
                                     }
-                                    final JSObject ret = new JSObject();
-                                    ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
                                     if (
                                         latest.isDownloaded() &&
                                         BundleStatus.DOWNLOADING != latest.getStatus() &&
                                         CapacitorUpdaterPlugin.this.implementation.canSet(latest)
                                     ) {
+                                        final JSObject ret = new JSObject();
+                                        ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
                                         final String downloadBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateDownloadBlockedReason(
                                             jsRes,
                                             latestVersionName

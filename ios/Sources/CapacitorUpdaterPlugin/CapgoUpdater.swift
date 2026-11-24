@@ -2147,7 +2147,9 @@ import UIKit
                     errorLock.lock()
                     failureStage = "process_file"
                     failedFiles += 1
-                    if (error as NSError).domain == "ChecksumError" {
+                    let nsError = error as NSError
+                    if nsError.domain == "ChecksumError" ||
+                        (nsError.userInfo[NSUnderlyingErrorKey] as? NSError)?.domain == "ChecksumError" {
                         hasChecksumError.value = true
                     }
                     if downloadError == nil {
