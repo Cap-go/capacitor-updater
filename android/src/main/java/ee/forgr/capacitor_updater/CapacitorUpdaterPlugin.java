@@ -6494,7 +6494,15 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             }
                             boolean retryDownloadSlot = false;
                             if (latest != null) {
+                                final BundleInfo preferredBeforeRetry = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
+                                    latest,
+                                    latestVersionName
+                                );
+                                if (preferredBeforeRetry != null) {
+                                    latest = preferredBeforeRetry;
+                                }
                                 if (
+                                    latest != null &&
                                     latest.isErrorStatus() &&
                                     !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
                                 ) {
@@ -6510,15 +6518,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     return;
                                 }
                                 if (!CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
-                                    final BundleInfo preferred = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
-                                        latest,
-                                        latestVersionName
-                                    );
-                                    if (preferred != null) {
-                                        latest = preferred;
-                                    } else if (latest.isDeleted() || latest.isDeleting()) {
-                                        latest = null;
-                                    }
                                     if (latest != null) {
                                         final JSObject ret = new JSObject();
                                         ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
@@ -6526,6 +6525,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         if (
                                             latest.isDownloaded() &&
                                             BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                            CapacitorUpdaterPlugin.this.implementation.canSet(latest) &&
                                             (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
                                                 CryptoCipher.isValidSessionKey(latestSessionKey))
                                         ) {
@@ -6683,28 +6683,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                     }
                                 }
-                            }
-                            if (
-                                latest != null &&
-                                BundleStatus.DOWNLOADING == latest.getStatus() &&
-                                CapacitorUpdaterPlugin.this.isVersionDownloadInProgress(latestVersionName) &&
-                                !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
-                            ) {
-                                if (
-                                    CapacitorUpdaterPlugin.this.implementation.reuseBackgroundDownload(latestVersionName, downloadContext)
-                                ) {
-                                    return;
-                                }
-                                logger.info("Active download already in progress for version: " + latestVersionName);
-                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    "Update already downloading",
-                                    latestVersionName,
-                                    current,
-                                    false,
-                                    plannedDirectUpdate,
-                                    downloadContext
-                                );
-                                return;
                             }
                             // The store refuses these downloads without a callback, so end the cycle here
                             // (appReady, splash hide) like iOS does.
