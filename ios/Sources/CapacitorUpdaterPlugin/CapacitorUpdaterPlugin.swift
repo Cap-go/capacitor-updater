@@ -4426,6 +4426,17 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo
     ) -> Bool {
+        if bundle.isDownloading() && self.isDownloadStuckOrTimedOut() {
+            return false
+        }
+        if let next = self.implementation.getNextBundle(),
+           bundle.isDeleted() || bundle.isDeleting(),
+           latestVersionName == next.getVersionName(),
+           bundle.getId() != next.getId(),
+           !next.isDeleted(),
+           !next.isDeleting() {
+            return false
+        }
         let bundleOnDisk = self.implementation.canSet(bundle: bundle)
         let retryCount = self.implementation.incompleteDownloadRetryCount(version: latestVersionName)
         let integrityBlocked = self.implementation.isIntegrityBlockedVersion(version: latestVersionName)

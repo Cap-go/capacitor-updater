@@ -2847,7 +2847,21 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean shouldRetryIncompleteDownload(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
+        if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus() && this.isVersionDownloadInProgress(latestVersionName)) {
+            return false;
+        }
         final BundleInfo next = this.implementation.getNextBundle();
+        if (
+            bundle != null &&
+            (bundle.isDeleted() || bundle.isDeleting()) &&
+            next != null &&
+            latestVersionName.equals(next.getVersionName()) &&
+            !bundle.getId().equals(next.getId()) &&
+            !next.isDeleted() &&
+            !next.isDeleting()
+        ) {
+            return false;
+        }
         final boolean isQueuedNext = bundle != null && next != null && bundle.getId().equals(next.getId());
         final boolean isCurrent =
             bundle != null &&

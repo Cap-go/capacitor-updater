@@ -374,6 +374,19 @@ public class CapacitorUpdaterUnitTest {
         }
 
         @Override
+        public boolean canSet(final BundleInfo bundle) {
+            if (
+                this.existingLatestBundle != null &&
+                bundle != null &&
+                this.existingLatestBundle.getId().equals(bundle.getId()) &&
+                this.existingLatestBundle.isDownloaded()
+            ) {
+                return true;
+            }
+            return super.canSet(bundle);
+        }
+
+        @Override
         public void downloadBackground(
             final String url,
             final String version,

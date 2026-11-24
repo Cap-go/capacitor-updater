@@ -118,6 +118,11 @@ public class SessionKeyRequiredTest {
             }
             return null;
         }
+
+        @Override
+        public boolean canSet(final BundleInfo bundle) {
+            return bundle != null && bundle.isDownloaded();
+        }
     }
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {
