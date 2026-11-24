@@ -213,6 +213,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let downloadLock = NSLock()
     private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
+    private var downloadActiveVersionName: String?
     private var downloadStartTime: Date?
     private let downloadTimeout: TimeInterval = 600 // 10 minute timeout
 
@@ -4426,7 +4427,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         latestVersionName: String,
         current: BundleInfo
     ) -> Bool {
-        if bundle.isDownloading() && self.isDownloadStuckOrTimedOut() {
+        if bundle.isDownloading() && self.isVersionDownloadInProgress(version: latestVersionName) {
             return false
         }
         if let next = self.implementation.getNextBundle(),
@@ -4780,6 +4781,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadLock.lock()
         defer { downloadLock.unlock() }
         downloadInProgress = false
+        downloadActiveVersionName = nil
         downloadStartTime = nil
 
         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
@@ -4820,10 +4822,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    private func isVersionDownloadInProgress(version: String) -> Bool {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+
+        guard downloadInProgress, downloadActiveVersionName == version else {
+            return false
+        }
+
+        if let startTime = downloadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > downloadTimeout {
+                self.logger.warn(
+                    "Download for \(version) exceeded timeout of \(downloadTimeout) seconds. Clearing stuck state."
+                )
+                downloadInProgress = false
+                downloadActiveVersionName = nil
+                downloadStartTime = nil
+                return false
+            }
+        }
+
+        return true
+    }
+
     private func clearDownloadInProgressState() {
         downloadLock.lock()
         defer { downloadLock.unlock() }
         downloadInProgress = false
+        downloadActiveVersionName = nil
         downloadStartTime = nil
     }
 
@@ -5011,7 +5038,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
-                    var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                    var nextImpl =
+                        self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                        ?? self.implementation.findRegistryBundleByVersionName(version: latestVersionName)
                     let needsDownload = nextImpl.map {
                         self.shouldRetryDownloadForExistingBundle($0, latestVersionName: latestVersionName, current: current)
                     } ?? self.shouldRetryDownloadForMissingBundle(latestVersionName: latestVersionName)
@@ -5019,9 +5048,10 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName) ?? existing
                     }
                     if needsDownload {
+                        var retryDownloadSlot = false
                         if let existing = nextImpl {
                             self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")
-                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
+                            retryDownloadSlot = true
                             if self.implementation.getNextBundle()?.getId() == existing.getId() {
                                 _ = self.implementation.setNextBundle(next: Optional<String>.none)
                             }
@@ -5031,9 +5061,12 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                             } else {
                                 self.logger.error("Failed to delete incomplete bundle: \(existing.toString())")
                             }
-                        } else {
-                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
+                        } else if self.implementation.incompleteDownloadRetryCount(version: latestVersionName) > 0 {
+                            retryDownloadSlot = true
                         }
+                        self.downloadLock.lock()
+                        self.downloadActiveVersionName = latestVersionName
+                        self.downloadLock.unlock()
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
@@ -5057,6 +5090,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 link: res.link,
                                 comment: res.comment
                             )
+                        }
+                        if retryDownloadSlot {
+                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
                         }
                     }
                     if nextImpl == nil && !needsDownload {

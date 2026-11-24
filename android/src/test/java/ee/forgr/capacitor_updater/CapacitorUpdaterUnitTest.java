@@ -375,6 +375,9 @@ public class CapacitorUpdaterUnitTest {
 
         @Override
         public boolean canSet(final BundleInfo bundle) {
+            if (bundle != null && bundle.isErrorStatus()) {
+                return false;
+            }
             if (
                 this.existingLatestBundle != null &&
                 bundle != null &&

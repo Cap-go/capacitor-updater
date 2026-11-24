@@ -2171,7 +2171,12 @@ import UIKit
             )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
-            self.markInterruptedDownloadBundle(bundleId: id)
+            let checksumFailure = (resolvedError as NSError).domain == "ChecksumError"
+            if checksumFailure {
+                self.markIntegrityBlockedVersion(version: version)
+            } else {
+                self.markInterruptedDownloadBundle(bundleId: id)
+            }
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
             reportFailure(resolvedError)
@@ -4496,6 +4501,22 @@ import UIKit
     public func getBundleInfoByVersionName(version: String) -> BundleInfo? {
         let installed: [BundleInfo] = self.list()
         for i in installed {
+            if i.getVersionName() == version {
+                return i
+            }
+        }
+        return nil
+    }
+
+    /// Includes deleted or incomplete registry entries omitted from the default non-raw list.
+    func findRegistryBundleByVersionName(version: String) -> BundleInfo? {
+        guard !version.isEmpty else {
+            return nil
+        }
+        for i in self.list(raw: true) {
+            if i.isBuiltin() || i.isUnknown() {
+                continue
+            }
             if i.getVersionName() == version {
                 return i
             }

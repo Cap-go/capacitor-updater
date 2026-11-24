@@ -6455,7 +6455,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 return;
                             }
                             BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
-                            boolean incompleteDownloadRetryCounted = false;
+                            if (latest == null) {
+                                latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
+                            }
+                            boolean retryDownloadSlot = false;
                             if (latest != null) {
                                 if (CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
                                     logger.info(
@@ -6463,8 +6466,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             latest.getStatus() +
                                             ") and will be deleted, download will overwrite it."
                                     );
-                                    CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
-                                    incompleteDownloadRetryCounted = true;
+                                    retryDownloadSlot = true;
                                     final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
                                     if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
                                         CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
@@ -6488,6 +6490,11 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         return;
                                     }
                                     latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                                    if (latest == null) {
+                                        latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(
+                                            latestVersionName
+                                        );
+                                    }
                                 }
                                 if (latest != null) {
                                     if (!CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)) {
@@ -6671,7 +6678,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                       directUpdateStillAllowed
                                     : directUpdateStillAllowed;
                             }
-                            final boolean countIncompleteDownloadRetry = incompleteDownloadRetryCounted;
+                            if (
+                                latest == null &&
+                                CapacitorUpdaterPlugin.this.implementation.incompleteDownloadRetryCount(latestVersionName) > 0
+                            ) {
+                                retryDownloadSlot = true;
+                            }
+                            final boolean consumeRetrySlotOnStart = retryDownloadSlot;
                             startNewThread(() -> {
                                 try {
                                     if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
@@ -6680,9 +6693,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     if (CapacitorUpdaterPlugin.this.shouldBlockAutoUpdateForPreviewSession()) {
                                         CapacitorUpdaterPlugin.this.clearBackgroundDownloadState(downloadContext);
                                         return;
-                                    }
-                                    if (!countIncompleteDownloadRetry) {
-                                        CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
                                     }
                                     logger.info(
                                         "New bundle: " +
@@ -6708,6 +6718,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
                                             downloadContext
                                         );
+                                    if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.STARTED && consumeRetrySlotOnStart) {
+                                        CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
+                                    }
                                     if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.NOT_STARTED) {
                                         CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                             latestVersionName,

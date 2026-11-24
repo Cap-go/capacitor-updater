@@ -5140,6 +5140,22 @@ public class CapgoUpdater {
         return null;
     }
 
+    /** Includes deleted or incomplete registry entries not returned by {@link #list(boolean)} with raw=false. */
+    public BundleInfo findRegistryBundleByVersionName(final String versionName) {
+        if (versionName == null || versionName.isEmpty()) {
+            return null;
+        }
+        for (final BundleInfo i : this.list(true)) {
+            if (i == null || i.isBuiltin() || i.isUnknown()) {
+                continue;
+            }
+            if (versionName.equals(i.getVersionName())) {
+                return i;
+            }
+        }
+        return null;
+    }
+
     private void removeBundleInfo(final String id) {
         this.saveBundleInfo(id, null);
     }

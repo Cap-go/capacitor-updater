@@ -180,9 +180,13 @@ public class HeadlessUpdateWorker extends Worker {
             final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
 
             BundleInfo existing = updater.getBundleInfoByName(version);
+            if (existing == null) {
+                existing = updater.findRegistryBundleByVersionName(version);
+            }
             if (updater.isIntegrityBlockedVersion(version)) {
                 return "failed";
             }
+            boolean retryDownloadSlot = false;
             final BundleInfo next = updater.getNextBundle();
             final boolean isQueuedNext = existing != null && next != null && existing.getId().equals(next.getId());
             final boolean isCurrent =
@@ -220,7 +224,7 @@ public class HeadlessUpdateWorker extends Worker {
                     ) &&
                     !(BundleStatus.DOWNLOADING == existing.getStatus() && updater.isVersionDownloadActive(version))
                 ) {
-                    updater.incrementIncompleteDownloadRetryCount(version);
+                    retryDownloadSlot = true;
                     if (isQueuedNext) {
                         updater.setNextBundle(null);
                     }
@@ -230,6 +234,34 @@ public class HeadlessUpdateWorker extends Worker {
                         logger.error("Failed to delete incomplete bundle: " + version + " " + e.getMessage());
                     }
                     existing = updater.getBundleInfoByName(version);
+                    if (existing == null) {
+                        existing = updater.findRegistryBundleByVersionName(version);
+                    }
+                }
+            }
+            if (existing != null && BundleStatus.DOWNLOADING == existing.getStatus()) {
+                final int retryCount = updater.incompleteDownloadRetryCount(version);
+                final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
+                final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                if (
+                    !CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        updater.canSet(existing),
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    )
+                ) {
+                    return "failed";
+                }
+                if (updater.isVersionDownloadActive(version)) {
+                    if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
+                        updater.handOverPendingStats();
+                        return "handed_over";
+                    }
+                    return "skipped";
                 }
             }
             if (
@@ -249,9 +281,21 @@ public class HeadlessUpdateWorker extends Worker {
 
             // downloadBackground returns null when it refuses the download (blocked encryption, gate,
             // version already downloading): only wait for a download it started.
+            if (existing == null && updater.isIntegrityBlockedVersion(version)) {
+                return "failed";
+            }
+            if (existing == null && updater.incompleteDownloadRetryCount(version) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
+                return "failed";
+            }
+            if (existing == null && updater.incompleteDownloadRetryCount(version) > 0) {
+                retryDownloadSlot = true;
+            }
             final String startedId = updater.downloadBackground((String) url, version, sessionKey, checksum, manifestOf(latest), setNext);
             if (startedId == null) {
                 return "skipped";
+            }
+            if (retryDownloadSlot) {
+                updater.incrementIncompleteDownloadRetryCount(version);
             }
             final long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(FINISH_TIMEOUT_MINUTES);
             try {
