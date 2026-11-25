@@ -6494,12 +6494,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             }
                             boolean retryDownloadSlot = false;
                             if (latest != null) {
-                                final BundleInfo preferredBeforeRetry = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
-                                    latest,
-                                    latestVersionName
-                                );
-                                if (preferredBeforeRetry != null) {
-                                    latest = preferredBeforeRetry;
+                                if (latest.isDeleted() || latest.isDeleting() || latest.isErrorStatus()) {
+                                    final BundleInfo preferredBeforeRetry = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
+                                        latest,
+                                        latestVersionName
+                                    );
+                                    if (preferredBeforeRetry != null) {
+                                        latest = preferredBeforeRetry;
+                                    }
                                 }
                                 if (
                                     latest != null &&
@@ -6517,142 +6519,124 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
-                                if (latest != null) {
-                                    final JSObject ret = new JSObject();
-                                    ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                    final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
-                                    if (
-                                        latest.isDownloaded() &&
-                                        BundleStatus.DOWNLOADING != latest.getStatus() &&
-                                        CapacitorUpdaterPlugin.this.implementation.canSet(latest)
-                                    ) {
-                                        final String reuseBlockedReason = CapacitorUpdaterPlugin.this.autoUpdateReuseBlockedReason(
-                                            jsRes,
-                                            latestVersionName
+                                final JSObject ret = new JSObject();
+                                ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
+                                final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
+                                if (
+                                    latest.isDownloaded() &&
+                                    BundleStatus.DOWNLOADING != latest.getStatus() &&
+                                    (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
+                                        CryptoCipher.isValidSessionKey(latestSessionKey))
+                                ) {
+                                    logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
+                                    final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
+                                        plannedDirectUpdate,
+                                        timeoutGeneration
+                                    );
+                                    if (directUpdateAllowedNow) {
+                                        String delayUpdatePreferences = prefs.getString(DelayUpdateUtils.DELAY_CONDITION_PREFERENCES, "[]");
+                                        ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(
+                                            delayUpdatePreferences
                                         );
-                                        if (reuseBlockedReason != null) {
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                reuseBlockedReason,
-                                                latestVersionName,
-                                                current,
-                                                true,
-                                                plannedDirectUpdate,
-                                                downloadContext
-                                            );
-                                            return;
-                                        }
-                                        logger.info("Latest bundle already exists and download is NOT required. " + messageUpdate);
-                                        final boolean directUpdateAllowedNow = CapacitorUpdaterPlugin.this.isDirectUpdateCurrentlyAllowed(
-                                            plannedDirectUpdate,
-                                            timeoutGeneration
-                                        );
-                                        if (directUpdateAllowedNow) {
-                                            String delayUpdatePreferences = prefs.getString(
-                                                DelayUpdateUtils.DELAY_CONDITION_PREFERENCES,
-                                                "[]"
-                                            );
-                                            ArrayList<DelayCondition> delayConditionList = delayUpdateUtils.parseDelayConditions(
-                                                delayUpdatePreferences
-                                            );
-                                            if (!delayConditionList.isEmpty()) {
-                                                logger.info("Update delayed until delay conditions met");
-                                                if (
-                                                    CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle() &&
-                                                    CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)
-                                                ) {
-                                                    CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
-                                                        latest.getId(),
-                                                        plannedDirectUpdate,
-                                                        downloadContext
-                                                    );
-                                                }
-                                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                    "Update delayed until delay conditions met",
-                                                    latestVersionName,
-                                                    latest,
-                                                    false,
-                                                    plannedDirectUpdate,
-                                                    downloadContext
-                                                );
-                                                return;
-                                            }
-                                            if (CapacitorUpdaterPlugin.this.tryInstallBackgroundUpdateResponse(latest, downloadContext)) {
-                                                return;
-                                            }
-                                        }
-                                        if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
-                                            if (plannedDirectUpdate) {
-                                                logger.info("Direct installation is unavailable. Update will install on next background.");
-                                            }
+                                        if (!delayConditionList.isEmpty()) {
+                                            logger.info("Update delayed until delay conditions met");
                                             if (
-                                                !CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                                CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle() &&
+                                                CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)
+                                            ) {
+                                                CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
                                                     latest.getId(),
                                                     plannedDirectUpdate,
                                                     downloadContext
-                                                )
-                                            ) {
-                                                return;
+                                                );
                                             }
-                                            if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                                return;
-                                            }
-                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "update downloaded, will install next background",
+                                                "Update delayed until delay conditions met",
                                                 latestVersionName,
                                                 latest,
                                                 false,
                                                 plannedDirectUpdate,
                                                 downloadContext
                                             );
-                                            CapacitorUpdaterPlugin.this.installNextIfInBackground();
-                                        } else {
-                                            logger.info(
-                                                "autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle"
-                                            );
-                                            if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                                return;
-                                            }
-                                            CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
-                                            CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                                "update downloaded, autoUpdate onlyDownload",
-                                                latestVersionName,
-                                                current,
-                                                false,
-                                                plannedDirectUpdate,
-                                                "download_fail",
-                                                "downloadFailed",
-                                                true,
-                                                false,
-                                                downloadContext
-                                            );
+                                            return;
                                         }
+                                        if (CapacitorUpdaterPlugin.this.tryInstallBackgroundUpdateResponse(latest, downloadContext)) {
+                                            return;
+                                        }
+                                    }
+                                    if (CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle()) {
+                                        if (plannedDirectUpdate) {
+                                            logger.info("Direct installation is unavailable. Update will install on next background.");
+                                        }
+                                        if (
+                                            !CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                                latest.getId(),
+                                                plannedDirectUpdate,
+                                                downloadContext
+                                            )
+                                        ) {
+                                            return;
+                                        }
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
+                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            "update downloaded, will install next background",
+                                            latestVersionName,
+                                            latest,
+                                            false,
+                                            plannedDirectUpdate,
+                                            downloadContext
+                                        );
+                                        CapacitorUpdaterPlugin.this.installNextIfInBackground();
+                                    } else {
+                                        logger.info("autoUpdate is set to onlyDownload, downloaded update will not be set as next bundle");
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                        CapacitorUpdaterPlugin.this.notifyListeners("updateAvailable", ret, false);
+                                        CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                            "update downloaded, autoUpdate onlyDownload",
+                                            latestVersionName,
+                                            current,
+                                            false,
+                                            plannedDirectUpdate,
+                                            "download_fail",
+                                            "downloadFailed",
+                                            true,
+                                            false,
+                                            downloadContext
+                                        );
+                                    }
+                                    return;
+                                }
+                                if (latest.isDeleted()) {
+                                    logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
                                         return;
                                     }
-                                    if (latest.isDeleted()) {
-                                        logger.info("Latest bundle already exists and will be deleted, download will overwrite it.");
-                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                            return;
+                                    try {
+                                        final boolean deleted = CapacitorUpdaterPlugin.this.implementation.deleteDeletedBundle(
+                                            latest.getId()
+                                        );
+                                        if (deleted) {
+                                            logger.info("Failed bundle deleted: " + latest.getVersionName());
                                         }
-                                        try {
-                                            final boolean deleted = CapacitorUpdaterPlugin.this.implementation.deleteDeletedBundle(
-                                                latest.getId()
-                                            );
-                                            if (deleted) {
-                                                logger.info("Failed bundle deleted: " + latest.getVersionName());
-                                            }
-                                        } catch (final IOException e) {
-                                            logger.error(
-                                                "Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage()
-                                            );
-                                        }
-                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
-                                            return;
-                                        }
+                                    } catch (final IOException e) {
+                                        logger.error("Failed to delete failed bundle: " + latest.getVersionName() + " " + e.getMessage());
+                                    }
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
                                     }
                                 }
                                 if (
                                     latest != null &&
+                                    (!latest.isDownloaded() ||
+                                        BundleStatus.DOWNLOADING == latest.getStatus() ||
+                                        latest.isErrorStatus() ||
+                                        latest.isDeleted() ||
+                                        latest.isDeleting()) &&
                                     CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
                                 ) {
                                     logger.info(
