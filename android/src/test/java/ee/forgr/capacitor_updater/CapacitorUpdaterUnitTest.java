@@ -2302,8 +2302,8 @@ public class CapacitorUpdaterUnitTest {
             updater.editor = editor;
             when(prefs.getString(anyString(), nullable(String.class))).thenAnswer((inv) -> inv.getArgument(1));
             when(prefs.getInt(anyString(), anyInt())).thenAnswer((inv) -> inv.getArgument(1));
-            when(prefs.getBoolean(anyString(), anyBoolean())).thenAnswer(
-                (inv) -> boolStore.getOrDefault(inv.getArgument(0), (Boolean) inv.getArgument(1))
+            when(prefs.getBoolean(anyString(), anyBoolean())).thenAnswer((inv) ->
+                boolStore.getOrDefault(inv.getArgument(0), (Boolean) inv.getArgument(1))
             );
             when(editor.putBoolean(anyString(), anyBoolean())).thenAnswer((inv) -> {
                 boolStore.put(inv.getArgument(0), inv.getArgument(1));

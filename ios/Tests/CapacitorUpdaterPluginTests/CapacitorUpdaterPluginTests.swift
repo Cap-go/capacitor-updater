@@ -1142,6 +1142,9 @@ class CapacitorUpdaterTests: XCTestCase {
 
         let bundleId = "downloading-id"
         updater.markInterruptedDownloadBundle(bundleId: bundleId)
+        defer {
+            updater.clearInterruptedDownloadBundle(bundleId: bundleId)
+        }
 
         let downloading = BundleInfo(
             id: bundleId,
