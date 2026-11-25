@@ -183,9 +183,6 @@ public class HeadlessUpdateWorker extends Worker {
             if (existing == null) {
                 existing = updater.findRegistryBundleByVersionName(version);
             }
-            if (updater.isIntegrityBlockedVersion(version)) {
-                return "failed";
-            }
             boolean retryDownloadSlot = false;
             final BundleInfo next = updater.getNextBundle();
             final boolean isQueuedNext = existing != null && next != null && existing.getId().equals(next.getId());
@@ -282,7 +279,7 @@ public class HeadlessUpdateWorker extends Worker {
             // downloadBackground returns null when it refuses the download (blocked encryption, gate,
             // version already downloading): only wait for a download it started.
             if (existing == null && updater.isIntegrityBlockedVersion(version)) {
-                return "failed";
+                updater.resetIncompleteDownloadRetryCount(version);
             }
             if (updater.incompleteDownloadRetryCount(version) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
                 return "failed";

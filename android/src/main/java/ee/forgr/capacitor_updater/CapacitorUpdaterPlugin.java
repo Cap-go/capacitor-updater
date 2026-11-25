@@ -6470,18 +6470,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 logger.info("Reusing automatic download for version: " + latestVersionName);
                                 return;
                             }
-                            if (CapacitorUpdaterPlugin.this.implementation.isIntegrityBlockedVersion(latestVersionName)) {
-                                logger.error("Latest bundle version is blocked after integrity failure and will not retry.");
-                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                    "Latest version failed integrity check and will not retry",
-                                    latestVersionName,
-                                    current,
-                                    false,
-                                    plannedDirectUpdate,
-                                    downloadContext
-                                );
-                                return;
-                            }
                             BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
                             if (latest == null) {
                                 latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
@@ -6700,6 +6688,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     downloadContext
                                 );
                                 return;
+                            }
+                            if (latest == null && CapacitorUpdaterPlugin.this.implementation.isIntegrityBlockedVersion(latestVersionName)) {
+                                CapacitorUpdaterPlugin.this.implementation.resetIncompleteDownloadRetryCount(latestVersionName);
                             }
                             if (
                                 CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >=

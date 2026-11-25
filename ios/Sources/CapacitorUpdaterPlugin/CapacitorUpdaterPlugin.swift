@@ -4461,9 +4461,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func shouldRetryDownloadForMissingBundle(latestVersionName: String) -> Bool {
-        if self.implementation.isIntegrityBlockedVersion(version: latestVersionName) {
-            return false
-        }
         return self.implementation.incompleteDownloadRetryCount(version: latestVersionName) < CapgoUpdater.maxIncompleteDownloadRetries
     }
 
@@ -5031,16 +5028,6 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
-                    if self.implementation.isIntegrityBlockedVersion(version: latestVersionName) {
-                        self.logger.error("Latest bundle version is blocked after integrity failure and will not retry.")
-                        self.endBackGroundTaskWithNotif(
-                            msg: "Latest version failed integrity check and will not retry",
-                            latestVersionName: latestVersionName,
-                            current: current,
-                            plannedDirectUpdate: plannedDirectUpdate
-                        )
-                        return
-                    }
                     var nextImpl =
                         self.implementation.getBundleInfoByVersionName(version: latestVersionName)
                         ?? self.implementation.findRegistryBundleByVersionName(version: latestVersionName)
@@ -5051,6 +5038,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName)
                     }
                     if needsDownload {
+                        if nextImpl == nil, self.implementation.isIntegrityBlockedVersion(version: latestVersionName) {
+                            self.implementation.resetIncompleteDownloadRetryCount(version: latestVersionName)
+                        }
                         if self.implementation.incompleteDownloadRetryCount(version: latestVersionName) >= CapgoUpdater.maxIncompleteDownloadRetries {
                             self.logger.error("Latest bundle exceeded incomplete download retries. Aborting update.")
                             self.endBackGroundTaskWithNotif(
