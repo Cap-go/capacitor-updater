@@ -874,7 +874,11 @@ final class NetworkTransportTests: XCTestCase {
 
         let lock = NSLock()
         var samples: [(Int64, Int64)] = []
-        let result = makeUpdater().performDownloadRequest(request("missing.zip"), label: "test") { received, expected in
+        var errorRequest = request("missing.zip")
+        errorRequest.timeoutInterval = 30
+        let updater = makeUpdater()
+        updater.timeout = 30
+        let result = updater.performDownloadRequest(errorRequest, label: "test") { received, expected in
             lock.lock()
             samples.append((received, expected))
             lock.unlock()
