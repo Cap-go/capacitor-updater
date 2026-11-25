@@ -25,6 +25,7 @@ import androidx.work.WorkerParameters;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.PluginConfig;
 import com.getcapacitor.plugin.WebView;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -178,11 +179,93 @@ public class HeadlessUpdateWorker extends Worker {
             final String sessionKey = latest.get("sessionKey") instanceof String ? (String) latest.get("sessionKey") : "";
             final String checksum = latest.get("checksum") instanceof String ? (String) latest.get("checksum") : "";
 
-            final BundleInfo existing = updater.getBundleInfoByName(version);
-            if (existing != null && existing.isErrorStatus()) {
-                return "failed";
+            BundleInfo existing = updater.getBundleInfoByName(version);
+            if (existing == null) {
+                existing = updater.findRegistryBundleByVersionName(version);
             }
-            if (existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus()) {
+            boolean retryDownloadSlot = false;
+            final BundleInfo next = updater.getNextBundle();
+            final boolean isQueuedNext = existing != null && next != null && existing.getId().equals(next.getId());
+            final boolean isCurrent =
+                existing != null &&
+                existing.getId().equals(current.getId()) &&
+                BundleStatus.SUCCESS == current.getStatus() &&
+                version.equals(current.getVersionName());
+            if (existing != null) {
+                final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
+                final int retryCount = updater.incompleteDownloadRetryCount(version);
+                final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                final boolean bundleOnDisk = updater.isBundleOnDisk(existing.getId());
+                if (
+                    existing.isErrorStatus() &&
+                    !CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        bundleOnDisk,
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    )
+                ) {
+                    return "failed";
+                }
+                if (
+                    CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        bundleOnDisk,
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    ) &&
+                    !(BundleStatus.DOWNLOADING == existing.getStatus() && updater.isVersionDownloadActive(version))
+                ) {
+                    retryDownloadSlot = true;
+                    if (isQueuedNext) {
+                        updater.setNextBundle(null);
+                    }
+                    try {
+                        updater.delete(existing.getId(), true);
+                    } catch (final IOException e) {
+                        logger.error("Failed to delete incomplete bundle: " + version + " " + e.getMessage());
+                    }
+                    existing = updater.getBundleInfoByName(version);
+                    if (existing == null) {
+                        existing = updater.findRegistryBundleByVersionName(version);
+                    }
+                }
+            }
+            if (existing != null && BundleStatus.DOWNLOADING == existing.getStatus()) {
+                final int retryCount = updater.incompleteDownloadRetryCount(version);
+                final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
+                final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                final boolean bundleOnDisk = updater.isBundleOnDisk(existing.getId());
+                if (
+                    !CapgoUpdater.shouldRetryDownloadForExistingBundle(
+                        existing,
+                        bundleOnDisk,
+                        retryCount,
+                        integrityBlocked,
+                        interrupted,
+                        isCurrent,
+                        isQueuedNext
+                    )
+                ) {
+                    return "failed";
+                }
+                if (updater.isVersionDownloadActive(version)) {
+                    if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
+                        updater.handOverPendingStats();
+                        return "handed_over";
+                    }
+                    return "skipped";
+                }
+            }
+            if (
+                existing != null && existing.isDownloaded() && BundleStatus.DOWNLOADING != existing.getStatus() && updater.canSet(existing)
+            ) {
                 if (builtinMinimumBlocksExistingBundle(updater, version, logger)) {
                     if (CapacitorUpdaterPlugin.isInstanceLoaded()) {
                         updater.handOverPendingStats();
@@ -197,9 +280,21 @@ public class HeadlessUpdateWorker extends Worker {
 
             // downloadBackground returns null when it refuses the download (blocked encryption, gate,
             // version already downloading): only wait for a download it started.
+            if (existing == null && updater.isIntegrityBlockedVersion(version)) {
+                updater.resetIncompleteDownloadRetryCount(version);
+            }
+            if (updater.incompleteDownloadRetryCount(version) >= CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
+                return "failed";
+            }
+            if (existing == null && updater.incompleteDownloadRetryCount(version) > 0) {
+                retryDownloadSlot = true;
+            }
             final String startedId = updater.downloadBackground((String) url, version, sessionKey, checksum, manifestOf(latest), setNext);
             if (startedId == null) {
                 return "skipped";
+            }
+            if (retryDownloadSlot) {
+                updater.incrementIncompleteDownloadRetryCount(version);
             }
             final long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(FINISH_TIMEOUT_MINUTES);
             try {

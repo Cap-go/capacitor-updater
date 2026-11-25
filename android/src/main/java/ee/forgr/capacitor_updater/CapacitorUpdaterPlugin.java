@@ -2836,6 +2836,10 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return this.onLaunchDirectUpdateUsed;
     }
 
+    boolean shouldRetryIncompleteDownloadForTesting(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
+        return this.shouldRetryIncompleteDownload(bundle, latestVersionName, current);
+    }
+
     boolean isVersionDownloadInProgress(final String version) {
         return (
             version != null &&
@@ -2843,6 +2847,93 @@ public class CapacitorUpdaterPlugin extends Plugin {
             this.implementation != null &&
             this.implementation.activity != null &&
             DownloadWorkerManager.isVersionDownloading(this.implementation.activity, version)
+        );
+    }
+
+    private BundleInfo preferredAutoUpdateBundle(final BundleInfo existing, final String latestVersionName) {
+        if (existing == null) {
+            return null;
+        }
+        final BundleInfo queued = this.implementation.getNextBundle();
+        if (
+            queued != null &&
+            latestVersionName.equals(queued.getVersionName()) &&
+            !existing.getId().equals(queued.getId()) &&
+            !queued.isDeleted() &&
+            !queued.isDeleting()
+        ) {
+            return queued;
+        }
+        if (existing.isDeleted() || existing.isDeleting()) {
+            return null;
+        }
+        return existing;
+    }
+
+    private boolean shouldRetryIncompleteDownload(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
+        if (
+            bundle != null &&
+            BundleStatus.DOWNLOADING == bundle.getStatus() &&
+            this.isVersionDownloadInProgress(latestVersionName) &&
+            !this.implementation.isInterruptedDownloadBundle(bundle.getId())
+        ) {
+            return false;
+        }
+        if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus()) {
+            if (!this.implementation.isInterruptedDownloadBundle(bundle.getId())) {
+                return false;
+            }
+        }
+        final BundleInfo next = this.implementation.getNextBundle();
+        if (
+            bundle != null &&
+            (bundle.isDeleted() || bundle.isDeleting()) &&
+            next != null &&
+            latestVersionName.equals(next.getVersionName()) &&
+            !bundle.getId().equals(next.getId()) &&
+            !next.isDeleted() &&
+            !next.isDeleting()
+        ) {
+            return false;
+        }
+        if (bundle != null && bundle.isDownloaded() && BundleStatus.DOWNLOADING != bundle.getStatus() && !bundle.isErrorStatus()) {
+            return false;
+        }
+        if (bundle != null && (bundle.isDeleted() || bundle.isDeleting())) {
+            if (this.isVersionDownloadInProgress(latestVersionName)) {
+                return false;
+            }
+            final BundleInfo liveSameVersion = this.implementation.findRegistryBundleByVersionName(latestVersionName);
+            if (
+                liveSameVersion != null &&
+                !liveSameVersion.getId().equals(bundle.getId()) &&
+                !liveSameVersion.isDeleted() &&
+                !liveSameVersion.isDeleting()
+            ) {
+                return false;
+            }
+            if (
+                !this.implementation.isInterruptedDownloadBundle(bundle.getId()) &&
+                CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName) == 0
+            ) {
+                return false;
+            }
+        }
+        final boolean isQueuedNext = bundle != null && next != null && bundle.getId().equals(next.getId());
+        final boolean isCurrent =
+            bundle != null &&
+            bundle.getId().equals(current.getId()) &&
+            BundleStatus.SUCCESS == current.getStatus() &&
+            latestVersionName.equals(current.getVersionName());
+        final boolean interrupted = bundle != null && this.implementation.isInterruptedDownloadBundle(bundle.getId());
+        return CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            bundle,
+            bundle != null && this.implementation.isBundleOnDisk(bundle.getId()),
+            CapgoUpdater.incompleteDownloadRetryCount(this.prefs, latestVersionName),
+            this.implementation.isIntegrityBlockedVersion(latestVersionName),
+            interrupted,
+            isCurrent,
+            isQueuedNext
         );
     }
 
@@ -3164,6 +3255,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                         this.implementation.cleanupOrphanedManifestStagingFolders(null);
 
                         this.persistCurrentNativeBuildVersion();
+                        if (this.implementation != null) {
+                            this.implementation.reconcileInterruptedDownloadsOnLaunch();
+                        }
                     } catch (Exception e) {
                         logger.error("Error during cleanupObsoleteVersions: " + e.getMessage());
                     } finally {
@@ -6132,10 +6226,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     /**
-     * Security gates of an auto-update download, checked before it starts. Returns the cycle status
-     * when the download must not start (after sending its stat), or null.
+     * Session/checksum checks before reusing an on-device bundle (does not re-run transport gates).
      */
-    private String autoUpdateDownloadBlockedReason(final JSObject latest, final String latestVersionName) {
+    private String autoUpdateReuseBlockedReason(final JSObject latest, final String latestVersionName) {
         final String sessionKey = latest.getString("sessionKey", "");
         if (!this.implementation.publicKey.isEmpty() && !CryptoCipher.isValidSessionKey(sessionKey)) {
             logger.error("Public key present but no valid session key provided");
@@ -6147,6 +6240,18 @@ public class CapacitorUpdaterPlugin extends Plugin {
             logger.error("No checksum provided");
             this.implementation.sendStats("checksum_required", latestVersionName);
             return "Checksum required";
+        }
+        return null;
+    }
+
+    /**
+     * Security gates of an auto-update download, checked before it starts. Returns the cycle status
+     * when the download must not start (after sending its stat), or null.
+     */
+    private String autoUpdateDownloadBlockedReason(final JSObject latest, final String latestVersionName) {
+        final String reuseBlockedReason = this.autoUpdateReuseBlockedReason(latest, latestVersionName);
+        if (reuseBlockedReason != null) {
+            return reuseBlockedReason;
         }
         try {
             this.implementation.runPreDownloadSecurityGates(
@@ -6374,14 +6479,35 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 logger.info("Reusing automatic download for version: " + latestVersionName);
                                 return;
                             }
-                            final BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                            BundleInfo latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                            if (latest == null) {
+                                latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
+                            } else if (latest.isDeleted() || latest.isDeleting()) {
+                                final BundleInfo liveSameVersion =
+                                    CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(latestVersionName);
+                                if (liveSameVersion != null && !liveSameVersion.isDeleted() && !liveSameVersion.isDeleting()) {
+                                    latest = liveSameVersion;
+                                }
+                            }
+                            boolean retryDownloadSlot = false;
                             if (latest != null) {
-                                final JSObject ret = new JSObject();
-                                ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
-                                if (latest.isErrorStatus()) {
-                                    logger.error("Latest bundle already exists, and is in error state. Aborting update.");
+                                if (latest.isDeleted() || latest.isDeleting() || latest.isErrorStatus()) {
+                                    final BundleInfo preferredBeforeRetry = CapacitorUpdaterPlugin.this.preferredAutoUpdateBundle(
+                                        latest,
+                                        latestVersionName
+                                    );
+                                    if (preferredBeforeRetry != null) {
+                                        latest = preferredBeforeRetry;
+                                    }
+                                }
+                                if (
+                                    latest != null &&
+                                    latest.isErrorStatus() &&
+                                    !CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
+                                ) {
+                                    logger.error("Latest bundle is in error state after incomplete retries. Aborting update.");
                                     CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
-                                        "Latest bundle already exists, and is in error state. Aborting update.",
+                                        "Latest version is in error state. Aborting update.",
                                         latestVersionName,
                                         current,
                                         true,
@@ -6390,9 +6516,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                     );
                                     return;
                                 }
+                                final JSObject ret = new JSObject();
+                                ret.put("bundle", InternalUtils.mapToJSObject(latest.toJSONMap()));
                                 final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                 if (
                                     latest.isDownloaded() &&
+                                    !latest.isErrorStatus() &&
                                     BundleStatus.DOWNLOADING != latest.getStatus() &&
                                     (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
                                         CryptoCipher.isValidSessionKey(latestSessionKey))
@@ -6409,6 +6538,16 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         );
                                         if (!delayConditionList.isEmpty()) {
                                             logger.info("Update delayed until delay conditions met");
+                                            if (
+                                                CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle() &&
+                                                CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)
+                                            ) {
+                                                CapacitorUpdaterPlugin.this.queueBackgroundUpdateResponse(
+                                                    latest.getId(),
+                                                    plannedDirectUpdate,
+                                                    downloadContext
+                                                );
+                                            }
                                             CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                                 "Update delayed until delay conditions met",
                                                 latestVersionName,
@@ -6489,6 +6628,58 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                         return;
                                     }
                                 }
+                                if (
+                                    latest != null &&
+                                    (!latest.isDownloaded() ||
+                                        BundleStatus.DOWNLOADING == latest.getStatus() ||
+                                        latest.isErrorStatus() ||
+                                        latest.isDeleted() ||
+                                        latest.isDeleting()) &&
+                                    CapacitorUpdaterPlugin.this.shouldRetryIncompleteDownload(latest, latestVersionName, current)
+                                ) {
+                                    logger.info(
+                                        "Latest bundle already exists in incomplete state (" +
+                                            latest.getStatus() +
+                                            ") and will be deleted, download will overwrite it."
+                                    );
+                                    retryDownloadSlot =
+                                        CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >
+                                            0 ||
+                                        CapacitorUpdaterPlugin.this.implementation.isInterruptedDownloadBundle(latest.getId());
+                                    final BundleInfo queuedNext = CapacitorUpdaterPlugin.this.implementation.getNextBundle();
+                                    synchronized (CapacitorUpdaterPlugin.this) {
+                                        if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                            return;
+                                        }
+                                        if (queuedNext != null && latest.getId() != null && latest.getId().equals(queuedNext.getId())) {
+                                            CapacitorUpdaterPlugin.this.implementation.setNextBundle(null);
+                                        }
+                                    }
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
+                                    try {
+                                        final Boolean deleted = CapacitorUpdaterPlugin.this.implementation.delete(latest.getId(), true);
+                                        if (Boolean.TRUE.equals(deleted)) {
+                                            logger.info("Incomplete bundle deleted: " + latest.toString());
+                                        } else {
+                                            logger.error("Failed to delete incomplete bundle: " + latest.toString());
+                                        }
+                                    } catch (final IOException e) {
+                                        logger.error(
+                                            "Failed to delete incomplete bundle: " + latest.getVersionName() + " " + e.getMessage()
+                                        );
+                                    }
+                                    if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
+                                        return;
+                                    }
+                                    latest = CapacitorUpdaterPlugin.this.implementation.getBundleInfoByName(latestVersionName);
+                                    if (latest == null) {
+                                        latest = CapacitorUpdaterPlugin.this.implementation.findRegistryBundleByVersionName(
+                                            latestVersionName
+                                        );
+                                    }
+                                }
                             }
                             // The store refuses these downloads without a callback, so end the cycle here
                             // (appReady, splash hide) like iOS does.
@@ -6499,6 +6690,24 @@ public class CapacitorUpdaterPlugin extends Plugin {
                             if (downloadBlockedReason != null) {
                                 CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
                                     downloadBlockedReason,
+                                    latestVersionName,
+                                    current,
+                                    true,
+                                    plannedDirectUpdate,
+                                    downloadContext
+                                );
+                                return;
+                            }
+                            if (latest == null && CapacitorUpdaterPlugin.this.implementation.isIntegrityBlockedVersion(latestVersionName)) {
+                                CapacitorUpdaterPlugin.this.implementation.resetIncompleteDownloadRetryCount(latestVersionName);
+                            }
+                            if (
+                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) >=
+                                CapgoUpdater.MAX_INCOMPLETE_DOWNLOAD_RETRIES
+                            ) {
+                                logger.error("Latest bundle exceeded incomplete download retries. Aborting update.");
+                                CapacitorUpdaterPlugin.this.endBackGroundTaskWithNotif(
+                                    "Latest version is in error state. Aborting update.",
                                     latestVersionName,
                                     current,
                                     true,
@@ -6525,6 +6734,13 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                       directUpdateStillAllowed
                                     : directUpdateStillAllowed;
                             }
+                            if (
+                                latest == null &&
+                                CapgoUpdater.incompleteDownloadRetryCount(CapacitorUpdaterPlugin.this.prefs, latestVersionName) > 0
+                            ) {
+                                retryDownloadSlot = true;
+                            }
+                            final boolean consumeRetrySlotOnStart = retryDownloadSlot;
                             startNewThread(() -> {
                                 try {
                                     if (!CapacitorUpdaterPlugin.this.ownsBackgroundDownload(downloadContext)) {
@@ -6558,6 +6774,9 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                             CapacitorUpdaterPlugin.this.shouldAutoSetNextBundle(),
                                             downloadContext
                                         );
+                                    if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.STARTED && consumeRetrySlotOnStart) {
+                                        CapacitorUpdaterPlugin.this.implementation.incrementIncompleteDownloadRetryCount(latestVersionName);
+                                    }
                                     if (result.status == CapgoUpdater.BackgroundDownloadResult.Status.NOT_STARTED) {
                                         CapacitorUpdaterPlugin.this.endFailedBackgroundDownload(
                                             latestVersionName,

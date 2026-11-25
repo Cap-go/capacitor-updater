@@ -1891,6 +1891,7 @@ import UIKit
         var completedFiles = 0
         var lastProgressPercent = -1
         let hasError = AtomicBool(initialValue: false)
+        let hasChecksumError = AtomicBool(initialValue: false)
         var downloadError: Error?
         var firstFile: String?
         var failedFiles = 0
@@ -2081,6 +2082,7 @@ import UIKit
                 userInfo: [NSLocalizedDescriptionKey: "Manifest download failed due to invalid or missing entries"]
             )
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
             reportFailure(resolvedError)
@@ -2098,6 +2100,7 @@ import UIKit
                 )
             } catch {
                 let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+                self.markInterruptedDownloadBundle(bundleId: id)
                 self.saveBundleInfo(id: id, bundle: errorBundle)
                 removePartialManifestBundleDirectory(destFolder)
                 self.notifyDownload(id: id, percent: 0, bundle: errorBundle)
@@ -2144,6 +2147,11 @@ import UIKit
                     errorLock.lock()
                     failureStage = "process_file"
                     failedFiles += 1
+                    let nsError = error as NSError
+                    if nsError.domain == "ChecksumError" ||
+                        (nsError.userInfo[NSUnderlyingErrorKey] as? NSError)?.domain == "ChecksumError" {
+                        hasChecksumError.value = true
+                    }
                     if downloadError == nil {
                         downloadError = error
                         firstFile = task.fileName
@@ -2169,6 +2177,12 @@ import UIKit
             )
             // Update bundle status to ERROR if download failed
             let errorBundle = bundleInfo.setStatus(status: BundleStatus.ERROR.storedValue)
+            let checksumFailure = hasChecksumError.value || (resolvedError as NSError).domain == "ChecksumError"
+            if checksumFailure {
+                self.markIntegrityBlockedVersion(version: version)
+            } else {
+                self.markInterruptedDownloadBundle(bundleId: id)
+            }
             self.saveBundleInfo(id: id, bundle: errorBundle)
             removePartialManifestBundleDirectory(destFolder)
             reportFailure(resolvedError)
@@ -2789,6 +2803,7 @@ import UIKit
         var mainError: NSError?
 
         guard var request = createRequest(url: url, method: "GET") else {
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw NSError(
                 domain: "DownloadError",
@@ -2865,6 +2880,7 @@ import UIKit
         if mainError != nil {
             logger.error("Failed to download bundle")
             logger.debug("Error: \(String(describing: mainError))")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             throw mainError!
         }
@@ -2876,6 +2892,7 @@ import UIKit
         } catch {
             logger.error("Failed to decrypt file")
             logger.debug("Error: \(error)")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData(for: id)
             throw error
@@ -2888,6 +2905,7 @@ import UIKit
             logger.error("Checksum mismatch, bundle rejected before extraction")
             CryptoCipher.logChecksumInfo(label: "Expected checksum", hexChecksum: expectedHash)
             self.sendStats(action: "checksum_fail", versionName: version)
+            self.markIntegrityBlockedVersion(version: version)
             try? FileManager.default.removeItem(at: finalPath)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             cleanDownloadData(for: id)
@@ -2904,6 +2922,7 @@ import UIKit
         } catch {
             logger.error("Failed to unzip file")
             logger.debug("Error: \(error)")
+            self.markInterruptedDownloadBundle(bundleId: id)
             self.saveBundleInfo(id: id, bundle: BundleInfo(id: id, version: version, status: BundleStatus.ERROR, downloaded: Date(), checksum: checksum, link: link, comment: comment))
             // Best-effort cleanup of the decrypted zip file when unzip fails
             do {
@@ -3461,6 +3480,146 @@ import UIKit
         }
     }
 
+    /// Retries for interrupted downloads only. Checksum/signature blocks use `markIntegrityBlockedVersion(version:)`.
+    public static let maxIncompleteDownloadRetries = 3
+    private let incompleteRetryCountPrefix = "capgo_incomplete_retry_count_"
+    private let incompleteFailReportedPrefix = "capgo_incomplete_fail_reported_"
+    private let integrityBlockedVersionPrefix = "capgo_integrity_blocked_version_"
+    private let interruptedDownloadBundlePrefix = "capgo_interrupted_download_bundle_"
+
+    func incompleteDownloadRetryCount(version: String) -> Int {
+        guard !version.isEmpty else {
+            return 0
+        }
+        return max(0, UserDefaults.standard.integer(forKey: incompleteRetryCountPrefix + version))
+    }
+
+    func incrementIncompleteDownloadRetryCount(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        let next = self.incompleteDownloadRetryCount(version: version) + 1
+        UserDefaults.standard.set(next, forKey: incompleteRetryCountPrefix + version)
+        UserDefaults.standard.synchronize()
+    }
+
+    func resetIncompleteDownloadRetryCount(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        UserDefaults.standard.removeObject(forKey: incompleteRetryCountPrefix + version)
+        UserDefaults.standard.removeObject(forKey: self.integrityBlockedVersionKey(version: version))
+        UserDefaults.standard.synchronize()
+    }
+
+    private func integrityBlockedVersionKey(version: String) -> String {
+        let scope = self.previewSession ? "preview:" : ""
+        return integrityBlockedVersionPrefix + scope + version
+    }
+
+    func markIntegrityBlockedVersion(version: String) {
+        guard !version.isEmpty else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: self.integrityBlockedVersionKey(version: version))
+        UserDefaults.standard.synchronize()
+    }
+
+    func isIntegrityBlockedVersion(version: String) -> Bool {
+        !version.isEmpty && UserDefaults.standard.bool(forKey: self.integrityBlockedVersionKey(version: version))
+    }
+
+    func markInterruptedDownloadBundle(bundleId: String) {
+        guard !bundleId.isEmpty else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: interruptedDownloadBundlePrefix + bundleId)
+        UserDefaults.standard.synchronize()
+    }
+
+    func isInterruptedDownloadBundle(bundleId: String) -> Bool {
+        !bundleId.isEmpty && UserDefaults.standard.bool(forKey: interruptedDownloadBundlePrefix + bundleId)
+    }
+
+    func clearInterruptedDownloadBundle(bundleId: String) {
+        guard !bundleId.isEmpty else {
+            return
+        }
+        UserDefaults.standard.removeObject(forKey: interruptedDownloadBundlePrefix + bundleId)
+        UserDefaults.standard.synchronize()
+    }
+
+    static func shouldRetryDownloadForExistingBundle(
+        _ bundle: BundleInfo,
+        bundleOnDisk: Bool,
+        incompleteRetryCount: Int,
+        integrityBlocked: Bool,
+        interruptedDownloadFailure: Bool,
+        isCurrentBundle: Bool,
+        isQueuedNext: Bool
+    ) -> Bool {
+        if incompleteRetryCount >= CapgoUpdater.maxIncompleteDownloadRetries {
+            return false
+        }
+        if integrityBlocked, !(bundle.isErrorStatus() && !bundleOnDisk) {
+            return false
+        }
+        if bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading() {
+            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+        }
+        if bundle.isErrorStatus() {
+            if !bundleOnDisk {
+                return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+            }
+            return interruptedDownloadFailure
+        }
+        if bundle.getStatus() == BundleStatus.SUCCESS.storedValue {
+            if isCurrentBundle || bundleOnDisk {
+                return false
+            }
+            return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+        }
+        if bundle.getStatus() == BundleStatus.PENDING.storedValue {
+            if bundleOnDisk {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
+    func isBundleOnDisk(id: String) -> Bool {
+        self.bundleExists(id: id)
+    }
+
+    /// Interrupted `downloading` records (e.g. process kill) emit `download_fail` once on the next launch, then move to `error`.
+    func reconcileInterruptedDownloadsOnLaunch() {
+        for info in self.list(raw: true) {
+            if info.isBuiltin() || info.getId().isEmpty {
+                continue
+            }
+            if !info.isDownloading() {
+                continue
+            }
+            if info.getId() == self.getCurrentBundleId() {
+                continue
+            }
+            let version = info.getVersionName()
+            let reportedKey = incompleteFailReportedPrefix + info.getId()
+            if !UserDefaults.standard.bool(forKey: reportedKey) {
+                self.sendStats(action: "download_fail", versionName: version)
+                UserDefaults.standard.set(true, forKey: reportedKey)
+                UserDefaults.standard.synchronize()
+            }
+            let currentInfo = self.getBundleInfo(id: info.getId())
+            if currentInfo.isDeleted() || currentInfo.isDeleting() || !currentInfo.isDownloading() {
+                continue
+            }
+            self.markInterruptedDownloadBundle(bundleId: info.getId())
+            _ = self.saveBundleInfo(id: info.getId(), bundle: info.setStatus(status: BundleStatus.ERROR.storedValue))
+        }
+    }
+
     func canSet(bundle: BundleInfo) -> Bool {
         bundle.isBuiltin() || self.bundleExists(id: bundle.getId())
     }
@@ -3590,6 +3749,11 @@ import UIKit
 
     public func setSuccess(bundle: BundleInfo, autoDeletePrevious: Bool) {
         self.setBundleStatus(id: bundle.getId(), status: BundleStatus.SUCCESS)
+        let versionName = bundle.getVersionName()
+        if !versionName.isEmpty {
+            self.resetIncompleteDownloadRetryCount(version: versionName)
+        }
+        self.clearInterruptedDownloadBundle(bundleId: bundle.getId())
         let fallback: BundleInfo = self.getFallbackBundle()
         let previewFallback = self.getPreviewFallbackBundle()
         let fallbackIsPreviewFallback = previewFallback?.getId() == fallback.getId()
@@ -4354,6 +4518,26 @@ import UIKit
             }
         }
         return nil
+    }
+
+    /// Includes deleted or incomplete registry entries omitted from the default non-raw list.
+    func findRegistryBundleByVersionName(version: String) -> BundleInfo? {
+        guard !version.isEmpty else {
+            return nil
+        }
+        var tombstoneMatch: BundleInfo?
+        for i in self.list(raw: true) {
+            if i.isBuiltin() || i.isUnknown() || i.getVersionName() != version {
+                continue
+            }
+            if !i.isDeleted() && !i.isDeleting() {
+                return i
+            }
+            if tombstoneMatch == nil {
+                tombstoneMatch = i
+            }
+        }
+        return tombstoneMatch
     }
 
     private func removeBundleInfo(id: String) {

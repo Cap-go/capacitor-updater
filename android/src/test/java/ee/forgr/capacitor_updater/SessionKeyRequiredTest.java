@@ -118,6 +118,16 @@ public class SessionKeyRequiredTest {
             }
             return null;
         }
+
+        @Override
+        public boolean canSet(final BundleInfo bundle) {
+            return bundle != null && bundle.isDownloaded();
+        }
+
+        @Override
+        boolean isBundleOnDisk(final String id) {
+            return "pending-id".equals(id);
+        }
     }
 
     private static final class ImmediateThreadCapacitorUpdaterPlugin extends CapacitorUpdaterPlugin {

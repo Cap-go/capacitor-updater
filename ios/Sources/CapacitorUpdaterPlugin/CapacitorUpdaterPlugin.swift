@@ -213,6 +213,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
     private let downloadLock = NSLock()
     private let onLaunchDirectUpdateStateLock = NSLock()
     private var downloadInProgress = false
+    private var downloadActiveVersionName: String?
     private var downloadStartTime: Date?
     private let downloadTimeout: TimeInterval = 600 // 10 minute timeout
 
@@ -1203,6 +1204,8 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             self.implementation.cleanupOrphanedTempFolders(threadToCheck: Thread.current)
+
+            self.implementation.reconcileInterruptedDownloadsOnLaunch()
 
             if self.defaultChannelCleanupMustRetry {
                 self.logger.warn("Keeping the previous native build version so default channel cleanup retries")
@@ -4419,11 +4422,65 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         isAutoUpdateModeEnabled(autoUpdateMode) && autoUpdateMode != autoUpdateModeOnlyDownload
     }
 
-    /// Incomplete leftovers must be downloaded again. Android already skips
-    /// `DOWNLOADING` here; iOS used to treat them as ready, then `setNextBundle`
-    /// failed quietly and the update never applied.
-    static func shouldRetryDownloadForExistingBundle(_ bundle: BundleInfo) -> Bool {
-        bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading()
+    private func shouldRetryDownloadForExistingBundle(
+        _ bundle: BundleInfo,
+        latestVersionName: String,
+        current: BundleInfo
+    ) -> Bool {
+        if bundle.isDownloaded() && !bundle.isDownloading() && !bundle.isErrorStatus() {
+            return false
+        }
+        if bundle.isDownloading() && self.isVersionDownloadInProgress(version: latestVersionName) {
+            if !self.implementation.isInterruptedDownloadBundle(bundleId: bundle.getId()) {
+                return false
+            }
+        }
+        if let next = self.implementation.getNextBundle(),
+           bundle.isDeleted() || bundle.isDeleting(),
+           latestVersionName == next.getVersionName(),
+           bundle.getId() != next.getId(),
+           !next.isDeleted(),
+           !next.isDeleting() {
+            return false
+        }
+        let bundleOnDisk = self.implementation.isBundleOnDisk(id: bundle.getId())
+        let retryCount = self.implementation.incompleteDownloadRetryCount(version: latestVersionName)
+        let integrityBlocked = self.implementation.isIntegrityBlockedVersion(version: latestVersionName)
+        let isCurrent = current.getId() == bundle.getId()
+            && current.getVersionName() == latestVersionName
+            && current.getStatus() == BundleStatus.SUCCESS.storedValue
+        let isQueuedNext = self.implementation.getNextBundle()?.getId() == bundle.getId()
+        let interrupted = self.implementation.isInterruptedDownloadBundle(bundleId: bundle.getId())
+        return CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            bundle,
+            bundleOnDisk: bundleOnDisk,
+            incompleteRetryCount: retryCount,
+            integrityBlocked: integrityBlocked,
+            interruptedDownloadFailure: interrupted,
+            isCurrentBundle: isCurrent,
+            isQueuedNext: isQueuedNext
+        )
+    }
+
+    private func shouldRetryDownloadForMissingBundle(latestVersionName: String) -> Bool {
+        return self.implementation.incompleteDownloadRetryCount(version: latestVersionName) < CapgoUpdater.maxIncompleteDownloadRetries
+    }
+
+    private func preferredAutoUpdateBundle(existing: BundleInfo?, latestVersionName: String) -> BundleInfo? {
+        guard let existing else {
+            return nil
+        }
+        if let queued = self.implementation.getNextBundle(),
+           latestVersionName == queued.getVersionName(),
+           existing.getId() != queued.getId(),
+           !queued.isDeleted(),
+           !queued.isDeleting() {
+            return queued
+        }
+        if existing.isDeleted() || existing.isDeleting() {
+            return nil
+        }
+        return existing
     }
 
     static func isDirectUpdateMode(_ directUpdateMode: String) -> Bool {
@@ -4569,6 +4626,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     var hasConsumedOnLaunchDirectUpdateForTesting: Bool {
         self.getOnLaunchDirectUpdateUsed()
+    }
+
+    func setVersionDownloadInProgressForTesting(version: String) {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = true
+        downloadActiveVersionName = version
+        downloadStartTime = Date()
+    }
+
+    func shouldRetryDownloadForExistingBundleForTesting(
+        _ bundle: BundleInfo,
+        latestVersionName: String,
+        current: BundleInfo
+    ) -> Bool {
+        self.shouldRetryDownloadForExistingBundle(bundle, latestVersionName: latestVersionName, current: current)
     }
 
     private func notifyBreakingEvents(version: String) {
@@ -4726,6 +4799,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadLock.lock()
         defer { downloadLock.unlock() }
         downloadInProgress = false
+        downloadActiveVersionName = nil
         downloadStartTime = nil
 
         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
@@ -4766,10 +4840,35 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         return true
     }
 
+    private func isVersionDownloadInProgress(version: String) -> Bool {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+
+        guard downloadInProgress, downloadActiveVersionName == version else {
+            return false
+        }
+
+        if let startTime = downloadStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > downloadTimeout {
+                self.logger.warn(
+                    "Download for \(version) exceeded timeout of \(downloadTimeout) seconds. Clearing stuck state."
+                )
+                downloadInProgress = false
+                downloadActiveVersionName = nil
+                downloadStartTime = nil
+                return false
+            }
+        }
+
+        return true
+    }
+
     private func clearDownloadInProgressState() {
         downloadLock.lock()
         defer { downloadLock.unlock() }
         downloadInProgress = false
+        downloadActiveVersionName = nil
         downloadStartTime = nil
     }
 
@@ -4947,20 +5046,52 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         )
                         return
                     }
-                    var nextImpl = self.implementation.getBundleInfoByVersionName(version: latestVersionName)
-                    let needsDownload = nextImpl.map(Self.shouldRetryDownloadForExistingBundle) ?? true
+                    var nextImpl =
+                        self.implementation.getBundleInfoByVersionName(version: latestVersionName)
+                        ?? self.implementation.findRegistryBundleByVersionName(version: latestVersionName)
+                    let needsDownload = nextImpl.map {
+                        self.shouldRetryDownloadForExistingBundle($0, latestVersionName: latestVersionName, current: current)
+                    } ?? self.shouldRetryDownloadForMissingBundle(latestVersionName: latestVersionName)
+                    if !needsDownload, let existing = nextImpl {
+                        nextImpl = self.preferredAutoUpdateBundle(existing: existing, latestVersionName: latestVersionName)
+                    }
                     if needsDownload {
+                        if nextImpl == nil, self.implementation.isIntegrityBlockedVersion(version: latestVersionName) {
+                            self.implementation.resetIncompleteDownloadRetryCount(version: latestVersionName)
+                        }
+                        if self.implementation.incompleteDownloadRetryCount(version: latestVersionName) >= CapgoUpdater.maxIncompleteDownloadRetries {
+                            self.logger.error("Latest bundle exceeded incomplete download retries. Aborting update.")
+                            self.endBackGroundTaskWithNotif(
+                                msg: "Latest version is in error state. Aborting update.",
+                                latestVersionName: latestVersionName,
+                                current: current,
+                                plannedDirectUpdate: plannedDirectUpdate
+                            )
+                            return
+                        }
+                        var retryDownloadSlot = false
                         if let existing = nextImpl {
                             self.logger.info("Latest bundle already exists in incomplete state (\(existing.getStatus())) and will be deleted, download will overwrite it.")
-                            _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                            retryDownloadSlot =
+                                self.implementation.incompleteDownloadRetryCount(version: latestVersionName) > 0 ||
+                                self.implementation.isInterruptedDownloadBundle(bundleId: existing.getId())
+                            if self.implementation.getNextBundle()?.getId() == existing.getId() {
+                                _ = self.implementation.setNextBundle(next: Optional<String>.none)
+                            }
                             let deleted = self.implementation.delete(id: existing.getId(), removeInfo: true)
                             if deleted {
                                 self.logger.info("Incomplete bundle deleted: \(existing.toString())")
                             } else {
                                 self.logger.error("Failed to delete incomplete bundle: \(existing.toString())")
                             }
+                        } else if self.implementation.incompleteDownloadRetryCount(version: latestVersionName) > 0 {
+                            retryDownloadSlot = true
                         }
+                        self.downloadLock.lock()
+                        self.downloadActiveVersionName = latestVersionName
+                        self.downloadLock.unlock()
                         self.consumeOnLaunchDirectUpdateAttempt(plannedDirectUpdate: plannedDirectUpdate)
+                        let consumeRetrySlotOnStart = retryDownloadSlot
                         if res.manifest != nil {
                             nextImpl = try self.implementation.downloadManifest(manifest: res.manifest!, version: latestVersionName, sessionKey: sessionKey, link: res.link, comment: res.comment)
                         } else {
@@ -4984,6 +5115,19 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 comment: res.comment
                             )
                         }
+                        if consumeRetrySlotOnStart {
+                            self.implementation.incrementIncompleteDownloadRetryCount(version: latestVersionName)
+                        }
+                    }
+                    if nextImpl == nil && !needsDownload {
+                        self.logger.error("Latest bundle exceeded incomplete download retries. Aborting update.")
+                        self.endBackGroundTaskWithNotif(
+                            msg: "Latest version is in error state. Aborting update.",
+                            latestVersionName: latestVersionName,
+                            current: current,
+                            plannedDirectUpdate: plannedDirectUpdate
+                        )
+                        return
                     }
                     guard let next = nextImpl else {
                         self.logger.error("Error downloading file")
@@ -4996,7 +5140,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     if next.isErrorStatus() {
-                        self.logger.error("Latest bundle already exists and is in error state. Aborting update.")
+                        self.logger.error("Latest bundle is in error state after download and exceeded incomplete retries. Aborting update.")
                         self.endBackGroundTaskWithNotif(
                             msg: "Latest version is in error state. Aborting update.",
                             latestVersionName: latestVersionName,
@@ -5017,6 +5161,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
                         if next.getChecksum() != res.checksum {
                             self.logger.error("Error checksum \(next.getChecksum()) \(res.checksum)")
                             self.implementation.sendStats(action: "checksum_fail", versionName: next.getVersionName())
+                            self.implementation.markIntegrityBlockedVersion(version: latestVersionName)
                             let id = next.getId()
                             let resDel = self.implementation.delete(id: id)
                             if !resDel {

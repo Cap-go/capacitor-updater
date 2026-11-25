@@ -464,6 +464,219 @@ public class CapgoUpdater {
         return !observedByThisProcess;
     }
 
+    /** Retries for interrupted downloads only. Checksum/signature blocks use {@link #markIntegrityBlockedVersion}. */
+    public static final int MAX_INCOMPLETE_DOWNLOAD_RETRIES = 3;
+    private static final String INCOMPLETE_RETRY_COUNT_PREFIX = "capgo_incomplete_retry_count_";
+    private static final String INCOMPLETE_FAIL_REPORTED_PREFIX = "capgo_incomplete_fail_reported_";
+    private static final String INTEGRITY_BLOCKED_VERSION_PREFIX = "capgo_integrity_blocked_version_";
+    private static final String INTERRUPTED_DOWNLOAD_BUNDLE_PREFIX = "capgo_interrupted_download_bundle_";
+
+    static int incompleteDownloadRetryCount(final SharedPreferences prefs, final String version) {
+        if (prefs == null || version == null || version.isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, prefs.getInt(INCOMPLETE_RETRY_COUNT_PREFIX + version, 0));
+    }
+
+    int incompleteDownloadRetryCount(final String version) {
+        return incompleteDownloadRetryCount(this.prefs, version);
+    }
+
+    void incrementIncompleteDownloadRetryCount(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        final int next = incompleteDownloadRetryCount(this.prefs, version) + 1;
+        this.editor.putInt(INCOMPLETE_RETRY_COUNT_PREFIX + version, next);
+        this.editor.commit();
+    }
+
+    void resetIncompleteDownloadRetryCount(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        this.editor.remove(INCOMPLETE_RETRY_COUNT_PREFIX + version);
+        this.editor.remove(this.integrityBlockedVersionKey(version));
+        this.editor.commit();
+    }
+
+    private String integrityBlockedVersionKey(final String version) {
+        if (version == null || version.isEmpty()) {
+            return INTEGRITY_BLOCKED_VERSION_PREFIX;
+        }
+        return INTEGRITY_BLOCKED_VERSION_PREFIX + (Boolean.TRUE.equals(this.previewSession) ? "preview:" : "") + version;
+    }
+
+    void markIntegrityBlockedVersion(final String version) {
+        if (this.editor == null || version == null || version.isEmpty()) {
+            return;
+        }
+        this.editor.putBoolean(this.integrityBlockedVersionKey(version), true);
+        this.editor.commit();
+    }
+
+    boolean isIntegrityBlockedVersion(final String version) {
+        return (
+            this.prefs != null &&
+            version != null &&
+            !version.isEmpty() &&
+            this.prefs.getBoolean(this.integrityBlockedVersionKey(version), false)
+        );
+    }
+
+    void markInterruptedDownloadBundle(final String bundleId) {
+        if (this.editor == null || bundleId == null || bundleId.isEmpty()) {
+            return;
+        }
+        this.editor.putBoolean(INTERRUPTED_DOWNLOAD_BUNDLE_PREFIX + bundleId, true);
+        this.editor.commit();
+    }
+
+    boolean isInterruptedDownloadBundle(final String bundleId) {
+        return (
+            this.prefs != null &&
+            bundleId != null &&
+            !bundleId.isEmpty() &&
+            this.prefs.getBoolean(INTERRUPTED_DOWNLOAD_BUNDLE_PREFIX + bundleId, false)
+        );
+    }
+
+    void clearInterruptedDownloadBundle(final String bundleId) {
+        if (this.editor == null || bundleId == null || bundleId.isEmpty()) {
+            return;
+        }
+        this.editor.remove(INTERRUPTED_DOWNLOAD_BUNDLE_PREFIX + bundleId);
+        this.editor.commit();
+    }
+
+    boolean isVersionDownloadObservedInThisProcess(final String version) {
+        return version != null && !version.isEmpty() && this.observedDownloadVersions.contains(version);
+    }
+
+    boolean isVersionDownloadActive(final String version) {
+        return (
+            this.isVersionDownloadObservedInThisProcess(version) ||
+            (this.context() != null && DownloadWorkerManager.isVersionDownloading(this.context(), version))
+        );
+    }
+
+    private boolean hasPendingDownloadFinalizationForBundleId(final String id) {
+        if (id == null || id.isEmpty()) {
+            return false;
+        }
+        synchronized (this.deleteLock) {
+            try {
+                final File bundleDir = this.getBundleDirectory(id);
+                final Set<DownloadFinalization> pending = downloadFinalizations.get(bundleDir);
+                return pending != null && !pending.isEmpty();
+            } catch (final IOException e) {
+                return false;
+            }
+        }
+    }
+
+    /**
+     * True when a stored bundle for the offered version must be removed and downloaded again.
+     * Integrity blocks retries only while a failed bundle is still on disk.
+     */
+    public static boolean shouldRetryDownloadForExistingBundle(
+        final BundleInfo bundle,
+        final boolean bundleOnDisk,
+        final int incompleteRetryCount,
+        final boolean integrityBlocked,
+        final boolean interruptedDownloadFailure,
+        final boolean isCurrentBundle,
+        final boolean isQueuedNext
+    ) {
+        if (incompleteRetryCount >= MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
+            return false;
+        }
+        if (bundle == null) {
+            return true;
+        }
+        if (integrityBlocked && !(bundle.isErrorStatus() && !bundleOnDisk)) {
+            return false;
+        }
+        if (bundle.isDeleted() || bundle.isDeleting() || BundleStatus.DOWNLOADING == bundle.getStatus()) {
+            return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+        }
+        if (bundle.isErrorStatus()) {
+            if (!bundleOnDisk) {
+                return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+            }
+            return interruptedDownloadFailure;
+        }
+        if (BundleStatus.SUCCESS == bundle.getStatus()) {
+            if (isCurrentBundle || bundleOnDisk) {
+                return false;
+            }
+            return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+        }
+        if (BundleStatus.PENDING == bundle.getStatus()) {
+            if (bundleOnDisk) {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    boolean isBundleOnDisk(final String id) {
+        return id != null && !id.isEmpty() && this.bundleExists(id);
+    }
+
+    /**
+     * Interrupted {@link BundleStatus#DOWNLOADING} records (e.g. process kill) emit {@code download_fail}
+     * once on the next launch, then move to ERROR so a later update check can retry.
+     */
+    public void reconcileInterruptedDownloadsOnLaunch() {
+        for (final BundleInfo info : this.list(true)) {
+            if (info == null || info.isBuiltin() || info.getId() == null || info.getId().isEmpty()) {
+                continue;
+            }
+            if (info.getStatus() != BundleStatus.DOWNLOADING) {
+                continue;
+            }
+            if (info.getId().equals(this.getCurrentBundleId())) {
+                continue;
+            }
+            final String version = info.getVersionName();
+            if (this.isVersionDownloadObservedInThisProcess(version)) {
+                continue;
+            }
+            synchronized (this.deleteLock) {
+                if (this.hasPendingDownloadFinalizationForBundleId(info.getId())) {
+                    continue;
+                }
+            }
+            final String reportedKey = INCOMPLETE_FAIL_REPORTED_PREFIX + info.getId();
+            if (this.prefs != null && !this.prefs.getBoolean(reportedKey, false)) {
+                this.sendStats("download_fail", version);
+                if (this.editor != null) {
+                    this.editor.putBoolean(reportedKey, true);
+                    this.editor.commit();
+                }
+            }
+            this.cleanupManifestStagingAfterDownloadCancelled(info.getId());
+            if (this.context() != null) {
+                DownloadWorkerManager.cancelVersionDownload(this.context(), version);
+            }
+            synchronized (this.deleteLock) {
+                final BundleInfo currentInfo = this.getBundleInfo(info.getId());
+                if (
+                    currentInfo == null ||
+                    currentInfo.isDeleted() ||
+                    currentInfo.isDeleting() ||
+                    BundleStatus.DOWNLOADING != currentInfo.getStatus()
+                ) {
+                    continue;
+                }
+                this.markInterruptedDownloadBundle(info.getId());
+                this.saveBundleInfo(info.getId(), info.setStatus(BundleStatus.ERROR));
+            }
+        }
+    }
+
     static boolean shouldReleaseLaunchWhileRetrying(
         final boolean awaitedByCaller,
         final boolean setNext,
@@ -1651,7 +1864,10 @@ public class CapgoUpdater {
                                     new Date(System.currentTimeMillis()),
                                     ""
                                 );
-                                saveBundleInfo(id, failedBundle);
+                                synchronized (CapgoUpdater.this.deleteLock) {
+                                    CapgoUpdater.this.markInterruptedDownloadBundle(id);
+                                    saveBundleInfo(id, failedBundle);
+                                }
                                 // Cleanup download tracking for failed downloads
                                 DownloadWorkerManager.cancelBundleDownload(context, id, failedVersion);
                                 Map<String, Object> ret = new HashMap<>();
@@ -1840,6 +2056,7 @@ public class CapgoUpdater {
                     logger.error("Checksum mismatch");
                     logger.debug("Expected: " + expectedChecksum + ", Got: " + checksum);
                     this.sendStats("checksum_fail");
+                    this.markIntegrityBlockedVersion(version);
                     throw new IOException("Checksum failed: " + id);
                 }
             }
@@ -2475,6 +2692,7 @@ public class CapgoUpdater {
                 }
                 if (orphanedBundle != null) {
                     this.cleanupManifestStagingAfterDownloadCancelled(orphanedBundle.getId());
+                    this.markInterruptedDownloadBundle(orphanedBundle.getId());
                     this.saveBundleInfo(orphanedBundle.getId(), orphanedBundle.setStatus(BundleStatus.ERROR));
                 }
                 logger.info("Restarting download orphaned by a previous process for version: " + version);
@@ -2610,6 +2828,7 @@ public class CapgoUpdater {
         synchronized (deleteLock) {
             final BundleInfo info = this.getBundleInfo(id);
             if (this.hasStoredBundleInfo(id) && !this.isBundleBeingDeleted(id) && !info.isDeleting() && !info.isDeleted()) {
+                this.markInterruptedDownloadBundle(id);
                 this.saveBundleInfo(id, new BundleInfo(id, version, BundleStatus.ERROR, new Date(System.currentTimeMillis()), ""));
             }
         }
@@ -3220,6 +3439,11 @@ public class CapgoUpdater {
 
     public void setSuccess(final BundleInfo bundle, Boolean autoDeletePrevious) {
         this.setBundleStatus(bundle.getId(), BundleStatus.SUCCESS);
+        final String versionName = bundle.getVersionName();
+        if (versionName != null && !versionName.isEmpty()) {
+            this.resetIncompleteDownloadRetryCount(versionName);
+        }
+        this.clearInterruptedDownloadBundle(bundle.getId());
         final BundleInfo fallback = this.getFallbackBundle();
         final BundleInfo previewFallback = this.getPreviewFallbackBundle();
         final boolean fallbackIsPreviewFallback = previewFallback != null && previewFallback.getId().equals(fallback.getId());
@@ -4920,6 +5144,29 @@ public class CapgoUpdater {
             }
         }
         return null;
+    }
+
+    /**
+     * Finds a same-version registry record only when {@link #getBundleInfoByName(String)} returned null,
+     * typically a deleted tombstone or other incomplete state kept in prefs.
+     */
+    public BundleInfo findRegistryBundleByVersionName(final String versionName) {
+        if (versionName == null || versionName.isEmpty() || this.prefs == null) {
+            return null;
+        }
+        BundleInfo tombstoneMatch = null;
+        for (final BundleInfo i : this.list(true)) {
+            if (i == null || i.isBuiltin() || i.isUnknown() || !versionName.equals(i.getVersionName())) {
+                continue;
+            }
+            if (!i.isDeleted() && !i.isDeleting()) {
+                return i;
+            }
+            if (tombstoneMatch == null) {
+                tombstoneMatch = i;
+            }
+        }
+        return tombstoneMatch;
     }
 
     private void removeBundleInfo(final String id) {

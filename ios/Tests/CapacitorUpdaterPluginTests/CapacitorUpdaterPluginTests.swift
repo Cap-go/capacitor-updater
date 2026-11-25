@@ -176,6 +176,26 @@ private class FreshDownloadCapgoUpdater: CapgoUpdater {
         return true
     }
 
+    override func canSet(bundle: BundleInfo) -> Bool {
+        if let existingBundleValue, existingBundleValue.getId() == bundle.getId() {
+            return existingBundleValue.getStatus() == BundleStatus.PENDING.storedValue
+        }
+        if let downloadedBundleValue, downloadedBundleValue.getId() == bundle.getId() {
+            return downloadedBundleValue.getStatus() == BundleStatus.PENDING.storedValue
+        }
+        return super.canSet(bundle: bundle)
+    }
+
+    override func isBundleOnDisk(id: String) -> Bool {
+        if let existingBundleValue, existingBundleValue.getId() == id {
+            return self.canSet(bundle: existingBundleValue)
+        }
+        if let downloadedBundleValue, downloadedBundleValue.getId() == id {
+            return self.canSet(bundle: downloadedBundleValue)
+        }
+        return super.isBundleOnDisk(id: id)
+    }
+
     override func setNextBundle(next: String?) -> Bool {
         setNextBundleCalls += 1
         lastSetNextBundleId = next
@@ -969,8 +989,15 @@ class CapacitorUpdaterTests: XCTestCase {
     }
 
     func testShouldRetryDownloadForIncompleteExistingBundles() {
-        let pending = BundleInfo(
+        let pendingOnDisk = BundleInfo(
             id: "pending-id",
+            version: "2.0.0",
+            status: .PENDING,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+        let pendingStale = BundleInfo(
+            id: "pending-stale",
             version: "2.0.0",
             status: .PENDING,
             downloaded: Date(),
@@ -997,11 +1024,157 @@ class CapacitorUpdaterTests: XCTestCase {
             downloaded: Date(),
             checksum: "abc123"
         )
+        let interruptedError = BundleInfo(
+            id: "error-id",
+            version: "2.0.0",
+            status: .ERROR,
+            downloaded: Date(),
+            checksum: ""
+        )
 
-        XCTAssertFalse(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(pending))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(downloading))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleting))
-        XCTAssertTrue(CapacitorUpdaterPlugin.shouldRetryDownloadForExistingBundle(deleted))
+        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            pendingOnDisk,
+            bundleOnDisk: true,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: true
+        ))
+        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            pendingStale,
+            bundleOnDisk: true,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            pendingStale,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            downloading,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            deleting,
+            bundleOnDisk: true,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            deleted,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: true,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: false,
+            interruptedDownloadFailure: true,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: CapgoUpdater.maxIncompleteDownloadRetries,
+            integrityBlocked: false,
+            interruptedDownloadFailure: true,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: true,
+            interruptedDownloadFailure: true,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+    }
+
+    func testInterruptedDownloadingBundleRetriesDespiteVersionInProgress() {
+        let plugin = TestableCapacitorUpdaterPlugin()
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        plugin.implementation = updater
+        plugin.setVersionDownloadInProgressForTesting(version: "2.0.0")
+
+        let bundleId = "downloading-id"
+        updater.markInterruptedDownloadBundle(bundleId: bundleId)
+        defer {
+            updater.clearInterruptedDownloadBundle(bundleId: bundleId)
+        }
+
+        let downloading = BundleInfo(
+            id: bundleId,
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        let current = BundleInfo(
+            id: "current-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        XCTAssertTrue(
+            plugin.shouldRetryDownloadForExistingBundleForTesting(downloading, latestVersionName: "2.0.0", current: current)
+        )
+
+        let otherDownloading = BundleInfo(
+            id: "other-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        XCTAssertFalse(
+            plugin.shouldRetryDownloadForExistingBundleForTesting(otherDownloading, latestVersionName: "2.0.0", current: current)
+        )
     }
 
     func testBuildUserAgentStripsNonIsoCharacters() {
