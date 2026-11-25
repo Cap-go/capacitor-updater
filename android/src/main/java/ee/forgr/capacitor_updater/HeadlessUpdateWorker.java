@@ -195,11 +195,12 @@ public class HeadlessUpdateWorker extends Worker {
                 final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
                 final int retryCount = updater.incompleteDownloadRetryCount(version);
                 final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                final boolean bundleOnDisk = updater.isBundleOnDisk(existing.getId());
                 if (
                     existing.isErrorStatus() &&
                     !CapgoUpdater.shouldRetryDownloadForExistingBundle(
                         existing,
-                        updater.canSet(existing),
+                        bundleOnDisk,
                         retryCount,
                         integrityBlocked,
                         interrupted,
@@ -212,7 +213,7 @@ public class HeadlessUpdateWorker extends Worker {
                 if (
                     CapgoUpdater.shouldRetryDownloadForExistingBundle(
                         existing,
-                        updater.canSet(existing),
+                        bundleOnDisk,
                         retryCount,
                         integrityBlocked,
                         interrupted,
@@ -240,10 +241,11 @@ public class HeadlessUpdateWorker extends Worker {
                 final int retryCount = updater.incompleteDownloadRetryCount(version);
                 final boolean interrupted = updater.isInterruptedDownloadBundle(existing.getId());
                 final boolean integrityBlocked = updater.isIntegrityBlockedVersion(version);
+                final boolean bundleOnDisk = updater.isBundleOnDisk(existing.getId());
                 if (
                     !CapgoUpdater.shouldRetryDownloadForExistingBundle(
                         existing,
-                        updater.canSet(existing),
+                        bundleOnDisk,
                         retryCount,
                         integrityBlocked,
                         interrupted,
