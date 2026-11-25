@@ -4628,6 +4628,22 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         self.getOnLaunchDirectUpdateUsed()
     }
 
+    func setVersionDownloadInProgressForTesting(version: String) {
+        downloadLock.lock()
+        defer { downloadLock.unlock() }
+        downloadInProgress = true
+        downloadActiveVersionName = version
+        downloadStartTime = Date()
+    }
+
+    func shouldRetryDownloadForExistingBundleForTesting(
+        _ bundle: BundleInfo,
+        latestVersionName: String,
+        current: BundleInfo
+    ) -> Bool {
+        self.shouldRetryDownloadForExistingBundle(bundle, latestVersionName: latestVersionName, current: current)
+    }
+
     private func notifyBreakingEvents(version: String) {
         guard !version.isEmpty else {
             return

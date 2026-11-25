@@ -1133,6 +1133,47 @@ class CapacitorUpdaterTests: XCTestCase {
         ))
     }
 
+    func testInterruptedDownloadingBundleRetriesDespiteVersionInProgress() {
+        let plugin = TestableCapacitorUpdaterPlugin()
+        let updater = CapgoUpdater()
+        updater.setLogger(Logger(withTag: "TestLogger"))
+        plugin.implementation = updater
+        plugin.setVersionDownloadInProgressForTesting(version: "2.0.0")
+
+        let bundleId = "downloading-id"
+        updater.markInterruptedDownloadBundle(bundleId: bundleId)
+
+        let downloading = BundleInfo(
+            id: bundleId,
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        let current = BundleInfo(
+            id: "current-id",
+            version: "1.0.0",
+            status: .SUCCESS,
+            downloaded: Date(),
+            checksum: "abc123"
+        )
+
+        XCTAssertTrue(
+            plugin.shouldRetryDownloadForExistingBundleForTesting(downloading, latestVersionName: "2.0.0", current: current)
+        )
+
+        let otherDownloading = BundleInfo(
+            id: "other-id",
+            version: "2.0.0",
+            status: .DOWNLOADING,
+            downloaded: Date(),
+            checksum: ""
+        )
+        XCTAssertFalse(
+            plugin.shouldRetryDownloadForExistingBundleForTesting(otherDownloading, latestVersionName: "2.0.0", current: current)
+        )
+    }
+
     func testBuildUserAgentStripsNonIsoCharacters() {
         let ua = CapgoUpdater.buildUserAgent(appId: "com.example.Тест", pluginVersion: "1.2.3🔥", versionOs: "18 😊")
         XCTAssertEqual(ua, "CapacitorUpdater/1.2.3 (com.example.) ios/18")

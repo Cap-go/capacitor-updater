@@ -2836,6 +2836,14 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return this.onLaunchDirectUpdateUsed;
     }
 
+    boolean shouldRetryIncompleteDownloadForTesting(
+        final BundleInfo bundle,
+        final String latestVersionName,
+        final BundleInfo current
+    ) {
+        return this.shouldRetryIncompleteDownload(bundle, latestVersionName, current);
+    }
+
     boolean isVersionDownloadInProgress(final String version) {
         return (
             version != null &&

@@ -108,6 +108,10 @@ public class CapacitorUpdaterUnitTest {
         boolean isVersionDownloadInProgress(final String version) {
             return this.versionDownloadInProgress;
         }
+
+        void setVersionDownloadInProgressForTesting(final boolean inProgress) {
+            this.versionDownloadInProgress = inProgress;
+        }
     }
 
     private static final class DirectUpdateDispatchPlugin extends TestableCapacitorUpdaterPlugin {
@@ -2276,6 +2280,53 @@ public class CapacitorUpdaterUnitTest {
             )
         );
         assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, true, false, false));
+    }
+
+    @Test
+    public void testInterruptedDownloadingBundleRetriesDespiteVersionInProgress() throws Exception {
+        try (
+            MockedStatic<Looper> looperMock = mockStatic(Looper.class);
+            MockedConstruction<Handler> ignored = mockConstruction(Handler.class)
+        ) {
+            looperMock.when(Looper::getMainLooper).thenReturn(mock(Looper.class));
+
+            final ImmediateThreadCapacitorUpdaterPlugin plugin = new ImmediateThreadCapacitorUpdaterPlugin();
+            plugin.setVersionDownloadInProgressForTesting(true);
+            plugin.setLoggerForTesting(mock(Logger.class));
+
+            final CapgoUpdater updater = new CapgoUpdater(mock(Logger.class));
+            final SharedPreferences prefs = mock(SharedPreferences.class);
+            final SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class, RETURNS_SELF);
+            final Map<String, Boolean> boolStore = new HashMap<>();
+            updater.prefs = prefs;
+            updater.editor = editor;
+            when(prefs.getString(anyString(), nullable(String.class))).thenAnswer((inv) -> inv.getArgument(1));
+            when(prefs.getInt(anyString(), anyInt())).thenAnswer((inv) -> inv.getArgument(1));
+            when(prefs.getBoolean(anyString(), anyBoolean())).thenAnswer(
+                (inv) -> boolStore.getOrDefault(inv.getArgument(0), (Boolean) inv.getArgument(1))
+            );
+            when(editor.putBoolean(anyString(), anyBoolean())).thenAnswer((inv) -> {
+                boolStore.put(inv.getArgument(0), inv.getArgument(1));
+                return editor;
+            });
+            when(editor.commit()).thenReturn(true);
+
+            final Field prefsField = CapacitorUpdaterPlugin.class.getDeclaredField("prefs");
+            prefsField.setAccessible(true);
+            prefsField.set(plugin, prefs);
+
+            plugin.implementation = updater;
+            final String bundleId = "downloading-id";
+            updater.markInterruptedDownloadBundle(bundleId);
+
+            final BundleInfo downloading = new BundleInfo(bundleId, "2.0.0", BundleStatus.DOWNLOADING, new Date(), "");
+            final BundleInfo current = new BundleInfo("current-id", "1.0.0", BundleStatus.SUCCESS, new Date(), "abc123");
+
+            assertTrue(plugin.shouldRetryIncompleteDownloadForTesting(downloading, "2.0.0", current));
+
+            final BundleInfo otherDownloading = new BundleInfo("other-id", "2.0.0", BundleStatus.DOWNLOADING, new Date(), "");
+            assertFalse(plugin.shouldRetryIncompleteDownloadForTesting(otherDownloading, "2.0.0", current));
+        }
     }
 
     @Test
