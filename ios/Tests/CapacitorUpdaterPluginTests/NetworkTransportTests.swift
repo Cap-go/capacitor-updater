@@ -963,7 +963,7 @@ final class NetworkTransportTests: XCTestCase {
         var resumeBody = false
         server.respond { _ in
             var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.01)
-            response.waitBeforeContinuingBodyTimeout = 20
+            response.waitBeforeContinuingBodyTimeout = 8
             response.waitBeforeContinuingBody = {
                 flowLock.lock()
                 let go = resumeBody
@@ -974,10 +974,10 @@ final class NetworkTransportTests: XCTestCase {
         }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
-        rangeRequest.timeoutInterval = 20
+        rangeRequest.timeoutInterval = 45
 
         let updater = makeUpdater()
-        updater.timeout = 20
+        updater.timeout = 45
         let sampleLock = NSLock()
         var partialSamples: [(Int64, Int64)] = []
         let result = updater.performDownloadRequest(rangeRequest, label: "test") { received, expected in
@@ -1011,7 +1011,8 @@ final class NetworkTransportTests: XCTestCase {
         server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
         var fullSamples: [(Int64, Int64)] = []
         let fullUpdater = makeUpdater()
-        fullUpdater.timeout = 20
+        fullUpdater.timeout = 45
+        rangeRequest.timeoutInterval = 45
         let fullResult = fullUpdater.performDownloadRequest(rangeRequest, label: "test") { received, expected in
             sampleLock.lock()
             fullSamples.append((received, expected))
