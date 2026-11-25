@@ -970,6 +970,7 @@ final class NetworkTransportTests: XCTestCase {
         }
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
+        rangeRequest.timeoutInterval = 20
 
         let updater = makeUpdater()
         updater.timeout = 20
