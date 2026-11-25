@@ -2867,7 +2867,12 @@ public class CapacitorUpdaterPlugin extends Plugin {
     }
 
     private boolean shouldRetryIncompleteDownload(final BundleInfo bundle, final String latestVersionName, final BundleInfo current) {
-        if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus() && this.isVersionDownloadInProgress(latestVersionName)) {
+        if (
+            bundle != null &&
+            BundleStatus.DOWNLOADING == bundle.getStatus() &&
+            this.isVersionDownloadInProgress(latestVersionName) &&
+            !this.implementation.isInterruptedDownloadBundle(bundle.getId())
+        ) {
             return false;
         }
         if (bundle != null && BundleStatus.DOWNLOADING == bundle.getStatus()) {

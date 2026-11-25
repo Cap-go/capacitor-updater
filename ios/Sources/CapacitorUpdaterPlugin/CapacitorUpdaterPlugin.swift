@@ -4431,7 +4431,9 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
             return false
         }
         if bundle.isDownloading() && self.isVersionDownloadInProgress(version: latestVersionName) {
-            return false
+            if !self.implementation.isInterruptedDownloadBundle(bundleId: bundle.getId()) {
+                return false
+            }
         }
         if let next = self.implementation.getNextBundle(),
            bundle.isDeleted() || bundle.isDeleting(),
