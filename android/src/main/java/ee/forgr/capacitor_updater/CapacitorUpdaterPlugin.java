@@ -6524,6 +6524,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
                                 final String latestSessionKey = jsRes.has("sessionKey") ? jsRes.getString("sessionKey") : "";
                                 if (
                                     latest.isDownloaded() &&
+                                    !latest.isErrorStatus() &&
                                     BundleStatus.DOWNLOADING != latest.getStatus() &&
                                     (CapacitorUpdaterPlugin.this.implementation.publicKey.isEmpty() ||
                                         CryptoCipher.isValidSessionKey(latestSessionKey))
