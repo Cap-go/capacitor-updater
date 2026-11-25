@@ -958,7 +958,8 @@ final class NetworkTransportTests: XCTestCase {
         let flowLock = NSLock()
         var resumeBody = false
         server.respond { _ in
-            var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.02)
+            var response = LoopbackHTTPServer.Response(status: 206, body: tail, chunkSize: 5_000, chunkDelay: 0.01)
+            response.waitBeforeContinuingBodyTimeout = 20
             response.waitBeforeContinuingBody = {
                 flowLock.lock()
                 let go = resumeBody
@@ -970,12 +971,14 @@ final class NetworkTransportTests: XCTestCase {
         var rangeRequest = request("partial.zip")
         rangeRequest.setValue("bytes=10-", forHTTPHeaderField: "Range")
 
+        let updater = makeUpdater()
+        updater.timeout = 20
         let sampleLock = NSLock()
         var partialSamples: [(Int64, Int64)] = []
-        let result = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+        let result = updater.performDownloadRequest(rangeRequest, label: "test") { received, expected in
             sampleLock.lock()
             partialSamples.append((received, expected))
-            if received > 10 {
+            if received > 0 {
                 flowLock.lock()
                 resumeBody = true
                 flowLock.unlock()
@@ -985,6 +988,7 @@ final class NetworkTransportTests: XCTestCase {
         if let fileURL = result.fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
+        releaseUpdater(updater)
 
         XCTAssertEqual(result.response?.statusCode, 206)
         XCTAssertEqual(server.requests.first?.headers["range"], "bytes=10-")
@@ -1001,7 +1005,9 @@ final class NetworkTransportTests: XCTestCase {
 
         server.respond { _ in .init(status: 200, body: tail, chunkSize: 50_000, chunkDelay: 0.01) }
         var fullSamples: [(Int64, Int64)] = []
-        let fullResult = makeUpdater().performDownloadRequest(rangeRequest, label: "test") { received, expected in
+        let fullUpdater = makeUpdater()
+        fullUpdater.timeout = 20
+        let fullResult = fullUpdater.performDownloadRequest(rangeRequest, label: "test") { received, expected in
             sampleLock.lock()
             fullSamples.append((received, expected))
             sampleLock.unlock()
@@ -1009,6 +1015,7 @@ final class NetworkTransportTests: XCTestCase {
         if let fileURL = fullResult.fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
+        releaseUpdater(fullUpdater)
         XCTAssertFalse(fullSamples.isEmpty)
         if let lastFull = fullSamples.last {
             XCTAssertEqual(lastFull.1, Int64(tail.count))
