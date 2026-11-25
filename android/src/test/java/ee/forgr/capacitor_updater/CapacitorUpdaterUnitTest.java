@@ -2261,7 +2261,8 @@ public class CapacitorUpdaterUnitTest {
                 false
             )
         );
-        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, false, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, false, false, false));
         assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, false, true, false, false));
         assertFalse(
             CapgoUpdater.shouldRetryDownloadForExistingBundle(
@@ -2274,7 +2275,7 @@ public class CapacitorUpdaterUnitTest {
                 false
             )
         );
-        assertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, true, false, false));
+        assertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(interruptedError, false, 0, true, true, false, false));
     }
 
     @Test

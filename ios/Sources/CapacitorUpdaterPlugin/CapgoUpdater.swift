@@ -3558,13 +3558,19 @@ import UIKit
         isCurrentBundle: Bool,
         isQueuedNext: Bool
     ) -> Bool {
-        if integrityBlocked || incompleteRetryCount >= CapgoUpdater.maxIncompleteDownloadRetries {
+        if incompleteRetryCount >= CapgoUpdater.maxIncompleteDownloadRetries {
+            return false
+        }
+        if integrityBlocked, !(bundle.isErrorStatus() && !bundleOnDisk) {
             return false
         }
         if bundle.isDeleted() || bundle.isDeleting() || bundle.isDownloading() {
             return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
         }
         if bundle.isErrorStatus() {
+            if !bundleOnDisk {
+                return incompleteRetryCount < CapgoUpdater.maxIncompleteDownloadRetries
+            }
             return interruptedDownloadFailure
         }
         if bundle.getStatus() == BundleStatus.SUCCESS.storedValue {

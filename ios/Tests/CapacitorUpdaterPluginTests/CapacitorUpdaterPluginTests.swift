@@ -1086,11 +1086,20 @@ class CapacitorUpdaterTests: XCTestCase {
             isCurrentBundle: false,
             isQueuedNext: false
         ))
-        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
             interruptedError,
             bundleOnDisk: false,
             incompleteRetryCount: 0,
             integrityBlocked: false,
+            interruptedDownloadFailure: false,
+            isCurrentBundle: false,
+            isQueuedNext: false
+        ))
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+            interruptedError,
+            bundleOnDisk: false,
+            incompleteRetryCount: 0,
+            integrityBlocked: true,
             interruptedDownloadFailure: false,
             isCurrentBundle: false,
             isQueuedNext: false
@@ -1113,7 +1122,7 @@ class CapacitorUpdaterTests: XCTestCase {
             isCurrentBundle: false,
             isQueuedNext: false
         ))
-        XCTAssertFalse(CapgoUpdater.shouldRetryDownloadForExistingBundle(
+        XCTAssertTrue(CapgoUpdater.shouldRetryDownloadForExistingBundle(
             interruptedError,
             bundleOnDisk: false,
             incompleteRetryCount: 0,

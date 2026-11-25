@@ -577,7 +577,7 @@ public class CapgoUpdater {
 
     /**
      * True when a stored bundle for the offered version must be removed and downloaded again.
-     * Integrity-blocked versions never retry here.
+     * Integrity blocks retries only while a failed bundle is still on disk.
      */
     public static boolean shouldRetryDownloadForExistingBundle(
         final BundleInfo bundle,
@@ -588,16 +588,22 @@ public class CapgoUpdater {
         final boolean isCurrentBundle,
         final boolean isQueuedNext
     ) {
-        if (integrityBlocked || incompleteRetryCount >= MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
+        if (incompleteRetryCount >= MAX_INCOMPLETE_DOWNLOAD_RETRIES) {
             return false;
         }
         if (bundle == null) {
             return true;
         }
+        if (integrityBlocked && !(bundle.isErrorStatus() && !bundleOnDisk)) {
+            return false;
+        }
         if (bundle.isDeleted() || bundle.isDeleting() || BundleStatus.DOWNLOADING == bundle.getStatus()) {
             return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
         }
         if (bundle.isErrorStatus()) {
+            if (!bundleOnDisk) {
+                return incompleteRetryCount < MAX_INCOMPLETE_DOWNLOAD_RETRIES;
+            }
             return interruptedDownloadFailure;
         }
         if (BundleStatus.SUCCESS == bundle.getStatus()) {
