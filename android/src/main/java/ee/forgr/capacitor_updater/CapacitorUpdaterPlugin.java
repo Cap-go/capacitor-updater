@@ -144,7 +144,6 @@ public class CapacitorUpdaterPlugin extends Plugin {
     private static final String SPLASH_SCREEN_PLUGIN_ID = "SplashScreen";
     private static final int SPLASH_SCREEN_RETRY_DELAY_MS = 100;
     private static final int SPLASH_SCREEN_MAX_RETRIES = 20;
-    private static final long PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS = 30000L;
     private static final long PREVIEW_TRANSITION_LOADER_TIMEOUT_MS = 60000L;
     static final int APPLICATION_EXIT_REASON_UNKNOWN = 0;
     static final int APPLICATION_EXIT_REASON_EXIT_SELF = 1;
@@ -1319,27 +1318,8 @@ public class CapacitorUpdaterPlugin extends Plugin {
         return true;
     }
 
-    protected long getMinimumPendingBundleAppReadyTimeoutMs() {
-        return PENDING_BUNDLE_APP_READY_MIN_TIMEOUT_MS;
-    }
-
     private long resolveAppReadyCheckTimeoutMs() {
-        long configuredTimeoutMs = this.appReadyTimeout.longValue();
-        try {
-            if (this.implementation == null) {
-                return configuredTimeoutMs;
-            }
-
-            final BundleInfo current = this.implementation.getCurrentBundle();
-            if (current == null || BundleStatus.SUCCESS == current.getStatus()) {
-                return configuredTimeoutMs;
-            }
-
-            return Math.max(configuredTimeoutMs, this.getMinimumPendingBundleAppReadyTimeoutMs());
-        } catch (final Exception e) {
-            logger.warn("Falling back to configured appReadyTimeout: " + e.getMessage());
-            return configuredTimeoutMs;
-        }
+        return this.appReadyTimeout.longValue();
     }
 
     private void sendReadyToJs(final BundleInfo current, final String msg) {
