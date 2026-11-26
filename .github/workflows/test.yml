@@ -877,6 +877,7 @@ jobs:
     runs-on: macOS-latest
     env:
       CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_IOS_SKIP_CI_DRIVER_RESET: '1'
       CAPGO_MAESTRO_BOOT_VERIFY_ATTEMPTS: '25'
       CAPGO_MAESTRO_BOOT_VERIFY_SLEEP_SECONDS: '1'
     name: iOS example app Maestro smoke / ${{ matrix.scenario }}
@@ -892,30 +893,22 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app and web assets
-        uses: actions/download-artifact@v8
+      - name: Prepare iOS Maestro job
+        uses: ./.github/actions/prepare-ios-maestro-job
         with:
-          name: maestro-ios-app-${{ matrix.scenario }}
-          path: .
+          web-artifact-name: maestro-web-assets
+          ios-artifact-name: maestro-ios-app-${{ matrix.scenario }}
+          ios-artifact-dir: maestro-ios-staging
+          bun-version: ${{ env.BUN_VERSION }}
+          maestro-version: ${{ env.MAESTRO_VERSION }}
       - name: Extract iOS app
         env:
           MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
+          set -euo pipefail
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+          tar -xzf "maestro-ios-staging/maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Wait for iOS simulator boot
-        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run Maestro smoke tests
         run: >-
           CAPGO_MAESTRO_SKIP_BUILD=1
@@ -946,6 +939,8 @@ jobs:
     runs-on: macOS-latest
     env:
       CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_IOS_SKIP_CI_DRIVER_RESET: '1'
+      CAPGO_MAESTRO_SUMMARY_WAIT_MS: '70000'
     name: iOS example app Maestro live update / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -959,30 +954,23 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Boot iOS simulator early
-        run: |
-          set -euo pipefail
-          simulator_id="$(./scripts/maestro/select-ios-simulator.sh)"
-          echo "CAPGO_MAESTRO_IOS_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl boot "$simulator_id" >/dev/null 2>&1 || true
-      - name: Download iOS app and web assets
-        uses: actions/download-artifact@v8
+      - name: Prepare iOS Maestro job
+        uses: ./.github/actions/prepare-ios-maestro-job
         with:
-          name: maestro-ios-app-${{ matrix.scenario }}
-          path: .
+          web-artifact-name: maestro-web-assets
+          ios-artifact-name: maestro-ios-app-${{ matrix.scenario }}
+          ios-artifact-dir: maestro-ios-staging
+          bun-version: ${{ env.BUN_VERSION }}
+          maestro-version: ${{ env.MAESTRO_VERSION }}
+          cache-runtimes: 'false'
       - name: Extract iOS app
         env:
           MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
+          set -euo pipefail
           mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
+          tar -xzf "maestro-ios-staging/maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
             -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
-      - name: Wait for iOS simulator boot
-        run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
       - name: Run live update Maestro flows
         run: |
           set -euo pipefail
@@ -1085,6 +1073,9 @@ jobs:
     runs-on: macOS-latest
     env:
       CAPGO_MAESTRO_IOS_SKIP_BOOT: '1'
+      CAPGO_MAESTRO_IOS_SKIP_CI_DRIVER_RESET: '1'
+      # Three recovery summary waits must finish inside the 10 minute job cap.
+      CAPGO_MAESTRO_SUMMARY_WAIT_MS: '70000'
     name: iOS example app Maestro edge case / ${{ matrix.scenario }}
     strategy:
       fail-fast: false
@@ -1129,14 +1120,16 @@ jobs:
           test "$("$runtime_bin/bun" --version)" = "$BUN_VERSION"
           echo "$runtime_bin" >> "$GITHUB_PATH"
           "$runtime_bin/bun" --revision
-      - name: Setup Maestro
-        uses: ./.github/actions/setup-maestro
-        with:
-          maestro-version: ${{ env.MAESTRO_VERSION }}
+      - name: Install Maestro
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAESTRO_VERSION: ${{ env.MAESTRO_VERSION }}
+        run: ./scripts/ci/install-maestro.sh
       - name: Extract selected iOS app
         env:
           APP_SCENARIO: ${{ matrix.app }}
         run: |
+          set -euo pipefail
           tar -xzf "maestro-ios-edge-apps/$APP_SCENARIO.tar.gz" -C .
       - name: Wait for iOS simulator boot
         run: xcrun simctl bootstatus "$CAPGO_MAESTRO_IOS_SIMULATOR_ID" -b
