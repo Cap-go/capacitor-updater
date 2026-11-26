@@ -248,11 +248,6 @@ public class UpdateLifecycleTest {
         }
 
         @Override
-        protected long getMinimumPendingBundleAppReadyTimeoutMs() {
-            return 1;
-        }
-
-        @Override
         protected boolean _reload() {
             return this.stubReload || super._reload();
         }
@@ -406,8 +401,8 @@ public class UpdateLifecycleTest {
         assertFalse(this.plugin.events.contains("updateFailed"));
     }
 
-    // Bug: the install at background waited appReadyTimeout (30 s for a pending bundle) for a page that
-    // cannot run while frozen, then reported failure and kept the bundle queued as next.
+    // Bug: the install at background waited appReadyTimeout for a page that cannot run while frozen,
+    // then reported failure and kept the bundle queued as next.
     @Test
     public void backgroundInstallDoesNotWaitForTheFrozenPage() throws Exception {
         final Bridge bridge = mock(Bridge.class);
