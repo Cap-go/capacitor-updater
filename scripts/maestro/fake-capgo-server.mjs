@@ -1,8 +1,11 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import {
+  artifactDir,
   defaultDeviceBaseUrl,
   defaultHostBaseUrl,
   defaultPort,
@@ -13,6 +16,15 @@ import {
   getManifestMetadataPath,
   scenarios,
 } from './scenarios.mjs';
+
+const tlsPort = Number.parseInt(process.env.CAPGO_MAESTRO_TLS_PORT ?? '3193', 10);
+const deviceHttpsBase = (process.env.CAPGO_MAESTRO_DEVICE_HTTPS_BASE ?? `https://127.0.0.1:${tlsPort}`).replace(
+  /\/$/,
+  '',
+);
+const websitesRoot = path.join(artifactDir, 'website', 'sites');
+const tlsKeyPath = path.join(artifactDir, 'website', 'tls', 'key.pem');
+const tlsCertPath = path.join(artifactDir, 'website', 'tls', 'cert.pem');
 
 const baseHeaders = {
   'access-control-allow-headers': '*',
@@ -98,6 +110,8 @@ const scenarioDebugState = new Map(
 );
 const scenarioFaultState = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, createScenarioFaults()]));
 const stalledDownloadReleasers = new Map(Object.keys(scenarios).map((scenarioId) => [scenarioId, new Set()]));
+/** Serves HTTPS website assets from the site root; the native plugin only accepts root website_url values. */
+let activeWebsiteVariant = 'good';
 
 function jsonResponse(payload, init = {}) {
   return Response.json(payload, {
@@ -140,9 +154,12 @@ function getScenarioFromQuery(requestUrl, fallbackScenarioId = null) {
 
 function getScenarioStatePayload(scenario) {
   const activeReleaseIndex = scenarioState.get(scenario.id) ?? 0;
+  const release = scenario.releases[activeReleaseIndex];
+  const activeRelease =
+    release?.version ?? (scenario.mode === 'website' ? (scenario.websiteLiveSuffix ?? scenario.id) : scenario.id);
 
   return {
-    activeRelease: scenario.releases[activeReleaseIndex].version,
+    activeRelease,
     activeReleaseIndex,
     delivery: scenario.delivery,
     faults: { ...(scenarioFaultState.get(scenario.id) ?? createScenarioFaults()) },
@@ -286,10 +303,16 @@ function updateScenarioState(scenario, action) {
     setScenarioFault(scenario.id, 'bundle', 'none');
     setScenarioFault(scenario.id, 'update', 'none');
     resetScenarioDebugState(scenario.id);
+    if (scenario.mode === 'website') {
+      activeWebsiteVariant = scenario.websiteLiveSuffix ?? scenario.id;
+    }
     return true;
   }
 
   if (action === 'advance') {
+    if (scenario.releases.length === 0) {
+      return false;
+    }
     scenarioState.set(scenario.id, Math.min(currentIndex + 1, scenario.releases.length - 1));
     return true;
   }
@@ -888,6 +911,66 @@ async function handleExactRoute(request, requestUrl, method, pathname) {
   return handler ? handler() : null;
 }
 
+async function handleWebsiteLive(requestUrl, method) {
+  const { pathname } = requestUrl;
+  const liveMatch = pathname.match(/^\/website_live\/(good|fail)$/);
+  if (!liveMatch || method !== 'GET') {
+    return null;
+  }
+
+  const variant = liveMatch[1];
+  activeWebsiteVariant = variant;
+  logRequest(requestUrl, method);
+  return jsonResponse({
+    allowed: true,
+    mode: 'website',
+    website_url: `${deviceHttpsBase}/`,
+    check_interval_seconds: 0,
+  });
+}
+
+async function serveWebsiteVariantFile(variant, relativeFile, method) {
+  if (variant === 'fail' && relativeFile === 'app.js') {
+    return new Response('missing required asset', { headers: baseHeaders, status: 404 });
+  }
+
+  const filePath = path.join(websitesRoot, variant, relativeFile);
+  try {
+    const data = await readFile(filePath);
+    const contentType = relativeFile.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8';
+    return new Response(method === 'HEAD' ? null : data, {
+      headers: { ...baseHeaders, 'content-type': contentType },
+      status: 200,
+    });
+  } catch {
+    return new Response('not found', { headers: baseHeaders, status: 404 });
+  }
+}
+
+async function handleWebsiteStatic(pathname, method) {
+  if (method !== 'GET' && method !== 'HEAD') {
+    return null;
+  }
+
+  if (pathname === '/' || pathname === '/index.html' || pathname === '/app.js') {
+    const relativeFile = pathname === '/app.js' ? 'app.js' : 'index.html';
+    return serveWebsiteVariantFile(activeWebsiteVariant, relativeFile, method);
+  }
+
+  const match = pathname.match(/^\/website\/(good|fail)\/(.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const variant = match[1];
+  let relativeFile = match[2] || 'index.html';
+  if (relativeFile.endsWith('/')) {
+    relativeFile += 'index.html';
+  }
+
+  return serveWebsiteVariantFile(variant, relativeFile, method);
+}
+
 async function handleRequest(request) {
   const requestUrl = new URL(request.url);
   const { method } = request;
@@ -896,6 +979,16 @@ async function handleRequest(request) {
 
   if (exactRouteResponse) {
     return exactRouteResponse;
+  }
+
+  const websiteLiveResponse = await handleWebsiteLive(requestUrl, method);
+  if (websiteLiveResponse) {
+    return websiteLiveResponse;
+  }
+
+  const websiteStaticResponse = await handleWebsiteStatic(pathname, method);
+  if (websiteStaticResponse) {
+    return websiteStaticResponse;
   }
 
   if (pathname.startsWith('/api/updates/') && method === 'POST') {
@@ -1007,3 +1100,50 @@ const listeningUrl = defaultHostBaseUrl.endsWith(defaultPortSuffix)
   : defaultHostBaseUrl;
 
 console.log(`[fake-capgo] listening on ${listeningUrl}`);
+
+if (existsSync(tlsKeyPath) && existsSync(tlsCertPath) && existsSync(websitesRoot)) {
+  const tlsServer = https.createServer(
+    {
+      key: fs.readFileSync(tlsKeyPath),
+      cert: fs.readFileSync(tlsCertPath),
+    },
+    async (req, res) => {
+      const connection = trackConnection(req);
+
+      try {
+        const requestUrl = new URL(req.url ?? '/', deviceHttpsBase);
+        const websiteLiveResponse = await handleWebsiteLive(requestUrl, req.method ?? 'GET');
+        if (websiteLiveResponse) {
+          if (websiteLiveResponse instanceof InterruptedResponse) {
+            writeInterruptedResponse(connection, res, websiteLiveResponse);
+            return;
+          }
+          await writeResponse(res, websiteLiveResponse);
+          return;
+        }
+        const response = await handleWebsiteStatic(requestUrl.pathname, req.method ?? 'GET');
+        if (!response) {
+          res.writeHead(404, baseHeaders);
+          res.end();
+          return;
+        }
+
+        if (response instanceof InterruptedResponse) {
+          writeInterruptedResponse(connection, res, response);
+          return;
+        }
+
+        await writeResponse(res, response);
+      } catch (error) {
+        console.error('[fake-capgo] https request failed', error);
+        if (!res.headersSent) {
+          res.writeHead(500, baseHeaders);
+        }
+        res.end();
+      }
+    },
+  );
+
+  await new Promise((resolve) => tlsServer.listen(tlsPort, '0.0.0.0', resolve));
+  console.log(`[fake-capgo] website TLS listening on ${deviceHttpsBase}`);
+}

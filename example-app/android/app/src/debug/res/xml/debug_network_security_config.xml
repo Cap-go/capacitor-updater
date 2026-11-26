@@ -4,5 +4,8 @@
         <domain includeSubdomains="false">10.0.2.2</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
+        <trust-anchors>
+            <certificates src="@raw/maestro_website_ca" />
+        </trust-anchors>
     </domain-config>
 </network-security-config>

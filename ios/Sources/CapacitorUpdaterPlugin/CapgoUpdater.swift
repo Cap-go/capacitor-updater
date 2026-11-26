@@ -347,6 +347,8 @@ import UIKit
             let body: Data?
             if let data {
                 body = data.isEmpty ? nil : data
+            } else if error == nil, let status = httpResponse?.statusCode, [204, 205].contains(status) {
+                body = nil
             } else {
                 body = nil
             }
@@ -476,7 +478,6 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
-    /// Downloads a URL to a temporary file, reporting cumulative `(received, expected)` bytes for `2xx` responses.
     func performDownloadRequest(
         _ request: URLRequest,
         label: String,
@@ -579,7 +580,8 @@ import UIKit
                 fileURL: existingDownloadFileURL(tempFileURL, fallback: temporaryDownloadURL),
                 response: httpResponse,
                 error: requestError,
-                timedOut: true
+                timedOut: true,
+                resumeData: interruptedResumeData
             )
         }
 
@@ -687,7 +689,9 @@ import UIKit
             return
         }
 
-        removeFileIfPresent(at: tempPath)
+        if fileManager.fileExists(atPath: tempPath.path) {
+            try fileManager.removeItem(at: tempPath)
+        }
         try fileManager.moveItem(at: downloadedFileURL, to: tempPath)
     }
 
@@ -719,12 +723,11 @@ import UIKit
 
     public func shutdown() {
         statsPersistLock.lock()
-        defer { statsPersistLock.unlock() }
-        guard !statsStopped else { return }
         statsStopped = true
+        statsPersistLock.unlock()
         statsFlushTimer?.invalidate()
         statsFlushTimer = nil
-        persistStatsQueueLocked()
+        persistStatsQueue(force: true)
     }
 
     private func calcTotalPercent(percent: Int, min: Int, max: Int) -> Int {
@@ -2744,7 +2747,6 @@ import UIKit
         return try self.downloadZip(url: url, version: version, sessionKey: sessionKey, link: link, comment: comment, expectedChecksum: expectedChecksum)
     }
 
-    /// Downloads, verifies, and extracts a zip bundle while emitting progress from 0% to 100%.
     private func downloadZip(
         url: URL,
         version: String,
@@ -3419,6 +3421,62 @@ import UIKit
         return try Self.resolveBundleDirectory(libraryDir: libraryDir, bundleId: id)
     }
 
+    /// Temp folder for a website-mode download. Uses the unzip prefix so orphans are cleaned at launch.
+    func createWebsiteTempDir() throws -> URL {
+        let temp = libraryDir.appendingPathComponent(TEMP_UNZIP_PREFIX + "web_" + randomString(length: 10), isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        return temp
+    }
+
+    func discardWebsiteTempDir(_ tempDir: URL) {
+        guard tempDir.standardizedFileURL.path.hasPrefix(libraryDir.standardizedFileURL.path + "/"),
+              tempDir.lastPathComponent.hasPrefix(TEMP_UNZIP_PREFIX) else {
+            return
+        }
+        try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    /// A fresh bundle id, reserved before a website download so its events name the installed bundle.
+    func newWebsiteBundleId() -> String {
+        randomString(length: 10)
+    }
+
+    /// Atomically promotes a fully downloaded website folder into a regular bundle folder and
+    /// registers it as a PENDING bundle, so set/next/rollback treat it like any other bundle.
+    func installWebsiteBundle(tempDir: URL, version: String, id: String? = nil) throws -> BundleInfo {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: tempDir.appendingPathComponent("index.html").path) else {
+            discardWebsiteTempDir(tempDir)
+            throw NSError(domain: "WebsiteMode", code: 1, userInfo: [NSLocalizedDescriptionKey: "Website download has no index.html"])
+        }
+        if let existing = getBundleInfoByVersionName(version: version),
+           existing.isErrorStatus() || existing.isDeleted() || existing.isDeleting() {
+            guard delete(id: existing.getId(), removeInfo: true) else {
+                discardWebsiteTempDir(tempDir)
+                throw NSError(
+                    domain: "WebsiteMode",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to delete existing website bundle before retry"]
+                )
+            }
+        }
+        let id = id ?? randomString(length: 10)
+        let target = try getBundleDirectory(id: id)
+        do {
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: tempDir, to: target)
+        } catch {
+            discardWebsiteTempDir(tempDir)
+            throw error
+        }
+        let info = BundleInfo(id: id, version: version, status: BundleStatus.PENDING, downloaded: Date(), checksum: "")
+        guard saveBundleInfo(id: id, bundle: info) else {
+            try? fileManager.removeItem(at: target)
+            throw NSError(domain: "WebsiteMode", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to persist website bundle info"])
+        }
+        return info
+    }
+
     struct ResetState {
         let currentBundlePath: String
         let fallbackBundleId: String
@@ -3943,7 +4001,6 @@ import UIKit
         }
         logger.info("defaultChannel synchronized from getChannel(): \(channelName)")
     }
-
     func listChannels() -> ListChannels {
         let listChannels: ListChannels = ListChannels()
 
@@ -4159,16 +4216,29 @@ import UIKit
         pendingStatsRootDirectory().appendingPathComponent(pendingStatsFileName)
     }
 
-    private func writePendingStatsFile(events: [StatsEvent]) {
+    private func persistStatsQueue(force: Bool = false) {
+        statsPersistLock.lock()
+        defer { statsPersistLock.unlock() }
+        if statsStopped && !force {
+            return
+        }
+
+        statsQueueLock.lock()
+        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
+        statsQueueLock.unlock()
+        if events.count > CapgoUpdater.maxPendingStats {
+            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
+        }
+
         let fileURL = pendingStatsFileURL()
-        let root = pendingStatsRootDirectory()
+        if events.isEmpty {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(events)
-            let temp = root.appendingPathComponent("\(pendingStatsFileName).\(UUID().uuidString).tmp")
-            defer { self.removeFileIfPresent(at: temp) }
-            try data.write(to: temp)
-            try replaceItemAtomically(at: fileURL, withItemAt: temp)
+            try data.write(to: fileURL, options: .atomic)
             var resourceURL = fileURL
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -4177,25 +4247,6 @@ import UIKit
             logger.error("Failed to persist stats queue")
             logger.debug("Error: \(error.localizedDescription)")
         }
-    }
-
-    private func persistStatsQueue() {
-        statsPersistLock.lock()
-        defer { statsPersistLock.unlock() }
-        guard !statsStopped else { return }
-        persistStatsQueueLocked()
-    }
-
-    /// Caller must hold statsPersistLock, including for the final shutdown snapshot.
-    private func persistStatsQueueLocked() {
-        statsQueueLock.lock()
-        var events = statsInFlight.map(\.event) + statsQueue.map(\.event)
-        statsQueueLock.unlock()
-        if events.count > CapgoUpdater.maxPendingStats {
-            events = Array(events.suffix(CapgoUpdater.maxPendingStats))
-        }
-
-        writePendingStatsFile(events: events)
     }
 
     private func ensureStatsTimerStarted() {

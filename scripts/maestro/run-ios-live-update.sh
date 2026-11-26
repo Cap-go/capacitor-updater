@@ -10,7 +10,9 @@ EXAMPLE_DIR="$ROOT_DIR/example-app"
 ARTIFACT_DIR="$ROOT_DIR/.maestro-artifacts"
 RESULTS_DIR="${CAPGO_MAESTRO_RESULTS_DIR:-$ROOT_DIR/maestro-results-ios-live-update}"
 HOST_SERVER_PORT="${CAPGO_MAESTRO_PORT:-3192}"
+HOST_TLS_PORT="${CAPGO_MAESTRO_TLS_PORT:-3193}"
 HOST_SERVER_URL="${CAPGO_MAESTRO_HOST_BASE_URL:-http://127.0.0.1:${HOST_SERVER_PORT}}"
+export CAPGO_MAESTRO_DEVICE_HTTPS_BASE="${CAPGO_MAESTRO_DEVICE_HTTPS_BASE:-https://127.0.0.1:${HOST_TLS_PORT}}"
 APP_ID="app.capgo.updater"
 SCENARIO_SELECTION="${1:-all}"
 SERVER_PID=""
@@ -219,6 +221,18 @@ PY
   return $?
 }
 
+trust_website_tls_cert() {
+  local ca_path="$ARTIFACT_DIR/website/tls/ca.pem"
+
+  if [[ ! -f "$ca_path" ]]; then
+    echo "Website TLS CA is missing at $ca_path" >&2
+    return 1
+  fi
+
+  xcrun simctl keychain booted add-root-cert "$ca_path" >/dev/null 2>&1 || true
+  return 0
+}
+
 wait_for_server() {
   for _ in $(seq 1 30); do
     if curl --silent --fail "$HOST_SERVER_URL/health" >/dev/null; then
@@ -239,7 +253,7 @@ is_supported_scenario() {
   local scenario_id="$1"
 
   case "$scenario_id" in
-    deferred|always|legacy-true|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest)
+    deferred|always|legacy-true|at-install|on-launch|manual-zip|manual-zip-config-guards|manual-manifest|website-good|website-fail)
       return 0
       ;;
   esac
@@ -306,6 +320,12 @@ start_fake_server() {
 assert_prebuilt_maestro_assets() {
   if [[ -d "$ROOT_DIR/dist" && -d "$ARTIFACT_DIR/bundles" && -d "$ARTIFACT_DIR/manifest" ]]; then
     return 0
+  fi
+
+  if [[ "$SCENARIO_SELECTION" == website-good || "$SCENARIO_SELECTION" == website-fail ]]; then
+    if [[ -d "$ROOT_DIR/dist" && -f "$ARTIFACT_DIR/website/tls/ca.pem" && -d "$ARTIFACT_DIR/website/sites/good" ]]; then
+      return 0
+    fi
   fi
 
   echo "Prebuilt dist/ and .maestro-artifacts/ assets are required when CAPGO_MAESTRO_SKIP_BUILD=1 or CAPGO_MAESTRO_SKIP_BUNDLE_BUILD=1." >&2
@@ -975,6 +995,15 @@ if (failures.length) {
 }
 '
       ;;
+    website-good)
+      trust_website_tls_cert
+      run_flow "$scenario_id" "$ROOT_DIR/.maestro/helpers/launch-app-e2e.yaml"
+      run_flow "$scenario_id" "$ROOT_DIR/.maestro/website-mode-good.yaml"
+      ;;
+    website-fail)
+      trust_website_tls_cert
+      run_flow "$scenario_id" "$ROOT_DIR/.maestro/website-mode-fail.yaml"
+      ;;
   esac
 
   echo "=== Completed iOS Maestro scenario: $scenario_id ==="
@@ -1001,6 +1030,7 @@ run_selected_scenarios() {
 validate_results_dir() {
   local resolved_results_dir=""
   local resolved_default_results_dir=""
+  local resolved_website_results_dir=""
   local resolved_artifact_dir=""
   local resolved_root_dir=""
   local resolved_home_dir=""
@@ -1013,6 +1043,7 @@ validate_results_dir() {
 
   resolved_results_dir="$(resolve_path "$RESULTS_DIR")"
   resolved_default_results_dir="$(resolve_path "$ROOT_DIR/maestro-results-ios-live-update")"
+  resolved_website_results_dir="$(resolve_path "$ROOT_DIR/maestro-results-ios-website-mode")"
   resolved_artifact_dir="$(resolve_path "$ARTIFACT_DIR")"
   resolved_root_dir="$(resolve_path "$ROOT_DIR")"
   resolved_home_dir="$(resolve_path "$HOME")"
@@ -1026,7 +1057,7 @@ validate_results_dir() {
   esac
 
   case "$resolved_results_dir" in
-    "$resolved_default_results_dir"|"$resolved_default_results_dir"/*|"$resolved_artifact_dir"/*)
+    "$resolved_default_results_dir"|"$resolved_default_results_dir"/*|"$resolved_website_results_dir"|"$resolved_website_results_dir"/*|"$resolved_artifact_dir"/*)
       RESULTS_DIR="$resolved_results_dir"
       return 0
       ;;
