@@ -331,6 +331,7 @@ public class CapacitorUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         appReadyTimeout = max(1000, getConfig().getInt("appReadyTimeout", 10000))  // Minimum 1 second
         implementation.timeout = Double(getConfig().getInt("responseTimeout", 20))
         implementation.allowHttpsToHttpRedirect = getConfig().getBoolean("allowHttpsToHttpRedirect", false)
+        implementation.http3Enabled = getConfig().getBoolean("http3", true)
         implementation.httpsOnly = getConfig().getBoolean("httpsOnly", true)
         implementation.builtinMinimum = getConfig().getBoolean("builtinMinimum", false)
         resetWhenUpdate = getConfig().getBoolean("resetWhenUpdate", true)

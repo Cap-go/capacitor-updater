@@ -345,6 +345,22 @@ declare module '@capacitor/cli' {
       httpsOnly?: boolean;
 
       /**
+       * Let bundle and manifest downloads use HTTP/3 when the server advertises it.
+       *
+       * Android 14+ (and Android 12 or 13 with the S extension at level 7) sends https downloads through the
+       * platform `HttpEngine`, which keeps the server's HTTP/3 support across app launches and falls back to
+       * HTTP/2 on its own when QUIC is blocked. Older Android versions keep the current HTTP/2 client.
+       * iOS marks download requests as HTTP/3 capable, and URLSession falls back to HTTP/2 when QUIC fails.
+       * Update checks, stats and channel calls are not affected. Set to `false` to keep every download on HTTP/2.
+       *
+       * Only available for Android and iOS.
+       *
+       * @default true
+       * @since 8.55.0
+       */
+      http3?: boolean;
+
+      /**
        * Refuse to download or install a bundle whose version is lower than the native app version
        * (`version` config override, else `CFBundleShortVersionString` / `versionName`). This is the on-device
        * counterpart of the Capgo channel setting "disable auto update under native" and protects against a

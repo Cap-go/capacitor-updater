@@ -100,6 +100,11 @@ public class DownloadService extends Worker {
     private static volatile Logger logger;
     private static final Object LOGGER_LOCK = new Object();
 
+    @androidx.annotation.Nullable
+    static Logger logger() {
+        return logger;
+    }
+
     public static void setLogger(Logger loggerInstance) {
         synchronized (LOGGER_LOCK) {
             logger = loggerInstance;
@@ -188,6 +193,8 @@ public class DownloadService extends Worker {
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
+            // Last application interceptor: tagged https downloads go over HttpEngine (HTTP/3) when available.
+            .addInterceptor(new Http3.EngineInterceptor())
             .addNetworkInterceptor((chain) -> {
                 // Network interceptor: runs once per hop, so a redirect to http is rejected here too.
                 assertHttpsAllowed(chain.request());
@@ -721,6 +728,8 @@ public class DownloadService extends Worker {
         final String dest = getInputData().getString(FILEDEST);
         final String version = getInputData().getString(VERSION);
         final boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
+        // Every bundle download runs here, possibly in a fresh process: build the shared HttpEngine once.
+        Http3.init(getApplicationContext(), logger);
         try {
             String url = getInputData().getString(URL);
             String id = getInputData().getString(ID);
@@ -1302,7 +1311,7 @@ public class DownloadService extends Worker {
             .readTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
             .build();
-        Request.Builder builder = new Request.Builder().url(url);
+        Request.Builder builder = Http3.markDownload(new Request.Builder().url(url));
         if (downloadedBytes > 0) {
             builder.header("Range", "bytes=" + downloadedBytes + "-");
         }
@@ -1553,7 +1562,7 @@ public class DownloadService extends Worker {
         boolean resumed = false;
         try {
             long existing = partial.isFile() ? partial.length() : 0;
-            Request.Builder builder = new Request.Builder().url(downloadUrl);
+            Request.Builder builder = Http3.markDownload(new Request.Builder().url(downloadUrl));
             if (existing > 0) {
                 builder.header("Range", "bytes=" + existing + "-");
             }

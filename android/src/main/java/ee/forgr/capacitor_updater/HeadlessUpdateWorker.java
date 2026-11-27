@@ -328,6 +328,7 @@ public class HeadlessUpdateWorker extends Worker {
         updater.setPublicKey(config.getString("publicKey", ""));
 
         DownloadService.setAllowHttpsToHttpRedirect(config.getBoolean("allowHttpsToHttpRedirect", false));
+        Http3.setEnabled(config.getBoolean("http3", true));
         final boolean httpsOnly = config.getBoolean("httpsOnly", true);
         updater.httpsOnly = httpsOnly;
         DownloadService.setHttpsOnly(httpsOnly);

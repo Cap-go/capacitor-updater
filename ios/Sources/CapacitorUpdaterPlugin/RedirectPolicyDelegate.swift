@@ -25,6 +25,10 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
             lock.unlock()
         }
     }
+    /// Called with the metrics of every finished download task, to log the negotiated protocol.
+    /// Must not retain the updater strongly.
+    var onDownloadMetrics: ((URLSessionTask, URLSessionTaskMetrics) -> Void)?
+
     /// Called when a downgrade redirect is refused. Must not retain the updater strongly.
     var onBlockedRedirect: ((URL?, URL?) -> Void)?
 
@@ -69,5 +73,23 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
             return
         }
         completionHandler(request)
+    }
+
+    func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard task is URLSessionDownloadTask else {
+            return
+        }
+        onDownloadMetrics?(task, metrics)
+    }
+}
+
+extension CapgoUpdater {
+    /// ALPN name of the last transaction that hit the network ("h3", "h2", "http/1.1"), nil when none did.
+    static func networkProtocol(of metrics: URLSessionTaskMetrics) -> String? {
+        return networkProtocol(of: metrics.transactionMetrics.map { $0.networkProtocolName })
+    }
+
+    static func networkProtocol(of names: [String?]) -> String? {
+        return names.last(where: { !($0 ?? "").isEmpty }) ?? nil
     }
 }
