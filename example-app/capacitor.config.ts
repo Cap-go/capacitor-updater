@@ -12,6 +12,11 @@ const appReadyTimeout =
   Number.isFinite(parsedAppReadyTimeout) && parsedAppReadyTimeout >= 1000
     ? parsedAppReadyTimeout
     : 20000;
+const parsedAutoSplashscreenTimeout = Number.parseInt(process.env.CAPGO_AUTO_SPLASHSCREEN_TIMEOUT ?? '', 10);
+const autoSplashscreenTimeout =
+  Number.isFinite(parsedAutoSplashscreenTimeout) && parsedAutoSplashscreenTimeout >= 0
+    ? parsedAutoSplashscreenTimeout
+    : undefined;
 
 function isLocalHttpUrl(value: string | undefined): boolean {
   if (!value) return false;
@@ -70,6 +75,7 @@ const config: CapacitorConfig = {
       channelUrl: process.env.CAPGO_CHANNEL_URL,
       appReadyTimeout,
       autoSplashscreen: usesDirectUpdate,
+      autoSplashscreenTimeout,
     },
   },
 };
