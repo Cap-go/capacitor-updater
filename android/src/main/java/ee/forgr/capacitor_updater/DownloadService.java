@@ -149,6 +149,7 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
+    public static final String HTTP3 = "http3";
     // 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
     // capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
@@ -728,7 +729,10 @@ public class DownloadService extends Worker {
         final String dest = getInputData().getString(FILEDEST);
         final String version = getInputData().getString(VERSION);
         final boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
-        // Every bundle download runs here, possibly in a fresh process: build the shared HttpEngine once.
+        // Every bundle download runs here, possibly in a fresh process where no config was loaded yet:
+        // restore the http3 option saved with the job (absent on older jobs, keep the default), then build
+        // the shared HttpEngine once.
+        Http3.setEnabled(getInputData().getBoolean(HTTP3, Http3.isEnabled()));
         Http3.init(getApplicationContext(), logger);
         try {
             String url = getInputData().getString(URL);

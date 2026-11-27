@@ -351,7 +351,11 @@ declare module '@capacitor/cli' {
        * platform `HttpEngine`, which keeps the server's HTTP/3 support across app launches and falls back to
        * HTTP/2 on its own when QUIC is blocked. Older Android versions keep the current HTTP/2 client.
        * iOS marks download requests as HTTP/3 capable, and URLSession falls back to HTTP/2 when QUIC fails.
-       * Update checks, stats and channel calls are not affected. Set to `false` to keep every download on HTTP/2.
+       * Update checks, stats and channel calls are not affected.
+       *
+       * Set to `false` to stop preferring HTTP/3. Android then keeps downloads on the previous OkHttp client
+       * (HTTP/2 or HTTP/1.1). iOS no longer marks downloads as HTTP/3 capable, but URLSession can still pick
+       * HTTP/3 on its own if it already learned the server supports it, so `false` is not a hard HTTP/2 guarantee there.
        *
        * Only available for Android and iOS.
        *

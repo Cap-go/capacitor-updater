@@ -8,6 +8,7 @@ package ee.forgr.capacitor_updater;
 import android.content.Context;
 import android.net.http.HttpEngine;
 import android.net.http.HttpException;
+import android.net.http.NetworkException;
 import android.net.http.UrlRequest;
 import android.net.http.UrlResponseInfo;
 import android.os.Build;
@@ -18,7 +19,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.net.ConnectException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
@@ -125,6 +129,50 @@ final class HttpEngineTransport implements Http3.Transport {
             .build();
     }
 
+    static IOException translate(@NonNull HttpException error) {
+        if (error instanceof NetworkException) {
+            return networkError(((NetworkException) error).getErrorCode(), error.getMessage(), error);
+        }
+        return new IOException("HttpEngine request failed: " + error.getMessage(), error);
+    }
+
+    /**
+     * Maps HttpEngine network errors onto the java.net exceptions OkHttp throws for the same failure, so the
+     * download retry logic ({@link DownloadService#isRetryableManifestError}) treats them the same way.
+     * TLS and any other engine error stay a plain IOException, which is not retried.
+     */
+    @NonNull
+    static IOException networkError(int errorCode, @Nullable String message, @Nullable Throwable cause) {
+        String text = "HttpEngine request failed: " + message;
+        IOException mapped;
+        switch (errorCode) {
+            case NetworkException.ERROR_HOSTNAME_NOT_RESOLVED:
+                mapped = new UnknownHostException(text);
+                break;
+            case NetworkException.ERROR_TIMED_OUT:
+            case NetworkException.ERROR_CONNECTION_TIMED_OUT:
+                mapped = new SocketTimeoutException(text);
+                break;
+            case NetworkException.ERROR_CONNECTION_REFUSED:
+                mapped = new ConnectException(text);
+                break;
+            case NetworkException.ERROR_INTERNET_DISCONNECTED:
+            case NetworkException.ERROR_NETWORK_CHANGED:
+            case NetworkException.ERROR_CONNECTION_CLOSED:
+            case NetworkException.ERROR_CONNECTION_RESET:
+            case NetworkException.ERROR_ADDRESS_UNREACHABLE:
+            case NetworkException.ERROR_QUIC_PROTOCOL_FAILED:
+                mapped = new SocketException(text);
+                break;
+            default:
+                return new IOException(text, cause);
+        }
+        if (cause != null) {
+            mapped.initCause(cause);
+        }
+        return mapped;
+    }
+
     private static long saturatedAdd(int a, int b) {
         // 0 means no timeout in OkHttp.
         if (a <= 0 || b <= 0) {
@@ -215,7 +263,7 @@ final class HttpEngineTransport implements Http3.Transport {
 
         @Override
         public void onFailed(@NonNull UrlRequest urlRequest, @Nullable UrlResponseInfo info, @NonNull HttpException error) {
-            events.offer(new Failed(new IOException("HttpEngine request failed: " + error.getMessage(), error)));
+            events.offer(new Failed(translate(error)));
         }
 
         @Override

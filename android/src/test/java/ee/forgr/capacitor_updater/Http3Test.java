@@ -419,4 +419,98 @@ public class Http3Test {
         }
         assertNotNull(pending.get());
     }
+
+    @Test
+    public void engineNetworkErrorsKeepTheDownloadRetryContract() {
+        int[] retryable = {
+            android.net.http.NetworkException.ERROR_CONNECTION_RESET,
+            android.net.http.NetworkException.ERROR_CONNECTION_CLOSED,
+            android.net.http.NetworkException.ERROR_NETWORK_CHANGED,
+            android.net.http.NetworkException.ERROR_INTERNET_DISCONNECTED,
+            android.net.http.NetworkException.ERROR_ADDRESS_UNREACHABLE,
+            android.net.http.NetworkException.ERROR_QUIC_PROTOCOL_FAILED,
+            android.net.http.NetworkException.ERROR_TIMED_OUT,
+            android.net.http.NetworkException.ERROR_CONNECTION_TIMED_OUT,
+            android.net.http.NetworkException.ERROR_CONNECTION_REFUSED,
+            android.net.http.NetworkException.ERROR_HOSTNAME_NOT_RESOLVED
+        };
+        for (int code : retryable) {
+            IOException mapped = HttpEngineTransport.networkError(code, "net error " + code, null);
+            assertTrue("code " + code + " -> " + mapped, DownloadService.isRetryableManifestError(mapped));
+        }
+        assertTrue(
+            HttpEngineTransport.networkError(android.net.http.NetworkException.ERROR_TIMED_OUT, "t", null) instanceof SocketTimeoutException
+        );
+        assertTrue(
+            HttpEngineTransport.networkError(android.net.http.NetworkException.ERROR_HOSTNAME_NOT_RESOLVED, "h", null) instanceof
+                java.net.UnknownHostException
+        );
+        // TLS failures and anything else the engine reports as ERROR_OTHER are not retried.
+        assertFalse(
+            DownloadService.isRetryableManifestError(
+                HttpEngineTransport.networkError(android.net.http.NetworkException.ERROR_OTHER, "cert", null)
+            )
+        );
+    }
+
+    @Test
+    public void connectionResetAfterPartialProgressIsRetryable() throws Exception {
+        HttpEngineTransport.EngineCall call = new HttpEngineTransport.EngineCall(FILE_URL, null);
+        UrlRequest request = mock(UrlRequest.class);
+        UrlResponseInfo info = info();
+        android.net.http.NetworkException reset = mock(android.net.http.NetworkException.class);
+        when(reset.getErrorCode()).thenReturn(android.net.http.NetworkException.ERROR_CONNECTION_RESET);
+        when(reset.getMessage()).thenReturn("net::ERR_CONNECTION_RESET");
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer((invocation) -> {
+            ByteBuffer buffer = invocation.getArgument(0);
+            if (reads.getAndIncrement() == 0) {
+                buffer.put("partial".getBytes(StandardCharsets.UTF_8));
+                call.onReadCompleted(request, info, buffer);
+            } else {
+                call.onFailed(request, info, reset);
+            }
+            return null;
+        })
+            .when(request)
+            .read(any(ByteBuffer.class));
+        call.start(request);
+        call.onResponseStarted(request, info);
+        call.awaitResponse(1000);
+        InputStream body = call.bodyStream(1000);
+        byte[] first = new byte[7];
+        assertEquals(7, body.read(first, 0, 7));
+        assertEquals("partial", new String(first, StandardCharsets.UTF_8));
+        try {
+            body.read();
+            fail("expected the reset to propagate");
+        } catch (IOException expected) {
+            assertTrue(expected instanceof java.net.SocketException);
+            assertTrue(DownloadService.isRetryableManifestError(expected));
+            assertSame(reset, expected.getCause());
+        }
+    }
+
+    private DownloadService worker(androidx.work.Data input) {
+        androidx.work.WorkerParameters params = mock(androidx.work.WorkerParameters.class);
+        when(params.getInputData()).thenReturn(input);
+        return new DownloadService(context, params);
+    }
+
+    @Test
+    public void resumedWorkerRestoresTheHttp3OptionSavedWithTheJob() {
+        // Engine already set up, so doWork's init() does not try to build a real HttpEngine.
+        initWith(34, 0);
+        androidx.work.Data disabled = new androidx.work.Data.Builder()
+            .putBoolean(DownloadService.IS_MANIFEST, true)
+            .putBoolean(DownloadService.HTTP3, false)
+            .build();
+        worker(disabled).doWork();
+        assertFalse(Http3.isEnabled());
+
+        // Jobs saved by an older plugin version have no http3 key: keep the default.
+        Http3.setEnabled(true);
+        worker(new androidx.work.Data.Builder().putBoolean(DownloadService.IS_MANIFEST, true).build()).doWork();
+        assertTrue(Http3.isEnabled());
+    }
 }
