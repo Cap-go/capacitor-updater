@@ -60,14 +60,18 @@ final class Http3 {
     private static volatile boolean enabled = true;
     // True once the plugin or the headless worker applied the http3 config in this process.
     private static volatile boolean configured;
+    // Guards the configured check plus the enabled write, kept apart from init() so it never waits on engine setup.
+    private static final Object OPTION_LOCK = new Object();
     private static boolean initialized;
 
     private Http3() {}
 
     /** The http3 config value, applied by plugin load and the headless worker. Wins over saved job values. */
     static void setEnabled(boolean value) {
-        enabled = value;
-        configured = true;
+        synchronized (OPTION_LOCK) {
+            enabled = value;
+            configured = true;
+        }
     }
 
     /**
@@ -75,8 +79,10 @@ final class Http3 {
      * (a job resumed in a fresh process), so a stale job never overrides the current config.
      */
     static void restoreSavedOption(boolean value) {
-        if (!configured) {
-            enabled = value;
+        synchronized (OPTION_LOCK) {
+            if (!configured) {
+                enabled = value;
+            }
         }
     }
 
@@ -147,8 +153,10 @@ final class Http3 {
     static synchronized void resetForTest() {
         transport = null;
         initialized = false;
-        enabled = true;
-        configured = false;
+        synchronized (OPTION_LOCK) {
+            enabled = true;
+            configured = false;
+        }
     }
 
     @NonNull
