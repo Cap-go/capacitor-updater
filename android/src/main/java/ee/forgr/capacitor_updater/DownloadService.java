@@ -730,9 +730,11 @@ public class DownloadService extends Worker {
         final String version = getInputData().getString(VERSION);
         final boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
         // Every bundle download runs here, possibly in a fresh process where no config was loaded yet:
-        // restore the http3 option saved with the job (absent on older jobs, keep the default), then build
-        // the shared HttpEngine once.
-        Http3.setEnabled(getInputData().getBoolean(HTTP3, Http3.isEnabled()));
+        // fall back to the http3 option saved with the job (absent on older jobs, keep the default), then
+        // build the shared HttpEngine once. A config already loaded in this process always wins.
+        if (getInputData().hasKeyWithValueOfType(HTTP3, Boolean.class)) {
+            Http3.restoreSavedOption(getInputData().getBoolean(HTTP3, true));
+        }
         Http3.init(getApplicationContext(), logger);
         try {
             String url = getInputData().getString(URL);

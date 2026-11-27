@@ -505,12 +505,34 @@ public class Http3Test {
             .putBoolean(DownloadService.IS_MANIFEST, true)
             .putBoolean(DownloadService.HTTP3, false)
             .build();
+        // Fresh process, no config loaded yet: the saved value applies.
         worker(disabled).doWork();
         assertFalse(Http3.isEnabled());
 
-        // Jobs saved by an older plugin version have no http3 key: keep the default.
-        Http3.setEnabled(true);
+        // Jobs saved by an older plugin version have no http3 key: keep the current value.
+        Http3.resetForTest();
+        initWith(34, 0);
         worker(new androidx.work.Data.Builder().putBoolean(DownloadService.IS_MANIFEST, true).build()).doWork();
+        assertTrue(Http3.isEnabled());
+    }
+
+    @Test
+    public void loadedConfigWinsOverAStaleJobValue() {
+        initWith(34, 0);
+        // Plugin load read http3: false, then a job saved before the app update (http3 true) runs.
+        Http3.setEnabled(false);
+        androidx.work.Data staleEnabled = new androidx.work.Data.Builder()
+            .putBoolean(DownloadService.IS_MANIFEST, true)
+            .putBoolean(DownloadService.HTTP3, true)
+            .build();
+        worker(staleEnabled).doWork();
+        assertFalse(Http3.isEnabled());
+
+        // And the other way round.
+        Http3.setEnabled(true);
+        worker(
+            new androidx.work.Data.Builder().putBoolean(DownloadService.IS_MANIFEST, true).putBoolean(DownloadService.HTTP3, false).build()
+        ).doWork();
         assertTrue(Http3.isEnabled());
     }
 }

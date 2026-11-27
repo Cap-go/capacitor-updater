@@ -58,12 +58,26 @@ final class Http3 {
 
     private static volatile Transport transport;
     private static volatile boolean enabled = true;
+    // True once the plugin or the headless worker applied the http3 config in this process.
+    private static volatile boolean configured;
     private static boolean initialized;
 
     private Http3() {}
 
+    /** The http3 config value, applied by plugin load and the headless worker. Wins over saved job values. */
     static void setEnabled(boolean value) {
         enabled = value;
+        configured = true;
+    }
+
+    /**
+     * The http3 value saved with a WorkManager job. Only used when this process has not loaded the config yet
+     * (a job resumed in a fresh process), so a stale job never overrides the current config.
+     */
+    static void restoreSavedOption(boolean value) {
+        if (!configured) {
+            enabled = value;
+        }
     }
 
     static boolean isEnabled() {
@@ -134,6 +148,7 @@ final class Http3 {
         transport = null;
         initialized = false;
         enabled = true;
+        configured = false;
     }
 
     @NonNull
