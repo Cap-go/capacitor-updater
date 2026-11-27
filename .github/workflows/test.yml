@@ -611,25 +611,24 @@ jobs:
         with:
           name: maestro-web-assets
           path: .
-      - name: Build iOS app
+      - name: Build iOS apps
         run: |
           set -euo pipefail
-          artifact_root="$RUNNER_TEMP/maestro-ios-runtime"
+          artifact_root="$RUNNER_TEMP/maestro-ios-apps"
+          archive_root="$RUNNER_TEMP/maestro-ios-archives"
           derived_data_path="$RUNNER_TEMP/maestro-ios-derived"
+          # Keep in sync with the maestro_ios_example_app and maestro_ios_live_update matrices.
           scenarios=(
-            deferred
             always
             legacy-true
-            at-install
             on-launch
             manual-zip
             manual-zip-no-persist
             manual-zip-config-guards
-            manual-manifest
           )
 
-          rm -rf "$artifact_root" "$derived_data_path"
-          mkdir -p "$artifact_root/maestro-ios-apps"
+          rm -rf "$artifact_root" "$archive_root" "$derived_data_path"
+          mkdir -p "$artifact_root" "$archive_root"
 
           for scenario in "${scenarios[@]}"; do
             bun scripts/maestro/prepare-ios-scenario.mjs "$scenario"
@@ -640,109 +639,54 @@ jobs:
               -destination "generic/platform=iOS Simulator" \
               -derivedDataPath "$derived_data_path" \
               build
-            tar -czf "$artifact_root/maestro-ios-apps/$scenario.tar.gz" \
-              -C "$derived_data_path/Build/Products/Debug-iphonesimulator" App.app
+            mkdir -p "$artifact_root/$scenario"
+            ditto "$derived_data_path/Build/Products/Debug-iphonesimulator/App.app" "$artifact_root/$scenario/App.app"
+            # Ship one archive per scenario, including the web fixtures needed by the fake server.
+            tar -czf "$archive_root/$scenario.tar.gz" \
+              -C "$RUNNER_TEMP" "maestro-ios-apps/$scenario/App.app" \
+              -C "$GITHUB_WORKSPACE" dist .maestro-artifacts
           done
-          # Restore each app and its matching fixtures in one artifact download.
-          cp -R dist .maestro-artifacts "$artifact_root/"
-      - name: Upload iOS app (deferred)
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-ios-app-deferred
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/deferred.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
-          if-no-files-found: error
       - name: Upload iOS app (always)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-always
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/always.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/always.tar.gz
+          compression-level: 0
           if-no-files-found: error
       - name: Upload iOS app (legacy-true)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-legacy-true
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/legacy-true.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
-          if-no-files-found: error
-      - name: Upload iOS app (at-install)
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-ios-app-at-install
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/at-install.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/legacy-true.tar.gz
+          compression-level: 0
           if-no-files-found: error
       - name: Upload iOS app (on-launch)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-on-launch
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/on-launch.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/on-launch.tar.gz
+          compression-level: 0
           if-no-files-found: error
       - name: Upload iOS app (manual-zip)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-manual-zip
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/manual-zip.tar.gz
+          compression-level: 0
           if-no-files-found: error
       - name: Upload iOS app (manual-zip-no-persist)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-manual-zip-no-persist
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-no-persist.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/manual-zip-no-persist.tar.gz
+          compression-level: 0
           if-no-files-found: error
       - name: Upload iOS app (manual-zip-config-guards)
         uses: actions/upload-artifact@v7
         with:
           name: maestro-ios-app-manual-zip-config-guards
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-zip-config-guards.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
-          if-no-files-found: error
-      - name: Upload iOS app (manual-manifest)
-        uses: actions/upload-artifact@v7
-        with:
-          name: maestro-ios-app-manual-manifest
-          path: |
-            ${{ runner.temp }}/maestro-ios-runtime/maestro-ios-apps/manual-manifest.tar.gz
-            ${{ runner.temp }}/maestro-ios-runtime/dist
-            ${{ runner.temp }}/maestro-ios-runtime/.maestro-artifacts
-          include-hidden-files: true
-          compression-level: 6
+          path: ${{ runner.temp }}/maestro-ios-archives/manual-zip-config-guards.tar.gz
+          compression-level: 0
           if-no-files-found: error
 
   maestro_android_example_app:
@@ -907,9 +851,7 @@ jobs:
         env:
           MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
-          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
-            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "$MAESTRO_APP_SCENARIO.tar.gz" -C .
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
@@ -974,9 +916,7 @@ jobs:
         env:
           MAESTRO_APP_SCENARIO: ${{ matrix.scenario }}
         run: |
-          mkdir -p "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
-          tar -xzf "maestro-ios-apps/$MAESTRO_APP_SCENARIO.tar.gz" \
-            -C "maestro-ios-apps/$MAESTRO_APP_SCENARIO"
+          tar -xzf "$MAESTRO_APP_SCENARIO.tar.gz" -C .
       - name: Setup Maestro
         uses: ./.github/actions/setup-maestro
         with:
