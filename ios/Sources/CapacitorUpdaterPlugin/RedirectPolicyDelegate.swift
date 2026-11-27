@@ -25,10 +25,6 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
             lock.unlock()
         }
     }
-    /// Called with the metrics of every finished download task, to log the negotiated protocol.
-    /// Must not retain the updater strongly.
-    var onDownloadMetrics: ((URLSessionTask, URLSessionTaskMetrics) -> Void)?
-
     /// Called when a downgrade redirect is refused. Must not retain the updater strongly.
     var onBlockedRedirect: ((URL?, URL?) -> Void)?
 
@@ -74,12 +70,18 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
         }
         completionHandler(request)
     }
+}
+
+/// Task delegate attached only to https bundle and manifest download tasks, to log the negotiated protocol.
+/// The session delegate (`RedirectPolicyDelegate`) does not collect metrics, so plain http downloads and API calls
+/// keep the exact same delegate setup as before. Redirects still reach the session delegate, because this one does not
+/// implement them. Must not retain the updater strongly.
+final class DownloadMetricsDelegate: NSObject, URLSessionTaskDelegate {
+    /// Set once when the updater session is created, before any task runs.
+    var onMetrics: ((URLSessionTask, URLSessionTaskMetrics) -> Void)?
 
     func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        guard task is URLSessionDownloadTask else {
-            return
-        }
-        onDownloadMetrics?(task, metrics)
+        onMetrics?(task, metrics)
     }
 }
 

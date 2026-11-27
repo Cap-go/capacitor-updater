@@ -299,14 +299,13 @@ import UIKit
             self?.logger?.error("Blocked redirect to a non-https URL (httpsOnly, or allowHttpsToHttpRedirect is false)")
             self?.logger?.debug("Redirect from \(source?.absoluteString ?? "") to \(target?.absoluteString ?? "")")
         }
-        redirectPolicy.onDownloadMetrics = { [weak self] task, metrics in
+        downloadMetricsDelegate.onMetrics = { [weak self] task, metrics in
             guard let url = task.originalRequest?.url else {
                 return
             }
             let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
-            let host = url.host ?? ""
             self?.logger?.debug(
-                "Download protocol \(Self.networkProtocol(of: metrics) ?? "unknown") (HTTP \(status)) \(host)\(url.path)"
+                "Download protocol \(Self.networkProtocol(of: metrics) ?? "unknown") (HTTP \(status)) \(url.host ?? "")\(url.path)"
             )
         }
         let session = URLSession(configuration: configuration, delegate: redirectPolicy, delegateQueue: nil)
@@ -316,6 +315,8 @@ import UIKit
 
     /// Owned separately from `CapgoUpdater` because URLSession retains its delegate strongly.
     private let redirectPolicy = RedirectPolicyDelegate()
+    /// Task delegate set only on https download tasks, to log the negotiated protocol (see `DownloadMetricsDelegate`).
+    private let downloadMetricsDelegate = DownloadMetricsDelegate()
 
     /// Follow redirects from HTTPS to plain HTTP. Off by default so a redirect can never downgrade updater traffic.
     public var allowHttpsToHttpRedirect: Bool {
@@ -489,6 +490,10 @@ import UIKit
         return RequestResult(data: responseData, response: httpResponse, error: requestError, timedOut: timedOut)
     }
 
+    static func isHTTPS(_ url: URL?) -> Bool {
+        return url?.scheme?.lowercased() == "https"
+    }
+
     /// Bundle and manifest downloads only: try HTTP/3 on the first request instead of waiting for Alt-Svc.
     /// The updater session is ephemeral, so it forgets Alt-Svc every launch, and the bundle zip is usually the
     /// first request to the CDN host in a process: without this flag it would always go over HTTP/2.
@@ -496,7 +501,7 @@ import UIKit
     /// does not do HTTP/3 (finding from https://github.com/Cap-go/capacitor-updater/issues/1027, credit autopylotben).
     /// API calls keep the default negotiation. Plain http is left alone: HTTP/3 needs TLS.
     static func preferHTTP3(_ request: URLRequest, enabled: Bool) -> URLRequest {
-        guard enabled, request.url?.scheme?.lowercased() == "https" else {
+        guard enabled, isHTTPS(request.url) else {
             return request
         }
         var request = request
@@ -553,9 +558,14 @@ import UIKit
                 semaphore.signal()
             }
         }
-        let request = Self.preferHTTP3(request, enabled: self.http3Enabled)
+        // Plain http keeps exactly the previous path: no HTTP/3 hint and no metrics delegate.
+        let secureDownload = Self.isHTTPS(request.url)
+        let request = secureDownload ? Self.preferHTTP3(request, enabled: self.http3Enabled) : request
         let downloadTask = resumeData.map { self.urlSession.downloadTask(withResumeData: $0, completionHandler: completion) }
             ?? self.urlSession.downloadTask(with: request, completionHandler: completion)
+        if secureDownload {
+            downloadTask.delegate = self.downloadMetricsDelegate
+        }
         let resumedBytes: Int64 = {
             guard let range = request.value(forHTTPHeaderField: "Range"),
                   range.hasPrefix("bytes="),

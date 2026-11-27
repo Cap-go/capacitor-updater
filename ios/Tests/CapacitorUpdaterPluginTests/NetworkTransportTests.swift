@@ -1049,6 +1049,18 @@ final class NetworkTransportTests: XCTestCase {
         XCTAssertEqual(marked.timeoutInterval, 42)
     }
 
+    func testPlainHttpDownloadsKeepTheSessionWithoutMetricsCollection() throws {
+        XCTAssertTrue(CapgoUpdater.isHTTPS(URL(string: "HTTPS://cdn.example.com/a.zip")))
+        XCTAssertFalse(CapgoUpdater.isHTTPS(URL(string: "http://127.0.0.1:3192/a.zip")))
+        XCTAssertFalse(CapgoUpdater.isHTTPS(nil))
+        // URLSession only collects metrics for tasks whose delegate implements didFinishCollecting. The session
+        // delegate must not, so plain http downloads and API calls run exactly as before; only https download
+        // tasks get the metrics task delegate.
+        let selector = #selector(URLSessionTaskDelegate.urlSession(_:task:didFinishCollecting:))
+        XCTAssertFalse(RedirectPolicyDelegate().responds(to: selector))
+        XCTAssertTrue(DownloadMetricsDelegate().responds(to: selector))
+    }
+
     func testUpdaterEnablesHTTP3ByDefault() {
         XCTAssertTrue(CapgoUpdater().http3Enabled)
     }
