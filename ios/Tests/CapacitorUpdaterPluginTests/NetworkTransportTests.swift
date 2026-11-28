@@ -1029,4 +1029,64 @@ final class NetworkTransportTests: XCTestCase {
             XCTAssertEqual(error.localizedDescription, "URL is not valid: ")
         }
     }
+
+    func testPreferHTTP3MarksOnlyHttpsDownloadsWhenEnabled() throws {
+        let https = URLRequest(url: try XCTUnwrap(URL(string: "https://cdn.example.com/bundle.zip")))
+        XCTAssertFalse(https.assumesHTTP3Capable)
+        XCTAssertTrue(CapgoUpdater.preferHTTP3(https, enabled: true).assumesHTTP3Capable)
+        // http3: false keeps the default negotiation (HTTP/2 unless Alt-Svc was already seen in this session).
+        XCTAssertFalse(CapgoUpdater.preferHTTP3(https, enabled: false).assumesHTTP3Capable)
+
+        // HTTP/3 needs TLS: plain http (local dev servers) is left untouched.
+        let plain = URLRequest(url: try XCTUnwrap(URL(string: "http://127.0.0.1:3192/bundle.zip")))
+        XCTAssertFalse(CapgoUpdater.preferHTTP3(plain, enabled: true).assumesHTTP3Capable)
+
+        var ranged = https
+        ranged.setValue("bytes=10-", forHTTPHeaderField: "Range")
+        ranged.timeoutInterval = 42
+        let marked = CapgoUpdater.preferHTTP3(ranged, enabled: true)
+        XCTAssertEqual(marked.value(forHTTPHeaderField: "Range"), "bytes=10-")
+        XCTAssertEqual(marked.timeoutInterval, 42)
+    }
+
+    func testPlainHttpDownloadsKeepTheSessionWithoutMetricsCollection() throws {
+        XCTAssertTrue(CapgoUpdater.isHTTPS(URL(string: "HTTPS://cdn.example.com/a.zip")))
+        XCTAssertFalse(CapgoUpdater.isHTTPS(URL(string: "http://127.0.0.1:3192/a.zip")))
+        XCTAssertFalse(CapgoUpdater.isHTTPS(nil))
+        // URLSession only collects metrics for tasks whose delegate implements didFinishCollecting. The session
+        // delegate must not, so plain http downloads and API calls run exactly as before; only https download
+        // tasks get the metrics task delegate.
+        let selector = #selector(URLSessionTaskDelegate.urlSession(_:task:didFinishCollecting:))
+        XCTAssertFalse(RedirectPolicyDelegate().responds(to: selector))
+        XCTAssertTrue(DownloadMetricsDelegate().responds(to: selector))
+    }
+
+    func testUpdaterEnablesHTTP3ByDefault() {
+        XCTAssertTrue(CapgoUpdater().http3Enabled)
+    }
+
+    func testNetworkProtocolUsesLastTransactionThatHitTheNetwork() {
+        XCTAssertEqual(CapgoUpdater.networkProtocol(of: ["h2", "h3"]), "h3")
+        // A redirect hop over h3 followed by a local-cache transaction with no protocol keeps "h3".
+        XCTAssertEqual(CapgoUpdater.networkProtocol(of: ["h3", nil]), "h3")
+        XCTAssertEqual(CapgoUpdater.networkProtocol(of: ["http/1.1", ""]), "http/1.1")
+        XCTAssertNil(CapgoUpdater.networkProtocol(of: []))
+        XCTAssertNil(CapgoUpdater.networkProtocol(of: [nil]))
+    }
+
+    func testPlainHttpDownloadStillWorksWithHTTP3Enabled() throws {
+        server.respond { _ in .init(status: 200, body: Data("zip-bytes".utf8)) }
+        let updater = makeUpdater()
+        XCTAssertTrue(updater.http3Enabled)
+        let result = updater.performDownloadRequest(request("h3-fallback.zip"), label: "test")
+        defer {
+            if let fileURL = result.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.response?.statusCode, 200)
+        let fileURL = try XCTUnwrap(result.fileURL)
+        XCTAssertEqual(try Data(contentsOf: fileURL), Data("zip-bytes".utf8))
+    }
 }

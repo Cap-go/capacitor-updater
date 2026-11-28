@@ -129,6 +129,8 @@ public class DownloadWorkerManager {
             .putString(DownloadService.DEFAULT_CHANNEL, defaultChannel)
             .putBoolean(DownloadService.IS_PROD, isProd)
             .putBoolean(DownloadService.IS_EMULATOR, isEmulator)
+            // A job WorkManager resumes in a fresh process runs before any config is loaded.
+            .putBoolean(DownloadService.HTTP3, Http3.isEnabled())
             .build();
 
         // Create network constraints - be more lenient on emulators

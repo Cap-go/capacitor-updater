@@ -100,6 +100,11 @@ public class DownloadService extends Worker {
     private static volatile Logger logger;
     private static final Object LOGGER_LOCK = new Object();
 
+    @androidx.annotation.Nullable
+    static Logger logger() {
+        return logger;
+    }
+
     public static void setLogger(Logger loggerInstance) {
         synchronized (LOGGER_LOCK) {
             logger = loggerInstance;
@@ -144,6 +149,7 @@ public class DownloadService extends Worker {
     public static final String DEFAULT_CHANNEL = "default_channel";
     public static final String IS_PROD = "is_prod";
     public static final String IS_EMULATOR = "is_emulator";
+    public static final String HTTP3 = "http3";
     // 32 files in flight on every device. Fewer leaves 2-core phones waiting on per-request latency;
     // capping by CPU count (8 on 4 cores) was 2-4x slower on emulators limited to 2, 4 and 8 cores.
     // Keep the global cap at 64 so API calls on another host are not starved by manifest downloads.
@@ -188,6 +194,8 @@ public class DownloadService extends Worker {
                 Request requestWithUserAgent = originalRequest.newBuilder().header("User-Agent", userAgent).build();
                 return chain.proceed(requestWithUserAgent);
             })
+            // Last application interceptor: tagged https downloads go over HttpEngine (HTTP/3) when available.
+            .addInterceptor(new Http3.EngineInterceptor())
             .addNetworkInterceptor((chain) -> {
                 // Network interceptor: runs once per hop, so a redirect to http is rejected here too.
                 assertHttpsAllowed(chain.request());
@@ -721,6 +729,13 @@ public class DownloadService extends Worker {
         final String dest = getInputData().getString(FILEDEST);
         final String version = getInputData().getString(VERSION);
         final boolean isManifest = getInputData().getBoolean(IS_MANIFEST, false);
+        // Every bundle download runs here, possibly in a fresh process where no config was loaded yet:
+        // fall back to the http3 option saved with the job (absent on older jobs, keep the default), then
+        // build the shared HttpEngine once. A config already loaded in this process always wins.
+        if (getInputData().hasKeyWithValueOfType(HTTP3, Boolean.class)) {
+            Http3.restoreSavedOption(getInputData().getBoolean(HTTP3, true));
+        }
+        Http3.init(getApplicationContext(), logger);
         try {
             String url = getInputData().getString(URL);
             String id = getInputData().getString(ID);
@@ -1302,7 +1317,7 @@ public class DownloadService extends Worker {
             .readTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(zipTimeoutMs, TimeUnit.MILLISECONDS)
             .build();
-        Request.Builder builder = new Request.Builder().url(url);
+        Request.Builder builder = Http3.markDownload(new Request.Builder().url(url));
         if (downloadedBytes > 0) {
             builder.header("Range", "bytes=" + downloadedBytes + "-");
         }
@@ -1553,7 +1568,7 @@ public class DownloadService extends Worker {
         boolean resumed = false;
         try {
             long existing = partial.isFile() ? partial.length() : 0;
-            Request.Builder builder = new Request.Builder().url(downloadUrl);
+            Request.Builder builder = Http3.markDownload(new Request.Builder().url(downloadUrl));
             if (existing > 0) {
                 builder.header("Range", "bytes=" + existing + "-");
             }

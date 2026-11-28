@@ -71,3 +71,27 @@ final class RedirectPolicyDelegate: NSObject, URLSessionTaskDelegate {
         completionHandler(request)
     }
 }
+
+/// Task delegate attached only to https bundle and manifest download tasks, to log the negotiated protocol.
+/// The session delegate (`RedirectPolicyDelegate`) does not collect metrics, so plain http downloads and API calls
+/// keep the exact same delegate setup as before. Redirects still reach the session delegate, because this one does not
+/// implement them. Must not retain the updater strongly.
+final class DownloadMetricsDelegate: NSObject, URLSessionTaskDelegate {
+    /// Set once when the updater session is created, before any task runs.
+    var onMetrics: ((URLSessionTask, URLSessionTaskMetrics) -> Void)?
+
+    func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        onMetrics?(task, metrics)
+    }
+}
+
+extension CapgoUpdater {
+    /// ALPN name of the last transaction that hit the network ("h3", "h2", "http/1.1"), nil when none did.
+    static func networkProtocol(of metrics: URLSessionTaskMetrics) -> String? {
+        return networkProtocol(of: metrics.transactionMetrics.map { $0.networkProtocolName })
+    }
+
+    static func networkProtocol(of names: [String?]) -> String? {
+        return names.last(where: { !($0 ?? "").isEmpty }) ?? nil
+    }
+}

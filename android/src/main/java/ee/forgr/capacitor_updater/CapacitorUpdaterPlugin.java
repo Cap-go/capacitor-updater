@@ -1045,6 +1045,7 @@ public class CapacitorUpdaterPlugin extends Plugin {
         this.implementation.timeout = (int) Math.min(Integer.MAX_VALUE, responseTimeoutMillis);
         DownloadService.applyHttpTimeouts(this.implementation.timeout);
         DownloadService.setAllowHttpsToHttpRedirect(this.getConfig().getBoolean("allowHttpsToHttpRedirect", false));
+        Http3.setEnabled(this.getConfig().getBoolean("http3", true));
         // httpsOnly overrides allowHttpsToHttpRedirect: no hop may leave https while it is on.
         final boolean httpsOnly = this.getConfig().getBoolean("httpsOnly", true);
         this.implementation.httpsOnly = httpsOnly;
