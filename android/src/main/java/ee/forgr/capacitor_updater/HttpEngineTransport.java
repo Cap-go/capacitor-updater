@@ -99,7 +99,7 @@ final class HttpEngineTransport implements Http3.Transport {
         UrlRequest urlRequest = builder.build();
         engineCall.start(urlRequest);
         // OkHttp: connect timeout for the connection, then read timeout for the response headers.
-        UrlResponseInfo info = engineCall.awaitResponse(saturatedAdd(connectTimeoutMs, readTimeoutMs));
+        UrlResponseInfo info = engineCall.awaitResponse(headerWaitBudgetMs(connectTimeoutMs, readTimeoutMs));
         String negotiated = info.getNegotiatedProtocol();
         Http3.logProtocol("HttpEngine", negotiated, request.url(), info.getHttpStatusCode());
 
@@ -176,12 +176,16 @@ final class HttpEngineTransport implements Http3.Transport {
         return mapped;
     }
 
-    private static long saturatedAdd(int a, int b) {
+    /** Longest wait for response headers, whatever the configured timeouts add up to (AGENTS.md: 10 minutes max). */
+    static final long MAX_HEADER_WAIT_MS = 600_000;
+
+    /** OkHttp waits connect timeout then read timeout for headers; the engine has one wait, so it gets the sum, capped. */
+    static long headerWaitBudgetMs(int connectTimeoutMs, int readTimeoutMs) {
         // 0 means no timeout in OkHttp.
-        if (a <= 0 || b <= 0) {
+        if (connectTimeoutMs <= 0 || readTimeoutMs <= 0) {
             return 0;
         }
-        return (long) a + (long) b;
+        return Math.min(MAX_HEADER_WAIT_MS, (long) connectTimeoutMs + (long) readTimeoutMs);
     }
 
     /** Last time any request on the shared engine got a callback: one engine, one picture of whether it is alive. */

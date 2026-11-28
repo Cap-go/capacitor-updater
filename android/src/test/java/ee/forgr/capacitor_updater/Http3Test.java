@@ -660,4 +660,14 @@ public class Http3Test {
         long later = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Http3.STALL_COOLDOWN_MS + 1);
         assertFalse("the engine is used again after the cooldown", Http3.isSuspended(later));
     }
+
+    @Test
+    public void headerWaitBudgetAddsTheTimeoutsAndCapsAtTenMinutes() {
+        assertEquals(15_000, HttpEngineTransport.headerWaitBudgetMs(5_000, 10_000));
+        assertEquals("two 360 s timeouts must not wait 720 s", 600_000, HttpEngineTransport.headerWaitBudgetMs(360_000, 360_000));
+        assertEquals(600_000, HttpEngineTransport.headerWaitBudgetMs(600_000, 1));
+        assertEquals(600_000, HttpEngineTransport.headerWaitBudgetMs(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        assertEquals("0 keeps meaning no timeout, like OkHttp", 0, HttpEngineTransport.headerWaitBudgetMs(0, 10_000));
+        assertEquals(0, HttpEngineTransport.headerWaitBudgetMs(10_000, 0));
+    }
 }
