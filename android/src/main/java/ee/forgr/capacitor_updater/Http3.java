@@ -11,9 +11,11 @@ import android.os.ext.SdkExtensions;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import okhttp3.Call;
 import okhttp3.Headers;
 import okhttp3.HttpUrl;
@@ -56,8 +58,31 @@ final class Http3 {
         Transport create(@NonNull Context context, @Nullable Logger logger);
     }
 
+    /**
+     * The engine made no progress at all (no callback for any request) for {@link #STALL_MS} while a download
+     * waited on it. Seen on an Android 16 emulator (HttpEngine 133): right after a large receive burst the QUIC session
+     * stops answering, and the engine only gives up on it after its own 6 to 40 s timeout.
+     */
+    static final class EngineStalledException extends SocketTimeoutException {
+
+        EngineStalledException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * How long the whole engine may stay silent, while downloads wait on it, before they move to OkHttp. A live
+     * connection with requests in flight answers in a few round trips, far below this.
+     */
+    static final long STALL_MS = 500;
+    /** After a stall, new downloads skip the engine for this long instead of each paying the stall again. */
+    static final long STALL_COOLDOWN_MS = 60_000;
+
     private static volatile Transport transport;
     private static volatile boolean enabled = true;
+    // System.nanoTime() until which downloads skip the engine after a stall; only read while stalledOnce is true.
+    private static volatile long suspendedUntilNanos;
+    private static volatile boolean stalledOnce;
     // True once the plugin or the headless worker applied the http3 config in this process.
     private static volatile boolean configured;
     // Guards the configured check plus the enabled write, kept apart from init() so it never waits on engine setup.
@@ -149,10 +174,21 @@ final class Http3 {
         return transport;
     }
 
+    /** Called when the engine stalled: downloads use OkHttp for {@link #STALL_COOLDOWN_MS}. */
+    static void suspendAfterStall(long nowNanos) {
+        suspendedUntilNanos = nowNanos + TimeUnit.MILLISECONDS.toNanos(STALL_COOLDOWN_MS);
+        stalledOnce = true;
+    }
+
+    static boolean isSuspended(long nowNanos) {
+        return stalledOnce && nowNanos - suspendedUntilNanos < 0;
+    }
+
     /** Test hook: forget the engine so the next init() starts over. */
     static synchronized void resetForTest() {
         transport = null;
         initialized = false;
+        stalledOnce = false;
         synchronized (OPTION_LOCK) {
             enabled = true;
             configured = false;
@@ -171,7 +207,8 @@ final class Http3 {
             "GET".equals(request.method()) &&
             request.body() == null &&
             // HTTP/3 only exists over TLS, so plain http (local dev servers) keeps the OkHttp path.
-            request.isHttps()
+            request.isHttps() &&
+            !isSuspended(System.nanoTime())
         );
     }
 
@@ -193,7 +230,19 @@ final class Http3 {
                 }
                 return response;
             }
-            return current.execute(request, chain.connectTimeoutMillis(), chain.readTimeoutMillis(), chain.call());
+            try {
+                return current.execute(request, chain.connectTimeoutMillis(), chain.readTimeoutMillis(), chain.call());
+            } catch (EngineStalledException stall) {
+                // No response headers yet, so nothing reached the caller: retry this download on OkHttp right away.
+                suspendAfterStall(System.nanoTime());
+                Logger logger = DownloadService.logger();
+                if (logger != null) {
+                    logger.warn("HttpEngine stalled, download moved to OkHttp: " + stall.getMessage());
+                }
+                Response response = chain.proceed(request);
+                logProtocol("OkHttp", response.protocol().toString(), request.url(), response.code());
+                return response;
+            }
         }
     }
 

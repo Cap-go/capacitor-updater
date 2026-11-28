@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import okhttp3.Call;
 import okhttp3.Headers;
 import okhttp3.MediaType;
@@ -50,11 +51,13 @@ final class HttpEngineTransport implements Http3.Transport {
     // Room for Alt-Svc, QUIC server info and host cache only: DISK_NO_HTTP never stores a response body.
     private static final long STORAGE_BYTES = 1024 * 1024;
     private static final int READ_BUFFER_BYTES = 32 * 1024;
-    // Poll slice so a cancelled OkHttp call (WorkManager stop) stops waiting promptly.
-    private static final long POLL_MS = 250;
+    // Poll slice so a cancelled OkHttp call (WorkManager stop) stops waiting promptly and a stall is seen within
+    // 50 ms of the stall window.
+    private static final long POLL_MS = 50;
 
     private final HttpEngine engine;
     private final Executor callbackExecutor;
+    private final Liveness liveness = new Liveness();
 
     private HttpEngineTransport(HttpEngine engine, Executor callbackExecutor) {
         this.engine = engine;
@@ -86,7 +89,7 @@ final class HttpEngineTransport implements Http3.Transport {
     @NonNull
     @Override
     public Response execute(@NonNull Request request, int connectTimeoutMs, int readTimeoutMs, @Nullable Call call) throws IOException {
-        EngineCall engineCall = new EngineCall(request.url().toString(), call);
+        EngineCall engineCall = new EngineCall(request.url().toString(), call, liveness, Http3.STALL_MS);
         UrlRequest.Builder builder = engine.newUrlRequestBuilder(request.url().toString(), callbackExecutor, engineCall);
         builder.setHttpMethod("GET");
         Headers headers = request.headers();
@@ -181,6 +184,27 @@ final class HttpEngineTransport implements Http3.Transport {
         return (long) a + (long) b;
     }
 
+    /** Last time any request on the shared engine got a callback: one engine, one picture of whether it is alive. */
+    static final class Liveness {
+
+        private final AtomicLong lastNanos = new AtomicLong();
+        // False until the first callback: a new engine has not proven it is alive, so nothing can stall yet.
+        private volatile boolean seen;
+
+        void mark() {
+            lastNanos.set(System.nanoTime());
+            seen = true;
+        }
+
+        boolean seen() {
+            return seen;
+        }
+
+        long lastNanos() {
+            return lastNanos.get();
+        }
+    }
+
     /** Bridges the engine callbacks to a blocking response and body stream. */
     static final class EngineCall implements UrlRequest.Callback {
 
@@ -223,10 +247,19 @@ final class HttpEngineTransport implements Http3.Transport {
         private volatile String currentUrl;
         private volatile IOException redirectError;
 
+        private final Liveness liveness;
+        private final long stallNanos;
+
         EngineCall(String url, @Nullable Call call) {
+            this(url, call, new Liveness(), Http3.STALL_MS);
+        }
+
+        EngineCall(String url, @Nullable Call call, @NonNull Liveness liveness, long stallMs) {
             this.url = url;
             this.currentUrl = url;
             this.call = call;
+            this.liveness = liveness;
+            this.stallNanos = TimeUnit.MILLISECONDS.toNanos(stallMs);
         }
 
         void start(UrlRequest urlRequest) {
@@ -236,6 +269,7 @@ final class HttpEngineTransport implements Http3.Transport {
 
         @Override
         public void onRedirectReceived(@NonNull UrlRequest urlRequest, @NonNull UrlResponseInfo info, @NonNull String newLocationUrl) {
+            liveness.mark();
             IOException error = Http3.redirectError(currentUrl, newLocationUrl);
             if (error != null) {
                 redirectError = error;
@@ -248,21 +282,25 @@ final class HttpEngineTransport implements Http3.Transport {
 
         @Override
         public void onResponseStarted(@NonNull UrlRequest urlRequest, @NonNull UrlResponseInfo info) {
+            liveness.mark();
             events.offer(new Started(info));
         }
 
         @Override
         public void onReadCompleted(@NonNull UrlRequest urlRequest, @NonNull UrlResponseInfo info, @NonNull ByteBuffer byteBuffer) {
+            liveness.mark();
             events.offer(new ReadDone(byteBuffer));
         }
 
         @Override
         public void onSucceeded(@NonNull UrlRequest urlRequest, @NonNull UrlResponseInfo info) {
+            liveness.mark();
             events.offer(SUCCEEDED);
         }
 
         @Override
         public void onFailed(@NonNull UrlRequest urlRequest, @Nullable UrlResponseInfo info, @NonNull HttpException error) {
+            liveness.mark();
             events.offer(new Failed(translate(error)));
         }
 
@@ -272,16 +310,23 @@ final class HttpEngineTransport implements Http3.Transport {
             events.offer(new Failed(error != null ? error : new IOException("Canceled")));
         }
 
-        /** Next callback event, or null on timeout (0 waits forever). Cancels the request when OkHttp's call is. */
+        /**
+         * Next callback event, or null on timeout (0 waits forever). Cancels the request when OkHttp's call is.
+         * Throws {@link Http3.EngineStalledException} when the whole engine went silent for the stall window: always
+         * while waiting for headers (the caller can still retry on OkHttp) if the engine was busy just before, and
+         * while reading a body only once a stall is already confirmed, so a slow single body never trips it.
+         */
         @Nullable
-        private Object next(long timeoutMs) throws IOException {
-            long deadline = timeoutMs > 0 ? System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs) : Long.MAX_VALUE;
+        private Object next(long timeoutMs, boolean waitingForHeaders) throws IOException {
+            long start = System.nanoTime();
+            long deadline = timeoutMs > 0 ? start + TimeUnit.MILLISECONDS.toNanos(timeoutMs) : Long.MAX_VALUE;
             try {
                 while (true) {
                     if (call != null && call.isCanceled()) {
                         cancel();
                         throw new IOException("Canceled");
                     }
+                    checkStall(start, waitingForHeaders);
                     long remainingMs = timeoutMs > 0 ? TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()) : POLL_MS;
                     if (remainingMs <= 0) {
                         return null;
@@ -298,8 +343,24 @@ final class HttpEngineTransport implements Http3.Transport {
             }
         }
 
+        private void checkStall(long waitStartNanos, boolean waitingForHeaders) throws Http3.EngineStalledException {
+            long now = System.nanoTime();
+            boolean seen = liveness.seen();
+            long last = seen ? liveness.lastNanos() : waitStartNanos;
+            // Headers: only when the engine was busy right before this wait, since the first request of a process,
+            // or a lone one after a quiet period, pays a full handshake that can take longer on a slow network.
+            boolean armed = waitingForHeaders ? seen && last - (waitStartNanos - stallNanos) >= 0 : Http3.isSuspended(now);
+            long silentSince = last - waitStartNanos >= 0 ? last : waitStartNanos;
+            if (armed && now - silentSince >= stallNanos) {
+                cancel();
+                throw new Http3.EngineStalledException(
+                    "HttpEngine made no progress for " + TimeUnit.NANOSECONDS.toMillis(now - silentSince) + " ms on " + url
+                );
+            }
+        }
+
         UrlResponseInfo awaitResponse(long timeoutMs) throws IOException {
-            Object event = next(timeoutMs);
+            Object event = next(timeoutMs, true);
             if (event instanceof Started) {
                 return ((Started) event).info;
             }
@@ -354,7 +415,7 @@ final class HttpEngineTransport implements Http3.Transport {
                     }
                     buffer.clear();
                     request.read(buffer);
-                    Object event = next(readTimeoutMs);
+                    Object event = next(readTimeoutMs, false);
                     if (event instanceof ReadDone) {
                         buffer.flip();
                     } else if (event == SUCCEEDED) {

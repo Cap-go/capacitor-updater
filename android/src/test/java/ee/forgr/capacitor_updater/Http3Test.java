@@ -535,4 +535,129 @@ public class Http3Test {
         ).doWork();
         assertTrue(Http3.isEnabled());
     }
+
+    // Stall guard: HttpEngine's QUIC session can go silent mid-burst and the engine only notices after 6 to 40 s.
+
+    @Test
+    public void busyEngineThatGoesSilentStallsWithinTheWindowAndCancels() throws Exception {
+        HttpEngineTransport.Liveness liveness = new HttpEngineTransport.Liveness();
+        liveness.mark();
+        HttpEngineTransport.EngineCall call = new HttpEngineTransport.EngineCall(FILE_URL, null, liveness, 100);
+        UrlRequest request = mock(UrlRequest.class);
+        call.start(request);
+        long start = System.nanoTime();
+        try {
+            call.awaitResponse(10_000);
+            fail("expected a stall");
+        } catch (Http3.EngineStalledException expected) {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            assertTrue("stall seen after " + elapsedMs + " ms", elapsedMs >= 100 && elapsedMs < 1000);
+            verify(request).cancel();
+        }
+    }
+
+    @Test
+    public void firstRequestOnANewEngineKeepsTheNormalTimeout() throws Exception {
+        HttpEngineTransport.EngineCall call = new HttpEngineTransport.EngineCall(FILE_URL, null, new HttpEngineTransport.Liveness(), 100);
+        UrlRequest request = mock(UrlRequest.class);
+        call.start(request);
+        try {
+            call.awaitResponse(500);
+            fail("expected a timeout");
+        } catch (SocketTimeoutException expected) {
+            assertFalse("the first handshake of a process is not a stall", expected instanceof Http3.EngineStalledException);
+        }
+    }
+
+    @Test
+    public void loneRequestAfterAQuietPeriodKeepsTheNormalTimeout() throws Exception {
+        HttpEngineTransport.Liveness liveness = new HttpEngineTransport.Liveness();
+        liveness.mark();
+        Thread.sleep(250);
+        HttpEngineTransport.EngineCall call = new HttpEngineTransport.EngineCall(FILE_URL, null, liveness, 100);
+        UrlRequest request = mock(UrlRequest.class);
+        call.start(request);
+        try {
+            call.awaitResponse(500);
+            fail("expected a timeout");
+        } catch (SocketTimeoutException expected) {
+            assertFalse("a slow first handshake is not a stall", expected instanceof Http3.EngineStalledException);
+        }
+    }
+
+    @Test
+    public void progressOnOtherRequestsKeepsAWaitingRequestOnTheEngine() throws Exception {
+        HttpEngineTransport.Liveness liveness = new HttpEngineTransport.Liveness();
+        liveness.mark();
+        HttpEngineTransport.EngineCall call = new HttpEngineTransport.EngineCall(FILE_URL, null, liveness, 100);
+        UrlRequest request = mock(UrlRequest.class);
+        UrlResponseInfo info = info();
+        Thread others = new Thread(() -> {
+            try {
+                for (int i = 0; i < 10; i++) {
+                    Thread.sleep(40);
+                    liveness.mark();
+                }
+                call.onResponseStarted(request, info);
+            } catch (InterruptedException ignored) {}
+        });
+        call.start(request);
+        others.start();
+        assertSame(info, call.awaitResponse(5000));
+        others.join();
+        verify(request, never()).cancel();
+    }
+
+    @Test
+    public void bodyReadsOnlyTripOnceAStallIsConfirmed() throws Exception {
+        HttpEngineTransport.Liveness liveness = new HttpEngineTransport.Liveness();
+        UrlRequest request = mock(UrlRequest.class);
+        UrlResponseInfo info = info();
+
+        HttpEngineTransport.EngineCall slow = new HttpEngineTransport.EngineCall(FILE_URL, null, liveness, 100);
+        slow.start(request);
+        slow.onResponseStarted(request, info);
+        slow.awaitResponse(1000);
+        try (InputStream body = slow.bodyStream(400)) {
+            body.read();
+            fail("expected the read timeout");
+        } catch (SocketTimeoutException expected) {
+            assertFalse("a slow body alone is not a stall", expected instanceof Http3.EngineStalledException);
+        }
+
+        Http3.suspendAfterStall(System.nanoTime());
+        HttpEngineTransport.EngineCall stuck = new HttpEngineTransport.EngineCall(FILE_URL, null, liveness, 100);
+        UrlRequest stuckRequest = mock(UrlRequest.class);
+        stuck.start(stuckRequest);
+        stuck.onResponseStarted(stuckRequest, info);
+        stuck.awaitResponse(1000);
+        try (InputStream body = stuck.bodyStream(10_000)) {
+            body.read();
+            fail("expected a stall");
+        } catch (Http3.EngineStalledException expected) {
+            assertTrue(DownloadService.isRetryableManifestError(expected));
+        }
+    }
+
+    @Test
+    public void stalledEngineMovesTheDownloadToOkHttpAndCoolsDown() throws Exception {
+        AtomicInteger engineCalls = new AtomicInteger();
+        Http3.init(context, null, 34, 0, (ctx, logger) -> (request, connectTimeoutMs, readTimeoutMs, call) -> {
+            engineCalls.incrementAndGet();
+            throw new Http3.EngineStalledException("no progress");
+        });
+        AtomicInteger okHttp = new AtomicInteger();
+        Response first = intercept(download(FILE_URL), okHttp);
+        assertEquals(Protocol.HTTP_2, first.protocol());
+        assertEquals(1, engineCalls.get());
+        assertEquals(1, okHttp.get());
+        assertTrue(Http3.isSuspended(System.nanoTime()));
+
+        Response second = intercept(download(FILE_URL), okHttp);
+        assertEquals("cooldown skips the engine", 1, engineCalls.get());
+        assertEquals(2, okHttp.get());
+        assertEquals(Protocol.HTTP_2, second.protocol());
+        long later = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Http3.STALL_COOLDOWN_MS + 1);
+        assertFalse("the engine is used again after the cooldown", Http3.isSuspended(later));
+    }
 }
